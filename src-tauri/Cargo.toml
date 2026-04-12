@@ -1,0 +1,65 @@
+[package]
+name = "volt"
+version = "0.0.2"
+description = "Lightning-fast keyboard-driven launcher for Windows, macOS, and Linux"
+authors = ["VoltLaunchr Contributors"]
+license = "Apache-2.0"
+homepage = "https://voltlaunchr.com"
+repository = "https://github.com/VoltLaunchr/Volt"
+edition = "2024"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+# The `_lib` suffix may seem redundant but it is necessary
+# to make the lib name unique and wouldn't conflict with the bin name.
+# This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
+name = "volt_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["devtools"] }
+tauri-plugin-opener = "2"
+tauri-plugin-global-shortcut = "2"
+tauri-plugin-shell = "2"
+tauri-plugin-fs = "2"
+tauri-plugin-autostart = "2"
+tauri-plugin-dialog = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+md5 = "0.7"
+whoami = "1.5"
+png = "0.17"
+chrono = "0.4"
+async-trait = "0.1"
+tauri-plugin-updater = "2.9.0"
+tauri-plugin-process = "2.3.1"
+regex = "1.11"
+dirs = "5.0"
+tokio = { version = "1", features = ["full"] }
+sysinfo = "0.32"
+semver = "1.0"
+arboard = "3.4"
+rusqlite = { version = "0.32", features = ["bundled"] }
+image = "0.25"
+base64 = "0.22"
+once_cell = "1.20"
+nucleo-matcher = "0.3"
+log = "0.4"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-appender = "0.2"
+reqwest = { version = "0.12", features = ["json"] }
+zip = "2.2"
+url = "2.5"
+
+[target.'cfg(windows)'.dependencies]
+winapi = { version = "0.3", features = ["shellapi", "winuser", "wingdi", "winnt", "winreg", "fileapi"] }
+winreg = "0.52"
+lnk = "0.5"
+
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+tauri-plugin-positioner = "2"

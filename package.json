@@ -1,0 +1,71 @@
+{
+  "name": "volt",
+  "private": true,
+  "version": "0.0.2",
+  "type": "module",
+  "description": "Lightning-fast keyboard-driven launcher for Windows, macOS, and Linux. Built with Tauri 2 + React + Rust.",
+  "license": "Apache-2.0",
+  "author": {
+    "name": "VoltLaunchr Contributors",
+    "url": "https://voltlaunchr.com"
+  },
+  "homepage": "https://voltlaunchr.com",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/VoltLaunchr/Volt.git"
+  },
+  "bugs": {
+    "url": "https://github.com/VoltLaunchr/Volt/issues"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "tauri": "tauri",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "sync-version": "node scripts/sync-version.mjs",
+    "check-version": "node scripts/sync-version.mjs --check",
+    "setup-hooks": "node scripts/setup-hooks.mjs"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2",
+    "@tauri-apps/plugin-dialog": "^2.4.2",
+    "@tauri-apps/plugin-opener": "^2",
+    "@tauri-apps/plugin-positioner": "~2",
+    "@tauri-apps/plugin-process": "^2.3.1",
+    "@tauri-apps/plugin-updater": "^2.9.0",
+    "date-fns": "^4.1.0",
+    "date-fns-tz": "^3.2.0",
+    "emojibase": "^17.0.0",
+    "emojibase-data": "^17.0.0",
+    "lucide-react": "^0.561.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "react-snowfall": "^2.4.0",
+    "sucrase": "^3.35.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.1",
+    "@tauri-apps/cli": "^2",
+    "@testing-library/jest-dom": "^6.6.3",
+    "@testing-library/react": "^16.1.0",
+    "@testing-library/user-event": "^14.5.2",
+    "@types/node": "^25.0.3",
+    "@types/react": "^19.1.8",
+    "@types/react-dom": "^19.1.6",
+    "@typescript-eslint/eslint-plugin": "^8.49.0",
+    "@typescript-eslint/parser": "^8.49.0",
+    "@vitejs/plugin-react": "^4.6.0",
+    "eslint": "^9.39.1",
+    "eslint-plugin-react-hooks": "^7.0.1",
+    "eslint-plugin-react-refresh": "^0.4.24",
+    "jsdom": "^25.0.1",
+    "prettier": "^3.7.4",
+    "typescript": "~5.8.3",
+    "vite": "^7.0.4",
+    "vitest": "^2.1.8"
+  }
+}

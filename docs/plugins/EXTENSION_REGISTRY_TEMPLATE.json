@@ -1,0 +1,32 @@
+{
+  "version": "1.0.0",
+  "lastUpdated": "2024-12-26T00:00:00Z",
+  "extensions": [
+    {
+      "manifest": {
+        "id": "example-hello-world",
+        "name": "Hello World",
+        "version": "1.0.0",
+        "description": "A simple example extension to demonstrate the Volt extension system",
+        "author": {
+          "name": "Volt Team",
+          "github": "VoltLaunchr"
+        },
+        "icon": "https://raw.githubusercontent.com/VoltLaunchr/volt-extensions/main/examples/hello-world/icon.png",
+        "keywords": ["example", "demo", "hello"],
+        "category": "other",
+        "repository": "https://github.com/VoltLaunchr/volt-extensions",
+        "license": "MIT",
+        "minVoltVersion": "0.3.0",
+        "permissions": []
+      },
+      "downloadUrl": "https://github.com/VoltLaunchr/volt-extensions/releases/download/hello-world-v1.0.0/hello-world.zip",
+      "downloads": 0,
+      "stars": 0,
+      "verified": true,
+      "featured": true,
+      "createdAt": "2024-12-26T00:00:00Z",
+      "updatedAt": "2024-12-26T00:00:00Z"
+    }
+  ]
+}

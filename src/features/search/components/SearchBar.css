@@ -1,0 +1,108 @@
+.search-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+  padding: 0 var(--spacing-lg);
+  height: var(--search-bar-height);
+  border-bottom: 1px solid var(--color-border);
+  transition: border-color var(--transition-fast);
+  -webkit-app-region: no-drag;
+  background: transparent;
+}
+
+.search-bar:focus-within {
+  border-color: var(--color-accent);
+}
+
+.search-icon {
+  display: flex;
+  align-items: center;
+  color: var(--color-text-secondary);
+  flex-shrink: 0;
+}
+
+.search-input {
+  flex: 1;
+  height: 100%;
+  font-size: var(--font-size-lg);
+  color: var(--color-text-primary);
+  caret-color: var(--color-accent);
+  -webkit-app-region: no-drag;
+  cursor: text;
+}
+
+.search-input::placeholder {
+  color: var(--color-text-tertiary);
+}
+
+.search-input:focus {
+  outline: none;
+}
+
+.search-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+  flex-shrink: 0;
+}
+
+.clear-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-secondary);
+  transition: all var(--transition-fast);
+  flex-shrink: 0;
+  -webkit-app-region: no-drag;
+  cursor: pointer;
+}
+
+.clear-button:hover {
+  background: var(--color-surface-hover);
+  color: var(--color-text-primary);
+}
+
+.clear-button:active {
+  transform: scale(0.95);
+}
+
+.quick-action-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  background: var(--color-surface);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  transition: all var(--transition-fast);
+  -webkit-app-region: no-drag;
+}
+
+.quick-action-badge:hover {
+  background: var(--color-surface-hover);
+  border-color: var(--color-accent);
+}
+
+.quick-action-label {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  font-weight: var(--font-weight-medium);
+}
+
+.quick-action-key {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  padding: 2px 6px;
+  font-size: var(--font-size-xs);
+  font-family: var(--font-family-mono);
+  background: var(--color-background);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-secondary);
+  font-weight: var(--font-weight-medium);
+}

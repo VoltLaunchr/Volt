@@ -1,0 +1,131 @@
+.hotkey-capture {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+.hotkey-button {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.hotkey-button:hover:not(:disabled) {
+  border-color: var(--color-accent);
+  background: var(--color-surface-hover);
+}
+
+.hotkey-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.hotkey-button kbd {
+  padding: 2px 8px;
+  font-size: var(--font-size-sm);
+  font-family: var(--font-family-mono);
+  background: var(--color-surface-hover);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-primary);
+}
+
+.hotkey-edit-icon {
+  font-size: 14px;
+  opacity: 0.6;
+}
+
+.hotkey-button:hover .hotkey-edit-icon {
+  opacity: 1;
+}
+
+.hotkey-button-empty {
+  border-style: dashed;
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.hotkey-button-empty:hover:not(:disabled) {
+  border-color: var(--color-accent);
+  background: rgba(99, 102, 241, 0.05);
+}
+
+.hotkey-placeholder {
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+}
+
+.hotkey-recording {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: var(--color-accent);
+  border: 2px solid var(--color-accent);
+  border-radius: var(--radius-md);
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(var(--color-accent-rgb), 0.4);
+  }
+  50% {
+    box-shadow: 0 0 0 8px rgba(var(--color-accent-rgb), 0);
+  }
+}
+
+.hotkey-recording-display {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 120px;
+  color: var(--color-bg);
+  font-weight: var(--font-weight-medium);
+}
+
+.hotkey-recording-display kbd {
+  padding: 2px 8px;
+  font-size: var(--font-size-sm);
+  font-family: var(--font-family-mono);
+  background: rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: var(--radius-sm);
+  color: var(--color-bg);
+  font-weight: var(--font-weight-bold);
+}
+
+.hotkey-prompt {
+  font-size: var(--font-size-sm);
+  color: var(--color-bg);
+  opacity: 0.9;
+  font-style: italic;
+}
+
+.hotkey-cancel {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  background: rgba(255, 255, 255, 0.2);
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--color-bg);
+  cursor: pointer;
+  font-size: 16px;
+  font-weight: bold;
+  transition: all var(--transition-fast);
+}
+
+.hotkey-cancel:hover {
+  background: rgba(255, 255, 255, 0.3);
+  transform: scale(1.1);
+}

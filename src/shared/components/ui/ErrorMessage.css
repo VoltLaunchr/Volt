@@ -1,0 +1,111 @@
+.error-message {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-md);
+  border-radius: var(--radius-md);
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  color: var(--color-error);
+}
+
+.error-message-inline {
+  width: 100%;
+}
+
+.error-message-toast {
+  position: fixed;
+  bottom: var(--spacing-lg);
+  right: var(--spacing-lg);
+  max-width: 400px;
+  box-shadow: var(--shadow-lg);
+  animation: error-slide-in var(--transition-normal);
+  z-index: var(--z-tooltip);
+}
+
+.error-message-banner {
+  border-radius: 0;
+  border-left: none;
+  border-right: none;
+}
+
+.error-message-icon {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-error);
+}
+
+.error-message-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.error-message-title {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  margin-bottom: var(--spacing-xs);
+  color: var(--color-error);
+}
+
+.error-message-text {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  line-height: var(--line-height-normal);
+  word-break: break-word;
+}
+
+.error-message-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  flex-shrink: 0;
+}
+
+.error-message-retry,
+.error-message-dismiss {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.error-message-retry:hover,
+.error-message-dismiss:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--color-text-primary);
+}
+
+.error-message-retry:active,
+.error-message-dismiss:active {
+  transform: scale(0.95);
+}
+
+@keyframes error-slide-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Light theme adjustments */
+[data-theme='light'] .error-message {
+  background: rgba(239, 68, 68, 0.08);
+  border-color: rgba(239, 68, 68, 0.25);
+}
+
+[data-theme='light'] .error-message-retry:hover,
+[data-theme='light'] .error-message-dismiss:hover {
+  background: rgba(0, 0, 0, 0.05);
+}

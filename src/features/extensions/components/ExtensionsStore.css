@@ -1,0 +1,701 @@
+/**
+ * Extensions Store Styles
+ * Matches the app's Raycast-style design system
+ */
+
+.extensions-store {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* Header */
+.extensions-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 24px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  flex-shrink: 0;
+}
+
+.extensions-header h2 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.extensions-header h2 svg {
+  color: var(--color-accent);
+}
+
+.refresh-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  background: transparent;
+  border: none;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+}
+
+.refresh-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--color-text-primary);
+}
+
+/* Error */
+.extensions-error {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  margin: 0 24px 16px;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  border-radius: 8px;
+  color: #ef4444;
+  font-size: 13px;
+}
+
+.extensions-error svg {
+  flex-shrink: 0;
+}
+
+.extensions-error button {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  font-size: 18px;
+  padding: 0;
+  opacity: 0.7;
+  line-height: 1;
+}
+
+.extensions-error button:hover {
+  opacity: 1;
+}
+
+/* Tabs */
+.extensions-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 0 24px;
+  margin-bottom: 16px;
+}
+
+.extensions-tabs .tab {
+  padding: 8px 16px;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  transition: all 0.15s ease;
+}
+
+.extensions-tabs .tab:hover:not(.active) {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--color-text-primary);
+}
+
+.extensions-tabs .tab.active {
+  background: rgba(99, 102, 241, 0.15);
+  color: var(--color-accent);
+}
+
+/* Filters */
+.extensions-filters {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 0 24px;
+  margin-bottom: 16px;
+}
+
+.extensions-search {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  transition: all 0.15s ease;
+}
+
+.extensions-search:focus-within {
+  border-color: var(--color-accent);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.extensions-search svg {
+  color: var(--color-text-tertiary);
+  flex-shrink: 0;
+}
+
+.extensions-search input {
+  flex: 1;
+  background: none;
+  border: none;
+  outline: none;
+  color: var(--color-text-primary);
+  font-size: 13px;
+}
+
+.extensions-search input::placeholder {
+  color: var(--color-text-tertiary);
+}
+
+/* Categories */
+.category-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.category-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: rgba(255, 255, 255, 0.03);
+  border: none;
+  border-radius: 6px;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  transition: all 0.15s ease;
+}
+
+.category-btn:hover:not(.active) {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--color-text-primary);
+}
+
+.category-btn.active {
+  background: rgba(99, 102, 241, 0.15);
+  color: var(--color-accent);
+}
+
+.category-icon {
+  flex-shrink: 0;
+}
+
+/* Extensions List */
+.extensions-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 24px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Loading */
+.extensions-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  gap: 16px;
+  color: var(--color-text-secondary);
+}
+
+.extensions-loading p {
+  font-size: 13px;
+  font-weight: 500;
+  margin: 0;
+}
+
+/* Empty State */
+.no-extensions {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 24px;
+  text-align: center;
+}
+
+.no-extensions svg {
+  opacity: 0.2;
+  color: var(--color-text-tertiary);
+  margin-bottom: 16px;
+}
+
+.no-extensions p {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+}
+
+.no-extensions .hint {
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--color-text-tertiary);
+  margin-top: 4px;
+}
+
+/* Extension Card */
+.extension-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 16px;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 10px;
+  transition: background 0.15s ease;
+}
+
+.extension-card:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.extension-card.disabled {
+  opacity: 0.5;
+}
+
+/* Extension Icon */
+.extension-icon {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
+  color: var(--color-text-tertiary);
+}
+
+.extension-icon img {
+  width: 24px;
+  height: 24px;
+  object-fit: contain;
+}
+
+/* Extension Info */
+.extension-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.extension-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.extension-header h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+}
+
+.extension-header .version {
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  font-family: var(--font-family-mono);
+}
+
+.extension-header .badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.extension-header .badge.verified {
+  color: var(--color-success);
+}
+
+.extension-header .badge.featured {
+  color: var(--color-warning);
+}
+
+.extension-info .description {
+  margin: 0;
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* Extension Meta */
+.extension-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  margin-top: 2px;
+}
+
+.extension-meta .author {
+  font-weight: 500;
+}
+
+.extension-meta .category {
+  padding: 2px 6px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 4px;
+  text-transform: capitalize;
+}
+
+.extension-meta .downloads {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.extension-meta .installed-date {
+  color: var(--color-text-tertiary);
+}
+
+/* Extension Actions */
+.extension-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+/* Action Buttons */
+.extension-actions .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: none;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.extension-actions .btn.install {
+  background: var(--color-accent);
+  color: white;
+}
+
+.extension-actions .btn.install:hover:not(:disabled) {
+  background: var(--color-accent-hover);
+}
+
+.extension-actions .btn.install:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.extension-actions .installed-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  background: rgba(16, 185, 129, 0.1);
+  color: var(--color-success);
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+/* Icon-only buttons */
+.extension-actions .btn.link,
+.extension-actions .btn.toggle,
+.extension-actions .btn.uninstall,
+.extension-actions .btn.refresh,
+.extension-actions .btn.unlink {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--color-text-tertiary);
+}
+
+.extension-actions .btn.link:hover,
+.extension-actions .btn.refresh:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--color-text-primary);
+}
+
+.extension-actions .btn.toggle {
+  color: var(--color-text-tertiary);
+}
+
+.extension-actions .btn.toggle:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--color-text-secondary);
+}
+
+.extension-actions .btn.toggle.enabled {
+  color: var(--color-accent);
+}
+
+.extension-actions .btn.toggle.enabled:hover {
+  background: rgba(99, 102, 241, 0.1);
+}
+
+.extension-actions .btn.uninstall,
+.extension-actions .btn.unlink {
+  color: var(--color-text-tertiary);
+}
+
+.extension-actions .btn.uninstall:hover,
+.extension-actions .btn.unlink:hover {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+}
+
+.extension-actions .btn.uninstall:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Animations */
+.spin {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Scrollbar */
+.extensions-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.extensions-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.extensions-list::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+}
+
+.extensions-list::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* Dev Extensions Section */
+.dev-extensions-section {
+  margin-bottom: 16px;
+}
+
+.link-dev-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  padding: 12px;
+  background: transparent;
+  border: 1px dashed rgba(99, 102, 241, 0.3);
+  border-radius: 8px;
+  color: var(--color-accent);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.link-dev-btn:hover:not(:disabled) {
+  background: rgba(99, 102, 241, 0.1);
+  border-color: var(--color-accent);
+}
+
+.link-dev-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Section Titles */
+.section-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.dev-extensions-list {
+  margin-bottom: 24px;
+}
+
+.installed-extensions-list {
+  margin-bottom: 8px;
+}
+
+/* Dev Extension Card */
+.extension-card.dev-card {
+  border: 1px dashed rgba(99, 102, 241, 0.3);
+  background: rgba(99, 102, 241, 0.03);
+}
+
+.extension-card.dev-card:hover {
+  background: rgba(99, 102, 241, 0.06);
+  border-color: rgba(99, 102, 241, 0.4);
+}
+
+.extension-card.dev-card .extension-icon {
+  background: rgba(99, 102, 241, 0.1);
+  color: var(--color-accent);
+}
+
+.extension-header .badge.dev {
+  background: rgba(99, 102, 241, 0.15);
+  color: var(--color-accent);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.extension-meta .path {
+  font-family: var(--font-family-mono);
+  font-size: 10px;
+  padding: 2px 6px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 4px;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Action Row */
+.action-row {
+  display: flex;
+  gap: 4px;
+}
+
+/* Light Theme Overrides */
+[data-theme='light'] .extensions-header {
+  border-bottom-color: rgba(0, 0, 0, 0.06);
+}
+
+[data-theme='light'] .extensions-tabs .tab:hover:not(.active) {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+[data-theme='light'] .extensions-tabs .tab.active {
+  background: rgba(99, 102, 241, 0.1);
+}
+
+[data-theme='light'] .extensions-search {
+  background: rgba(0, 0, 0, 0.03);
+  border-color: rgba(0, 0, 0, 0.1);
+}
+
+[data-theme='light'] .extensions-search:focus-within {
+  background: rgba(0, 0, 0, 0.05);
+}
+
+[data-theme='light'] .category-btn {
+  background: rgba(0, 0, 0, 0.02);
+}
+
+[data-theme='light'] .category-btn:hover:not(.active) {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+[data-theme='light'] .category-btn.active {
+  background: rgba(99, 102, 241, 0.1);
+}
+
+[data-theme='light'] .extension-card {
+  background: rgba(0, 0, 0, 0.02);
+}
+
+[data-theme='light'] .extension-card:hover {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+[data-theme='light'] .extension-icon {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+[data-theme='light'] .extension-meta .category,
+[data-theme='light'] .extension-meta .path {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+[data-theme='light'] .extension-card.dev-card {
+  background: rgba(99, 102, 241, 0.02);
+}
+
+[data-theme='light'] .extension-card.dev-card:hover {
+  background: rgba(99, 102, 241, 0.04);
+}
+
+[data-theme='light'] .extension-card.dev-card .extension-icon {
+  background: rgba(99, 102, 241, 0.08);
+}
+
+[data-theme='light'] .section-title {
+  border-bottom-color: rgba(0, 0, 0, 0.06);
+}
+
+[data-theme='light'] .refresh-btn:hover {
+  background: rgba(0, 0, 0, 0.06);
+}
+
+[data-theme='light'] .extension-actions .btn.link:hover,
+[data-theme='light'] .extension-actions .btn.refresh:hover,
+[data-theme='light'] .extension-actions .btn.toggle:hover {
+  background: rgba(0, 0, 0, 0.06);
+}
+
+[data-theme='light'] .extension-actions .btn.toggle.enabled:hover {
+  background: rgba(99, 102, 241, 0.08);
+}
+
+[data-theme='light'] .extensions-list::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.1);
+}
+
+[data-theme='light'] .extensions-list::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.2);
+}

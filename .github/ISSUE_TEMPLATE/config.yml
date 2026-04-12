@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions and discussions
+    url: https://github.com/VoltLaunchr/Volt/discussions
+    about: Ask questions, share ideas, or connect with the community
+  - name: Security vulnerabilities
+    url: https://github.com/VoltLaunchr/Volt/security/advisories/new
+    about: Report security issues privately (do NOT use public issues)

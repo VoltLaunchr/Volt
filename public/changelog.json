@@ -1,0 +1,84 @@
+{
+  "versions": [
+    {
+      "version": "0.0.2",
+      "date": "2026-01-01",
+      "title": "Initial Public Release",
+      "description": "We're excited to introduce Volt - a modern, lightning-fast application launcher for Windows, macOS, and Linux. Built with Tauri v2 and React, Volt combines native performance with a beautiful, customizable interface.",
+      "sections": [
+        {
+          "type": "features",
+          "title": "Core Features",
+          "icon": "sparkles",
+          "items": [
+            "Lightning-fast application launcher with intelligent fuzzy search",
+            "Beautiful glass-morphism UI with smooth animations",
+            "Multi-theme support (Dark, Light, Auto)",
+            "Smart file indexing with advanced search capabilities",
+            "Customizable keyboard shortcuts and global hotkey (Ctrl+Space)",
+            "Cross-platform support (Windows, macOS, Linux)"
+          ]
+        },
+        {
+          "type": "plugins",
+          "title": "Built-in Plugins",
+          "icon": "package",
+          "items": [
+            "Calculator - Instant math evaluations, unit conversions, date calculations",
+            "Clipboard Manager - Track, search, and pin clipboard history",
+            "Emoji Picker - Quick emoji search with :emoji syntax",
+            "Web Search - Search the web directly (?query)",
+            "Timer - Countdown and pomodoro timers",
+            "System Monitor - Real-time CPU, RAM, and disk monitoring",
+            "Game Scanner - Launch games from Steam, Epic, GOG, EA, and more"
+          ]
+        },
+        {
+          "type": "performance",
+          "title": "Performance",
+          "icon": "zap",
+          "items": [
+            "Debounced search with sub-150ms response time",
+            "Background file indexing for instant file access",
+            "Smart result scoring and prioritization",
+            "Plugin keyword boosting for relevant results",
+            "Efficient memory usage with intelligent caching"
+          ]
+        },
+        {
+          "type": "system",
+          "title": "System Integration",
+          "icon": "cpu",
+          "items": [
+            "Global hotkey support (Ctrl+Space by default)",
+            "Auto-start with system option",
+            "Window positioning presets (Top, Center, Custom)",
+            "Extension system with hot-reload support",
+            "Native performance with Tauri v2 + Rust backend"
+          ]
+        },
+        {
+          "type": "settings",
+          "title": "Customization",
+          "icon": "settings",
+          "items": [
+            "Comprehensive settings panel for all preferences",
+            "Configure file indexing folders and exclusions",
+            "Customize search result limits and behavior",
+            "Plugin management and configuration",
+            "Extensive keyboard shortcuts (15+ shortcuts)"
+          ]
+        }
+      ],
+      "footer": {
+        "gettingStarted": "Press Ctrl+Space to open Volt anytime. Start typing to search for apps, files, or commands. Press Ctrl+, to open settings.",
+        "feedback": "Have feedback or found a bug? Visit our GitHub repository to report issues or request features.",
+        "links": {
+          "github": "https://github.com/VoltLaunchr/Volt",
+          "releases": "https://github.com/VoltLaunchr/Volt/releases",
+          "docs": "https://voltlaunchr.com/docs"
+        }
+      }
+    }
+  ]
+}

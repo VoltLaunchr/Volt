@@ -1,0 +1,70 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Dependencies / build outputs
+node_modules
+dist
+dist-ssr
+*.local
+build/
+out/
+target/
+src-tauri/target/
+src-tauri/gen/
+
+# Secrets - NEVER COMMIT
+.env
+.env.local
+.env.*.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Tauri signing keys
+tauri-update.key
+tauri-update.key*
+tauri-update.key.pub
+volt-update.key
+volt-update.key*
+*.key
+!*.key.pub
+
+# Certificates / private keys
+*.pem
+*.p12
+*.pfx
+*.cer
+*.crt
+*.der
+*.jks
+*.keystore
+
+# Credentials / secret bundles
+secrets.json
+secrets.yaml
+secrets.yml
+credentials.json
+credentials.yaml
+credentials.yml
+id_rsa
+id_rsa.*
+id_ed25519
+id_ed25519.*
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+Thumbs.db
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?

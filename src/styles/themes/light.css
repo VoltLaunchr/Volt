@@ -1,0 +1,13 @@
+[data-theme='light'] {
+  /* Colors - Light Theme */
+  --color-background: rgba(250, 250, 255, 0.85);
+  --color-surface: rgba(255, 255, 255, 0.9);
+  --color-surface-hover: rgba(245, 245, 250, 0.95);
+  --color-surface-selected: rgba(99, 102, 241, 0.15);
+  --color-border: rgba(0, 0, 0, 0.1);
+  --color-text-primary: rgba(0, 0, 0, 0.9);
+  --color-text-secondary: rgba(0, 0, 0, 0.6);
+  --color-text-tertiary: rgba(0, 0, 0, 0.4);
+  --color-accent: #6366f1;
+  --color-accent-hover: #4f46e5;
+}

@@ -1,0 +1,116 @@
+.timer-display {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--border-color, rgba(255, 255, 255, 0.1));
+}
+
+.timer-item {
+  position: relative;
+  background: var(--surface-color, rgba(255, 255, 255, 0.05));
+  border-radius: 8px;
+  overflow: hidden;
+  min-height: 44px;
+}
+
+.timer-progress {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    var(--accent-color, #ff6b6b) 0%,
+    var(--accent-secondary, #ffa502) 100%
+  );
+  opacity: 0.2;
+  transition: width 1s linear;
+}
+
+.timer-content {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  z-index: 1;
+}
+
+.timer-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.timer-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary, #fff);
+}
+
+.timer-time {
+  font-size: 18px;
+  font-weight: 700;
+  font-family: 'SF Mono', 'Consolas', monospace;
+  color: var(--accent-color, #ff6b6b);
+  min-width: 70px;
+  text-align: right;
+}
+
+.timer-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.timer-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: all 0.15s ease;
+  background: var(--surface-hover, rgba(255, 255, 255, 0.1));
+  color: var(--text-primary, #fff);
+}
+
+.timer-btn:hover {
+  transform: scale(1.05);
+}
+
+.timer-btn-pause:hover,
+.timer-btn-resume:hover {
+  background: var(--accent-color, #ff6b6b);
+  color: #fff;
+}
+
+.timer-btn-cancel:hover {
+  background: #e74c3c;
+  color: #fff;
+}
+
+/* Pomodoro specific styling */
+.timer-item[data-timer-type='pomodoro'] .timer-progress {
+  background: linear-gradient(90deg, #e74c3c 0%, #c0392b 100%);
+}
+
+/* Animation for low time */
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.timer-time.low-time {
+  animation: pulse 1s ease-in-out infinite;
+  color: #e74c3c;
+}

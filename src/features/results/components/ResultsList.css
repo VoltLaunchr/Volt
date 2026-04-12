@@ -1,0 +1,21 @@
+.results-list {
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  max-height: calc(var(--result-item-height) * 8);
+  padding: var(--spacing-sm);
+}
+
+.results-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-md);
+  padding: var(--spacing-2xl);
+  color: var(--color-text-tertiary);
+}
+
+.results-empty svg {
+  opacity: 0.5;
+}

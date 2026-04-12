@@ -1,0 +1,44 @@
+name: Feature Request
+description: Suggest a new feature or improvement
+title: "[Feature] "
+labels: ["enhancement", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the suggestion! Help us understand the problem you want solved.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem statement
+      placeholder: What problem does this feature solve? What frustration are you experiencing?
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      placeholder: How do you imagine this feature working?
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      placeholder: Have you considered other solutions or workarounds?
+    validations:
+      required: false
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      placeholder: Screenshots, mockups, links to similar features in other apps, etc.
+    validations:
+      required: false
+  - type: checkboxes
+    id: search
+    attributes:
+      label: Before submitting
+      options:
+        - label: I have searched existing issues and discussions to make sure this is not a duplicate
+          required: true

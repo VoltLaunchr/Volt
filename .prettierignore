@@ -1,0 +1,55 @@
+# Build outputs
+dist/
+src-tauri/target/
+
+# Dependencies
+node_modules/
+
+# Generated files
+src-tauri/gen/
+
+# Binary and lock files
+*.lock
+*.lib
+*.dll
+*.exe
+*.a
+*.so
+*.dylib
+*.rlib
+*.rmeta
+
+# Tauri build artifacts
+src-tauri/icons/
+
+# Package manager files
+bun.lockb
+pnpm-lock.yaml
+package-lock.json
+
+# IDE
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Documentation (Markdown files can have varied formatting)
+docs/
+*.md
+!README.md
+
+# Configuration files
+.claude/
+.github/skills/
+archive/
+src-tauri/ARCHITECTURE.md
+src-tauri/MODULES.md
+src-tauri/README.md
+src-tauri/STRUCTURE.md
+src-tauri/src/plugins/PLUGIN_GUIDE.md
+src-tauri/src/plugins/README.md
+
+# Local environment
+.env

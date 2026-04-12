@@ -1,0 +1,61 @@
+.app-footer {
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 var(--spacing-lg);
+  border-top: 1px solid var(--color-border);
+  background: transparent;
+  margin-top: auto;
+  border-radius: 0 0 var(--radius-xl) var(--radius-xl);
+}
+
+.footer-left {
+  display: flex;
+  align-items: center;
+}
+
+.footer-logo {
+  width: 24px;
+  height: 24px;
+  opacity: 0.8;
+}
+
+.footer-right {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-lg);
+}
+
+.footer-action {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+}
+
+.footer-key {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 4px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  font-family: var(--font-family-mono);
+  font-size: 10px;
+  color: var(--color-text-primary);
+}
+
+.footer-divider {
+  width: 1px;
+  height: 16px;
+  background: var(--color-border);
+}
+
+/* Diagonal stripes pattern for the middle section if needed,
+   though the screenshot suggests it might be a specific state or design element.
+   For now, I'll stick to the clean layout. */

@@ -1,0 +1,109 @@
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-sm);
+  border: none;
+  border-radius: var(--radius-md);
+  font-family: var(--font-family-base);
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  outline: none;
+  text-decoration: none;
+}
+
+.button:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+.button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Sizes */
+.button-small {
+  padding: var(--spacing-xs) var(--spacing-sm);
+  font-size: var(--font-size-sm);
+  height: 32px;
+}
+
+.button-medium {
+  padding: var(--spacing-sm) var(--spacing-md);
+  font-size: var(--font-size-base);
+  height: 40px;
+}
+
+.button-large {
+  padding: var(--spacing-md) var(--spacing-lg);
+  font-size: var(--font-size-lg);
+  height: 48px;
+}
+
+.button-full-width {
+  width: 100%;
+}
+
+/* Variants */
+.button-primary {
+  background: var(--color-accent);
+  color: white;
+}
+
+.button-primary:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--color-accent) 80%, white);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
+}
+
+.button-primary:active:not(:disabled) {
+  transform: translateY(0);
+  box-shadow: var(--shadow-sm);
+}
+
+.button-secondary {
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  border: 1px solid var(--color-border);
+}
+
+.button-secondary:hover:not(:disabled) {
+  background: var(--color-border);
+  border-color: var(--color-text-tertiary);
+}
+
+.button-secondary:active:not(:disabled) {
+  background: color-mix(in srgb, var(--color-border) 80%, black);
+}
+
+.button-danger {
+  background: var(--color-error);
+  color: white;
+}
+
+.button-danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--color-error) 80%, white);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
+}
+
+.button-danger:active:not(:disabled) {
+  transform: translateY(0);
+  box-shadow: var(--shadow-sm);
+}
+
+.button-ghost {
+  background: transparent;
+  color: var(--color-text-secondary);
+}
+
+.button-ghost:hover:not(:disabled) {
+  background: var(--color-border);
+  color: var(--color-text-primary);
+}
+
+.button-ghost:active:not(:disabled) {
+  background: color-mix(in srgb, var(--color-border) 80%, black);
+}

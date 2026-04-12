@@ -1,0 +1,140 @@
+.properties-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  padding: 1rem;
+}
+
+.properties-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.properties-icon {
+  font-size: 2.5rem;
+  min-width: 3rem;
+  text-align: center;
+}
+
+.properties-title {
+  font-size: 1.25rem;
+  font-weight: 600;
+  margin: 0;
+  color: var(--text-primary);
+  word-break: break-word;
+}
+
+.properties-body {
+  overflow-y: auto;
+  max-height: 60vh;
+}
+
+.properties-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.property-row {
+  border-bottom: 1px solid var(--border-color);
+}
+
+.property-row:last-child {
+  border-bottom: none;
+}
+
+.property-label {
+  padding: 0.75rem 0.5rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  width: 30%;
+  vertical-align: top;
+  text-align: left;
+  font-size: 0.875rem;
+}
+
+.property-value {
+  padding: 0.75rem 0.5rem;
+  color: var(--text-primary);
+  word-break: break-all;
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.property-value-text {
+  flex: 1;
+  font-size: 0.875rem;
+  font-family:
+    'Segoe UI',
+    system-ui,
+    -apple-system,
+    sans-serif;
+}
+
+.property-copy-btn {
+  background: transparent;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  padding: 0.25rem 0.5rem;
+  cursor: pointer;
+  font-size: 0.875rem;
+  opacity: 0;
+  transition: all 0.2s ease;
+  color: var(--text-secondary);
+  min-width: 2rem;
+  flex-shrink: 0;
+}
+
+.property-row:hover .property-copy-btn {
+  opacity: 1;
+}
+
+.property-copy-btn:hover {
+  background-color: var(--hover-bg);
+  border-color: var(--accent-color);
+  transform: scale(1.05);
+}
+
+.property-copy-btn:active {
+  transform: scale(0.95);
+}
+
+/* Dark theme adjustments */
+[data-theme='dark'] .properties-header {
+  border-bottom-color: rgba(255, 255, 255, 0.1);
+}
+
+[data-theme='dark'] .property-row {
+  border-bottom-color: rgba(255, 255, 255, 0.1);
+}
+
+[data-theme='dark'] .property-copy-btn {
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+[data-theme='dark'] .property-copy-btn:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+  border-color: var(--accent-color);
+}
+
+/* Light theme adjustments */
+[data-theme='light'] .properties-header {
+  border-bottom-color: rgba(0, 0, 0, 0.1);
+}
+
+[data-theme='light'] .property-row {
+  border-bottom-color: rgba(0, 0, 0, 0.1);
+}
+
+[data-theme='light'] .property-copy-btn {
+  border-color: rgba(0, 0, 0, 0.2);
+}
+
+[data-theme='light'] .property-copy-btn:hover {
+  background-color: rgba(0, 0, 0, 0.05);
+  border-color: var(--accent-color);
+}

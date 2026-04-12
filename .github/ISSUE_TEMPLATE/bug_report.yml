@@ -1,0 +1,69 @@
+name: Bug Report
+description: Report a bug in Volt
+title: "[Bug] "
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug! Please fill in the details below.
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating System
+      options:
+        - Windows
+        - macOS (Intel)
+        - macOS (Apple Silicon)
+        - Linux (Debian/Ubuntu)
+        - Linux (Fedora/RHEL)
+        - Linux (Arch)
+        - Linux (other)
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Volt version
+      placeholder: "e.g. 0.0.3"
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      placeholder: Describe the bug clearly.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open Volt
+        2. Type '...'
+        3. Press Enter
+        4. See error
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      placeholder: What should have happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or screenshots
+      placeholder: Paste logs (Settings > About > Copy diagnostics) or attach screenshots.
+    validations:
+      required: false
+  - type: checkboxes
+    id: search
+    attributes:
+      label: Before submitting
+      options:
+        - label: I have searched existing issues to make sure this is not a duplicate
+          required: true
