@@ -1,5 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
-import React, { useCallback, useEffect } from 'react';
+import type React from 'react';
+import { useCallback, useEffect } from 'react';
 import { applicationService } from '../../features/applications/services/applicationService';
 import { defaultSuggestions } from '../../shared/constants/suggestions';
 import { KEYS } from '../../shared/constants/keys';
@@ -19,10 +20,10 @@ const getDirectoryPath = (filePath: string): string => {
 interface UseGlobalHotkeyOptions {
   results: SearchResult[];
   selectedIndex: number;
-  setSelectedIndex: React.Dispatch<React.SetStateAction<number>>;
+  setSelectedIndex: (index: number | ((prev: number) => number)) => void;
   searchQuery: string;
   setSearchQuery: (q: string) => void;
-  setResults: React.Dispatch<React.SetStateAction<SearchResult[]>>;
+  setResults: (results: SearchResult[]) => void;
   closeOnLaunch: boolean;
   hideWindow: () => Promise<void>;
   onLaunch: (result: SearchResult) => void | Promise<void>;
@@ -30,6 +31,7 @@ interface UseGlobalHotkeyOptions {
   onShowProperties: (result: SearchResult) => void;
   onOpenSettings: () => void | Promise<void>;
   onOpenCalculator: () => void;
+  onOpenHelp: () => void;
 }
 
 export interface UseGlobalHotkeyResult {
@@ -59,22 +61,20 @@ export function useGlobalHotkey({
   onShowProperties,
   onOpenSettings,
   onOpenCalculator,
+  onOpenHelp,
 }: UseGlobalHotkeyOptions): UseGlobalHotkeyResult {
-  // Setup global keyboard shortcuts (F1 for help, etc.)
+  // Setup global keyboard shortcuts (F1 / ? for help)
   useEffect(() => {
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
-      // F1: Show help (open documentation) - works globally
       if (e.key === 'F1') {
         e.preventDefault();
-        import('@tauri-apps/plugin-opener')
-          .then(({ openUrl }) => openUrl('https://voltlaunchr.com/docs'))
-          .catch(() => window.open('https://voltlaunchr.com/docs', '_blank'));
+        onOpenHelp();
       }
     };
 
     window.addEventListener('keydown', handleGlobalKeyDown);
     return () => window.removeEventListener('keydown', handleGlobalKeyDown);
-  }, []);
+  }, [onOpenHelp]);
 
   // Setup listener for custom events (e.g., from plugins)
   useEffect(() => {
@@ -144,12 +144,10 @@ export function useGlobalHotkey({
         return;
       }
 
-      // --- F1: Show help (open documentation) ---
-      if (e.key === 'F1') {
+      // --- F1 / ?: Show help dialog ---
+      if (e.key === 'F1' || (e.key === '?' && !e.ctrlKey && !e.altKey && !searchQuery.trim())) {
         e.preventDefault();
-        import('@tauri-apps/plugin-opener')
-          .then(({ openUrl }) => openUrl('https://voltlaunchr.com/docs'))
-          .catch(() => window.open('https://voltlaunchr.com/docs', '_blank'));
+        onOpenHelp();
         return;
       }
 
@@ -200,7 +198,7 @@ export function useGlobalHotkey({
           const appData = selectedResult.data as AppInfo;
           invoke('remove_from_history', { path: appData.path }).catch((err) => logger.error(err));
           // Remove from current results
-          setResults((prev) => prev.filter((r) => r.id !== selectedResult.id));
+          setResults(results.filter((r) => r.id !== selectedResult.id));
         }
         return;
       }
@@ -329,6 +327,7 @@ export function useGlobalHotkey({
       onActivateSuggestion,
       onShowProperties,
       onOpenSettings,
+      onOpenHelp,
     ]
   );
 

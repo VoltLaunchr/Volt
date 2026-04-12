@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import { useApplications } from '../../features/applications';
 import { ClipboardPlugin } from '../../features/clipboard';
 import { extensionLoader } from '../../features/extensions';
@@ -16,7 +16,6 @@ import {
 } from '../../features/plugins/builtin';
 import { pluginRegistry } from '../../features/plugins/core';
 import {
-  Settings,
   applyTheme,
   settingsService,
   setupThemeListener,
@@ -24,6 +23,7 @@ import {
 import { updateService } from '../../features/settings/services/updateService';
 import { AppInfo } from '../../shared/types/common.types';
 import { logger } from '../../shared/utils/logger';
+import { useAppStore } from '../../stores/appStore';
 
 export interface UseAppLifecycleResult {
   allApps: AppInfo[];
@@ -31,7 +31,6 @@ export interface UseAppLifecycleResult {
   appError: string | null;
   refreshApps: () => Promise<void>;
   clearAppError: () => void;
-  settings: Settings | null;
 }
 
 /**
@@ -42,6 +41,8 @@ export interface UseAppLifecycleResult {
  * - Background file indexing kickoff
  * - Best-effort updater check on startup
  * - Listening for `extension-changed` events from settings window
+ *
+ * Settings and indexing state live in appStore (zustand).
  */
 export function useAppLifecycle(): UseAppLifecycleResult {
   const {
@@ -52,7 +53,8 @@ export function useAppLifecycle(): UseAppLifecycleResult {
     clearError: clearAppError,
   } = useApplications();
 
-  const [settings, setSettings] = useState<Settings | null>(null);
+  const settings = useAppStore((s) => s.settings);
+  const { setSettings, setIsIndexing } = useAppStore.getState();
 
   const indexingStarted = useRef(false); // Prevent double indexing (StrictMode)
   const updateCheckDone = useRef(false); // Prevent double update check
@@ -118,7 +120,7 @@ export function useAppLifecycle(): UseAppLifecycleResult {
     };
 
     initializeApp();
-  }, []);
+  }, [setSettings]);
 
   // Best-effort update check on startup (silent)
   useEffect(() => {
@@ -205,6 +207,7 @@ export function useAppLifecycle(): UseAppLifecycleResult {
       }
 
       try {
+        setIsIndexing(true);
         await invoke('start_indexing', {
           folders: foldersToIndex,
           excludedPaths: settings.indexing.excludedPaths,
@@ -213,13 +216,15 @@ export function useAppLifecycle(): UseAppLifecycleResult {
         console.log('✓ File indexing started for', foldersToIndex.length, 'folders');
       } catch (err) {
         logger.error('Failed to start file indexing:', err);
+      } finally {
+        setIsIndexing(false);
       }
     };
 
     if (settings) {
       startFileIndexing();
     }
-  }, [settings]);
+  }, [settings, setIsIndexing]);
 
   return {
     allApps,
@@ -227,6 +232,5 @@ export function useAppLifecycle(): UseAppLifecycleResult {
     appError,
     refreshApps,
     clearAppError,
-    settings,
   };
 }

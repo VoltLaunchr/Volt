@@ -6,15 +6,9 @@ import { PluginResult as PluginResultData } from '../../features/plugins/types';
 import { defaultSuggestions } from '../../shared/constants/suggestions';
 import { FileInfo, SearchResult, SearchResultType } from '../../shared/types/common.types';
 import { logger } from '../../shared/utils/logger';
+import type { ActiveView } from '../../stores/uiStore';
 
-export type ActiveView =
-  | { type: 'search' }
-  | { type: 'clipboard' }
-  | { type: 'emoji'; initialQuery?: string }
-  | { type: 'files' }
-  | { type: 'calculator' }
-  | { type: 'games' }
-  | { type: 'changelog' };
+export type { ActiveView };
 
 interface UseResultActionsOptions {
   closeOnLaunch: boolean;

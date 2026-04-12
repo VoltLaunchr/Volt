@@ -1,5 +1,16 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { useSearchStore } from '../searchStore';
+import { SearchResult, SearchResultType } from '../../shared/types/common.types';
+
+const mockResult: SearchResult = {
+  id: '1',
+  type: SearchResultType.Application,
+  title: 'Test',
+  subtitle: '',
+  icon: '',
+  score: 100,
+  data: { id: '1', name: 'Test', path: '/test', icon: '' } as any,
+};
 
 describe('searchStore', () => {
   beforeEach(() => {
@@ -23,7 +34,7 @@ describe('searchStore', () => {
   it('setResults updates results and resets selectedIndex', () => {
     useSearchStore.getState().setSelectedIndex(3);
     useSearchStore.getState().setResults([
-      { id: '1', type: 0, title: 'Test', subtitle: '', icon: '', score: 100, data: {} },
+      mockResult,
     ]);
     expect(useSearchStore.getState().results).toHaveLength(1);
     expect(useSearchStore.getState().selectedIndex).toBe(0);
@@ -43,7 +54,7 @@ describe('searchStore', () => {
   it('clearSearch resets query, results, and snow effect', () => {
     useSearchStore.getState().setQuery('test');
     useSearchStore.getState().setResults([
-      { id: '1', type: 0, title: 'Test', subtitle: '', icon: '', score: 100, data: {} },
+      mockResult,
     ]);
     useSearchStore.getState().setShowSnowEffect(true);
     useSearchStore.getState().clearSearch();

@@ -1,10 +1,11 @@
 import { invoke } from '@tauri-apps/api/core';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { applicationService } from '../../features/applications/services/applicationService';
 import { pluginRegistry } from '../../features/plugins/core';
 import { PluginResult as PluginResultData } from '../../features/plugins/types';
 import { AppInfo, FileInfo, SearchResult, SearchResultType } from '../../shared/types/common.types';
 import { logger } from '../../shared/utils/logger';
+import { useSearchStore } from '../../stores/searchStore';
 
 // Search result priority scores (higher = appears first)
 export const SEARCH_PRIORITIES = {
@@ -58,20 +59,8 @@ interface UseSearchPipelineOptions {
   suspended?: boolean;
 }
 
-export interface UseSearchPipelineResult {
-  searchQuery: string;
-  setSearchQuery: (q: string) => void;
-  results: SearchResult[];
-  setResults: React.Dispatch<React.SetStateAction<SearchResult[]>>;
-  selectedIndex: number;
-  setSelectedIndex: React.Dispatch<React.SetStateAction<number>>;
-  searchError: string | null;
-  setSearchError: (err: string | null) => void;
-  showSnowEffect: boolean;
-}
-
 /**
- * Owns the search pipeline: query state, debounced execution, and result merging.
+ * Wires up the debounced search pipeline. State lives in useSearchStore.
  *
  * - 150 ms debounce
  * - Stale-response protection via `latestSearchId`
@@ -84,12 +73,12 @@ export function useSearchPipeline({
   isLoading,
   maxResults,
   suspended = false,
-}: UseSearchPipelineOptions): UseSearchPipelineResult {
-  const [searchQuery, setSearchQuery] = useState('');
-  const [results, setResults] = useState<SearchResult[]>([]);
-  const [selectedIndex, setSelectedIndex] = useState(0);
-  const [searchError, setSearchError] = useState<string | null>(null);
-  const [showSnowEffect, setShowSnowEffect] = useState(false);
+}: UseSearchPipelineOptions): void {
+  const searchQuery = useSearchStore((s) => s.searchQuery);
+  const results = useSearchStore((s) => s.results);
+  const selectedIndex = useSearchStore((s) => s.selectedIndex);
+  const { setResults, setSelectedIndex, setSearchError, setShowSnowEffect } =
+    useSearchStore.getState();
 
   const latestSearchId = useRef(0); // Prevent stale search responses
 
@@ -197,7 +186,6 @@ export function useSearchPipeline({
           .slice(0, maxResults);
 
         setResults(allResults);
-        setSelectedIndex(0);
       } catch (err) {
         const errorMessage = err instanceof Error ? err.message : String(err);
         logger.error('Search failed:', errorMessage);
@@ -205,7 +193,7 @@ export function useSearchPipeline({
         setSearchError(`Search failed: ${errorMessage}`);
       }
     },
-    [allApps, isLoading, maxResults]
+    [allApps, isLoading, maxResults, setResults, setSearchError, setShowSnowEffect]
   );
 
   // Debounced search effect (150 ms)
@@ -226,17 +214,5 @@ export function useSearchPipeline({
     if (results.length > 0 && selectedIndex >= results.length) {
       setSelectedIndex(results.length - 1);
     }
-  }, [results, selectedIndex]);
-
-  return {
-    searchQuery,
-    setSearchQuery,
-    results,
-    setResults,
-    selectedIndex,
-    setSelectedIndex,
-    searchError,
-    setSearchError,
-    showSnowEffect,
-  };
+  }, [results, selectedIndex, setSelectedIndex]);
 }

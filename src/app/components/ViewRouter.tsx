@@ -11,7 +11,7 @@ import { SuggestionsView } from '../../features/suggestions';
 import { ErrorMessage, Spinner } from '../../shared/components/ui';
 import { defaultSuggestions } from '../../shared/constants/suggestions';
 import { SearchResult } from '../../shared/types/common.types';
-import type { ActiveView } from '../hooks/useResultActions';
+import type { ActiveView } from '../../stores/uiStore';
 
 interface ViewRouterProps {
   activeView: ActiveView;
