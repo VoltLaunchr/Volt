@@ -1,7 +1,7 @@
 {
   "versions": [
     {
-      "version": "0.0.3",
+      "version": "0.0.4",
       "date": "2026-01-01",
       "title": "Initial Public Release",
       "description": "We're excited to introduce Volt - a modern, lightning-fast application launcher for Windows, macOS, and Linux. Built with Tauri v2 and React, Volt combines native performance with a beautiful, customizable interface.",
