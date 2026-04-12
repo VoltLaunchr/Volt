@@ -7,6 +7,7 @@ export interface GeneralSettings {
   startWithWindows: boolean;
   maxResults: number;
   closeOnLaunch: boolean;
+  hasSeenOnboarding: boolean;
 }
 
 export interface CustomPosition {
@@ -85,6 +86,7 @@ export const DEFAULT_SETTINGS: Settings = {
     startWithWindows: false,
     maxResults: 8,
     closeOnLaunch: true,
+    hasSeenOnboarding: false,
   },
   appearance: {
     theme: 'dark',

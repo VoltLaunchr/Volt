@@ -4,7 +4,8 @@ import { TimerDisplay } from '../features/plugins/builtin';
 import { SearchBar } from '../features/search/components/SearchBar';
 import { useWindowState } from '../features/window';
 import { Footer } from '../shared/components/layout';
-import { HelpDialog, PropertiesDialog, ToastContainer } from '../shared/components/ui';
+import { HelpDialog, OnboardingModal, PropertiesDialog, ToastContainer } from '../shared/components/ui';
+import { settingsService } from '../features/settings';
 import { defaultSuggestions } from '../shared/constants/suggestions';
 import { SearchResult } from '../shared/types/common.types';
 import { useAppStore } from '../stores/appStore';
@@ -17,6 +18,7 @@ import { useGlobalHotkey } from './hooks/useGlobalHotkey';
 import { useResultActions } from './hooks/useResultActions';
 import { useSearchPipeline } from './hooks/useSearchPipeline';
 import { openSettingsWindow } from './utils';
+import '../styles/accessibility.css';
 import './App.css';
 
 function App() {
@@ -128,6 +130,16 @@ function App() {
     onOpenHelp: handleOpenHelp,
   });
 
+  const handleOnboardingComplete = useCallback(async () => {
+    if (!settings) return;
+    const updated = {
+      ...settings,
+      general: { ...settings.general, hasSeenOnboarding: true },
+    };
+    await settingsService.updateGeneralSettings(updated.general).catch(() => {});
+    useAppStore.getState().setSettings(updated);
+  }, [settings]);
+
   const handleRetry = useCallback(async () => {
     clearError();
     await refreshApps();
@@ -144,6 +156,9 @@ function App() {
 
   return (
     <div className="app-container glass">
+      <a href="#search-input" className="skip-link">
+        Skip to search
+      </a>
       {activeView.type === 'search' && (
         <>
           <div className="drag-region" onMouseDown={startDragging}>
@@ -199,6 +214,10 @@ function App() {
       <HelpDialog isOpen={isHelpOpen} onClose={toggleHelp} />
 
       <ToastContainer />
+
+      {settings && !settings.general.hasSeenOnboarding && (
+        <OnboardingModal isOpen={true} onComplete={handleOnboardingComplete} />
+      )}
 
       {showSnowEffect && (
         <Snowfall

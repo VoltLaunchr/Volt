@@ -30,3 +30,5 @@ export type { HelpDialogProps } from './HelpDialog';
 
 export { ToastContainer, useToastStore } from './Toast';
 export type { ToastItem } from './Toast';
+
+export { OnboardingModal } from './OnboardingModal';

@@ -6,8 +6,8 @@
   --color-surface-selected: rgba(99, 102, 241, 0.15);
   --color-border: rgba(0, 0, 0, 0.1);
   --color-text-primary: rgba(0, 0, 0, 0.9);
-  --color-text-secondary: rgba(0, 0, 0, 0.6);
-  --color-text-tertiary: rgba(0, 0, 0, 0.4);
-  --color-accent: #6366f1;
-  --color-accent-hover: #4f46e5;
+  --color-text-secondary: rgba(0, 0, 0, 0.65);  /* was 0.6 — boosted for WCAG AA */
+  --color-text-tertiary: rgba(0, 0, 0, 0.55);  /* was 0.4 — boosted for WCAG AA placeholder */
+  --color-accent: #4f46e5; /* was #6366f1 — darkened for WCAG AA 4.5:1 contrast on light bg */
+  --color-accent-hover: #4338ca;
 }

@@ -11,6 +11,8 @@ pub struct GeneralSettings {
     pub start_with_windows: bool,
     pub max_results: u32,
     pub close_on_launch: bool,
+    #[serde(default)]
+    pub has_seen_onboarding: bool,
 }
 
 impl Default for GeneralSettings {
@@ -19,6 +21,7 @@ impl Default for GeneralSettings {
             start_with_windows: false,
             max_results: 8,
             close_on_launch: true,
+            has_seen_onboarding: false,
         }
     }
 }
