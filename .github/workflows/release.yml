@@ -102,3 +102,74 @@ jobs:
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}
+
+      # --- Windows: collect artifacts for SignPath signing ---
+      - name: Collect Windows artifacts for signing
+        if: matrix.platform == 'windows-latest'
+        shell: bash
+        run: |
+          mkdir -p signpath-input
+          cp src-tauri/target/release/bundle/nsis/*.exe signpath-input/ 2>/dev/null || true
+          cp src-tauri/target/release/bundle/msi/*.msi signpath-input/ 2>/dev/null || true
+          echo "Collected artifacts for signing:"
+          ls -la signpath-input/
+
+      - name: Upload unsigned artifacts for SignPath
+        if: matrix.platform == 'windows-latest'
+        id: upload-unsigned
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-unsigned
+          path: signpath-input/
+
+  # --- SignPath code signing (Windows only) ---
+  sign-windows:
+    needs: publish-tauri
+    if: always() && needs.publish-tauri.result != 'cancelled'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - name: Submit signing request to SignPath
+        id: sign
+        uses: signpath/github-action-submit-signing-request@v1
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ secrets.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: "Voltlaunchr"
+          signing-policy-slug: "release-signing"
+          github-artifact-id: ${{ needs.publish-tauri.outputs.artifact-id || '' }}
+          wait-for-completion: true
+          output-artifact-directory: signpath-output
+          wait-for-completion-timeout-in-seconds: 600
+        continue-on-error: true
+
+      - name: Upload signed artifacts to release
+        if: steps.sign.outcome == 'success'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "Signed artifacts:"
+          ls -la signpath-output/ 2>/dev/null || echo "No signed output"
+          TAG="${GITHUB_REF_NAME}"
+          for file in signpath-output/*; do
+            if [ -f "$file" ]; then
+              BASENAME=$(basename "$file")
+              echo "Uploading signed: $BASENAME"
+              # Delete unsigned version first, then upload signed
+              gh release delete-asset "$TAG" "$BASENAME" --repo "$GITHUB_REPOSITORY" --yes 2>/dev/null || true
+              gh release upload "$TAG" "$file" --repo "$GITHUB_REPOSITORY" --clobber
+            fi
+          done
+
+      - name: Report signing status
+        if: always()
+        run: |
+          if [ "${{ steps.sign.outcome }}" == "success" ]; then
+            echo "SignPath signing completed successfully"
+          else
+            echo "SignPath signing skipped or failed (non-blocking). Unsigned artifacts remain in the release."
+            echo "This is expected if SignPath Foundation approval is still pending."
+          fi
