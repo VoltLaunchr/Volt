@@ -1,7 +1,7 @@
 {
   "name": "volt",
   "private": true,
-  "version": "0.0.2",
+  "version": "0.0.3",
   "type": "module",
   "description": "Lightning-fast keyboard-driven launcher for Windows, macOS, and Linux. Built with Tauri 2 + React + Rust.",
   "license": "Apache-2.0",
