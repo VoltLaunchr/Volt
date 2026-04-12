@@ -4,7 +4,7 @@ import { TimerDisplay } from '../features/plugins/builtin';
 import { SearchBar } from '../features/search/components/SearchBar';
 import { useWindowState } from '../features/window';
 import { Footer } from '../shared/components/layout';
-import { HelpDialog, PropertiesDialog } from '../shared/components/ui';
+import { HelpDialog, PropertiesDialog, ToastContainer } from '../shared/components/ui';
 import { defaultSuggestions } from '../shared/constants/suggestions';
 import { SearchResult } from '../shared/types/common.types';
 import { useAppStore } from '../stores/appStore';
@@ -197,6 +197,8 @@ function App() {
       />
 
       <HelpDialog isOpen={isHelpOpen} onClose={toggleHelp} />
+
+      <ToastContainer />
 
       {showSnowEffect && (
         <Snowfall

@@ -23,6 +23,7 @@ import {
 import { updateService } from '../../features/settings/services/updateService';
 import { AppInfo } from '../../shared/types/common.types';
 import { logger } from '../../shared/utils/logger';
+import { useToastStore } from '../../shared/components/ui/Toast';
 import { useAppStore } from '../../stores/appStore';
 
 export interface UseAppLifecycleResult {
@@ -208,14 +209,17 @@ export function useAppLifecycle(): UseAppLifecycleResult {
 
       try {
         setIsIndexing(true);
+        const { addToast } = useToastStore.getState();
+        addToast(`Indexing ${foldersToIndex.length} folder(s)...`, 'info');
         await invoke('start_indexing', {
           folders: foldersToIndex,
           excludedPaths: settings.indexing.excludedPaths,
           fileExtensions: settings.indexing.fileExtensions,
         });
-        console.log('✓ File indexing started for', foldersToIndex.length, 'folders');
+        addToast('Indexing complete', 'success');
       } catch (err) {
         logger.error('Failed to start file indexing:', err);
+        useToastStore.getState().addToast('Indexing failed', 'error');
       } finally {
         setIsIndexing(false);
       }

@@ -24,3 +24,9 @@ export type { ContextMenuProps, ContextMenuAction } from './ContextMenu';
 
 export { PropertiesDialog } from './PropertiesDialog';
 export type { PropertiesDialogProps } from './PropertiesDialog';
+
+export { HelpDialog } from './HelpDialog';
+export type { HelpDialogProps } from './HelpDialog';
+
+export { ToastContainer, useToastStore } from './Toast';
+export type { ToastItem } from './Toast';
