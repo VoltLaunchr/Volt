@@ -121,7 +121,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDhGNDcxMkUzRUEwN0I5NTQKUldSVXVRZnE0eEpIajFxL2NVSGExOXhvRng1V0FyNVJqZUFZMUNUOXJEekZmRmVSU0tOQnhTYWYK",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEM4MEZCNDU0QUQ1NjJFMzMKUldRekxsYXRWTFFQeUhlbVU1L2Q5MGNpbWdBbmdzSUxrdWhRaXk5WWthTTc3TVh6bHpxcmFHUmkK",
       "endpoints": ["https://github.com/VoltLaunchr/Volt/releases/latest/download/latest.json"]
     }
   }
