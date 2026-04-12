@@ -99,6 +99,6 @@ jobs:
 
             ---
             🔄 Les mises à jour automatiques sont activées !
-          releaseDraft: false
+          releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}
