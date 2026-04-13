@@ -46,7 +46,7 @@ Grab the latest release for your platform from the [Releases page](https://githu
 
 > **Windows users**: until we obtain code signing (tracked in [ROADMAP M1.3](docs/build-release/ROADMAP.md)), SmartScreen will warn on first install. Click **More info > Run anyway**. The binary is reproducible from the source in this repo.
 
-After install, press **`Ctrl+Shift+Space`** (configurable) to open Volt.
+After install, press **`Ctrl+Space`** (configurable) to open Volt.
 
 ## Quick Start (development)
 

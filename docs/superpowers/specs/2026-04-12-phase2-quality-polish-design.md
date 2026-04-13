@@ -164,7 +164,7 @@ Rust side: add `has_seen_onboarding: bool` to `GeneralSettings` struct with `#[s
 **`src/shared/components/ui/OnboardingModal.tsx`**
 
 3-step modal:
-1. **"Global Hotkey"** — Icon: Keyboard. Text: "Press Ctrl+Shift+Space anywhere to summon Volt. You can change this in Settings > Hotkeys."
+1. **"Global Hotkey"** — Icon: Keyboard. Text: "Press Ctrl+Space anywhere to summon Volt. You can change this in Settings > Hotkeys."
 2. **"File Indexing"** — Icon: FolderSearch. Text: "Volt indexes your files for instant search. Configure folders in Settings > Indexing."
 3. **"Plugins"** — Icon: Puzzle. Text: "Calculator, emoji picker, web search, timer and more — just start typing."
 

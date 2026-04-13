@@ -1,0 +1,18 @@
+# Created using wingetcreate 1.6.5.0
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.installer.1.6.0.schema.json
+
+PackageIdentifier: VoltLaunchr.Volt
+PackageVersion: 0.0.4
+InstallModes:
+  - interactive
+  - silent
+InstallerSwitches:
+  Silent: /S
+  SilentWithProgress: /S
+Installers:
+  - Architecture: x64
+    InstallerType: nullsoft
+    InstallerUrl: https://github.com/VoltLaunchr/Volt/releases/download/v0.0.4/volt_0.0.4_x64-setup.exe
+    InstallerSha256: TODO_SHA256_HASH
+ManifestType: installer
+ManifestVersion: 1.6.0

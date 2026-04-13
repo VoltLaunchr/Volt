@@ -9,9 +9,17 @@ src-tauri/src/
 ├── commands/           # Tauri command handlers
 │   ├── apps.rs        # Application scanning and launching
 │   ├── autostart.rs   # Autostart management
+│   ├── clipboard.rs   # Clipboard operations
+│   ├── extensions.rs  # Extension management
 │   ├── files.rs       # File indexing
+│   ├── games.rs       # Game scanning
+│   ├── hotkey.rs      # Hotkey management
 │   ├── launcher.rs    # Launch history tracking
+│   ├── logging.rs     # Logging configuration
+│   ├── plugins.rs     # Plugin commands
 │   ├── settings.rs    # Settings management
+│   ├── steam.rs       # Steam integration
+│   ├── system_monitor.rs # System monitoring
 │   └── mod.rs         # Module exports
 │
 ├── hotkey/            # Global hotkey management
@@ -19,10 +27,18 @@ src-tauri/src/
 │
 ├── indexer/           # File indexing system
 │   ├── scanner.rs
+│   ├── search.rs
+│   ├── search_engine.rs
+│   ├── database.rs
+│   ├── watcher.rs
+│   ├── types.rs
+│   ├── file_history.rs
 │   └── mod.rs
 │
 ├── launcher/          # Cross-platform app launching
 │   ├── process.rs
+│   ├── history.rs
+│   ├── types.rs
 │   └── mod.rs
 │
 ├── search/            # Search algorithms
@@ -50,13 +66,21 @@ src-tauri/src/
 │   ├── api.rs         # VoltPluginAPI - comprehensive plugin API
 │   ├── builtin/       # Built-in plugins (organized structure)
 │   │   ├── mod.rs     # Plugin registration
-│   │   ├── system_monitor/  # System monitoring plugin
-│   │   │   ├── mod.rs       # Module declaration
-│   │   │   └── plugin.rs    # Implementation
-│   │   └── steam_scanner/   # Steam game scanner
-│   │       ├── mod.rs       # Module declaration
-│   │       ├── plugin.rs    # Plugin implementation
-│   │       └── scanner.rs   # Steam scanning logic
+│   │   ├── clipboard_manager/  # Clipboard management plugin
+│   │   │   └── ...
+│   │   ├── game_scanner/       # Game scanner plugin
+│   │   │   ├── mod.rs
+│   │   │   └── scanners/       # Per-platform scanners
+│   │   │       ├── ea.rs
+│   │   │       ├── epic.rs
+│   │   │       ├── gog.rs
+│   │   │       ├── riot.rs
+│   │   │       ├── steam.rs
+│   │   │       ├── ubisoft.rs
+│   │   │       └── xbox.rs
+│   │   └── system_monitor/     # System monitoring plugin
+│   │       ├── mod.rs
+│   │       └── plugin.rs
 │   ├── PLUGIN_GUIDE.md  # Plugin development guide
 │   └── mod.rs         # Module exports
 │
@@ -69,12 +93,21 @@ src-tauri/src/
 ### `commands/`
 
 Tauri command handlers that are exposed to the frontend via `invoke()`.
+All commands return `VoltResult<T>` using the `VoltError` discriminated union.
 
 - **apps.rs**: Cross-platform application scanning (Windows, macOS, Linux)
 - **autostart.rs**: Enable/disable autostart on system boot
+- **clipboard.rs**: Clipboard read/write operations
+- **extensions.rs**: Extension management
 - **files.rs**: File indexing for fast file search
+- **games.rs**: Game scanning across platforms
+- **hotkey.rs**: Hotkey registration and management
 - **launcher.rs**: Launch history, pinned apps, tags
+- **logging.rs**: Logging configuration and log file management
+- **plugins.rs**: Plugin lifecycle commands
 - **settings.rs**: Load/save user settings
+- **steam.rs**: Steam library integration
+- **system_monitor.rs**: System resource monitoring
 
 ### `utils/`
 
@@ -119,22 +152,29 @@ Window management commands.
 Global hotkey registration and handling.
 
 - Uses `tauri-plugin-global-shortcut`
-- Default: Ctrl+Shift+Space
+- Default: Ctrl+Space
 
 ### `launcher/`
 
 Cross-platform process launching.
 
-- Handles Windows, macOS, Linux
-- Detached process spawning
-- Error handling
+- **process.rs**: Detached process spawning (Windows, macOS, Linux)
+- **history.rs**: Launch history tracking
+- **types.rs**: Launcher-specific types
+- Error handling via VoltResult
 
 ### `indexer/`
 
 File system indexing for fast file search.
 
-- Background scanning
-- Incremental updates
+- **scanner.rs**: Background file system scanning
+- **search.rs**: File search with scoring
+- **search_engine.rs**: Advanced search engine
+- **database.rs**: Indexed file database
+- **watcher.rs**: File system watcher (notify v6)
+- **types.rs**: Indexer-specific types
+- **file_history.rs**: File access history tracking
+- Background scanning with incremental updates
 - Configurable paths and extensions
 
 ### `core/`
@@ -226,13 +266,14 @@ Each plugin now has its own directory for better organization:
 ```
 builtin/
 ├── mod.rs              # Plugin registration with API
-├── system_monitor/     # Example plugin
-│   ├── mod.rs         # Module declaration
-│   └── plugin.rs      # Plugin implementation
-└── steam_scanner/      # Complex example
-    ├── mod.rs         # Module declaration
-    ├── plugin.rs      # Plugin trait impl
-    └── scanner.rs     # Additional logic
+├── clipboard_manager/  # Clipboard management plugin
+│   └── ...
+├── game_scanner/       # Multi-platform game scanner
+│   ├── mod.rs
+│   └── scanners/       # EA, Epic, GOG, Riot, Steam, Ubisoft, Xbox
+└── system_monitor/     # System resource monitoring
+    ├── mod.rs
+    └── plugin.rs
 ```
 
 **Benefits:**
@@ -408,12 +449,20 @@ Key dependencies:
 - `md5`: Generate app IDs
 - `png`: Icon encoding
 - `winapi`: Windows API (Windows only)
+- `notify` (v6): File system watcher
+- `reqwest`: HTTP client
+- `nucleo-matcher`: High-performance fuzzy matching
+- `image`: Image processing
+- `base64`: Base64 encoding/decoding
+- `arboard`: Clipboard access
+- `tracing` / `tracing-subscriber` / `tracing-appender`: Structured logging with rotating daily log files
+- `zip`: Archive handling
+- `url`: URL parsing
+- `once_cell`: Lazy static initialization
 
 Development dependencies:
 
-- `cargo-audit`: Security auditing
-- `criterion`: Benchmarking
-- `proptest`: Property-based testing
+- `tempfile`: Temporary file/directory creation for tests
 
 ## 🎯 Roadmap
 

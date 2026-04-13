@@ -234,6 +234,16 @@ fn scan_directory(
     Ok(files)
 }
 
+/// Public wrapper for use by the file watcher module.
+pub fn create_file_info_pub(path: &Path, metadata: &fs::Metadata) -> Option<FileInfo> {
+    create_file_info(path, metadata)
+}
+
+/// Public wrapper for use by the file watcher module.
+pub fn create_directory_info_pub(path: &Path, metadata: &fs::Metadata) -> Option<FileInfo> {
+    create_directory_info(path, metadata)
+}
+
 /// Creates a FileInfo from a file path and metadata
 fn create_file_info(path: &Path, metadata: &fs::Metadata) -> Option<FileInfo> {
     let name = path.file_name()?.to_string_lossy().to_string();

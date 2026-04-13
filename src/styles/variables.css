@@ -6,8 +6,8 @@
   --color-surface-selected: rgba(60, 80, 200, 0.3);
   --color-border: rgba(255, 255, 255, 0.1);
   --color-text-primary: rgba(255, 255, 255, 0.95);
-  --color-text-secondary: rgba(255, 255, 255, 0.6);
-  --color-text-tertiary: rgba(255, 255, 255, 0.4);
+  --color-text-secondary: rgba(255, 255, 255, 0.7);  /* was 0.6 — boosted for WCAG AA */
+  --color-text-tertiary: rgba(255, 255, 255, 0.55);  /* was 0.4 — boosted for WCAG AA placeholder */
   --color-accent: #6366f1;
   --color-accent-hover: #818cf8;
   --color-success: #10b981;

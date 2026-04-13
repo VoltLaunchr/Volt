@@ -36,7 +36,8 @@ src-tauri/src/
 
 - **registry.rs**: Thread-safe plugin management
 - **loader.rs**: Dynamic plugin loading (future)
-- **builtin/**: Built-in plugins (SystemMonitor, etc.)
+- **api.rs**: VoltPluginAPI for plugin interactions
+- **builtin/**: Built-in plugins (clipboard_manager, game_scanner, system_monitor)
 
 **Documentation**: See [plugins/README.md](./src/plugins/README.md)
 
@@ -51,7 +52,7 @@ src-tauri/src/
 **Key Functions**:
 
 - `extract_icon()` - Extract app icons
-- `fuzzy_match()` - Pattern matching
+- `fuzzy_match()` - Pattern matching (uses nucleo-matcher)
 - `calculate_match_score()` - Search scoring (0-100)
 
 ### 🔍 Search (`search/`)
@@ -80,6 +81,14 @@ src-tauri/src/
 - **files.rs**: File indexing
 - **launcher.rs**: Launch history
 - **autostart.rs**: Autostart management
+- **clipboard.rs**: Clipboard operations
+- **extensions.rs**: Extension management
+- **games.rs**: Game scanning
+- **steam.rs**: Steam integration
+- **system_monitor.rs**: System monitoring
+- **plugins.rs**: Plugin commands
+- **hotkey.rs**: Hotkey management
+- **logging.rs**: Logging configuration
 
 ## 🚀 Quick Start
 
@@ -218,8 +227,8 @@ cargo test -- --nocapture
 - **Total Modules**: 9
 - **Core Types**: 4 enums, 6 traits
 - **Utility Functions**: 15+
-- **Tauri Commands**: 30+
-- **Built-in Plugins**: 1 (expandable)
+- **Tauri Commands**: 50+
+- **Built-in Plugins**: 3 (clipboard_manager, game_scanner, system_monitor)
 
 ## 🛣️ Roadmap
 
@@ -232,8 +241,8 @@ cargo test -- --nocapture
 
 ### Phase 2: Enhancement 🚧
 
-- [ ] More built-in plugins
-- [ ] Advanced search algorithms
+- [x] More built-in plugins (clipboard_manager, game_scanner)
+- [x] Advanced search algorithms (nucleo-matcher fuzzy matching)
 - [ ] Caching layer
 - [ ] Performance optimizations
 

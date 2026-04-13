@@ -271,13 +271,18 @@ impl MyPlugin {
     }
 
     /// Initialiser le plugin (scan initial, etc.)
-    pub async fn initialize(&self) -> Result<(), String> {
+    pub async fn initialize(&self) -> VoltResult<()> {
         println!("✓ My Plugin initialized");
         Ok(())
     }
 
+    /// Capabilities required by this plugin
+    pub fn required_capabilities(&self) -> Vec<&str> {
+        vec!["filesystem", "cache"]
+    }
+
     /// Votre logique métier ici
-    pub async fn do_something(&self) -> Result<Vec<MyData>, String> {
+    pub async fn do_something(&self) -> VoltResult<Vec<MyData>> {
         // Accès au système de fichiers via l'API
         let cache_dir = self.api.get_plugin_cache_dir("my_plugin")
             .map_err(|e| e.to_string())?;
@@ -299,7 +304,7 @@ use crate::plugins::builtin::my_plugin::MyPlugin;
 #[tauri::command]
 pub async fn my_plugin_command(
     plugin: State<'_, MyPlugin>
-) -> Result<Vec<MyData>, String> {
+) -> VoltResult<Vec<MyData>> {
     plugin.do_something().await
 }
 ```
@@ -725,19 +730,19 @@ impl VoltPluginAPI {
     pub fn new(app_data_dir: PathBuf) -> Self;
 
     /// Obtenir le répertoire de cache du plugin
-    pub fn get_plugin_cache_dir(&self, plugin_id: &str) -> Result<PathBuf, String>;
+    pub fn get_plugin_cache_dir(&self, plugin_id: &str) -> VoltResult<PathBuf>;
 
     /// Obtenir le répertoire de configuration du plugin
-    pub fn get_plugin_config_dir(&self, plugin_id: &str) -> Result<PathBuf, String>;
+    pub fn get_plugin_config_dir(&self, plugin_id: &str) -> VoltResult<PathBuf>;
 
     /// Lire un fichier de cache
-    pub async fn read_cache_file(&self, plugin_id: &str, cache_key: &str) -> Result<Vec<u8>, String>;
+    pub async fn read_cache_file(&self, plugin_id: &str, cache_key: &str) -> VoltResult<Vec<u8>>;
 
     /// Écrire dans un fichier de cache
-    pub async fn write_cache_file(&self, plugin_id: &str, cache_key: &str, data: &[u8]) -> Result<(), String>;
+    pub async fn write_cache_file(&self, plugin_id: &str, cache_key: &str, data: &[u8]) -> VoltResult<()>;
 
     /// Supprimer un fichier de cache
-    pub async fn delete_cache_file(&self, plugin_id: &str, cache_key: &str) -> Result<(), String>;
+    pub async fn delete_cache_file(&self, plugin_id: &str, cache_key: &str) -> VoltResult<()>;
 }
 ```
 
@@ -897,7 +902,7 @@ export class MyPlugin implements Plugin {
 
 ### Q : Comment partager mon plugin ?
 
-**R :** Actuellement, les plugins sont intégrés au code source. Le support des plugins externes est prévu pour une version future.
+**R :** Les plugins intégrés font partie du code source. Pour les plugins communautaires et externes, soumettez-les au dépôt [volt-extensions](https://github.com/VoltLaunchr/volt-extensions).
 
 ---
 
@@ -905,7 +910,7 @@ export class MyPlugin implements Plugin {
 
 ### Documentation officielle
 
-- [Tauri Documentation](https://tauri.app/v1/guides/)
+- [Tauri Documentation](https://v2.tauri.app/)
 - [React Documentation](https://react.dev/)
 - [TypeScript Handbook](https://www.typescriptlang.org/docs/)
 
@@ -919,6 +924,10 @@ export class MyPlugin implements Plugin {
 ### Contribuer
 
 Si vous créez un plugin utile, n'hésitez pas à soumettre une Pull Request !
+
+**Plugins intégrés** : soumettez une PR au [dépôt principal Volt](https://github.com/VoltLaunchr/Volt).
+
+**Extensions communautaires/externes** : soumettez-les au dépôt [volt-extensions](https://github.com/VoltLaunchr/volt-extensions).
 
 1. Fork le projet
 2. Créez votre branche (`git checkout -b feature/my-plugin`)

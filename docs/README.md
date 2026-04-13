@@ -226,11 +226,17 @@ bun tauri build
 
 ```
 Volt/
-├── src/                          # Frontend (React/TypeScript)
+├── src/                          # Frontend (React 19/TypeScript 5.8)
 │   ├── app/                      # Application principale
+│   │   ├── App.tsx              # Main component (~197 lines)
+│   │   └── hooks/               # Extracted hooks
+│   │       ├── useSearchPipeline.ts
+│   │       ├── useAppLifecycle.ts
+│   │       ├── useGlobalHotkey.ts
+│   │       └── useResultActions.ts
 │   ├── features/                 # Features organisées par domaine
-│   │   ├── plugins/             # 🔌 Système de plugins
-│   │   │   ├── builtin/         # Plugins intégrés
+│   │   ├── plugins/             # Système de plugins
+│   │   │   ├── builtin/         # 9 plugins intégrés
 │   │   │   ├── core/            # Registry et infrastructure
 │   │   │   └── types/           # Types TypeScript
 │   │   ├── applications/        # Gestion des applications
@@ -241,9 +247,10 @@ Volt/
 │
 ├── src-tauri/                   # Backend (Rust)
 │   ├── src/
-│   │   ├── commands/            # Commandes Tauri
-│   │   ├── plugins/             # 🔌 Plugins backend
+│   │   ├── commands/            # 13 command files (Tauri commands)
+│   │   ├── plugins/             # 3 backend plugins
 │   │   ├── indexer/             # Indexation de fichiers
+│   │   ├── core/                # VoltResult, VoltError, types
 │   │   └── hotkey/              # Hotkeys globales
 │   └── Cargo.toml
 │
@@ -265,7 +272,7 @@ Volt/
 2. Créez votre plugin dans `src/features/plugins/builtin/`
 3. Enregistrez-le dans `src/app/App.tsx`
 4. Testez localement avec `bun tauri dev`
-5. Soumettez une Pull Request
+5. Soumettez une Pull Request (or submit community extensions to [volt-extensions](https://github.com/VoltLaunchr/volt-extensions))
 
 ### Contribuer à la doc
 

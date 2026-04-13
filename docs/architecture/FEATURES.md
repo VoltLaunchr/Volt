@@ -189,6 +189,8 @@ For extension developers:
 - Backend integrations
 - Custom views
 
+Community and third-party extensions are hosted at the [volt-extensions](https://github.com/VoltLaunchr/volt-extensions) repository.
+
 See [Plugin Development Guide](../plugins/DEVELOPMENT.md) for developer guide.
 
 ## Settings & Customization
@@ -347,4 +349,4 @@ Press `Ctrl+I` to view:
 
 For feature requests or bug reports, visit our [GitHub repository](https://github.com/VoltLaunchr/Volt).
 
-Last updated: January 1, 2026
+Last updated: April 12, 2026

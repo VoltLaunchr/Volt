@@ -8,7 +8,7 @@ mod search;
 mod utils;
 mod window;
 
-use commands::files::{FileHistoryState, FileIndexState};
+use commands::files::{FileHistoryState, FileIndexState, WatcherState};
 use commands::launcher::LaunchHistoryState;
 use commands::*;
 use hotkey::HotkeyState;
@@ -161,9 +161,6 @@ pub fn run() {
                 }
             });
 
-            // Initialize file index state
-            app.manage(FileIndexState::default());
-
             // Initialize launch history state and plugin system with validated data directory
             // Try to get app_data_dir and ensure it exists
             let data_dir = if let Ok(dir) = app.path().app_data_dir() {
@@ -220,6 +217,16 @@ pub fn run() {
             }
 
             info!("Data directory: {:?}", data_dir);
+
+            // Initialize file index state backed by SQLite.
+            let db_path = data_dir.join("file_index.db");
+            app.manage(FileIndexState::with_db(db_path));
+
+            // File-system watcher state (handle starts as None; watcher is
+            // started after the initial scan by the frontend).
+            app.manage(WatcherState {
+                handle: std::sync::Mutex::new(None),
+            });
 
             app.manage(LaunchHistoryState::new(data_dir.clone()));
 
@@ -289,6 +296,11 @@ pub fn run() {
             clear_file_history,
             get_file_categories,
             get_index_stats,
+            // Persistent index commands (SQLite + watcher)
+            invalidate_index,
+            get_db_index_stats,
+            start_file_watcher,
+            stop_file_watcher,
             // Settings commands
             load_settings,
             save_settings,

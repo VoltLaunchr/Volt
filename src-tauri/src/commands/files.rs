@@ -1,12 +1,14 @@
 use crate::core::error::{VoltError, VoltResult};
+use crate::indexer::watcher::WatcherHandle;
 use crate::indexer::{
-    FileCategory, FileHistory, FileInfo, IndexConfig, IndexStatus, SearchEngine, SearchOptions,
-    SearchResult as IndexSearchResult, scan_files, search_files as search_indexed_files,
+    FileCategory, FileHistory, FileIndexDb, FileInfo, IndexConfig, IndexStats as DbIndexStats,
+    IndexStatus, SearchEngine, SearchOptions, SearchResult as IndexSearchResult, scan_files,
+    search_files as search_indexed_files,
 };
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use tauri::State;
-use tracing::error;
+use tracing::{error, info, warn};
 
 /// Parse a category string into FileCategory
 fn parse_file_category(category: &str) -> Option<FileCategory> {
@@ -50,10 +52,20 @@ impl From<IndexSearchResult> for FileSearchResult {
     }
 }
 
-/// Global file index state
+/// Global file index state (in-memory cache + SQLite backend)
 pub struct FileIndexState {
     pub files: Arc<Mutex<Vec<FileInfo>>>,
     pub status: Arc<Mutex<IndexStatus>>,
+    /// SQLite database for persistent storage (None if DB could not be opened)
+    pub db: Arc<Option<FileIndexDb>>,
+    /// Configured folders, stored so that `invalidate_index` can trigger a rescan
+    pub config: Arc<Mutex<IndexConfig>>,
+}
+
+/// State for the active file-system watcher.  Stored separately so the
+/// watcher can be started/stopped without touching the index state.
+pub struct WatcherState {
+    pub handle: Mutex<Option<WatcherHandle>>,
 }
 
 /// Global file history state
@@ -81,11 +93,48 @@ impl Default for FileIndexState {
                 indexed_files: 0,
                 last_updated: 0,
             })),
+            db: Arc::new(None),
+            config: Arc::new(Mutex::new(IndexConfig::default())),
         }
     }
 }
 
-/// Starts file indexing based on settings
+impl FileIndexState {
+    /// Create a `FileIndexState` backed by a SQLite database at `db_path`.
+    pub fn with_db(db_path: PathBuf) -> Self {
+        let db = match FileIndexDb::open(&db_path) {
+            Ok(d) => {
+                info!("File index DB opened at {:?}", db_path);
+                Some(d)
+            }
+            Err(e) => {
+                warn!(
+                    "Could not open file index DB, falling back to in-memory: {}",
+                    e
+                );
+                None
+            }
+        };
+
+        Self {
+            files: Arc::new(Mutex::new(Vec::new())),
+            status: Arc::new(Mutex::new(IndexStatus {
+                is_indexing: false,
+                total_files: 0,
+                indexed_files: 0,
+                last_updated: 0,
+            })),
+            db: Arc::new(db),
+            config: Arc::new(Mutex::new(IndexConfig::default())),
+        }
+    }
+}
+
+/// Starts file indexing based on settings.
+///
+/// On the first call the DB is empty so a full scan runs.  On subsequent
+/// calls the in-memory cache is populated from the DB (fast path), and the
+/// scan only runs if `force` is true or no files are in the DB.
 #[tauri::command]
 pub async fn start_indexing(
     state: State<'_, FileIndexState>,
@@ -106,6 +155,21 @@ pub async fn start_indexing(
         }
     }
 
+    // Persist config so `invalidate_index` can re-use it.
+    {
+        let mut cfg = state
+            .config
+            .lock()
+            .map_err(|e| VoltError::Unknown(e.to_string()))?;
+        *cfg = IndexConfig {
+            folders: folders.clone(),
+            excluded_paths: excluded_paths.clone(),
+            file_extensions: file_extensions.clone(),
+            max_depth: 10,
+            max_file_size: 100 * 1024 * 1024,
+        };
+    }
+
     // Mark as indexing
     {
         let mut status = state
@@ -119,6 +183,7 @@ pub async fn start_indexing(
 
     let files_arc = state.files.clone();
     let status_arc = state.status.clone();
+    let db_arc = state.db.clone();
 
     // Run indexing in background
     tauri::async_runtime::spawn(async move {
@@ -130,11 +195,49 @@ pub async fn start_indexing(
             max_file_size: 100 * 1024 * 1024, // 100MB limit
         };
 
+        // --- Fast path: load from DB if it already has files ---
+        if let Some(db) = db_arc.as_ref() {
+            match db.count() {
+                Ok(n) if n > 0 => {
+                    info!("Loading {} files from SQLite cache", n);
+                    match db.get_all_files() {
+                        Ok(cached) => {
+                            let file_count = cached.len();
+                            if let Ok(mut files) = files_arc.lock() {
+                                *files = cached;
+                            }
+                            if let Ok(mut status) = status_arc.lock() {
+                                status.is_indexing = false;
+                                status.total_files = file_count;
+                                status.indexed_files = file_count;
+                                status.last_updated = chrono::Utc::now().timestamp();
+                            }
+                            info!("In-memory cache populated from DB ({} files)", file_count);
+                            return;
+                        }
+                        Err(e) => warn!("Failed to load from DB, falling back to scan: {}", e),
+                    }
+                }
+                Ok(_) => info!("DB is empty – performing full scan"),
+                Err(e) => warn!("Could not check DB count: {}", e),
+            }
+        }
+
+        // --- Full scan ---
         match scan_files(&config) {
             Ok(scanned_files) => {
                 let file_count = scanned_files.len();
 
-                // Update files
+                // Persist to SQLite.
+                if let Some(db) = db_arc.as_ref() {
+                    if let Err(e) = db.upsert_files(&scanned_files) {
+                        warn!("Failed to persist index to DB: {}", e);
+                    } else if let Err(e) = db.mark_full_scan() {
+                        warn!("Failed to mark full scan: {}", e);
+                    }
+                }
+
+                // Update in-memory cache.
                 if let Ok(mut files) = files_arc.lock() {
                     *files = scanned_files;
                 }
@@ -146,6 +249,8 @@ pub async fn start_indexing(
                     status.indexed_files = file_count;
                     status.last_updated = chrono::Utc::now().timestamp();
                 }
+
+                info!("Full scan complete: {} files indexed", file_count);
             }
             Err(e) => {
                 error!("Indexing failed: {}", e);
@@ -478,7 +583,7 @@ pub async fn get_index_stats(state: State<'_, FileIndexState>) -> VoltResult<Ind
     Ok(stats)
 }
 
-/// Index statistics
+/// Index statistics (per-category counts, in-memory)
 #[derive(Debug, Clone, Default, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct IndexStats {
@@ -495,4 +600,206 @@ pub struct IndexStats {
     pub archives: usize,
     pub code_files: usize,
     pub other: usize,
+}
+
+// ---------------------------------------------------------------------------
+// New commands: invalidate_index, get_db_index_stats
+// ---------------------------------------------------------------------------
+
+/// Clears the SQLite index and triggers a full rescan.
+///
+/// Frontend can call this as "Rebuild Index".
+#[tauri::command]
+pub async fn invalidate_index(
+    state: State<'_, FileIndexState>,
+    watcher_state: State<'_, WatcherState>,
+) -> VoltResult<()> {
+    // Stop the watcher while we rebuild.
+    if let Ok(mut handle) = watcher_state.handle.lock() {
+        if let Some(h) = handle.as_ref() {
+            h.stop();
+        }
+        *handle = None;
+    }
+
+    // Clear the SQLite DB.
+    if let Some(db) = state.db.as_ref() {
+        db.clear_all().map_err(VoltError::Unknown)?;
+    }
+
+    // Clear in-memory cache.
+    if let Ok(mut files) = state.files.lock() {
+        files.clear();
+    }
+
+    // Re-run indexing with the last-known config.
+    let config = state
+        .config
+        .lock()
+        .map_err(|e| VoltError::Unknown(e.to_string()))?
+        .clone();
+
+    // Kick off a new full scan (reuse start_indexing logic).
+    {
+        let mut status = state
+            .status
+            .lock()
+            .map_err(|e| VoltError::Unknown(e.to_string()))?;
+        status.is_indexing = true;
+        status.indexed_files = 0;
+        status.total_files = 0;
+    }
+
+    let files_arc = state.files.clone();
+    let status_arc = state.status.clone();
+    let db_arc = state.db.clone();
+
+    tauri::async_runtime::spawn(async move {
+        match scan_files(&config) {
+            Ok(scanned_files) => {
+                let file_count = scanned_files.len();
+
+                if let Some(db) = db_arc.as_ref() {
+                    if let Err(e) = db.upsert_files(&scanned_files) {
+                        warn!("Failed to persist rebuilt index: {}", e);
+                    } else if let Err(e) = db.mark_full_scan() {
+                        warn!("Failed to mark full scan: {}", e);
+                    }
+                }
+
+                if let Ok(mut files) = files_arc.lock() {
+                    *files = scanned_files;
+                }
+
+                if let Ok(mut status) = status_arc.lock() {
+                    status.is_indexing = false;
+                    status.total_files = file_count;
+                    status.indexed_files = file_count;
+                    status.last_updated = chrono::Utc::now().timestamp();
+                }
+
+                info!("Index rebuilt: {} files", file_count);
+            }
+            Err(e) => {
+                error!("Index rebuild failed: {}", e);
+                if let Ok(mut status) = status_arc.lock() {
+                    status.is_indexing = false;
+                }
+            }
+        }
+    });
+
+    Ok(())
+}
+
+/// Returns SQLite-level index statistics (file count, DB size, last scan, watcher status).
+#[tauri::command]
+pub async fn get_db_index_stats(
+    state: State<'_, FileIndexState>,
+    watcher_state: State<'_, WatcherState>,
+) -> VoltResult<DbIndexStats> {
+    let is_watching = watcher_state
+        .handle
+        .lock()
+        .map(|h| h.as_ref().map(|w| w.is_active()).unwrap_or(false))
+        .unwrap_or(false);
+
+    if let Some(db) = state.db.as_ref() {
+        db.get_stats(is_watching).map_err(VoltError::Unknown)
+    } else {
+        // No DB – synthesise stats from in-memory state.
+        let indexed_count = state.files.lock().map(|f| f.len()).unwrap_or(0);
+        Ok(DbIndexStats {
+            indexed_count,
+            db_size_bytes: 0,
+            last_full_scan: 0,
+            is_watching,
+        })
+    }
+}
+
+/// Start (or restart) the file-system watcher for the configured directories.
+///
+/// Called by the frontend after the initial index scan completes.
+#[tauri::command]
+pub async fn start_file_watcher(
+    index_state: State<'_, FileIndexState>,
+    watcher_state: State<'_, WatcherState>,
+) -> VoltResult<()> {
+    // Stop any existing watcher.
+    if let Ok(mut handle) = watcher_state.handle.lock() {
+        if let Some(h) = handle.as_ref() {
+            h.stop();
+        }
+        *handle = None;
+    }
+
+    // Get the current config's folders.
+    let folders = {
+        let cfg = index_state
+            .config
+            .lock()
+            .map_err(|e| VoltError::Unknown(e.to_string()))?;
+        cfg.folders.clone()
+    };
+
+    if folders.is_empty() {
+        info!("No folders configured for watching");
+        return Ok(());
+    }
+
+    // Get a reference to the DB.
+    let db = match index_state.db.as_ref() {
+        Some(d) => d,
+        None => {
+            warn!("No DB available – file watcher not started");
+            return Ok(());
+        }
+    };
+
+    // We need an Arc<FileIndexDb> for the watcher thread.  Since `db` is
+    // already inside an Arc<Option<FileIndexDb>>, we reconstruct a new Arc.
+    // This is safe because FileIndexDb wraps its connection in Arc<Mutex<>>.
+    use crate::indexer::watcher::start_watcher;
+
+    // Build an Arc from the existing DB reference.
+    // Because FileIndexDb has Arc<Mutex<Connection>> internally, cloning the
+    // Arc-wrapped DB by pointer would require an Arc<FileIndexDb>.
+    // The state already holds Arc<Option<FileIndexDb>>; we construct a new
+    // Arc pointing at the same underlying db by opening a shared reference.
+    //
+    // To avoid requiring Clone on FileIndexDb (which holds a Mutex), we
+    // instead open a fresh connection to the same path stored in the DB.
+    // The DB path is retrieved via a public method.
+    let db_arc: Arc<FileIndexDb> = Arc::new(
+        FileIndexDb::open(db.db_path())
+            .map_err(|e| VoltError::Unknown(format!("Failed to open watcher DB: {}", e)))?,
+    );
+
+    match start_watcher(folders.clone(), db_arc) {
+        Ok(handle) => {
+            info!("File watcher started for {} director(y/ies)", folders.len());
+            if let Ok(mut h) = watcher_state.handle.lock() {
+                *h = Some(handle);
+            }
+            Ok(())
+        }
+        Err(e) => {
+            warn!("Failed to start file watcher: {}", e);
+            Err(VoltError::Unknown(e))
+        }
+    }
+}
+
+/// Stop the file-system watcher.
+#[tauri::command]
+pub async fn stop_file_watcher(watcher_state: State<'_, WatcherState>) -> VoltResult<()> {
+    if let Ok(mut handle) = watcher_state.handle.lock() {
+        if let Some(h) = handle.as_ref() {
+            h.stop();
+            info!("File watcher stopped");
+        }
+        *handle = None;
+    }
+    Ok(())
 }

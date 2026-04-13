@@ -59,3 +59,35 @@
 /* Diagonal stripes pattern for the middle section if needed,
    though the screenshot suggests it might be a specific state or design element.
    For now, I'll stick to the clean layout. */
+
+/* Indexing indicator */
+.footer-indexing {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: var(--spacing-sm);
+}
+
+.footer-indexing-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-accent);
+  animation: indexing-pulse 1.4s ease-in-out infinite;
+}
+
+.footer-indexing-label {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-tertiary);
+}
+
+@keyframes indexing-pulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.4;
+    transform: scale(0.75);
+  }
+}

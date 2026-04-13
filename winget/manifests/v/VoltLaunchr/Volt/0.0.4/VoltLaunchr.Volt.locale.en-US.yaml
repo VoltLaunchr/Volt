@@ -1,0 +1,27 @@
+# Created using wingetcreate 1.6.5.0
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.defaultLocale.1.6.0.schema.json
+
+PackageIdentifier: VoltLaunchr.Volt
+PackageVersion: 0.0.4
+PackageLocale: en-US
+Publisher: VoltLaunchr
+PublisherUrl: https://github.com/VoltLaunchr
+PublisherSupportUrl: https://github.com/VoltLaunchr/Volt/issues
+PackageName: Volt
+PackageUrl: https://github.com/VoltLaunchr/Volt
+License: Apache-2.0
+LicenseUrl: https://github.com/VoltLaunchr/Volt/blob/main/LICENSE
+Copyright: Copyright (c) VoltLaunchr contributors
+ShortDescription: Lightning-fast application launcher
+Description: Fast, beautiful desktop launcher for Windows, macOS, and Linux
+Moniker: volt
+Tags:
+  - launcher
+  - productivity
+  - search
+  - spotlight
+  - alfred
+  - tauri
+ReleaseNotesUrl: https://github.com/VoltLaunchr/Volt/releases/tag/v0.0.4
+ManifestType: defaultLocale
+ManifestVersion: 1.6.0

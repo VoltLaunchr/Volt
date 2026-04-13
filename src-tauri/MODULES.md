@@ -10,6 +10,9 @@ Complete guide to the Rust backend module system.
 4. [Search Module](#search-module)
 5. [Window Module](#window-module)
 6. [Commands Module](#commands-module)
+7. [Hotkey Module](#hotkey-module)
+8. [Indexer Module](#indexer-module)
+9. [Launcher Module](#launcher-module)
 
 ---
 
@@ -84,7 +87,7 @@ core/
   ```rust
   #[async_trait]
   pub trait Launchable {
-      async fn launch(&self) -> Result<(), String>;
+      async fn launch(&self) -> VoltResult<()>;
       fn can_launch(&self) -> bool;
       fn launch_preview(&self) -> Option<String>;
   }
@@ -98,8 +101,8 @@ core/
       fn name(&self) -> &str;
       fn description(&self) -> &str;
       fn is_enabled(&self) -> bool;
-      async fn initialize(&mut self) -> Result<(), String>;
-      async fn shutdown(&mut self) -> Result<(), String>;
+      async fn initialize(&mut self) -> VoltResult<()>;
+      async fn shutdown(&mut self) -> VoltResult<()>;
   }
   ```
 
@@ -131,6 +134,8 @@ pub enum VoltError {
 pub type VoltResult<T> = Result<T, VoltError>;
 ```
 
+`VoltError` has `From` implementations for `io::Error`, `serde_json::Error`, `tauri::Error`, `String`, and `&str`, enabling seamless error conversion with the `?` operator.
+
 ---
 
 ## Plugins Module
@@ -146,9 +151,15 @@ plugins/
 ├── mod.rs              # Module exports
 ├── registry.rs         # Plugin registry
 ├── loader.rs           # Dynamic plugin loading
+├── api.rs              # VoltPluginAPI - comprehensive plugin API
 └── builtin/
-    ├── mod.rs          # Built-in plugins
-    └── system_monitor.rs
+    ├── mod.rs          # Plugin registration
+    ├── clipboard_manager/  # Clipboard management plugin
+    ├── game_scanner/       # Multi-platform game scanner
+    │   └── scanners/       # EA, Epic, GOG, Riot, Steam, Ubisoft, Xbox
+    └── system_monitor/     # System monitoring plugin
+        ├── mod.rs
+        └── plugin.rs
 ```
 
 ### Plugin Registry (`registry.rs`)
@@ -161,12 +172,12 @@ pub struct PluginRegistry {
 }
 
 impl PluginRegistry {
-    pub fn register(&self, plugin: Box<dyn Plugin>) -> Result<(), String>;
-    pub fn unregister(&self, plugin_id: &str) -> Result<(), String>;
-    pub fn get(&self, plugin_id: &str) -> Result<(), String>;
-    pub fn list_plugins(&self) -> Result<Vec<String>, String>;
-    pub async fn initialize_all(&self) -> Result<(), String>;
-    pub async fn shutdown_all(&self) -> Result<(), String>;
+    pub fn register(&self, plugin: Box<dyn Plugin>) -> VoltResult<()>;
+    pub fn unregister(&self, plugin_id: &str) -> VoltResult<()>;
+    pub fn get(&self, plugin_id: &str) -> VoltResult<()>;
+    pub fn list_plugins(&self) -> VoltResult<Vec<String>>;
+    pub async fn initialize_all(&self) -> VoltResult<()>;
+    pub async fn shutdown_all(&self) -> VoltResult<()>;
 }
 ```
 
@@ -283,16 +294,16 @@ Window management commands.
 
 ```rust
 #[tauri::command]
-pub fn show_window(window: Window) -> Result<(), String>;
+pub fn show_window(window: Window) -> VoltResult<()>;
 
 #[tauri::command]
-pub fn hide_window(window: Window) -> Result<(), String>;
+pub fn hide_window(window: Window) -> VoltResult<()>;
 
 #[tauri::command]
-pub fn toggle_window(app: AppHandle) -> Result<(), String>;
+pub fn toggle_window(app: AppHandle) -> VoltResult<()>;
 
 #[tauri::command]
-pub fn center_window(window: Window) -> Result<(), String>;
+pub fn center_window(window: Window) -> VoltResult<()>;
 ```
 
 ---
@@ -305,11 +316,89 @@ Tauri command handlers exposed to frontend.
 
 ### Modules
 
+All commands return `VoltResult<T>` using the `VoltError` discriminated union.
+
 - **apps.rs**: Application scanning and launching
 - **autostart.rs**: Autostart management
+- **clipboard.rs**: Clipboard read/write operations
+- **extensions.rs**: Extension management
 - **files.rs**: File indexing
+- **games.rs**: Game scanning across platforms
+- **hotkey.rs**: Hotkey registration and management
 - **launcher.rs**: Launch history tracking
+- **logging.rs**: Logging configuration and log file management
+- **plugins.rs**: Plugin lifecycle commands
 - **settings.rs**: Settings management
+- **steam.rs**: Steam library integration
+- **system_monitor.rs**: System resource monitoring
+
+---
+
+## Hotkey Module
+
+**Location**: `src/hotkey/`
+
+Global hotkey registration and handling.
+
+### Structure
+
+```
+hotkey/
+└── mod.rs         # Global shortcut management
+```
+
+- Uses `tauri-plugin-global-shortcut`
+- Default: Ctrl+Space (configurable in Settings)
+- No fallback hotkeys - if default conflicts, user can change in Settings
+
+---
+
+## Indexer Module
+
+**Location**: `src/indexer/`
+
+File system indexing for fast file search.
+
+### Structure
+
+```
+indexer/
+├── mod.rs             # Module exports
+├── scanner.rs         # Background file system scanning
+├── search.rs          # File search with scoring
+├── search_engine.rs   # Advanced search engine
+├── database.rs        # Indexed file database
+├── watcher.rs         # File system watcher (notify v6)
+├── types.rs           # Indexer-specific types
+└── file_history.rs    # File access history tracking
+```
+
+- In-memory state: `FileIndexState` (Arc<Mutex<Vec<FileInfo>>>)
+- Background scan via `start_indexing()` with `max_depth=10`, `max_file_size=100MB`
+- Extensions filter: empty = all files; specified = only those extensions
+- File watcher using `notify` v6 for real-time updates
+
+---
+
+## Launcher Module
+
+**Location**: `src/launcher/`
+
+Cross-platform process launching and history.
+
+### Structure
+
+```
+launcher/
+├── mod.rs         # Module exports
+├── process.rs     # Cross-platform process spawning
+├── history.rs     # Launch history tracking
+└── types.rs       # Launcher-specific types
+```
+
+- Detached process spawning for Windows, macOS, Linux
+- Launch history with frequency and recency tracking
+- Error handling via VoltResult
 
 ---
 
@@ -360,12 +449,12 @@ impl Plugin for MyPlugin {
         self.enabled
     }
 
-    async fn initialize(&mut self) -> Result<(), String> {
+    async fn initialize(&mut self) -> VoltResult<()> {
         println!("My plugin initialized!");
         Ok(())
     }
 
-    async fn shutdown(&mut self) -> Result<(), String> {
+    async fn shutdown(&mut self) -> VoltResult<()> {
         println!("My plugin shutting down...");
         Ok(())
     }
@@ -427,8 +516,25 @@ cargo test --lib plugins::registry
 
 ## Dependencies
 
+- `tauri` (v2) - Desktop app framework
 - `async-trait` - Async trait support
-- `serde` - Serialization
+- `serde` / `serde_json` - Serialization
+- `tokio` - Async runtime
 - `chrono` - Date/time
 - `md5` - Hashing
-- Platform-specific crates as needed
+- `notify` (v6) - File system watcher
+- `reqwest` - HTTP client
+- `nucleo-matcher` - High-performance fuzzy matching
+- `image` - Image processing
+- `base64` - Base64 encoding/decoding
+- `arboard` - Clipboard access
+- `tracing` / `tracing-subscriber` / `tracing-appender` - Structured logging with rotating daily log files
+- `zip` - Archive handling
+- `url` - URL parsing
+- `once_cell` - Lazy static initialization
+- `png` - Icon encoding
+- Platform-specific crates as needed (winapi, etc.)
+
+Development dependencies:
+
+- `tempfile` - Temporary file/directory creation for tests

@@ -55,6 +55,37 @@ export function SettingsApp() {
   const [diagnosticsCopied, setDiagnosticsCopied] = useState(false);
   const appVersion = '0.0.2';
 
+  // Indexing stats for the File Search panel
+  const [indexStats, setIndexStats] = useState<{
+    indexedCount: number;
+    dbSizeBytes: number;
+    lastFullScan: number;
+    isWatching: boolean;
+  } | null>(null);
+  const [isRebuilding, setIsRebuilding] = useState(false);
+
+  // Fetch DB index stats
+  const fetchIndexStats = useCallback(async () => {
+    try {
+      const stats = await invoke<{
+        indexedCount: number;
+        dbSizeBytes: number;
+        lastFullScan: number;
+        isWatching: boolean;
+      }>('get_db_index_stats');
+      setIndexStats(stats);
+    } catch (err) {
+      logger.error('Failed to fetch index stats:', err);
+    }
+  }, []);
+
+  // Refresh index stats whenever the file-search panel is shown
+  useEffect(() => {
+    if (activeCategory === 'file-search') {
+      fetchIndexStats();
+    }
+  }, [activeCategory, fetchIndexStats]);
+
   // Load settings on mount
   useEffect(() => {
     loadSettings();
@@ -939,6 +970,90 @@ export function SettingsApp() {
             <button className="folder-add-btn" onClick={addExcludedPath}>
               <span>+</span> Add Exclusion
             </button>
+          </div>
+
+          <div className="settings-section-divider" />
+
+          <h3 className="settings-subsection-title">Index Status</h3>
+          <p className="settings-subsection-desc">
+            Persistent SQLite index statistics and maintenance
+          </p>
+
+          {indexStats ? (
+            <div className="index-stats-grid">
+              <div className="index-stat-item">
+                <span className="index-stat-label">Indexed files</span>
+                <span className="index-stat-value">
+                  {indexStats.indexedCount.toLocaleString()}
+                </span>
+              </div>
+              <div className="index-stat-item">
+                <span className="index-stat-label">DB size</span>
+                <span className="index-stat-value">
+                  {indexStats.dbSizeBytes > 0
+                    ? `${(indexStats.dbSizeBytes / 1024).toFixed(1)} KB`
+                    : '—'}
+                </span>
+              </div>
+              <div className="index-stat-item">
+                <span className="index-stat-label">Last full scan</span>
+                <span className="index-stat-value">
+                  {indexStats.lastFullScan > 0
+                    ? new Date(indexStats.lastFullScan * 1000).toLocaleString()
+                    : 'Never'}
+                </span>
+              </div>
+              <div className="index-stat-item">
+                <span className="index-stat-label">File watcher</span>
+                <span
+                  className={`index-stat-value ${indexStats.isWatching ? 'index-stat-active' : 'index-stat-inactive'}`}
+                >
+                  {indexStats.isWatching ? 'Active' : 'Inactive'}
+                </span>
+              </div>
+            </div>
+          ) : (
+            <p className="settings-subsection-desc">Loading stats…</p>
+          )}
+
+          <div className="settings-row" style={{ marginTop: '12px' }}>
+            <div className="settings-row-info">
+              <span className="settings-row-label">Rebuild Index</span>
+              <span className="settings-row-desc">
+                Clears the database and re-scans all configured folders from scratch
+              </span>
+            </div>
+            <Button
+              variant="secondary"
+              disabled={isRebuilding}
+              onClick={async () => {
+                setIsRebuilding(true);
+                try {
+                  await invoke('invalidate_index');
+                  // Poll until indexing is done
+                  const pollStats = async () => {
+                    try {
+                      const status = await invoke<{ isIndexing: boolean }>('get_index_status');
+                      if (status.isIndexing) {
+                        setTimeout(pollStats, 800);
+                      } else {
+                        await fetchIndexStats();
+                        setIsRebuilding(false);
+                      }
+                    } catch {
+                      setIsRebuilding(false);
+                    }
+                  };
+                  setTimeout(pollStats, 500);
+                } catch (err) {
+                  logger.error('Failed to rebuild index:', err);
+                  setIsRebuilding(false);
+                }
+              }}
+            >
+              {isRebuilding ? <Spinner size="small" /> : null}
+              {isRebuilding ? 'Rebuilding…' : 'Rebuild Index'}
+            </Button>
           </div>
         </div>
       </div>

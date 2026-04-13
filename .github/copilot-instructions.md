@@ -16,11 +16,11 @@
 
 ## Where things live
 
-- Main UI orchestration (loading apps/settings, debounced search, key handling): [src/app/App.tsx](../src/app/App.tsx)
+- Main UI orchestration: [src/app/App.tsx](../src/app/App.tsx) (197 lines, delegates to extracted hooks in `src/app/hooks/`: `useSearchPipeline`, `useAppLifecycle`, `useGlobalHotkey`, `useResultActions`)
 - Feature slices: `src/features/*` (e.g. search/results/settings/plugins)
 - Shared UI + primitives: `src/shared/components`, shared TS types in `src/shared/types`
 - Global styling + themes: `src/styles/*` (theme is driven via `data-theme` and settings)
-- Tauri commands: [src-tauri/src/commands](../src-tauri/src/commands) (apps/files/settings/window)
+- Tauri commands: [src-tauri/src/commands](../src-tauri/src/commands) (13 modules: apps, files, settings, launcher, autostart, clipboard, extensions, games, steam, system_monitor, plugins, hotkey, logging)
 - Global hotkey: [src-tauri/src/hotkey/mod.rs](../src-tauri/src/hotkey/mod.rs)
 - Window behavior is configured in [src-tauri/tauri.conf.json](../src-tauri/tauri.conf.json) (transparent, always-on-top, no decorations).
 
@@ -52,3 +52,18 @@
 
 - Hotkey registration is best-effort (does not crash if unavailable). It tries a list of defaults and may apply a user-configured hotkey from settings on startup.
 - Keep string formats consistent with `tauri-plugin-global-shortcut` parsing (see [src-tauri/src/hotkey/mod.rs](../src-tauri/src/hotkey/mod.rs)).
+
+## Extensions system
+
+- External extensions are loaded via `src/features/extensions/` on the frontend.
+- Backend extension commands live in `src-tauri/src/commands/extensions.rs`.
+
+## Logging
+
+- Backend uses `tracing` with rotating daily log files (configured in `src-tauri/src/`).
+- Frontend logging helper: `src/shared/utils/logger.ts`.
+
+## Error handling
+
+- All Tauri commands return `VoltResult<T>` (alias for `Result<T, VoltError>`).
+- `VoltError` is a discriminated union defined in `src-tauri/src/core/errors.rs` — do not use raw `Result<T, String>`.

@@ -33,7 +33,7 @@
 
 **Parametres**
 - 8 categories de parametres (general, apparence, hotkeys, indexation, plugins, extensions, about)
-- Hotkey globale configurable en live (defaut : Ctrl+Shift+Space)
+- Hotkey globale configurable en live (defaut : Ctrl+Space)
 - 9 positions de fenetre predefinies + coordonnees custom
 - Themes : Dark, Light, Auto (suit le systeme)
 - Demarrage automatique avec le systeme (autostart)

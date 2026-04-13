@@ -584,7 +584,7 @@ Crée une nouvelle instance de l'API.
 let api = VoltPluginAPI::new(app_data_dir);
 ```
 
-##### `get_plugin_cache_dir(&self, plugin_id: &str) -> Result<PathBuf, String>`
+##### `get_plugin_cache_dir(&self, plugin_id: &str) -> VoltResult<PathBuf>`
 
 Récupère le répertoire de cache du plugin.
 
@@ -595,7 +595,7 @@ let cache_dir = api.get_plugin_cache_dir("my_plugin")?;
 // Retourne: {app_data}/cache/my_plugin
 ```
 
-##### `get_plugin_config_dir(&self, plugin_id: &str) -> Result<PathBuf, String>`
+##### `get_plugin_config_dir(&self, plugin_id: &str) -> VoltResult<PathBuf>`
 
 Récupère le répertoire de configuration du plugin.
 
@@ -604,7 +604,7 @@ let config_dir = api.get_plugin_config_dir("my_plugin")?;
 // Retourne: {app_data}/config/my_plugin
 ```
 
-##### `read_cache_file(&self, plugin_id: &str, cache_key: &str) -> Result<Vec<u8>, String>`
+##### `read_cache_file(&self, plugin_id: &str, cache_key: &str) -> VoltResult<Vec<u8>>`
 
 Lit un fichier depuis le cache du plugin.
 
@@ -613,7 +613,7 @@ let data = api.read_cache_file("my_plugin", "games.json").await?;
 let json = String::from_utf8(data)?;
 ```
 
-##### `write_cache_file(&self, plugin_id: &str, cache_key: &str, data: &[u8]) -> Result<(), String>`
+##### `write_cache_file(&self, plugin_id: &str, cache_key: &str, data: &[u8]) -> VoltResult<()>`
 
 Écrit dans un fichier de cache du plugin.
 
@@ -622,7 +622,7 @@ let json_data = serde_json::to_vec(&my_data)?;
 api.write_cache_file("my_plugin", "games.json", &json_data).await?;
 ```
 
-##### `delete_cache_file(&self, plugin_id: &str, cache_key: &str) -> Result<(), String>`
+##### `delete_cache_file(&self, plugin_id: &str, cache_key: &str) -> VoltResult<()>`
 
 Supprime un fichier du cache.
 
@@ -642,13 +642,13 @@ Les commandes Tauri permettent au frontend d'appeler le code Rust.
 // src-tauri/src/commands/my_plugin.rs
 
 #[tauri::command]
-pub async fn my_plugin_scan() -> Result<Vec<MyData>, String> {
+pub async fn my_plugin_scan() -> VoltResult<Vec<MyData>> {
     // Votre logique ici
     Ok(vec![])
 }
 
 #[tauri::command]
-pub async fn my_plugin_launch(id: String) -> Result<(), String> {
+pub async fn my_plugin_launch(id: String) -> VoltResult<()> {
     // Lancer l'élément par ID
     Ok(())
 }
@@ -826,8 +826,8 @@ pub struct MyData {
     pub path: PathBuf,
 }
 
-// Résultat Tauri command
-pub type CommandResult<T> = Result<T, String>;
+// Résultat Tauri command — uses VoltError discriminated union
+pub type VoltResult<T> = Result<T, VoltError>;
 ```
 
 ---
@@ -879,15 +879,17 @@ async execute(result: PluginResult): Promise<void> {
 
 ```rust
 #[tauri::command]
-pub async fn my_command() -> Result<Vec<Data>, String> {
-    // Convertir les erreurs en String pour Tauri
+pub async fn my_command() -> VoltResult<Vec<Data>> {
+    // Errors are handled via VoltError discriminated union
     let data = fetch_data()
         .await
-        .map_err(|e| format!("Failed to fetch data: {}", e))?;
+        .map_err(|e| VoltError::Plugin(format!("Failed to fetch data: {}", e)))?;
 
     Ok(data)
 }
 ```
+
+> **Note**: Volt uses `VoltResult<T>` (an alias for `Result<T, VoltError>`) instead of `Result<T, String>`. The `VoltError` enum provides structured error variants for different failure modes.
 
 ---
 

@@ -18,9 +18,17 @@ src-tauri/
 │   │   ├── mod.rs                     # Module exports
 │   │   ├── registry.rs                # PluginRegistry (thread-safe)
 │   │   ├── loader.rs                  # PluginLoader (future: dynamic loading)
+│   │   ├── api.rs                     # VoltPluginAPI - comprehensive plugin API
 │   │   ├── builtin/
 │   │   │   ├── mod.rs                 # get_builtin_plugins()
-│   │   │   └── system_monitor.rs     # SystemMonitorPlugin
+│   │   │   ├── clipboard_manager/     # Clipboard management plugin
+│   │   │   │   └── ...
+│   │   │   ├── game_scanner/          # Multi-platform game scanner
+│   │   │   │   ├── mod.rs
+│   │   │   │   └── scanners/          # EA, Epic, GOG, Riot, Steam, Ubisoft, Xbox
+│   │   │   └── system_monitor/        # System monitoring plugin
+│   │   │       ├── mod.rs
+│   │   │       └── plugin.rs
 │   │   └── README.md                  # Plugin development guide
 │   │
 │   ├── utils/                         🛠️ UTILITIES
@@ -38,22 +46,37 @@ src-tauri/
 │   ├── commands/                      📡 TAURI COMMANDS
 │   │   ├── mod.rs                     # Module exports
 │   │   ├── apps.rs                    # scan/search/launch applications
-│   │   ├── settings.rs                # load/save settings
+│   │   ├── autostart.rs               # autostart management
+│   │   ├── clipboard.rs               # clipboard operations
+│   │   ├── extensions.rs              # extension management
 │   │   ├── files.rs                   # file indexing
+│   │   ├── games.rs                   # game scanning
+│   │   ├── hotkey.rs                  # hotkey management
 │   │   ├── launcher.rs                # launch history, pins, tags
-│   │   └── autostart.rs               # autostart management
+│   │   ├── logging.rs                 # logging configuration
+│   │   ├── plugins.rs                 # plugin commands
+│   │   ├── settings.rs                # load/save settings
+│   │   ├── steam.rs                   # Steam integration
+│   │   └── system_monitor.rs          # system monitoring
 │   │
 │   ├── hotkey/                        ⌨️  GLOBAL HOTKEYS
 │   │   └── mod.rs                     # Global shortcut management
 │   │
 │   ├── indexer/                       📂 FILE INDEXING
 │   │   ├── mod.rs
-│   │   └── scanner.rs                 # File system scanner
+│   │   ├── scanner.rs                 # File system scanner
+│   │   ├── search.rs                  # File search with scoring
+│   │   ├── search_engine.rs           # Advanced search engine
+│   │   ├── database.rs                # Indexed file database
+│   │   ├── watcher.rs                 # File system watcher (notify v6)
+│   │   ├── types.rs                   # Indexer-specific types
+│   │   └── file_history.rs            # File access history tracking
 │   │
 │   ├── launcher/                      🚀 PROCESS LAUNCHER
 │   │   ├── mod.rs
 │   │   ├── process.rs                 # Cross-platform launching
-│   │   └── history.rs                 # Launch history tracking
+│   │   ├── history.rs                 # Launch history tracking
+│   │   └── types.rs                   # Launcher-specific types
 │   │
 │   ├── icons/                         🎨 ICONS
 │   │   └── ...                        # Icon assets
@@ -77,30 +100,30 @@ src-tauri/
 | Module       | Purpose                   | Key Files                                   | Main Exports                                          |
 | ------------ | ------------------------- | ------------------------------------------- | ----------------------------------------------------- |
 | **core**     | Foundation types & traits | types.rs, traits.rs, constants.rs, error.rs | AppCategory, Platform, Plugin trait, VoltError        |
-| **plugins**  | Plugin system             | registry.rs, loader.rs, builtin/            | PluginRegistry, SystemMonitorPlugin                   |
+| **plugins**  | Plugin system             | registry.rs, loader.rs, api.rs, builtin/    | PluginRegistry, 3 built-in plugins                    |
 | **utils**    | Reusable utilities        | icon.rs, matching.rs, path.rs               | extract_icon(), fuzzy_match(), find_main_executable() |
 | **search**   | Search algorithms         | mod.rs                                      | search_applications()                                 |
 | **window**   | Window management         | mod.rs                                      | show/hide/toggle/center commands                      |
-| **commands** | Tauri handlers            | apps.rs, settings.rs, files.rs, launcher.rs | All #[tauri::command] functions                       |
+| **commands** | Tauri handlers            | 13 command files (apps, settings, files, etc.) | All #[tauri::command] functions                    |
 | **hotkey**   | Global shortcuts          | mod.rs                                      | Hotkey registration                                   |
-| **indexer**  | File scanning             | scanner.rs                                  | File indexing system                                  |
-| **launcher** | App launching             | process.rs, history.rs                      | Cross-platform launcher                               |
+| **indexer**  | File scanning             | scanner.rs, search.rs, database.rs, watcher.rs, etc. | File indexing system                           |
+| **launcher** | App launching             | process.rs, history.rs, types.rs            | Cross-platform launcher                               |
 
 ## 📊 File Count by Module
 
 ```
 core/         5 files
-plugins/      5 files (+ 1 README)
+plugins/      6+ files (+ builtin subdirectories + README)
 utils/        4 files
 search/       1 file
 window/       1 file
-commands/     6 files
+commands/     14 files (mod.rs + 13 command files)
 hotkey/       1 file
-indexer/      2 files
-launcher/     3 files
+indexer/      8 files
+launcher/     4 files
 icons/        N/A
 ──────────────────
-Total:        28+ Rust files
+Total:        44+ Rust files
 ```
 
 ## 🔗 Module Dependencies
@@ -212,6 +235,8 @@ App Startup
 plugins::registry::PluginRegistry::new()
      │
      ├─→ Register built-in plugins
+     │   ├─→ ClipboardManagerPlugin
+     │   ├─→ GameScannerPlugin
      │   └─→ SystemMonitorPlugin
      │
      ├─→ registry.initialize_all()
@@ -224,6 +249,8 @@ plugins::registry::PluginRegistry::new()
 ```
 
 ## 📈 Scoring System
+
+Uses `nucleo-matcher` for high-performance fuzzy matching.
 
 ```
 Search Score Calculation:
@@ -335,5 +362,5 @@ Integration Tests:
 
 ---
 
-**Last Updated**: December 2024
-**Version**: 0.4.1
+**Last Updated**: April 2026
+**Version**: 0.0.4

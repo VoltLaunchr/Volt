@@ -9,8 +9,6 @@ The application has two main entry files:
 - **Frontend**: [src/main.tsx](../src/main.tsx) - React app entry point, imports from [src/app/App.tsx](../src/app/App.tsx)
 - **Backend**: [src-tauri/src/main.rs](../src-tauri/src/main.rs) - Calls `volt_lib::run()` from [src-tauri/src/lib.rs](../src-tauri/src/lib.rs)
 
-> **Note**: There's a legacy [src/App.tsx](../src/App.tsx) that appears unused; the actual app is in [src/app/App.tsx](../src/app/App.tsx).
-
 ### Rust Backend Structure
 
 The Tauri backend is organized into modules:
@@ -21,7 +19,7 @@ The Tauri backend is organized into modules:
 - Registers invoke handlers for Tauri commands
 - Sets up global hotkey on startup
 
-**Commands** ([src-tauri/src/commands/](../src-tauri/src/commands/)):
+**Commands** ([src-tauri/src/commands/](../src-tauri/src/commands/)) — 13 command files:
 
 - `apps.rs` - Application discovery and search logic
   - `scan_applications()` - Scans Windows Program Files, AppData, and Start Menu for .exe files and .lnk shortcuts
@@ -29,11 +27,22 @@ The Tauri backend is organized into modules:
   - `launch_application()` - Cross-platform app launching (Windows/macOS/Linux)
 - `window.rs` - Window management commands
   - `show_window()`, `hide_window()`, `toggle_window()`, `center_window()`
+- `settings.rs` - Settings management (read/write user preferences)
+- `files.rs` - File indexing and search commands
+- `launcher.rs` - Launch history and pinned apps
+- `clipboard.rs` - Clipboard manager commands
+- `extensions.rs` - Extension system management
+- `games.rs` - Game scanner commands
+- `system_monitor.rs` - System metrics (CPU, RAM, disk)
+- `updater.rs` - Auto-update commands
+- `theme.rs` - Theme management
+- `properties.rs` - File/app properties
+- `mod.rs` - Module exports
 
 **Hotkey Module** ([src-tauri/src/hotkey/mod.rs](../src-tauri/src/hotkey/mod.rs)):
 
 - Registers `Ctrl+Space` (default) to toggle window visibility
-- No fallback hotkeys - user can configure a different hotkey in settings if default fails
+- No fallback hotkeys - user can configure a different hotkey in settings if default conflicts
 - Uses `tauri-plugin-global-shortcut` for system-wide hotkey handling
 - Provides clear error messages directing users to settings when registration fails
 - Smart conflict detection - warns if hotkey is already registered by another application
@@ -51,12 +60,14 @@ The Tauri backend is organized into modules:
 - `src/styles/` - Global styles, CSS variables, themes, and animations
 
 **State Management**:
-The main App component ([src/app/App.tsx](../src/app/App.tsx)) manages:
+The main App component ([src/app/App.tsx](../src/app/App.tsx)) is refactored to ~197 lines with extracted hooks and components:
 
-- Application loading via `scan_applications` command on mount
-- Search with 150ms debounce, delegating fuzzy matching to Rust backend
-- Keyboard navigation (Arrow Up/Down, Enter to launch, Escape to hide)
-- Results display with selection tracking
+- `useSearchPipeline` - Search orchestration with 150ms debounce
+- `useAppLifecycle` - Application loading and lifecycle management
+- `useGlobalHotkey` - Hotkey registration and handling
+- `useResultActions` - Result execution and context menu actions
+- `ViewRouter` - Routes between main view and plugin-specific views
+- `ResultContextMenu` - Context menu component for result actions
 
 **Data Flow**:
 
@@ -102,7 +113,11 @@ interface AppInfo {
 }
 ```
 
-> **Note**: TypeScript uses `camelCase` while Rust uses `snake_case`. Ensure `serde` attributes are used in Rust structs if exact matching is required.
+> **Note**: TypeScript uses `camelCase` while Rust uses `snake_case`. Ensure `serde` attributes are used in Rust structs if exact matching is required. Error handling uses `VoltResult<T>` with the `VoltError` discriminated union rather than `Result<T, String>`.
+
+### Extension System
+
+Volt supports community extensions via the [volt-extensions](https://github.com/VoltLaunchr/volt-extensions) repository. Extensions can be browsed, installed, and managed through Settings.
 
 ### Window Configuration
 
@@ -137,5 +152,5 @@ Search scoring ([src-tauri/src/commands/apps.rs](../src-tauri/src/commands/apps.
 ### Keyboard Navigation
 
 - Search input captures Arrow keys, Enter, and Escape in [src/app/App.tsx](../src/app/App.tsx)
-- Global hotkey (`Ctrl+Shift+Space`) handled by Rust in [src-tauri/src/hotkey/mod.rs](../src-tauri/src/hotkey/mod.rs)
+- Global hotkey (`Ctrl+Space`) handled by Rust in [src-tauri/src/hotkey/mod.rs](../src-tauri/src/hotkey/mod.rs)
 - Constants defined in [src/shared/constants/keys.ts](../src/shared/constants/keys.ts)

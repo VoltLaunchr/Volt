@@ -49,10 +49,27 @@ export const ResultsList: React.FC<ResultsListProps> = ({
     );
   }
 
+  const selectedItemId =
+    selectedIndex >= 0 && selectedIndex < results.length
+      ? `result-item-${selectedIndex}`
+      : undefined;
+
   return (
-    <div className="results-list">
+    <div
+      id="results-listbox"
+      className="results-list"
+      role="listbox"
+      aria-label="Search results"
+      aria-activedescendant={selectedItemId}
+    >
       {results.map((result, index) => (
-        <div key={`${result.id}-${index}`} ref={index === selectedIndex ? selectedRef : null}>
+        <div
+          key={`${result.id}-${index}`}
+          ref={index === selectedIndex ? selectedRef : null}
+          id={`result-item-${index}`}
+          role="option"
+          aria-selected={index === selectedIndex}
+        >
           <ResultItem
             result={result}
             isSelected={index === selectedIndex}

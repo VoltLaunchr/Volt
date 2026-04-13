@@ -7,7 +7,7 @@ Complete reference guide for all keyboard shortcuts in Volt.
 | Shortcut | Action | Notes |
 |----------|--------|-------|
 | `Ctrl+Space` | Toggle Volt window | Default hotkey (configurable in Settings) |
-| `F1` | Show help / Open documentation | Works globally |
+| `F1` | Show help dialog | Works globally |
 
 ## View Control
 
@@ -22,7 +22,7 @@ Complete reference guide for all keyboard shortcuts in Volt.
 
 | Shortcut | Action |
 |----------|--------|
-| `Ctrl+K` | Clear input |
+| `Ctrl+K` | Open context menu for selected result |
 | `Ctrl+A` | Select all text |
 | `Ctrl+C` | Copy selected result path (when no text selected) |
 | `Ctrl+V` | Paste into search |
@@ -148,4 +148,4 @@ The system will warn you if your chosen hotkey is already registered by another 
 
 ---
 
-Last updated: January 1, 2026
+Last updated: April 12, 2026

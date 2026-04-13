@@ -48,7 +48,7 @@ src/                    # Frontend (React + TypeScript)
 src-tauri/src/          # Backend (Rust)
   core/                 # Foundation: types, traits, constants, errors
   plugins/              # Plugin system and built-in plugins
-  commands/             # Tauri command handlers (apps, settings, files, launcher)
+  commands/             # Tauri command handlers (13 modules: apps, files, settings, launcher, autostart, clipboard, extensions, games, steam, system_monitor, plugins, hotkey, logging)
   search/               # Search algorithms and scoring
   utils/                # Reusable utilities (icons, fuzzy matching, paths)
   window/               # Window management
@@ -121,7 +121,7 @@ bun run test                    # 130+ vitest tests
 cd src-tauri
 cargo fmt --check               # Formatting
 cargo clippy --all-features --all-targets -- -D warnings   # Lints
-cargo test --lib                # 110+ tests
+cargo test --lib                # 113+ tests
 ```
 
 All checks must pass. CI will run these automatically on your PR, but running locally first saves time.
@@ -158,6 +158,10 @@ Not sure where to begin? Here are some ideas:
 - Improve documentation or fix typos.
 - Add tests for existing functionality.
 - Try the app and report bugs you find.
+
+## Plugin & Extension Contributions
+
+For external plugin/extension contributions, please use the [Volt Extensions](https://github.com/VoltLaunchr/extensions) repository. The core Volt repo contains only built-in plugins; community extensions are managed separately.
 
 ## What We Won't Merge
 

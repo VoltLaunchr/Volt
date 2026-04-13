@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.0.4] - 2026-04-12
+
+### 🔧 Improvements
+
+- **Major App.tsx refactor** - Reduced from 1090 lines to 197 lines by extracting hooks: `useSearchPipeline`, `useAppLifecycle`, `useGlobalHotkey`, `useResultActions` (in `src/app/hooks/`)
+- **VoltError discriminated union** - Typed error handling across all Tauri commands
+- **Tracing-based logging** - Rotating daily log files on the backend
+- **Help dialog** - Press F1 to view keyboard shortcuts and help
+- **CSP security policy** - Content Security Policy added in `tauri.conf.json`
+- **Version sync script** - Run `bun run sync-version` to keep versions aligned
+
+### 🧪 Testing
+
+- **130+ frontend tests** (vitest)
+- **113+ backend tests** (cargo test)
+
+### 🔒 Security & CI
+
+- Added CI gates: `cargo fmt --check`, `cargo clippy -D warnings`, vitest, `cargo test`
+- Code signing CI scaffolding (ready to activate)
+
+### 🗑️ Removals
+
+- Dead code cleanup: SnowEffect, SettingsWindow duplicate, and other unused code
+
+---
+
+## [0.0.3] - 2026-04-12
+
+### 📝 Notes
+
+- First public release attempt
+- Version tag v0.0.3 was consumed by a failed release pipeline
+
+---
+
 ## [0.0.2] - 2026-01-01
 
 ### 🎉 Initial Release
@@ -119,7 +155,7 @@ We're excited to introduce **Volt** - a modern, lightning-fast application launc
 ### 🛠️ Technical Details
 
 #### Architecture
-- **Frontend**: React 18 with TypeScript, Vite, CSS Variables
+- **Frontend**: React 19 with TypeScript, Vite, CSS Variables
 - **Backend**: Rust with Tauri v2
 - **State Management**: React hooks and context
 - **Plugin System**: Extensible architecture with TypeScript/Rust APIs
@@ -175,60 +211,7 @@ Special thanks to:
 
 ---
 
-[Unreleased]: https://github.com/VoltLaunchr/Volt/compare/v0.0.2...HEAD
+[Unreleased]: https://github.com/VoltLaunchr/Volt/compare/v0.0.4...HEAD
+[0.0.4]: https://github.com/VoltLaunchr/Volt/compare/v0.0.3...v0.0.4
+[0.0.3]: https://github.com/VoltLaunchr/Volt/compare/v0.0.2...v0.0.3
 [0.0.2]: https://github.com/VoltLaunchr/Volt/releases/tag/v0.0.2
-- 🎯 Système de suggestions contextuelles
-- 📌 Menu contextuel avec actions rapides (Ctrl+K)
-- 📋 Copie de chemin et ouverture du dossier parent
-- ℹ️ Dialogue de propriétés pour les résultats
-- 🔄 Synchronisation des raccourcis d'applications
-- 📊 Suivi de l'historique de lancement
-
-#### Système d'Extensions
-- 🔌 Support des extensions externes
-- 📦 Chargement dynamique d'extensions
-- 🔧 Extensions de développement (dev mode)
-- 🔄 Rafraîchissement à chaud des extensions
-- 📚 API complète pour les développeurs
-
-### 🔧 Technique
-
-#### Architecture
-- ⚡ Tauri v2 (Rust + React)
-- ⚛️ React 18 avec hooks modernes
-- 🎨 CSS variables pour le theming
-- 🔒 TypeScript pour la sécurité des types
-
-#### Performance
-- 🚀 Indexation en tâche de fond
-- ⏱️ Timeout de 500ms par plugin
-- 🎯 Protection anti-réponses obsolètes
-- 💾 Cache intelligent pour les résultats
-
-#### Plateforme
-- 🪟 Support Windows complet
-- 🍎 Support macOS
-- 🐧 Support Linux
-
-### 🐛 Corrections
-- Gestion des erreurs lors de l'indexation
-- Stabilité du système de hotkey globale
-- Gestion des chemins multi-plateformes
-
-### 📝 Notes
-- Première version publique
-- Base solide pour les futures améliorations
-- Système de plugins extensible
-
----
-
-## Légende
-
-- ✨ Nouveautés
-- 🔧 Améliorations
-- 🐛 Corrections de bugs
-- 🔒 Sécurité
-- 📝 Documentation
-- 🚀 Performance
-- ⚠️ Dépréciations
-- 🗑️ Suppressions
