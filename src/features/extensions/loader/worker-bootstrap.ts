@@ -16,6 +16,7 @@ export type ActionCommand =
   | { action: 'copyToClipboard'; text: string }
   | { action: 'openUrl'; url: string }
   | { action: 'notify'; message: string; type?: 'info' | 'success' | 'error' }
+  | { action: 'fetch'; url: string; options?: Record<string, unknown> }
   | { action: 'noop' };
 
 /**
@@ -75,6 +76,10 @@ const PluginResultType = ${pluginResultTypeObj};
 // Action capture for execute()
 let __pendingActions__ = [];
 
+// Fetch proxy infrastructure
+let __fetchCounter__ = 10000;
+var __fetchPending__ = {};
+
 // Mock VoltAPI (captures actions instead of executing them)
 const VoltAPI = {
   types: { PluginResultType },
@@ -108,6 +113,17 @@ const VoltAPI = {
   },
   notify: function(message, type) {
     __pendingActions__.push({ action: 'notify', message: message, type: type || 'info' });
+  },
+  fetch: function(url, options) {
+    return new Promise(function(resolve, reject) {
+      var fetchId = ++__fetchCounter__;
+      __fetchPending__[fetchId] = { resolve: resolve, reject: reject };
+      self.postMessage({
+        type: 'fetch-request',
+        id: fetchId,
+        payload: { url: url, options: options }
+      });
+    });
   },
 };
 
@@ -146,6 +162,25 @@ self.onmessage = function(event) {
   var id = msg.id;
   var type = msg.type;
   var payload = msg.payload;
+
+  if (type === 'fetch-response') {
+    var fetchReq = __fetchPending__[id];
+    if (fetchReq) {
+      delete __fetchPending__[id];
+      if (payload.error) {
+        fetchReq.reject(new Error(payload.error));
+      } else {
+        fetchReq.resolve({
+          ok: payload.ok,
+          status: payload.status,
+          statusText: payload.statusText,
+          text: function() { return Promise.resolve(payload.body); },
+          json: function() { return Promise.resolve(JSON.parse(payload.body)); },
+        });
+      }
+    }
+    return;
+  }
 
   try {
     var plugin = __getPlugin__();
@@ -199,6 +234,11 @@ self.onmessage = function(event) {
       payload: err.message || String(err)
     });
   }
+};
+
+// Override fetch to use permission-controlled proxy
+self.fetch = function(url, options) {
+  return VoltAPI.fetch(url, options);
 };
 
 // Signal ready

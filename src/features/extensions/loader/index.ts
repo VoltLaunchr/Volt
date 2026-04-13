@@ -129,6 +129,7 @@ export class ExtensionLoader {
     const moduleCode = this.extractModuleCode(bundledCode);
 
     // Create WorkerPlugin proxy
+    // grantedPermissions will be populated by the consent flow (wired in task #22)
     const plugin = new WorkerPlugin({
       id,
       name: manifest.name,
@@ -137,6 +138,7 @@ export class ExtensionLoader {
       prefix: manifest.prefix || null,
       bundledModuleCode: moduleCode,
       entryPoint: source.entryPoint,
+      grantedPermissions: [],
     });
 
     // Register with plugin registry

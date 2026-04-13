@@ -39,6 +39,9 @@ export class WorkerPlugin implements Plugin {
   private keywords: string[];
   private prefix: string | null;
 
+  // Permission enforcement
+  private grantedPermissions: Set<string>;
+
   constructor(options: {
     id: string;
     name: string;
@@ -47,6 +50,7 @@ export class WorkerPlugin implements Plugin {
     prefix: string | null;
     bundledModuleCode: string;
     entryPoint: string;
+    grantedPermissions: string[];
   }) {
     this.id = options.id;
     this.name = options.name;
@@ -55,6 +59,14 @@ export class WorkerPlugin implements Plugin {
     this.keywords = options.keywords.map((k) => k.toLowerCase());
     this.prefix = options.prefix?.toLowerCase() ?? null;
     this.workerCode = generateWorkerBootstrap(options.bundledModuleCode, options.entryPoint);
+    this.grantedPermissions = new Set(options.grantedPermissions);
+  }
+
+  /**
+   * Check if a permission is granted for this extension.
+   */
+  private hasPermission(permission: string): boolean {
+    return this.grantedPermissions.has(permission);
   }
 
   /**
@@ -138,6 +150,12 @@ export class WorkerPlugin implements Plugin {
     // Ignore 'ready' signal
     if (type === 'ready' as string) return;
 
+    // Handle fetch requests from Worker
+    if (type === 'fetch-request' as string) {
+      this.handleFetchRequest(id, payload as { url: string; options?: RequestInit });
+      return;
+    }
+
     const pending = this.pending.get(id);
     if (!pending) return;
 
@@ -150,6 +168,49 @@ export class WorkerPlugin implements Plugin {
       pending.resolve(payload);
     }
   };
+
+  /**
+   * Handle fetch requests from the Worker.
+   * Executes fetch on the main thread (where network is available) and sends response back.
+   */
+  private async handleFetchRequest(
+    requestId: number,
+    payload: { url: string; options?: RequestInit }
+  ): Promise<void> {
+    const worker = this.worker;
+    if (!worker) return;
+
+    if (!this.hasPermission('network')) {
+      console.warn(`[WorkerPlugin:${this.id}] Blocked fetch — network permission not granted`);
+      worker.postMessage({
+        type: 'fetch-response',
+        id: requestId,
+        payload: { error: 'Network permission not granted' },
+      });
+      return;
+    }
+
+    try {
+      const response = await fetch(payload.url, payload.options);
+      const text = await response.text();
+      worker.postMessage({
+        type: 'fetch-response',
+        id: requestId,
+        payload: {
+          ok: response.ok,
+          status: response.status,
+          statusText: response.statusText,
+          body: text,
+        },
+      });
+    } catch (err) {
+      worker.postMessage({
+        type: 'fetch-response',
+        id: requestId,
+        payload: { error: String(err) },
+      });
+    }
+  }
 
   /**
    * Handle Worker errors.
@@ -201,12 +262,28 @@ export class WorkerPlugin implements Plugin {
     for (const action of actions) {
       switch (action.action) {
         case 'copyToClipboard':
+          if (!this.hasPermission('clipboard')) {
+            console.warn(`[WorkerPlugin:${this.id}] Blocked clipboard access — permission not granted`);
+            break;
+          }
           await copyToClipboard(action.text);
           break;
         case 'openUrl':
           await openUrl(action.url);
           break;
+        case 'fetch': {
+          if (!this.hasPermission('network')) {
+            console.warn(`[WorkerPlugin:${this.id}] Blocked network access — permission not granted`);
+            break;
+          }
+          // Network fetch is handled in match/execute response flow, not here
+          break;
+        }
         case 'notify':
+          if (!this.hasPermission('notifications')) {
+            console.warn(`[WorkerPlugin:${this.id}] Blocked notification — permission not granted`);
+            break;
+          }
           window.dispatchEvent(
             new CustomEvent('volt:notification', {
               detail: { message: action.message, type: action.type || 'info' },
