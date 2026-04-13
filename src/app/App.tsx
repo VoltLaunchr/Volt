@@ -22,7 +22,7 @@ import '../styles/accessibility.css';
 import './App.css';
 
 function App() {
-  const { allApps, isLoading, appError, refreshApps, clearAppError } = useAppLifecycle();
+  const { isLoading, appError, refreshApps, clearAppError } = useAppLifecycle();
   const { hide: hideWindow, startDragging } = useWindowState();
 
   // App store
@@ -48,8 +48,6 @@ function App() {
     useUiStore.getState();
 
   useSearchPipeline({
-    allApps,
-    isLoading,
     maxResults: settings?.general.maxResults ?? 8,
     suspended: activeView.type !== 'search',
   });

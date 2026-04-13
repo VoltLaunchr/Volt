@@ -3,8 +3,9 @@ import { useCallback, useEffect, useRef } from 'react';
 import { applicationService } from '../../features/applications/services/applicationService';
 import { pluginRegistry } from '../../features/plugins/core';
 import { PluginResult as PluginResultData } from '../../features/plugins/types';
-import { AppInfo, FileInfo, SearchResult, SearchResultType } from '../../shared/types/common.types';
+import { FileInfo, SearchResult, SearchResultType } from '../../shared/types/common.types';
 import { logger } from '../../shared/utils/logger';
+import { useAppStore } from '../../stores/appStore';
 import { useSearchStore } from '../../stores/searchStore';
 
 // Search result priority scores (higher = appears first)
@@ -49,8 +50,6 @@ const getPluginKeywordBoost = (query: string, pluginId: string): number => {
 };
 
 interface UseSearchPipelineOptions {
-  allApps: AppInfo[];
-  isLoading: boolean;
   maxResults: number;
   /**
    * When true, the debounced search effect is suspended (e.g. while a non-search
@@ -69,11 +68,11 @@ interface UseSearchPipelineOptions {
  * - Christmas easter egg detection (snow effect)
  */
 export function useSearchPipeline({
-  allApps,
-  isLoading,
   maxResults,
   suspended = false,
 }: UseSearchPipelineOptions): void {
+  const allApps = useAppStore((s) => s.allApps);
+  const isLoading = useAppStore((s) => s.isLoading);
   const searchQuery = useSearchStore((s) => s.searchQuery);
   const results = useSearchStore((s) => s.results);
   const selectedIndex = useSearchStore((s) => s.selectedIndex);
