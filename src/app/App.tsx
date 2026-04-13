@@ -35,7 +35,7 @@ function App() {
   const selectedIndex = useSearchStore((s) => s.selectedIndex);
   const searchError = useSearchStore((s) => s.searchError);
   const showSnowEffect = useSearchStore((s) => s.showSnowEffect);
-  const { setQuery, setResults, setSelectedIndex, setSearchError, clearSearch } =
+  const { setQuery, setSelectedIndex, setSearchError, clearSearch } =
     useSearchStore.getState();
 
   // UI store
@@ -73,10 +73,6 @@ function App() {
     closeOnLaunch,
     hideWindow,
     openSettingsWindow,
-    setSearchQuery: setQuery,
-    setResults,
-    setSearchError,
-    setActiveView,
   });
 
   const handleSuggestionSelect = useCallback(
@@ -112,12 +108,6 @@ function App() {
   }, [setActiveView, clearSearch]);
 
   const { handleKeyDown } = useGlobalHotkey({
-    results,
-    selectedIndex,
-    setSelectedIndex,
-    searchQuery,
-    setSearchQuery: setQuery,
-    setResults,
     closeOnLaunch,
     hideWindow,
     onLaunch: handleLaunch,

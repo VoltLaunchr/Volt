@@ -6,6 +6,7 @@ import { defaultSuggestions } from '../../shared/constants/suggestions';
 import { KEYS } from '../../shared/constants/keys';
 import { AppInfo, FileInfo, SearchResult, SearchResultType } from '../../shared/types/common.types';
 import { logger } from '../../shared/utils/logger';
+import { useSearchStore } from '../../stores/searchStore';
 
 // Helper to extract directory path (cross-platform)
 const getDirectoryPath = (filePath: string): string => {
@@ -18,12 +19,6 @@ const getDirectoryPath = (filePath: string): string => {
 };
 
 interface UseGlobalHotkeyOptions {
-  results: SearchResult[];
-  selectedIndex: number;
-  setSelectedIndex: (index: number | ((prev: number) => number)) => void;
-  searchQuery: string;
-  setSearchQuery: (q: string) => void;
-  setResults: (results: SearchResult[]) => void;
   closeOnLaunch: boolean;
   hideWindow: () => Promise<void>;
   onLaunch: (result: SearchResult) => void | Promise<void>;
@@ -48,12 +43,6 @@ export interface UseGlobalHotkeyResult {
  * Returns the keyboard handler that App.tsx wires to its `<SearchBar>`.
  */
 export function useGlobalHotkey({
-  results,
-  selectedIndex,
-  setSelectedIndex,
-  searchQuery,
-  setSearchQuery,
-  setResults,
   closeOnLaunch,
   hideWindow,
   onLaunch,
@@ -63,6 +52,10 @@ export function useGlobalHotkey({
   onOpenCalculator,
   onOpenHelp,
 }: UseGlobalHotkeyOptions): UseGlobalHotkeyResult {
+  const results = useSearchStore((s) => s.results);
+  const selectedIndex = useSearchStore((s) => s.selectedIndex);
+  const searchQuery = useSearchStore((s) => s.searchQuery);
+  const { setSelectedIndex, setQuery: setSearchQuery, setResults } = useSearchStore.getState();
   // Setup global keyboard shortcuts (F1 / ? for help)
   useEffect(() => {
     const handleGlobalKeyDown = (e: KeyboardEvent) => {

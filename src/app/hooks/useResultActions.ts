@@ -6,6 +6,8 @@ import { PluginResult as PluginResultData } from '../../features/plugins/types';
 import { defaultSuggestions } from '../../shared/constants/suggestions';
 import { FileInfo, SearchResult, SearchResultType } from '../../shared/types/common.types';
 import { logger } from '../../shared/utils/logger';
+import { useSearchStore } from '../../stores/searchStore';
+import { useUiStore } from '../../stores/uiStore';
 import type { ActiveView } from '../../stores/uiStore';
 
 export type { ActiveView };
@@ -14,10 +16,6 @@ interface UseResultActionsOptions {
   closeOnLaunch: boolean;
   hideWindow: () => Promise<void>;
   openSettingsWindow: () => Promise<void>;
-  setSearchQuery: (q: string) => void;
-  setResults: (results: SearchResult[]) => void;
-  setSearchError: (err: string | null) => void;
-  setActiveView: (view: ActiveView) => void;
 }
 
 export interface UseResultActionsResult {
@@ -37,11 +35,9 @@ export function useResultActions({
   closeOnLaunch,
   hideWindow,
   openSettingsWindow,
-  setSearchQuery,
-  setResults,
-  setSearchError,
-  setActiveView,
 }: UseResultActionsOptions): UseResultActionsResult {
+  const { setQuery: setSearchQuery, setResults, setSearchError } = useSearchStore.getState();
+  const { setActiveView } = useUiStore.getState();
   const handleLaunch = useCallback(
     async (result: SearchResult) => {
       try {
