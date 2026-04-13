@@ -1,0 +1,39 @@
+{
+  "contextMenu": {
+    "launch": "Launch",
+    "launchAdmin": "Launch as Administrator",
+    "openFolder": "Open File Location",
+    "copyPath": "Copy Path",
+    "properties": "Properties",
+    "removeHistory": "Remove from History"
+  },
+  "properties": {
+    "title": "Properties",
+    "name": "Name",
+    "path": "Path",
+    "id": "ID",
+    "description": "Description",
+    "category": "Category",
+    "keywords": "Keywords",
+    "usageCount": "Usage Count",
+    "lastUsed": "Last Used",
+    "extension": "Extension",
+    "size": "Size",
+    "modified": "Modified",
+    "subtitle": "Subtitle",
+    "type": "Type",
+    "score": "Score",
+    "copyToClipboard": "Copy to clipboard"
+  },
+  "badges": {
+    "game": "Game",
+    "app": "App",
+    "file": "File",
+    "command": "Command"
+  },
+  "empty": "No results found",
+  "loading": "Searching...",
+  "shortcuts": {
+    "enter": "Enter"
+  }
+}

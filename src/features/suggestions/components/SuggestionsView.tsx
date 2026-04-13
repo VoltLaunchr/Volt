@@ -1,4 +1,5 @@
 import React, { useEffect, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import { SuggestionCategory } from '../../../shared/constants/suggestions';
 import './SuggestionsView.css';
 
@@ -15,6 +16,7 @@ export const SuggestionsView: React.FC<SuggestionsViewProps> = ({
   onSelect,
   onActivate,
 }) => {
+  const { t } = useTranslation('common');
   const selectedRef = useRef<HTMLDivElement>(null);
   let globalIndex = 0;
 
@@ -57,7 +59,7 @@ export const SuggestionsView: React.FC<SuggestionsViewProps> = ({
                   </div>
                   {item.shortcut && <div className="suggestion-item-badge">{item.shortcut}</div>}
                   {!item.shortcut && item.category === 'command' && (
-                    <div className="suggestion-item-badge">Command</div>
+                    <div className="suggestion-item-badge">{t('suggestionsBadge.command')}</div>
                   )}
                 </div>
               );

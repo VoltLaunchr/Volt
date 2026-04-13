@@ -1,0 +1,24 @@
+{
+  "loading": "Loading emojis...",
+  "loadingSubtitle": "Please wait while emoji data is being loaded",
+  "noResults": "No emojis found",
+  "noResultsSubtitle": "Try searching for \"{{query}}\" with different keywords",
+  "view": {
+    "placeholder": "Search Emoji & Symbols...",
+    "noEmojis": "No emojis found",
+    "tryDifferent": "Try searching with different keywords",
+    "categories": {
+      "all": "All Categories",
+      "frequent": "Frequently Used",
+      "smileys": "Smileys & People",
+      "people": "People & Body",
+      "animals": "Animals & Nature",
+      "food": "Food & Drink",
+      "travel": "Travel & Places",
+      "activity": "Activity",
+      "objects": "Objects",
+      "symbols": "Symbols",
+      "flags": "Flags"
+    }
+  }
+}

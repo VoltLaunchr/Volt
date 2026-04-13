@@ -1,0 +1,7 @@
+{
+  "about": { "title": "About", "subtitle": "Volt information" },
+  "account": { "title": "Account", "subtitle": "User Settings" },
+  "reload": { "title": "Reload Volt", "subtitle": "Restart the application" },
+  "settings": { "title": "Open Settings", "subtitle": "Configure Volt preferences" },
+  "quit": { "title": "Quit Volt", "subtitle": "Close the application" }
+}

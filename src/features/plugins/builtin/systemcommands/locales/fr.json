@@ -1,0 +1,7 @@
+{
+  "about": { "title": "A propos", "subtitle": "Informations sur Volt" },
+  "account": { "title": "Compte", "subtitle": "Parametres utilisateur" },
+  "reload": { "title": "Recharger Volt", "subtitle": "Redemarrer l'application" },
+  "settings": { "title": "Ouvrir les Parametres", "subtitle": "Configurer les preferences" },
+  "quit": { "title": "Quitter Volt", "subtitle": "Fermer l'application" }
+}

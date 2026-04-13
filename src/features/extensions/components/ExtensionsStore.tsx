@@ -4,6 +4,7 @@
  */
 
 import React, { useCallback, useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   Download,
   Trash2,
@@ -57,6 +58,7 @@ interface ExtensionsStoreProps {
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 export const ExtensionsStore: React.FC<ExtensionsStoreProps> = (_props) => {
+  const { t } = useTranslation('extensions');
   const [availableExtensions, setAvailableExtensions] = useState<ExtensionInfo[]>([]);
   const [installedExtensions, setInstalledExtensions] = useState<InstalledExtension[]>([]);
   const [devExtensions, setDevExtensions] = useState<DevExtension[]>([]);
@@ -282,7 +284,7 @@ export const ExtensionsStore: React.FC<ExtensionsStoreProps> = (_props) => {
     return (
       <div className="extensions-loading">
         <Loader2 className="spin" size={32} />
-        <p>Loading extensions...</p>
+        <p>{t('loading')}</p>
       </div>
     );
   }
@@ -293,9 +295,9 @@ export const ExtensionsStore: React.FC<ExtensionsStoreProps> = (_props) => {
       <div className="extensions-header">
         <h2>
           <Package size={24} />
-          Extension Store
+          {t('header.title')}
         </h2>
-        <button className="refresh-btn" onClick={loadExtensions} title="Refresh">
+        <button className="refresh-btn" onClick={loadExtensions} title={t('header.refresh')}>
           <RefreshCw size={18} />
         </button>
       </div>
@@ -315,13 +317,13 @@ export const ExtensionsStore: React.FC<ExtensionsStoreProps> = (_props) => {
           className={`tab ${activeTab === 'browse' ? 'active' : ''}`}
           onClick={() => setActiveTab('browse')}
         >
-          Browse ({availableExtensions.length})
+          {t('tabs.browse')} ({availableExtensions.length})
         </button>
         <button
           className={`tab ${activeTab === 'installed' ? 'active' : ''}`}
           onClick={() => setActiveTab('installed')}
         >
-          Installed ({totalInstalledCount})
+          {t('tabs.installed')} ({totalInstalledCount})
         </button>
       </div>
 
@@ -331,7 +333,7 @@ export const ExtensionsStore: React.FC<ExtensionsStoreProps> = (_props) => {
           <Search size={18} />
           <input
             type="text"
-            placeholder="Search extensions..."
+            placeholder={t('searchPlaceholder')}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
           />
@@ -362,8 +364,8 @@ export const ExtensionsStore: React.FC<ExtensionsStoreProps> = (_props) => {
           filteredExtensions.length === 0 ? (
             <div className="no-extensions">
               <Package size={48} />
-              <p>No extensions found</p>
-              {searchQuery && <p className="hint">Try a different search term</p>}
+              <p>{t('empty.noExtensions')}</p>
+              {searchQuery && <p className="hint">{t('empty.tryDifferent')}</p>}
             </div>
           ) : (
             filteredExtensions.map((ext) => (
@@ -390,12 +392,12 @@ export const ExtensionsStore: React.FC<ExtensionsStoreProps> = (_props) => {
                 {linkingDev ? (
                   <>
                     <Loader2 className="spin" size={16} />
-                    Linking...
+                    {t('dev.linking')}
                   </>
                 ) : (
                   <>
                     <FolderOpen size={16} />
-                    Link Dev Extension
+                    {t('dev.linkButton')}
                   </>
                 )}
               </button>
@@ -406,7 +408,7 @@ export const ExtensionsStore: React.FC<ExtensionsStoreProps> = (_props) => {
               <div className="dev-extensions-list">
                 <h4 className="section-title">
                   <Code size={16} />
-                  Development ({filteredDevExtensions.length})
+                  {t('dev.sectionTitle')} ({filteredDevExtensions.length})
                 </h4>
                 {filteredDevExtensions.map((ext) => (
                   <DevExtensionCard
@@ -426,7 +428,7 @@ export const ExtensionsStore: React.FC<ExtensionsStoreProps> = (_props) => {
                 {filteredDevExtensions.length > 0 && (
                   <h4 className="section-title">
                     <Package size={16} />
-                    Installed ({filteredInstalled.length})
+                    {t('sections.installed')} ({filteredInstalled.length})
                   </h4>
                 )}
                 {filteredInstalled.map((ext) => (
@@ -445,8 +447,8 @@ export const ExtensionsStore: React.FC<ExtensionsStoreProps> = (_props) => {
             {filteredInstalled.length === 0 && filteredDevExtensions.length === 0 && (
               <div className="no-extensions">
                 <Package size={48} />
-                <p>No extensions installed</p>
-                <p className="hint">Browse extensions or link a dev extension</p>
+                <p>{t('empty.noneInstalled')}</p>
+                <p className="hint">{t('empty.browseOrLink')}</p>
               </div>
             )}
           </>
@@ -474,6 +476,7 @@ const ExtensionCard: React.FC<ExtensionCardProps> = ({
   onInstall,
   onUninstall,
 }) => {
+  const { t } = useTranslation('extensions');
   const { manifest } = extension;
 
   return (
@@ -513,19 +516,19 @@ const ExtensionCard: React.FC<ExtensionCardProps> = ({
         {installed ? (
           <span className="installed-badge">
             <CheckCircle size={14} />
-            Installed
+            {t('actions.installed')}
           </span>
         ) : (
           <button className="btn install" onClick={onInstall} disabled={installing}>
             {installing ? (
               <>
                 <Loader2 className="spin" size={16} />
-                Installing...
+                {t('actions.installing')}
               </>
             ) : (
               <>
                 <Download size={16} />
-                Install
+                {t('actions.install')}
               </>
             )}
           </button>
@@ -573,6 +576,7 @@ const InstalledExtensionCard: React.FC<InstalledExtensionCardProps> = ({
   onToggle,
   onUninstall,
 }) => {
+  const { t } = useTranslation('extensions');
   const { manifest, enabled, installedAt } = extension;
 
   return (
@@ -601,7 +605,7 @@ const InstalledExtensionCard: React.FC<InstalledExtensionCardProps> = ({
         <button
           className={`btn toggle ${enabled ? 'enabled' : ''}`}
           onClick={() => onToggle(!enabled)}
-          title={enabled ? 'Disable' : 'Enable'}
+          title={enabled ? t('actions.disable') : t('actions.enable')}
         >
           {enabled ? <ToggleRight size={20} /> : <ToggleLeft size={20} />}
         </button>
@@ -610,7 +614,7 @@ const InstalledExtensionCard: React.FC<InstalledExtensionCardProps> = ({
           className="btn uninstall"
           onClick={onUninstall}
           disabled={uninstalling}
-          title="Uninstall"
+          title={t('actions.uninstall')}
         >
           {uninstalling ? <Loader2 className="spin" size={16} /> : <Trash2 size={16} />}
         </button>
@@ -633,6 +637,7 @@ const DevExtensionCard: React.FC<DevExtensionCardProps> = ({
   onUnlink,
   onRefresh,
 }) => {
+  const { t } = useTranslation('extensions');
   const { manifest, enabled, path } = extension;
 
   return (
@@ -646,7 +651,7 @@ const DevExtensionCard: React.FC<DevExtensionCardProps> = ({
           <h3>{manifest.name}</h3>
           <span className="version">v{manifest.version}</span>
           <span className="badge dev" title="Development Extension">
-            DEV
+            {t('dev.badge')}
           </span>
         </div>
 
@@ -664,7 +669,7 @@ const DevExtensionCard: React.FC<DevExtensionCardProps> = ({
         <button
           className={`btn toggle ${enabled ? 'enabled' : ''}`}
           onClick={() => onToggle(!enabled)}
-          title={enabled ? 'Disable' : 'Enable'}
+          title={enabled ? t('actions.disable') : t('actions.enable')}
         >
           {enabled ? <ToggleRight size={20} /> : <ToggleLeft size={20} />}
         </button>

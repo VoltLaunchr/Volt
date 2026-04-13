@@ -1,0 +1,39 @@
+{
+  "contextMenu": {
+    "launch": "Lancer",
+    "launchAdmin": "Lancer en administrateur",
+    "openFolder": "Ouvrir l'emplacement du fichier",
+    "copyPath": "Copier le chemin",
+    "properties": "Proprietes",
+    "removeHistory": "Supprimer de l'historique"
+  },
+  "properties": {
+    "title": "Proprietes",
+    "name": "Nom",
+    "path": "Chemin",
+    "id": "ID",
+    "description": "Description",
+    "category": "Categorie",
+    "keywords": "Mots-cles",
+    "usageCount": "Nombre d'utilisations",
+    "lastUsed": "Derniere utilisation",
+    "extension": "Extension",
+    "size": "Taille",
+    "modified": "Modifie",
+    "subtitle": "Sous-titre",
+    "type": "Type",
+    "score": "Score",
+    "copyToClipboard": "Copier dans le presse-papiers"
+  },
+  "badges": {
+    "game": "Jeu",
+    "app": "App",
+    "file": "Fichier",
+    "command": "Commande"
+  },
+  "empty": "Aucun resultat",
+  "loading": "Recherche en cours...",
+  "shortcuts": {
+    "enter": "Entree"
+  }
+}

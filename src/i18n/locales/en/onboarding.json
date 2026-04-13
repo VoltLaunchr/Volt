@@ -1,0 +1,21 @@
+{
+  "welcome": "Welcome to Volt",
+  "subtitle": "Your keyboard-driven app launcher",
+  "steps": {
+    "hotkey": {
+      "title": "Global Hotkey",
+      "description": "Press Ctrl+Space anywhere to summon Volt instantly. You can change this shortcut in Settings > Hotkeys."
+    },
+    "indexing": {
+      "title": "File Indexing",
+      "description": "Volt indexes your files for instant search. Configure which folders to index in Settings > Indexing."
+    },
+    "plugins": {
+      "title": "Built-in Plugins",
+      "description": "Calculator, emoji picker, web search, timer, system monitor and more — just start typing to use them."
+    }
+  },
+  "getStarted": "Get Started",
+  "next": "Next",
+  "skip": "Skip"
+}

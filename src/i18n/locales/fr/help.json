@@ -1,0 +1,37 @@
+{
+  "title": "Raccourcis clavier",
+  "groups": {
+    "navigation": {
+      "title": "Navigation",
+      "moveResults": "Naviguer entre les resultats",
+      "jumpFirst": "Aller au premier resultat",
+      "jumpLast": "Aller au dernier resultat",
+      "moveFive": "Deplacer de 5 resultats"
+    },
+    "actions": {
+      "title": "Actions",
+      "launch": "Lancer le resultat selectionne",
+      "autocomplete": "Autocompleter avec le titre",
+      "launchAdmin": "Lancer en administrateur",
+      "launchKeepOpen": "Lancer sans fermer Volt",
+      "quickLaunch": "Lancer rapidement par numero"
+    },
+    "fileApp": {
+      "title": "Fichiers et Applications",
+      "openFolder": "Ouvrir le dossier parent",
+      "copyPath": "Copier le chemin",
+      "showProperties": "Afficher les proprietes",
+      "removeHistory": "Supprimer de l'historique"
+    },
+    "application": {
+      "title": "Application",
+      "clearClose": "Effacer / fermer Volt",
+      "clearInput": "Effacer la recherche",
+      "openSettings": "Ouvrir les Parametres",
+      "reload": "Recharger Volt",
+      "quit": "Quitter / masquer Volt",
+      "showHelp": "Afficher cette aide"
+    }
+  },
+  "closeHint": "Appuyez sur {{key}} pour fermer"
+}

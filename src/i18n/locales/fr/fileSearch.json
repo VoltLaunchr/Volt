@@ -1,0 +1,36 @@
+{
+  "back": "Retour",
+  "searchPlaceholder": "Rechercher des fichiers...",
+  "filters": {
+    "all": "Tous les types",
+    "documents": "Documents",
+    "images": "Images",
+    "videos": "Vidéos",
+    "audio": "Audio",
+    "code": "Code"
+  },
+  "states": {
+    "recentlyUsed": "Récemment utilisés",
+    "searching": "Recherche en cours...",
+    "noFiles": "Aucun fichier trouvé",
+    "notIndexed": "Aucun fichier indexé pour l'instant",
+    "configureHint": "Configurez les dossiers à indexer dans Paramètres → Recherche de fichiers"
+  },
+  "metadata": {
+    "title": "Métadonnées",
+    "name": "Nom",
+    "where": "Emplacement",
+    "type": "Type",
+    "size": "Taille",
+    "fileDefault": "Fichier"
+  },
+  "actions": {
+    "open": "Ouvrir"
+  },
+  "footer": {
+    "title": "Recherche de fichiers",
+    "hint": "Naviguer",
+    "hintOpen": "Ouvrir",
+    "hintClose": "Fermer"
+  }
+}

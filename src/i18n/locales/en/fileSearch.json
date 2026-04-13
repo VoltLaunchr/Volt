@@ -1,0 +1,36 @@
+{
+  "back": "Back",
+  "searchPlaceholder": "Search files...",
+  "filters": {
+    "all": "All Types",
+    "documents": "Documents",
+    "images": "Images",
+    "videos": "Videos",
+    "audio": "Audio",
+    "code": "Code"
+  },
+  "states": {
+    "recentlyUsed": "Recently Used",
+    "searching": "Searching...",
+    "noFiles": "No files found",
+    "notIndexed": "No files indexed yet",
+    "configureHint": "Configure folders to index in Settings → File Search"
+  },
+  "metadata": {
+    "title": "Metadata",
+    "name": "Name",
+    "where": "Where",
+    "type": "Type",
+    "size": "Size",
+    "fileDefault": "File"
+  },
+  "actions": {
+    "open": "Open"
+  },
+  "footer": {
+    "title": "Search Files",
+    "hint": "Navigate",
+    "hintOpen": "Open",
+    "hintClose": "Close"
+  }
+}

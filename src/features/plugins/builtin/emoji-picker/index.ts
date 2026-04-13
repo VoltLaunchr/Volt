@@ -1,3 +1,9 @@
+import i18n from 'i18next';
+import enEmojiPicker from './locales/en.json';
+import frEmojiPicker from './locales/fr.json';
+i18n.addResourceBundle('en', 'emoji-picker', enEmojiPicker);
+i18n.addResourceBundle('fr', 'emoji-picker', frEmojiPicker);
+
 import { logger } from '../../../../shared/utils/logger';
 import { Plugin, PluginContext, PluginResult, PluginResultType } from '../../types';
 import { copyToClipboard } from '../../utils/helpers';

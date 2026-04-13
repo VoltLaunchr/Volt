@@ -1,5 +1,7 @@
 import { useCallback, useEffect } from 'react';
 import Snowfall from 'react-snowfall';
+import { useTranslation } from 'react-i18next';
+import { listen } from '@tauri-apps/api/event';
 import { TimerDisplay } from '../features/plugins/builtin';
 import { SearchBar } from '../features/search/components/SearchBar';
 import { useWindowState } from '../features/window';
@@ -17,12 +19,14 @@ import { useGlobalHotkey } from './hooks/useGlobalHotkey';
 import { useResultActions } from './hooks/useResultActions';
 import { useSearchPipeline } from './hooks/useSearchPipeline';
 import { openSettingsWindow } from './utils';
+import i18n from '../i18n';
 import '../styles/accessibility.css';
 import './App.css';
 
 function App() {
-  const { isLoading } = useAppLifecycle();
+  useAppLifecycle();
   const { hide: hideWindow, startDragging } = useWindowState();
+  const { t } = useTranslation('common');
 
   // App store
   const settings = useAppStore((s) => s.settings);
@@ -58,6 +62,14 @@ function App() {
       setActiveView({ type: 'search' });
     }
   }, [searchQuery, activeView.type, setActiveView]);
+
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    listen<{ language: string }>('volt://language-changed', ({ payload }) => {
+      i18n.changeLanguage(payload.language);
+    }).then((fn) => { unlisten = fn; });
+    return () => { unlisten?.(); };
+  }, []);
 
   const { handleLaunch, handleSuggestionActivate } = useResultActions({
     closeOnLaunch,
@@ -119,7 +131,7 @@ function App() {
   return (
     <div className="app-container glass">
       <a href="#search-input" className="skip-link">
-        Skip to search
+        {t('accessibility.skipToSearch')}
       </a>
       {activeView.type === 'search' && (
         <>
@@ -130,7 +142,7 @@ function App() {
             value={searchQuery}
             onChange={setQuery}
             onKeyDown={handleKeyDown}
-            placeholder={isLoading ? 'Loading applications...' : 'Search for apps and commands...'}
+            placeholder={t('search.placeholder')}
             resultCount={results.length}
           />
         </>

@@ -1,4 +1,5 @@
 import React, { useEffect, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import { SearchResult } from '../../../shared/types/common.types';
 import { ResultItem } from './ResultItem';
 import './ResultsList.css';
@@ -16,6 +17,7 @@ export const ResultsList: React.FC<ResultsListProps> = ({
   onSelect,
   onLaunch,
 }) => {
+  const { t } = useTranslation('results');
   const selectedRef = useRef<HTMLDivElement>(null);
 
   // Auto-scroll to selected item
@@ -44,7 +46,7 @@ export const ResultsList: React.FC<ResultsListProps> = ({
           <circle cx="11" cy="11" r="8" />
           <path d="m21 21-4.35-4.35" />
         </svg>
-        <p className="text-secondary">No results found</p>
+        <p className="text-secondary">{t('empty')}</p>
       </div>
     );
   }

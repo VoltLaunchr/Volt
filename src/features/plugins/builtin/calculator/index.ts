@@ -1,3 +1,9 @@
+import i18n from 'i18next';
+import enCalculator from './locales/en.json';
+import frCalculator from './locales/fr.json';
+i18n.addResourceBundle('en', 'calculator', enCalculator);
+i18n.addResourceBundle('fr', 'calculator', frCalculator);
+
 import { Plugin, PluginContext, PluginResult, PluginResultType } from '../../types';
 import { copyToClipboard } from '../../utils/helpers';
 import { detectQueryType, parseQuery } from './parsers/queryParser';

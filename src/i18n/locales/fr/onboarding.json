@@ -1,0 +1,21 @@
+{
+  "welcome": "Bienvenue sur Volt",
+  "subtitle": "Votre lanceur d'applications au clavier",
+  "steps": {
+    "hotkey": {
+      "title": "Raccourci global",
+      "description": "Appuyez sur Ctrl+Espace n'importe ou pour invoquer Volt. Vous pouvez changer ce raccourci dans Parametres > Raccourcis."
+    },
+    "indexing": {
+      "title": "Indexation de fichiers",
+      "description": "Volt indexe vos fichiers pour une recherche instantanee. Configurez les dossiers a indexer dans Parametres > Indexation."
+    },
+    "plugins": {
+      "title": "Plugins integres",
+      "description": "Calculatrice, emojis, recherche web, minuteur, moniteur systeme et plus — commencez a taper pour les utiliser."
+    }
+  },
+  "getStarted": "Commencer",
+  "next": "Suivant",
+  "skip": "Passer"
+}

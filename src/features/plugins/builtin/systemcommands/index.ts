@@ -1,3 +1,9 @@
+import i18n from 'i18next';
+import enSystemCommands from './locales/en.json';
+import frSystemCommands from './locales/fr.json';
+i18n.addResourceBundle('en', 'systemcommands', enSystemCommands);
+i18n.addResourceBundle('fr', 'systemcommands', frSystemCommands);
+
 import { logger } from '../../../../shared/utils/logger';
 import { Plugin, PluginContext, PluginResult, PluginResultType } from '../../types';
 

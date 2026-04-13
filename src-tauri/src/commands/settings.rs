@@ -13,6 +13,12 @@ pub struct GeneralSettings {
     pub close_on_launch: bool,
     #[serde(default)]
     pub has_seen_onboarding: bool,
+    #[serde(default = "default_language")]
+    pub language: String,
+}
+
+fn default_language() -> String {
+    "auto".to_string()
 }
 
 impl Default for GeneralSettings {
@@ -22,6 +28,7 @@ impl Default for GeneralSettings {
             max_results: 8,
             close_on_launch: true,
             has_seen_onboarding: false,
+            language: "auto".to_string(),
         }
     }
 }

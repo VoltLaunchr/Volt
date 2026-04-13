@@ -1,0 +1,40 @@
+{
+  "back": "Retour",
+  "filterPlaceholder": "Filtrer les entrées...",
+  "filters": {
+    "all": "Tous les types",
+    "text": "Texte",
+    "image": "Image",
+    "files": "Fichiers"
+  },
+  "states": {
+    "loading": "Chargement...",
+    "empty": "Aucun élément dans le presse-papiers"
+  },
+  "groups": {
+    "today": "Aujourd'hui",
+    "yesterday": "Hier"
+  },
+  "metadata": {
+    "title": "Informations",
+    "source": "Source",
+    "type": "Type",
+    "characters": "Caractères",
+    "words": "Mots",
+    "dimensions": "Dimensions",
+    "size": "Taille",
+    "copied": "Copié"
+  },
+  "actions": {
+    "paste": "Coller",
+    "pin": "Épingler",
+    "unpin": "Désépingler",
+    "delete": "Supprimer"
+  },
+  "footer": {
+    "title": "Historique du presse-papiers",
+    "hint": "Naviguer",
+    "hintPaste": "Coller",
+    "hintClose": "Fermer"
+  }
+}

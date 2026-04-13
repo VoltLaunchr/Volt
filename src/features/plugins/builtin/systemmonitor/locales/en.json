@@ -1,0 +1,14 @@
+{
+  "cpu": "CPU",
+  "memory": "Memory",
+  "disk": "Disk",
+  "available": "{{value}} GB available",
+  "free": "{{value}} GB free",
+  "usage": {
+    "critical": "Critical usage",
+    "high": "High usage",
+    "moderate": "Moderate usage",
+    "normal": "Normal"
+  },
+  "clipboardTitle": "System Performance"
+}

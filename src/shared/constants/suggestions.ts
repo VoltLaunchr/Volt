@@ -1,3 +1,4 @@
+import i18n from 'i18next';
 import {
   Newspaper,
   Settings,
@@ -32,6 +33,24 @@ export interface SuggestionCategory {
 export interface SuggestionBadge {
   text: string;
   type?: 'default' | 'version' | 'shortcut';
+}
+
+/**
+ * Get translated suggestion title, falling back to the hardcoded English.
+ */
+export function getSuggestionTitle(id: string, fallback: string): string {
+  const key = `suggestions.${id}.title`;
+  const translated = i18n.t(key, { ns: 'common' });
+  return translated === key ? fallback : translated;
+}
+
+/**
+ * Get translated suggestion subtitle, falling back to the hardcoded English.
+ */
+export function getSuggestionSubtitle(id: string, fallback: string): string {
+  const key = `suggestions.${id}.subtitle`;
+  const translated = i18n.t(key, { ns: 'common' });
+  return translated === key ? fallback : translated;
 }
 
 export const defaultSuggestions: SuggestionCategory[] = [

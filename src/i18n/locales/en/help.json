@@ -1,0 +1,37 @@
+{
+  "title": "Keyboard Shortcuts",
+  "groups": {
+    "navigation": {
+      "title": "Navigation",
+      "moveResults": "Move between results",
+      "jumpFirst": "Jump to first result",
+      "jumpLast": "Jump to last result",
+      "moveFive": "Move 5 results at a time"
+    },
+    "actions": {
+      "title": "Actions",
+      "launch": "Launch selected result",
+      "autocomplete": "Autocomplete with selected title",
+      "launchAdmin": "Launch as administrator",
+      "launchKeepOpen": "Launch without closing Volt",
+      "quickLaunch": "Quick-launch result by number"
+    },
+    "fileApp": {
+      "title": "File & App Commands",
+      "openFolder": "Open containing folder",
+      "copyPath": "Copy path to clipboard",
+      "showProperties": "Show item properties",
+      "removeHistory": "Remove from launch history"
+    },
+    "application": {
+      "title": "Application",
+      "clearClose": "Clear search / close Volt",
+      "clearInput": "Clear search input",
+      "openSettings": "Open Settings",
+      "reload": "Reload Volt",
+      "quit": "Quit / hide Volt",
+      "showHelp": "Show this help dialog"
+    }
+  },
+  "closeHint": "Press {{key}} to close"
+}

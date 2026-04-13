@@ -1,0 +1,18 @@
+{
+  "loading": "Chargement du journal des modifications...",
+  "error": {
+    "title": "Impossible de charger le journal des modifications",
+    "subtitle": "Une erreur s'est produite",
+    "viewReleases": "Voir les versions sur GitHub →"
+  },
+  "header": {
+    "title": "Quoi de neuf dans Volt",
+    "subtitle": "Votre compagnon de productivité vient de s'améliorer"
+  },
+  "footer": {
+    "pressEsc": "Appuyez sur",
+    "escKey": "Échap",
+    "toClose": "pour fermer",
+    "viewAllReleases": "Voir toutes les versions →"
+  }
+}

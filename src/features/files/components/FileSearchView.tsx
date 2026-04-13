@@ -1,5 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import React, { useCallback, useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { FileInfo } from '../../../shared/types/common.types';
 import { logger } from '../../../shared/utils';
 import './FileSearchView.css';
@@ -21,6 +22,7 @@ const FILE_TYPE_EXTENSIONS: Record<FileTypeFilter, string[]> = {
 };
 
 export const FileSearchView: React.FC<FileSearchViewProps> = ({ onClose }) => {
+  const { t } = useTranslation('fileSearch');
   const [searchQuery, setSearchQuery] = useState('');
   const [files, setFiles] = useState<FileInfo[]>([]);
   const [selectedFile, setSelectedFile] = useState<FileInfo | null>(null);
@@ -200,7 +202,7 @@ export const FileSearchView: React.FC<FileSearchViewProps> = ({ onClose }) => {
     >
       {/* Header with search and filter */}
       <div className="file-search-header">
-        <button className="back-button" onClick={onClose} title="Back">
+        <button className="back-button" onClick={onClose} title={t('back')}>
           <svg
             width="20"
             height="20"
@@ -217,7 +219,7 @@ export const FileSearchView: React.FC<FileSearchViewProps> = ({ onClose }) => {
           <input
             type="text"
             className="file-search-input"
-            placeholder="Search files..."
+            placeholder={t('searchPlaceholder')}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             autoFocus
@@ -243,8 +245,8 @@ export const FileSearchView: React.FC<FileSearchViewProps> = ({ onClose }) => {
             </svg>
             <span>
               {typeFilter === 'all'
-                ? 'All Types'
-                : typeFilter.charAt(0).toUpperCase() + typeFilter.slice(1)}
+                ? t('filters.all')
+                : t(`filters.${typeFilter}`, { defaultValue: typeFilter.charAt(0).toUpperCase() + typeFilter.slice(1) })}
             </span>
             <svg
               width="12"
@@ -271,8 +273,8 @@ export const FileSearchView: React.FC<FileSearchViewProps> = ({ onClose }) => {
                     }}
                   >
                     {filter === 'all'
-                      ? 'All Types'
-                      : filter.charAt(0).toUpperCase() + filter.slice(1)}
+                      ? t('filters.all')
+                      : t(`filters.${filter}`, { defaultValue: filter.charAt(0).toUpperCase() + filter.slice(1) })}
                   </button>
                 )
               )}
@@ -285,19 +287,19 @@ export const FileSearchView: React.FC<FileSearchViewProps> = ({ onClose }) => {
       <div className="file-search-content">
         {/* Files list */}
         <div className="file-list">
-          {!searchQuery.trim() && <div className="section-header">Recently Used</div>}
+          {!searchQuery.trim() && <div className="section-header">{t('states.recentlyUsed')}</div>}
 
           {isLoading ? (
-            <div className="loading-state">Searching...</div>
+            <div className="loading-state">{t('states.searching')}</div>
           ) : displayFiles.length === 0 ? (
             <div className="empty-state">
               {searchQuery.trim() ? (
-                'No files found'
+                t('states.noFiles')
               ) : (
                 <div style={{ textAlign: 'center', padding: '20px' }}>
-                  <div style={{ marginBottom: '12px', fontSize: '14px' }}>No files indexed yet</div>
+                  <div style={{ marginBottom: '12px', fontSize: '14px' }}>{t('states.notIndexed')}</div>
                   <div style={{ fontSize: '12px', color: 'var(--color-text-tertiary)' }}>
-                    Configure folders to index in Settings → File Search
+                    {t('states.configureHint')}
                   </div>
                 </div>
               )}
@@ -337,28 +339,28 @@ export const FileSearchView: React.FC<FileSearchViewProps> = ({ onClose }) => {
 
             {/* Metadata */}
             <div className="details-metadata">
-              <h3>Metadata</h3>
+              <h3>{t('metadata.title')}</h3>
 
               <div className="metadata-row">
-                <span className="metadata-label">Name</span>
+                <span className="metadata-label">{t('metadata.name')}</span>
                 <span className="metadata-value">{selectedFile.name}</span>
               </div>
 
               <div className="metadata-row">
-                <span className="metadata-label">Where</span>
+                <span className="metadata-label">{t('metadata.where')}</span>
                 <span className="metadata-value">{selectedFile.path}</span>
               </div>
 
               <div className="metadata-row">
-                <span className="metadata-label">Type</span>
+                <span className="metadata-label">{t('metadata.type')}</span>
                 <span className="metadata-value">
-                  {selectedFile.name.split('.').pop()?.toUpperCase() || 'File'}
+                  {selectedFile.name.split('.').pop()?.toUpperCase() || t('metadata.fileDefault')}
                 </span>
               </div>
 
               {selectedFile.size !== undefined && (
                 <div className="metadata-row">
-                  <span className="metadata-label">Size</span>
+                  <span className="metadata-label">{t('metadata.size')}</span>
                   <span className="metadata-value">{formatFileSize(selectedFile.size)}</span>
                 </div>
               )}
@@ -370,7 +372,7 @@ export const FileSearchView: React.FC<FileSearchViewProps> = ({ onClose }) => {
                 className="action-button primary"
                 onClick={() => handleOpenFile(selectedFile)}
               >
-                <span>Open</span>
+                <span>{t('actions.open')}</span>
                 <kbd>↵</kbd>
               </button>
             </div>
@@ -382,11 +384,11 @@ export const FileSearchView: React.FC<FileSearchViewProps> = ({ onClose }) => {
       <div className="file-search-footer">
         <div className="footer-left">
           <div className="footer-icon">🔍</div>
-          <span>Search Files</span>
+          <span>{t('footer.title')}</span>
         </div>
         <div className="footer-right">
           <span className="footer-hint">
-            <kbd>↑</kbd> <kbd>↓</kbd> Navigate • <kbd>↵</kbd> Open • <kbd>Esc</kbd> Close
+            <kbd>↑</kbd> <kbd>↓</kbd> {t('footer.hint')} • <kbd>↵</kbd> {t('footer.hintOpen')} • <kbd>Esc</kbd> {t('footer.hintClose')}
           </span>
         </div>
       </div>

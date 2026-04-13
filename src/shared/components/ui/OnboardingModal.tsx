@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Keyboard, FolderSearch, Puzzle } from 'lucide-react';
 import { Modal } from './Modal';
 import './OnboardingModal.css';
@@ -8,33 +9,16 @@ interface OnboardingModalProps {
   onComplete: () => void;
 }
 
-const steps = [
-  {
-    icon: Keyboard,
-    title: 'Global Hotkey',
-    description:
-      'Press Ctrl+Space anywhere to summon Volt instantly. You can change this shortcut in Settings > Hotkeys.',
-  },
-  {
-    icon: FolderSearch,
-    title: 'File Indexing',
-    description:
-      'Volt indexes your files for instant search. Configure which folders to index in Settings > Indexing.',
-  },
-  {
-    icon: Puzzle,
-    title: 'Built-in Plugins',
-    description:
-      'Calculator, emoji picker, web search, timer, system monitor and more — just start typing to use them.',
-  },
-];
+const stepIcons = [Keyboard, FolderSearch, Puzzle];
+const stepKeys = ['hotkey', 'indexing', 'plugins'] as const;
 
 export function OnboardingModal({ isOpen, onComplete }: OnboardingModalProps) {
+  const { t } = useTranslation('onboarding');
   const [currentStep, setCurrentStep] = useState(0);
 
-  const isLastStep = currentStep === steps.length - 1;
-  const step = steps[currentStep];
-  const StepIcon = step.icon;
+  const isLastStep = currentStep === stepKeys.length - 1;
+  const stepKey = stepKeys[currentStep];
+  const StepIcon = stepIcons[currentStep];
 
   const handleNext = () => {
     if (isLastStep) {
@@ -55,25 +39,25 @@ export function OnboardingModal({ isOpen, onComplete }: OnboardingModalProps) {
           <StepIcon size={40} strokeWidth={1.5} />
         </div>
 
-        <h3 className="onboarding-title">{step.title}</h3>
-        <p className="onboarding-description">{step.description}</p>
+        <h3 className="onboarding-title">{t(`steps.${stepKey}.title`)}</h3>
+        <p className="onboarding-description">{t(`steps.${stepKey}.description`)}</p>
 
         <div className="onboarding-dots">
-          {steps.map((_, i) => (
+          {stepKeys.map((_, i) => (
             <span
               key={i}
               className={`onboarding-dot ${i === currentStep ? 'active' : ''}`}
-              aria-label={`Step ${i + 1} of ${steps.length}`}
+              aria-label={`Step ${i + 1} of ${stepKeys.length}`}
             />
           ))}
         </div>
 
         <div className="onboarding-actions">
           <button className="onboarding-skip" onClick={handleSkip} type="button">
-            Skip
+            {t('skip')}
           </button>
           <button className="onboarding-next" onClick={handleNext} type="button">
-            {isLastStep ? 'Get Started' : 'Next'}
+            {isLastStep ? t('getStarted') : t('next')}
           </button>
         </div>
       </div>

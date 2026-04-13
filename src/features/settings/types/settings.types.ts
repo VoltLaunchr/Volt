@@ -8,6 +8,7 @@ export interface GeneralSettings {
   maxResults: number;
   closeOnLaunch: boolean;
   hasSeenOnboarding: boolean;
+  language: 'auto' | 'en' | 'fr';
 }
 
 export interface CustomPosition {
@@ -87,6 +88,7 @@ export const DEFAULT_SETTINGS: Settings = {
     maxResults: 8,
     closeOnLaunch: true,
     hasSeenOnboarding: false,
+    language: 'auto',
   },
   appearance: {
     theme: 'dark',

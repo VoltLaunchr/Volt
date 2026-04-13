@@ -1,0 +1,34 @@
+{
+  "badge": "Jeu",
+  "view": {
+    "searchPlaceholder": "Rechercher des jeux...",
+    "allPlatforms": "Toutes les plateformes",
+    "loading": "Chargement des jeux...",
+    "noGames": "Aucun jeu trouve",
+    "noGamesHint": "Installez des jeux depuis Steam, Epic, GOG ou d'autres launchers",
+    "noMatchingGames": "Aucun jeu correspondant",
+    "information": "Informations",
+    "platform": "Plateforme",
+    "status": "Statut",
+    "installed": "Installe",
+    "notInstalled": "Non installe",
+    "lastPlayed": "Derniere partie",
+    "installPath": "Dossier d'installation",
+    "play": "Jouer",
+    "openFolder": "Ouvrir le dossier",
+    "gamesLibrary": "Bibliotheque de jeux",
+    "game": "jeu",
+    "games": "jeux",
+    "rescan": "Rescanner les jeux",
+    "neverPlayed": "Jamais joue",
+    "today": "Aujourd'hui",
+    "yesterday": "Hier",
+    "daysAgo": "Il y a {{count}} jours",
+    "weeksAgo": "Il y a {{count}} semaines",
+    "footer": {
+      "navigate": "Naviguer",
+      "play": "Jouer",
+      "close": "Fermer"
+    }
+  }
+}

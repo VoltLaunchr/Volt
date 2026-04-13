@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { AppInfo, FileInfo, SearchResult, SearchResultType } from '../../types/common.types';
 import { Modal } from './Modal';
 import './PropertiesDialog.css';
@@ -9,6 +10,8 @@ export interface PropertiesDialogProps {
 }
 
 export function PropertiesDialog({ isOpen, onClose, result }: PropertiesDialogProps) {
+  const { t } = useTranslation('results');
+
   if (!result) return null;
 
   const formatBytes = (bytes: number): string => {
@@ -28,37 +31,37 @@ export function PropertiesDialog({ isOpen, onClose, result }: PropertiesDialogPr
       const app = result.data as AppInfo;
       return (
         <>
-          <PropertyRow label="Name" value={app.name} />
-          <PropertyRow label="Path" value={app.path} copyable />
-          <PropertyRow label="ID" value={app.id} />
-          {app.description && <PropertyRow label="Description" value={app.description} />}
-          {app.category && <PropertyRow label="Category" value={app.category} />}
+          <PropertyRow label={t('properties.name')} value={app.name} copyLabel={t('properties.copyToClipboard')} />
+          <PropertyRow label={t('properties.path')} value={app.path} copyable copyLabel={t('properties.copyToClipboard')} />
+          <PropertyRow label={t('properties.id')} value={app.id} copyLabel={t('properties.copyToClipboard')} />
+          {app.description && <PropertyRow label={t('properties.description')} value={app.description} copyLabel={t('properties.copyToClipboard')} />}
+          {app.category && <PropertyRow label={t('properties.category')} value={app.category} copyLabel={t('properties.copyToClipboard')} />}
           {app.keywords && app.keywords.length > 0 && (
-            <PropertyRow label="Keywords" value={app.keywords.join(', ')} />
+            <PropertyRow label={t('properties.keywords')} value={app.keywords.join(', ')} copyLabel={t('properties.copyToClipboard')} />
           )}
-          <PropertyRow label="Usage Count" value={app.usageCount.toString()} />
-          {app.lastUsed && <PropertyRow label="Last Used" value={formatDate(app.lastUsed)} />}
+          <PropertyRow label={t('properties.usageCount')} value={app.usageCount.toString()} copyLabel={t('properties.copyToClipboard')} />
+          {app.lastUsed && <PropertyRow label={t('properties.lastUsed')} value={formatDate(app.lastUsed)} copyLabel={t('properties.copyToClipboard')} />}
         </>
       );
     } else if (result.type === SearchResultType.File) {
       const file = result.data as FileInfo;
       return (
         <>
-          <PropertyRow label="Name" value={file.name} />
-          <PropertyRow label="Path" value={file.path} copyable />
-          <PropertyRow label="Extension" value={file.extension} />
-          <PropertyRow label="Size" value={formatBytes(file.size)} />
-          <PropertyRow label="Modified" value={formatDate(file.modified)} />
-          <PropertyRow label="ID" value={file.id} />
+          <PropertyRow label={t('properties.name')} value={file.name} copyLabel={t('properties.copyToClipboard')} />
+          <PropertyRow label={t('properties.path')} value={file.path} copyable copyLabel={t('properties.copyToClipboard')} />
+          <PropertyRow label={t('properties.extension')} value={file.extension} copyLabel={t('properties.copyToClipboard')} />
+          <PropertyRow label={t('properties.size')} value={formatBytes(file.size)} copyLabel={t('properties.copyToClipboard')} />
+          <PropertyRow label={t('properties.modified')} value={formatDate(file.modified)} copyLabel={t('properties.copyToClipboard')} />
+          <PropertyRow label={t('properties.id')} value={file.id} copyLabel={t('properties.copyToClipboard')} />
         </>
       );
     } else {
       return (
         <>
-          <PropertyRow label="Title" value={result.title} />
-          {result.subtitle && <PropertyRow label="Subtitle" value={result.subtitle} />}
-          <PropertyRow label="Type" value={result.type} />
-          <PropertyRow label="Score" value={result.score.toString()} />
+          <PropertyRow label={t('properties.name')} value={result.title} copyLabel={t('properties.copyToClipboard')} />
+          {result.subtitle && <PropertyRow label={t('properties.subtitle')} value={result.subtitle} copyLabel={t('properties.copyToClipboard')} />}
+          <PropertyRow label={t('properties.type')} value={result.type} copyLabel={t('properties.copyToClipboard')} />
+          <PropertyRow label={t('properties.score')} value={result.score.toString()} copyLabel={t('properties.copyToClipboard')} />
         </>
       );
     }
@@ -92,9 +95,10 @@ interface PropertyRowProps {
   label: string;
   value: string;
   copyable?: boolean;
+  copyLabel: string;
 }
 
-function PropertyRow({ label, value, copyable }: PropertyRowProps) {
+function PropertyRow({ label, value, copyable, copyLabel }: PropertyRowProps) {
   const handleCopy = () => {
     navigator.clipboard.writeText(value);
   };
@@ -110,8 +114,8 @@ function PropertyRow({ label, value, copyable }: PropertyRowProps) {
           <button
             className="property-copy-btn"
             onClick={handleCopy}
-            aria-label="Copy to clipboard"
-            title="Copy to clipboard"
+            aria-label={copyLabel}
+            title={copyLabel}
           >
             📋
           </button>

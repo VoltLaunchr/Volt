@@ -1,6 +1,9 @@
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { invoke } from '@tauri-apps/api/core';
+import { emit } from '@tauri-apps/api/event';
 import React, { useCallback, useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import i18n from '../../i18n';
 import {
   Package,
   Bug,
@@ -38,6 +41,7 @@ import logo from '../../assets/icons/logo.svg';
 import './SettingsApp.css';
 
 export function SettingsApp() {
+  const { t } = useTranslation('settings');
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
   const [activeCategory, setActiveCategory] = useState<SettingsCategory>('general');
   const [isLoading, setIsLoading] = useState(true);
@@ -131,7 +135,7 @@ export function SettingsApp() {
       setAppShortcuts(shortcuts);
     } catch (err) {
       logger.error('Failed to sync app shortcuts:', err);
-      setError('Failed to sync app shortcuts');
+      setError(t('errors.loadFailed'));
     }
   };
 
@@ -141,7 +145,7 @@ export function SettingsApp() {
       await loadAppShortcuts();
     } catch (err) {
       logger.error('Failed to save app shortcut:', err);
-      setError('Failed to save shortcut');
+      setError(t('errors.saveFailed'));
     }
   };
 
@@ -163,7 +167,7 @@ export function SettingsApp() {
       setSettings(loadedSettings);
       setHasChanges(false);
     } catch (err) {
-      setError('Failed to load settings');
+      setError(t('errors.loadFailed'));
       logger.error('Failed to load settings:', err);
     } finally {
       setIsLoading(false);
@@ -177,7 +181,7 @@ export function SettingsApp() {
       await settingsService.saveSettings(settings);
       setHasChanges(false);
     } catch (err) {
-      setError('Failed to save settings');
+      setError(t('errors.saveFailed'));
       logger.error('Failed to save settings:', err);
     } finally {
       setIsSaving(false);
@@ -219,6 +223,33 @@ export function SettingsApp() {
     (theme: Theme) => {
       updateSettings('appearance', 'theme', theme);
       applyTheme(theme);
+    },
+    [updateSettings]
+  );
+
+  const handleLanguageChange = useCallback(
+    async (language: 'auto' | 'en' | 'fr') => {
+      updateSettings('general', 'language', language);
+
+      let resolvedLng: string = language;
+      if (language === 'auto') {
+        try {
+          const { locale } = await import('@tauri-apps/plugin-os');
+          const osLocale = await locale();
+          if (osLocale) {
+            const base = osLocale.split('-')[0].toLowerCase();
+            if (base === 'fr' || base === 'en') resolvedLng = base;
+            else resolvedLng = 'en';
+          } else {
+            resolvedLng = 'en';
+          }
+        } catch {
+          resolvedLng = 'en';
+        }
+      }
+
+      i18n.changeLanguage(resolvedLng);
+      await emit('volt://language-changed', { language: resolvedLng });
     },
     [updateSettings]
   );
@@ -269,7 +300,7 @@ export function SettingsApp() {
       updateSettings('plugins', 'clipboardMonitoring', enabled);
     } catch (error) {
       logger.error('Failed to toggle clipboard monitoring:', error);
-      setError(`Failed to ${enabled ? 'enable' : 'disable'} clipboard monitoring`);
+      setError(t('errors.saveFailed'));
     }
   };
 
@@ -298,13 +329,17 @@ export function SettingsApp() {
 
             return (
               <div key={category.id}>
-                {showSection && <div className="settings-nav-section">{category.section}</div>}
+                {showSection && (
+                  <div className="settings-nav-section">{t('sections.builtIn')}</div>
+                )}
                 <button
                   className={`settings-nav-item ${activeCategory === category.id ? 'active' : ''}`}
                   onClick={() => setActiveCategory(category.id)}
                 >
                   <category.icon size={18} className="settings-nav-icon" />
-                  <span className="settings-nav-label">{category.label}</span>
+                  <span className="settings-nav-label">
+                    {t(`sections.${category.id === 'file-search' ? 'fileSearch' : category.id === 'clipboard' ? 'clipboard' : category.id}`)}
+                  </span>
                 </button>
               </div>
             );
@@ -318,13 +353,28 @@ export function SettingsApp() {
   const renderGeneralSection = () => (
     <div className="settings-panel">
       <div className="settings-panel-header">
-        <h2 className="settings-panel-title">General</h2>
+        <h2 className="settings-panel-title">{t('general.title')}</h2>
       </div>
 
       <div className="settings-panel-content">
         <div className="settings-row">
           <div className="settings-row-info">
-            <span className="settings-row-label">Follow System Appearance</span>
+            <span className="settings-row-label">{t('general.language')}</span>
+          </div>
+          <select
+            className="settings-select"
+            value={settings.general.language}
+            onChange={(e) => handleLanguageChange(e.target.value as 'auto' | 'en' | 'fr')}
+          >
+            <option value="auto">{t('general.languageAuto')}</option>
+            <option value="en">{t('general.languageEn')}</option>
+            <option value="fr">{t('general.languageFr')}</option>
+          </select>
+        </div>
+
+        <div className="settings-row">
+          <div className="settings-row-info">
+            <span className="settings-row-label">{t('general.followSystemAppearance')}</span>
           </div>
           <Toggle
             checked={settings.appearance.theme === 'auto'}
@@ -334,14 +384,14 @@ export function SettingsApp() {
 
         <div className="settings-row">
           <div className="settings-row-info">
-            <span className="settings-row-label">Open at Login</span>
+            <span className="settings-row-label">{t('general.openAtLogin')}</span>
           </div>
           <Toggle checked={settings.general.startWithWindows} onChange={handleAutostartChange} />
         </div>
 
         <div className="settings-row">
           <div className="settings-row-info">
-            <span className="settings-row-label">Close on Launch</span>
+            <span className="settings-row-label">{t('general.closeOnLaunch')}</span>
           </div>
           <Toggle
             checked={settings.general.closeOnLaunch}
@@ -351,9 +401,9 @@ export function SettingsApp() {
 
         <div className="settings-row">
           <div className="settings-row-info">
-            <span className="settings-row-label" id="hotkey-label">Volt Hotkey</span>
+            <span className="settings-row-label" id="hotkey-label">{t('general.voltHotkey')}</span>
             <span className="settings-row-desc" id="hotkey-desc">
-              Press a key combination to set your global shortcut
+              {t('general.hotkeyDesc')}
             </span>
           </div>
           <div className="settings-row-action">
@@ -439,12 +489,12 @@ export function SettingsApp() {
     return (
       <div className="settings-panel">
         <div className="settings-panel-header">
-          <h2 className="settings-panel-title">Shortcuts</h2>
+          <h2 className="settings-panel-title">{t('shortcuts.title')}</h2>
           <div className="settings-panel-actions">
             <input
               type="text"
               className="settings-search-input"
-              placeholder="Search by name or alias"
+              placeholder={t('shortcuts.searchPlaceholder')}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
             />
@@ -453,7 +503,7 @@ export function SettingsApp() {
               value={categoryFilter}
               onChange={(e) => setCategoryFilter(e.target.value)}
             >
-              <option value="all">All categories</option>
+              <option value="all">{t('shortcuts.allCategories')}</option>
               {Object.keys(groupedShortcuts).map((cat) => (
                 <option key={cat} value={cat.toLowerCase()}>
                   {cat}
@@ -461,7 +511,7 @@ export function SettingsApp() {
               ))}
             </select>
             <Button variant="secondary" onClick={syncAppShortcuts}>
-              Sync Apps
+              {t('shortcuts.syncApps')}
             </Button>
           </div>
         </div>
@@ -491,9 +541,9 @@ export function SettingsApp() {
                 {isExpanded && (
                   <div className="shortcuts-table">
                     <div className="shortcuts-table-header">
-                      <span className="shortcuts-col-name">Name</span>
-                      <span className="shortcuts-col-alias">Alias</span>
-                      <span className="shortcuts-col-hotkey">Hotkey</span>
+                      <span className="shortcuts-col-name">{t('shortcuts.tableHeaders.name')}</span>
+                      <span className="shortcuts-col-alias">{t('shortcuts.tableHeaders.alias')}</span>
+                      <span className="shortcuts-col-hotkey">{t('shortcuts.tableHeaders.hotkey')}</span>
                       <span className="shortcuts-col-enabled"></span>
                     </div>
 
@@ -542,7 +592,7 @@ export function SettingsApp() {
                                 className="shortcuts-add-alias"
                                 onClick={() => handleAliasClick(shortcut.id)}
                               >
-                                {shortcut.alias || 'Add Alias'}
+                                {shortcut.alias || t('shortcuts.addAlias')}
                               </button>
                             )}
                           </span>
@@ -571,8 +621,8 @@ export function SettingsApp() {
           {Object.keys(filteredShortcuts).length === 0 && (
             <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-secondary)' }}>
               {appShortcuts.length === 0
-                ? 'No shortcuts available. Click "Sync Apps" to load your applications.'
-                : 'No shortcuts match your search.'}
+                ? t('shortcuts.noShortcuts')
+                : t('shortcuts.noMatch')}
             </div>
           )}
         </div>
@@ -584,13 +634,13 @@ export function SettingsApp() {
   const renderAdvancedSection = () => (
     <div className="settings-panel">
       <div className="settings-panel-header">
-        <h2 className="settings-panel-title">Advanced</h2>
+        <h2 className="settings-panel-title">{t('advanced.title')}</h2>
       </div>
 
       <div className="settings-panel-content">
         <div className="settings-row">
           <div className="settings-row-info">
-            <span className="settings-row-label">Show Volt on</span>
+            <span className="settings-row-label">{t('advanced.showVoltOn')}</span>
           </div>
           <select
             className="settings-dropdown"
@@ -611,34 +661,34 @@ export function SettingsApp() {
               }
             }}
           >
-            <option value="center">Center of screen</option>
-            <option value="topCenter">Top center</option>
-            <option value="topLeft">Top left</option>
-            <option value="topRight">Top right</option>
+            <option value="center">{t('advanced.positions.center')}</option>
+            <option value="topCenter">{t('advanced.positions.topCenter')}</option>
+            <option value="topLeft">{t('advanced.positions.topLeft')}</option>
+            <option value="topRight">{t('advanced.positions.topRight')}</option>
           </select>
         </div>
 
         <div className="settings-row">
           <div className="settings-row-info">
-            <span className="settings-row-label">Max Results</span>
-            <span className="settings-row-desc">Maximum number of search results displayed</span>
+            <span className="settings-row-label">{t('advanced.maxResults')}</span>
+            <span className="settings-row-desc">{t('advanced.maxResultsDesc')}</span>
           </div>
           <select
             className="settings-dropdown"
             value={settings.general.maxResults}
             onChange={(e) => updateSettings('general', 'maxResults', parseInt(e.target.value))}
           >
-            <option value={5}>5 results</option>
-            <option value={8}>8 results</option>
-            <option value={10}>10 results</option>
-            <option value={15}>15 results</option>
+            <option value={5}>{t('advanced.results', { count: 5 })}</option>
+            <option value={8}>{t('advanced.results', { count: 8 })}</option>
+            <option value={10}>{t('advanced.results', { count: 10 })}</option>
+            <option value={15}>{t('advanced.results', { count: 15 })}</option>
           </select>
         </div>
 
         <div className="settings-row">
           <div className="settings-row-info">
-            <span className="settings-row-label">Window Transparency</span>
-            <span className="settings-row-desc">Adjust the window background transparency</span>
+            <span className="settings-row-label">{t('advanced.windowTransparency')}</span>
+            <span className="settings-row-desc">{t('advanced.transparencyDesc')}</span>
           </div>
           <div className="settings-slider-wrapper">
             <input
@@ -660,7 +710,7 @@ export function SettingsApp() {
 
         <div className="settings-section-divider" />
 
-        <h3 className="settings-subsection-title">Theme</h3>
+        <h3 className="settings-subsection-title">{t('advanced.theme')}</h3>
 
         <div className="settings-theme-selector">
           <button
@@ -671,7 +721,7 @@ export function SettingsApp() {
               <div className="theme-preview-bar" />
               <div className="theme-preview-content" />
             </div>
-            <span>Light</span>
+            <span>{t('advanced.themeLight')}</span>
           </button>
           <button
             className={`theme-card ${settings.appearance.theme === 'dark' ? 'active' : ''}`}
@@ -681,7 +731,7 @@ export function SettingsApp() {
               <div className="theme-preview-bar" />
               <div className="theme-preview-content" />
             </div>
-            <span>Dark</span>
+            <span>{t('advanced.themeDark')}</span>
           </button>
           <button
             className={`theme-card ${settings.appearance.theme === 'auto' ? 'active' : ''}`}
@@ -691,7 +741,7 @@ export function SettingsApp() {
               <div className="theme-preview-bar" />
               <div className="theme-preview-content" />
             </div>
-            <span>Auto</span>
+            <span>{t('advanced.themeAuto')}</span>
           </button>
         </div>
       </div>
@@ -755,7 +805,7 @@ export function SettingsApp() {
   const renderAboutSection = () => (
     <div className="settings-panel">
       <div className="settings-panel-header">
-        <h2 className="settings-panel-title">About</h2>
+        <h2 className="settings-panel-title">{t('about.title')}</h2>
       </div>
 
       <div className="settings-panel-content">
@@ -765,9 +815,7 @@ export function SettingsApp() {
           </div>
           <h3 className="about-name">Volt</h3>
           <p className="about-version">Version {appVersion}</p>
-          <p className="about-desc">
-            Fast, beautiful desktop launcher for Windows, macOS, and Linux
-          </p>
+          <p className="about-desc">{t('about.description')}</p>
         </div>
 
         <div className="settings-section-divider" />
@@ -785,7 +833,7 @@ export function SettingsApp() {
             className="about-link"
           >
             <Globe size={20} className="about-link-icon" />
-            <span>Official Website</span>
+            <span>{t('about.officialWebsite')}</span>
           </button>
           <button
             onClick={async () => {
@@ -799,7 +847,7 @@ export function SettingsApp() {
             className="about-link"
           >
             <Package size={20} className="about-link-icon" />
-            <span>GitHub Repository</span>
+            <span>{t('about.githubRepo')}</span>
           </button>
           <button
             onClick={async () => {
@@ -813,7 +861,7 @@ export function SettingsApp() {
             className="about-link"
           >
             <Bug size={20} className="about-link-icon" />
-            <span>Report an Issue</span>
+            <span>{t('about.reportIssue')}</span>
           </button>
           <button
             onClick={async () => {
@@ -827,7 +875,7 @@ export function SettingsApp() {
             className="about-link"
           >
             <FileText size={20} className="about-link-icon" />
-            <span>Release Notes</span>
+            <span>{t('about.releaseNotes')}</span>
           </button>
         </div>
 
@@ -836,7 +884,7 @@ export function SettingsApp() {
         <div className="about-links">
           <button onClick={handleOpenLogsFolder} className="about-link">
             <FolderOpen size={20} className="about-link-icon" />
-            <span>Open logs folder</span>
+            <span>{t('about.openLogs')}</span>
           </button>
           <button onClick={handleCopyDiagnostics} className="about-link">
             {diagnosticsCopied ? (
@@ -844,15 +892,15 @@ export function SettingsApp() {
             ) : (
               <Copy size={20} className="about-link-icon" />
             )}
-            <span>{diagnosticsCopied ? 'Copied!' : 'Copy diagnostics'}</span>
+            <span>{diagnosticsCopied ? t('about.copied') : t('about.copyDiagnostics')}</span>
           </button>
         </div>
 
         <div className="settings-section-divider" />
 
         <div className="about-credits">
-          <p className="about-copyright">© 2026 VoltLaunchr Contributors • Licensed under Apache 2.0</p>
-          <p className="about-tech">Built with Tauri, React, and Rust</p>
+          <p className="about-copyright">{t('about.copyright')}</p>
+          <p className="about-tech">{t('about.builtWith')}</p>
         </div>
       </div>
     </div>
@@ -889,14 +937,14 @@ export function SettingsApp() {
     return (
       <div className="settings-panel">
         <div className="settings-panel-header">
-          <h2 className="settings-panel-title">File Search</h2>
+          <h2 className="settings-panel-title">{t('fileSearch.title')}</h2>
         </div>
 
         <div className="settings-panel-content">
           <div className="settings-row">
             <div className="settings-row-info">
-              <span className="settings-row-label">Index on Startup</span>
-              <span className="settings-row-desc">Automatically index files when Volt starts</span>
+              <span className="settings-row-label">{t('fileSearch.indexOnStartup')}</span>
+              <span className="settings-row-desc">{t('fileSearch.indexOnStartupDesc')}</span>
             </div>
             <Toggle
               checked={settings.indexing.indexOnStartup}
@@ -906,9 +954,9 @@ export function SettingsApp() {
 
           <div className="settings-section-divider" />
 
-          <h3 className="settings-subsection-title">Folders to Index</h3>
+          <h3 className="settings-subsection-title">{t('fileSearch.foldersToIndex')}</h3>
           <p className="settings-subsection-desc" id="folders-desc">
-            Directories to scan for files (e.g., Documents, Downloads)
+            {t('fileSearch.foldersToIndexDesc')}
           </p>
 
           <div className="folder-list" aria-describedby="folders-desc">
@@ -928,14 +976,14 @@ export function SettingsApp() {
               </div>
             ))}
             <button className="folder-add-btn" onClick={addFolder}>
-              <span>+</span> Add Folder
+              <span>+</span> {t('fileSearch.addFolder')}
             </button>
           </div>
 
           <div className="settings-section-divider" />
 
-          <h3 className="settings-subsection-title">File Extensions</h3>
-          <p className="settings-subsection-desc" id="extensions-desc">File types to include (comma-separated)</p>
+          <h3 className="settings-subsection-title">{t('fileSearch.fileExtensions')}</h3>
+          <p className="settings-subsection-desc" id="extensions-desc">{t('fileSearch.fileExtensionsDesc')}</p>
 
           <input
             type="text"
@@ -949,13 +997,13 @@ export function SettingsApp() {
                 .filter((ext) => ext.length > 0);
               updateSettings('indexing', 'fileExtensions', extensions);
             }}
-            placeholder="pdf, docx, txt, xlsx"
+            placeholder={t('fileSearch.fileExtensionsPlaceholder')}
           />
 
           <div className="settings-section-divider" />
 
-          <h3 className="settings-subsection-title">Excluded Paths</h3>
-          <p className="settings-subsection-desc">Paths or folders to skip during indexing</p>
+          <h3 className="settings-subsection-title">{t('fileSearch.excludedPaths')}</h3>
+          <p className="settings-subsection-desc">{t('fileSearch.excludedPathsDesc')}</p>
 
           <div className="folder-list">
             {settings.indexing.excludedPaths.map((path, index) => (
@@ -974,27 +1022,27 @@ export function SettingsApp() {
               </div>
             ))}
             <button className="folder-add-btn" onClick={addExcludedPath}>
-              <span>+</span> Add Exclusion
+              <span>+</span> {t('fileSearch.addPath')}
             </button>
           </div>
 
           <div className="settings-section-divider" />
 
-          <h3 className="settings-subsection-title">Index Status</h3>
+          <h3 className="settings-subsection-title">{t('fileSearch.indexStatus')}</h3>
           <p className="settings-subsection-desc">
-            Persistent SQLite index statistics and maintenance
+            {t('fileSearch.indexStatusDesc')}
           </p>
 
           {indexStats ? (
             <div className="index-stats-grid">
               <div className="index-stat-item">
-                <span className="index-stat-label">Indexed files</span>
+                <span className="index-stat-label">{t('fileSearch.stats.indexedFiles')}</span>
                 <span className="index-stat-value">
                   {indexStats.indexedCount.toLocaleString()}
                 </span>
               </div>
               <div className="index-stat-item">
-                <span className="index-stat-label">DB size</span>
+                <span className="index-stat-label">{t('fileSearch.stats.dbSize')}</span>
                 <span className="index-stat-value">
                   {indexStats.dbSizeBytes > 0
                     ? `${(indexStats.dbSizeBytes / 1024).toFixed(1)} KB`
@@ -1002,31 +1050,31 @@ export function SettingsApp() {
                 </span>
               </div>
               <div className="index-stat-item">
-                <span className="index-stat-label">Last full scan</span>
+                <span className="index-stat-label">{t('fileSearch.stats.lastScan')}</span>
                 <span className="index-stat-value">
                   {indexStats.lastFullScan > 0
                     ? new Date(indexStats.lastFullScan * 1000).toLocaleString()
-                    : 'Never'}
+                    : t('fileSearch.stats.never')}
                 </span>
               </div>
               <div className="index-stat-item">
-                <span className="index-stat-label">File watcher</span>
+                <span className="index-stat-label">{t('fileSearch.stats.watcher')}</span>
                 <span
                   className={`index-stat-value ${indexStats.isWatching ? 'index-stat-active' : 'index-stat-inactive'}`}
                 >
-                  {indexStats.isWatching ? 'Active' : 'Inactive'}
+                  {indexStats.isWatching ? t('fileSearch.stats.active') : t('fileSearch.stats.inactive')}
                 </span>
               </div>
             </div>
           ) : (
-            <p className="settings-subsection-desc">Loading stats…</p>
+            <p className="settings-subsection-desc">{t('fileSearch.loadingStats')}</p>
           )}
 
           <div className="settings-row" style={{ marginTop: '12px' }}>
             <div className="settings-row-info">
-              <span className="settings-row-label">Rebuild Index</span>
+              <span className="settings-row-label">{t('fileSearch.stats.rebuild')}</span>
               <span className="settings-row-desc">
-                Clears the database and re-scans all configured folders from scratch
+                {t('fileSearch.stats.rebuildDesc')}
               </span>
             </div>
             <Button
@@ -1058,7 +1106,7 @@ export function SettingsApp() {
               }}
             >
               {isRebuilding ? <Spinner size="small" /> : null}
-              {isRebuilding ? 'Rebuilding…' : 'Rebuild Index'}
+              {isRebuilding ? t('fileSearch.stats.rebuilding') : t('fileSearch.stats.rebuild')}
             </Button>
           </div>
         </div>
@@ -1070,23 +1118,20 @@ export function SettingsApp() {
   const renderApplicationsSection = () => (
     <div className="settings-panel">
       <div className="settings-panel-header">
-        <h2 className="settings-panel-title">Applications</h2>
+        <h2 className="settings-panel-title">{t('applications.title')}</h2>
       </div>
 
       <div className="settings-panel-content">
         <div className="settings-info-box">
           <Lightbulb size={20} className="settings-info-icon" />
-          <p>
-            Volt automatically scans for installed applications on your system. Applications are
-            refreshed each time Volt starts.
-          </p>
+          <p>{t('applications.infoText')}</p>
         </div>
 
         <div className="settings-row">
           <div className="settings-row-info">
-            <span className="settings-row-label">Scan Applications</span>
+            <span className="settings-row-label">{t('applications.scanApps')}</span>
             <span className="settings-row-desc">
-              Manually trigger a scan for installed applications
+              {t('applications.scanAppsDesc')}
             </span>
           </div>
           <Button
@@ -1099,7 +1144,7 @@ export function SettingsApp() {
               }
             }}
           >
-            Scan Now
+            {t('applications.scanNow')}
           </Button>
         </div>
       </div>
@@ -1109,19 +1154,19 @@ export function SettingsApp() {
   // Render Plugins section
   const renderPluginsSection = () => {
     const plugins = [
-      { id: 'calculator', name: 'Calculator', icon: Calculator, builtin: true },
-      { id: 'web-search', name: 'Web Search', icon: Globe, builtin: true },
-      { id: 'system-commands', name: 'System Commands', icon: Terminal, builtin: true },
-      { id: 'timer', name: 'Timer', icon: Clock, builtin: true },
-      { id: 'system-monitor', name: 'System Monitor', icon: Activity, builtin: true },
-      { id: 'steam-games', name: 'Games', icon: Gamepad2, builtin: true },
-      { id: 'clipboard-manager', name: 'Clipboard History', icon: ClipboardIcon, builtin: true },
+      { id: 'calculator', nameKey: 'plugins.names.calculator', icon: Calculator, builtin: true },
+      { id: 'web-search', nameKey: 'plugins.names.webSearch', icon: Globe, builtin: true },
+      { id: 'system-commands', nameKey: 'plugins.names.systemCommands', icon: Terminal, builtin: true },
+      { id: 'timer', nameKey: 'plugins.names.timer', icon: Clock, builtin: true },
+      { id: 'system-monitor', nameKey: 'plugins.names.systemMonitor', icon: Activity, builtin: true },
+      { id: 'steam-games', nameKey: 'plugins.names.games', icon: Gamepad2, builtin: true },
+      { id: 'clipboard-manager', nameKey: 'plugins.names.clipboardHistory', icon: ClipboardIcon, builtin: true },
     ];
 
     return (
       <div className="settings-panel">
         <div className="settings-panel-header">
-          <h2 className="settings-panel-title">Plugins</h2>
+          <h2 className="settings-panel-title">{t('plugins.title')}</h2>
         </div>
 
         <div className="settings-panel-content">
@@ -1132,8 +1177,8 @@ export function SettingsApp() {
                 <div key={plugin.id} className="plugin-item">
                   {React.createElement(plugin.icon, { size: 20, className: 'plugin-icon' })}
                   <div className="plugin-info">
-                    <span className="plugin-name">{plugin.name}</span>
-                    {plugin.builtin && <span className="plugin-badge">Built-in</span>}
+                    <span className="plugin-name">{t(plugin.nameKey)}</span>
+                    {plugin.builtin && <span className="plugin-badge">{t('plugins.builtin')}</span>}
                   </div>
                   <Toggle
                     checked={isEnabled}
@@ -1152,22 +1197,22 @@ export function SettingsApp() {
   const renderClipboardSection = () => (
     <div className="settings-panel">
       <div className="settings-panel-header">
-        <h2 className="settings-panel-title">Clipboard History</h2>
+        <h2 className="settings-panel-title">{t('clipboard.title')}</h2>
       </div>
 
       <div className="settings-panel-content">
         <div className="settings-info-box">
           <ClipboardIcon size={20} className="settings-info-icon" />
           <p>
-            Clipboard History stores your recent clipboard entries for quick access. Use{' '}
-            <kbd>cb</kbd> followed by your search term to find past clipboard items.
+            {t('clipboard.infoText')}{' '}
+            <kbd>cb</kbd> {t('clipboard.infoTextSuffix')}
           </p>
         </div>
 
         <div className="settings-row">
           <div className="settings-row-info">
-            <span className="settings-row-label">Enable Clipboard Monitoring</span>
-            <span className="settings-row-desc">Automatically track clipboard changes</span>
+            <span className="settings-row-label">{t('clipboard.monitoring')}</span>
+            <span className="settings-row-desc">{t('clipboard.monitoringDesc')}</span>
           </div>
           <Toggle
             checked={settings.plugins.clipboardMonitoring}
@@ -1177,8 +1222,8 @@ export function SettingsApp() {
 
         <div className="settings-row">
           <div className="settings-row-info">
-            <span className="settings-row-label">Clear History</span>
-            <span className="settings-row-desc">Remove all clipboard history items</span>
+            <span className="settings-row-label">{t('clipboard.clearHistory')}</span>
+            <span className="settings-row-desc">{t('clipboard.clearHistoryDesc')}</span>
           </div>
           <Button
             variant="secondary"
@@ -1187,11 +1232,11 @@ export function SettingsApp() {
                 await invoke('clear_clipboard_history');
               } catch (err) {
                 logger.error('Failed to clear clipboard history:', err);
-                setError('Failed to clear clipboard history');
+                setError(t('errors.saveFailed'));
               }
             }}
           >
-            Clear
+            {t('clipboard.clear')}
           </Button>
         </div>
       </div>
@@ -1203,7 +1248,7 @@ export function SettingsApp() {
     if (isLoading) {
       return (
         <div className="settings-loading">
-          <Spinner size="medium" message="Loading settings..." />
+          <Spinner size="medium" message={t('loading')} />
         </div>
       );
     }
@@ -1236,7 +1281,7 @@ export function SettingsApp() {
     <div className="settings-app">
       {/* Custom title bar */}
       <div className="settings-titlebar" data-tauri-drag-region>
-        <span className="settings-titlebar-title">Volt Settings</span>
+        <span className="settings-titlebar-title">{t('titlebar')}</span>
         <div className="settings-titlebar-controls">
           <button className="titlebar-btn minimize" onClick={handleMinimize}>
             <span>−</span>
@@ -1262,13 +1307,13 @@ export function SettingsApp() {
 
           {hasChanges && (
             <div className="settings-save-bar">
-              <span>You have unsaved changes</span>
+              <span>{t('saveBar.unsavedChanges')}</span>
               <div className="settings-save-actions">
                 <Button variant="secondary" onClick={() => loadSettings()}>
-                  Discard
+                  {t('saveBar.discard')}
                 </Button>
                 <Button variant="primary" onClick={handleSave} disabled={isSaving}>
-                  {isSaving ? 'Saving...' : 'Save Changes'}
+                  {isSaving ? t('actions.saving') : t('saveBar.saveChanges')}
                 </Button>
               </div>
             </div>

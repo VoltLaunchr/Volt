@@ -1,0 +1,35 @@
+{
+  "loading": "Chargement des extensions...",
+  "header": {
+    "title": "Boutique d'extensions",
+    "refresh": "Actualiser"
+  },
+  "tabs": {
+    "browse": "Parcourir",
+    "installed": "Installées"
+  },
+  "searchPlaceholder": "Rechercher des extensions...",
+  "empty": {
+    "noExtensions": "Aucune extension trouvée",
+    "tryDifferent": "Essayez un autre terme de recherche",
+    "noneInstalled": "Aucune extension installée",
+    "browseOrLink": "Parcourez les extensions ou liez une extension de développement"
+  },
+  "dev": {
+    "linkButton": "Lier une extension de développement",
+    "linking": "Liaison...",
+    "sectionTitle": "Développement",
+    "badge": "DEV"
+  },
+  "sections": {
+    "installed": "Installées"
+  },
+  "actions": {
+    "install": "Installer",
+    "installing": "Installation...",
+    "installed": "Installée",
+    "disable": "Désactiver",
+    "enable": "Activer",
+    "uninstall": "Désinstaller"
+  }
+}

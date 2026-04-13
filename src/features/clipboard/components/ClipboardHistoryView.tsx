@@ -1,5 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import React, { useCallback, useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { ClipboardItem, ClipboardType } from '../../../shared/types/clipboard';
 import { logger } from '../../../shared/utils';
 import './ClipboardHistoryView.css';
@@ -11,6 +12,7 @@ interface ClipboardHistoryViewProps {
 type FilterType = 'all' | ClipboardType;
 
 export const ClipboardHistoryView: React.FC<ClipboardHistoryViewProps> = ({ onClose }) => {
+  const { t } = useTranslation('clipboard');
   const [items, setItems] = useState<ClipboardItem[]>([]);
   const [filteredItems, setFilteredItems] = useState<ClipboardItem[]>([]);
   const [selectedItem, setSelectedItem] = useState<ClipboardItem | null>(null);
@@ -158,11 +160,11 @@ export const ClipboardHistoryView: React.FC<ClipboardHistoryViewProps> = ({ onCl
     yesterday.setDate(yesterday.getDate() - 1);
 
     if (date >= today) {
-      return `Today ${date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}`;
+      return `${t('groups.today')} ${date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}`;
     } else if (date >= yesterday) {
-      return `Yesterday ${date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}`;
+      return `${t('groups.yesterday')} ${date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}`;
     }
-    return date.toLocaleString('en-US', {
+    return date.toLocaleString(undefined, {
       month: '2-digit',
       day: '2-digit',
       year: 'numeric',
@@ -206,11 +208,11 @@ export const ClipboardHistoryView: React.FC<ClipboardHistoryViewProps> = ({ onCl
 
       let groupKey: string;
       if (date.toDateString() === today.toDateString()) {
-        groupKey = 'Today';
+        groupKey = t('groups.today');
       } else if (date.toDateString() === yesterday.toDateString()) {
-        groupKey = 'Yesterday';
+        groupKey = t('groups.yesterday');
       } else {
-        groupKey = date.toLocaleDateString('en-US', {
+        groupKey = date.toLocaleDateString(undefined, {
           month: 'long',
           day: 'numeric',
           year: 'numeric',
@@ -238,7 +240,7 @@ export const ClipboardHistoryView: React.FC<ClipboardHistoryViewProps> = ({ onCl
     >
       {/* Header with search and filter */}
       <div className="clipboard-header">
-        <button className="back-button" onClick={onClose} title="Back">
+        <button className="back-button" onClick={onClose} title={t('back')}>
           <svg
             width="20"
             height="20"
@@ -255,7 +257,7 @@ export const ClipboardHistoryView: React.FC<ClipboardHistoryViewProps> = ({ onCl
           <input
             type="text"
             className="filter-input"
-            placeholder="Type to filter entries..."
+            placeholder={t('filterPlaceholder')}
             value={filterQuery}
             onChange={(e) => setFilterQuery(e.target.value)}
             autoFocus
@@ -281,8 +283,8 @@ export const ClipboardHistoryView: React.FC<ClipboardHistoryViewProps> = ({ onCl
             </svg>
             <span>
               {typeFilter === 'all'
-                ? 'All Types'
-                : typeFilter.charAt(0).toUpperCase() + typeFilter.slice(1)}
+                ? t('filters.all')
+                : t(`filters.${typeFilter}`, { defaultValue: typeFilter.charAt(0).toUpperCase() + typeFilter.slice(1) })}
             </span>
             <svg
               width="12"
@@ -305,7 +307,7 @@ export const ClipboardHistoryView: React.FC<ClipboardHistoryViewProps> = ({ onCl
                   setShowTypeDropdown(false);
                 }}
               >
-                All Types
+                {t('filters.all')}
               </button>
               <button
                 className={`type-filter-option ${typeFilter === 'text' ? 'active' : ''}`}
@@ -316,11 +318,11 @@ export const ClipboardHistoryView: React.FC<ClipboardHistoryViewProps> = ({ onCl
               >
                 <img
                   src="/icons/text-creation-stroke-rounded.svg"
-                  alt="Text"
+                  alt={t('filters.text')}
                   width="16"
                   height="16"
                 />
-                Text
+                {t('filters.text')}
               </button>
               <button
                 className={`type-filter-option ${typeFilter === 'image' ? 'active' : ''}`}
@@ -329,8 +331,8 @@ export const ClipboardHistoryView: React.FC<ClipboardHistoryViewProps> = ({ onCl
                   setShowTypeDropdown(false);
                 }}
               >
-                <img src="/icons/image-03-stroke-rounded.svg" alt="Image" width="16" height="16" />
-                Image
+                <img src="/icons/image-03-stroke-rounded.svg" alt={t('filters.image')} width="16" height="16" />
+                {t('filters.image')}
               </button>
               <button
                 className={`type-filter-option ${typeFilter === 'files' ? 'active' : ''}`}
@@ -341,11 +343,11 @@ export const ClipboardHistoryView: React.FC<ClipboardHistoryViewProps> = ({ onCl
               >
                 <img
                   src="/icons/text-creation-stroke-rounded.svg"
-                  alt="Files"
+                  alt={t('filters.files')}
                   width="16"
                   height="16"
                 />
-                Files
+                {t('filters.files')}
               </button>
             </div>
           )}
@@ -357,9 +359,9 @@ export const ClipboardHistoryView: React.FC<ClipboardHistoryViewProps> = ({ onCl
         {/* Items list */}
         <div className="clipboard-items-list">
           {isLoading ? (
-            <div className="loading-state">Loading...</div>
+            <div className="loading-state">{t('states.loading')}</div>
           ) : filteredItems.length === 0 ? (
-            <div className="empty-state">No clipboard items found</div>
+            <div className="empty-state">{t('states.empty')}</div>
           ) : (
             Object.entries(groupedItems).map(([groupName, groupItems]) => (
               <div key={groupName} className="clipboard-group">
@@ -413,17 +415,17 @@ export const ClipboardHistoryView: React.FC<ClipboardHistoryViewProps> = ({ onCl
               {/* Metadata */}
               <div className="details-metadata">
                 <div className="metadata-section">
-                  <h3>Information</h3>
+                  <h3>{t('metadata.title')}</h3>
 
                   {selectedItem.source && (
                     <div className="metadata-row">
-                      <span className="metadata-label">Source</span>
+                      <span className="metadata-label">{t('metadata.source')}</span>
                       <span className="metadata-value">{selectedItem.source}</span>
                     </div>
                   )}
 
                   <div className="metadata-row">
-                    <span className="metadata-label">Type</span>
+                    <span className="metadata-label">{t('metadata.type')}</span>
                     <span className="metadata-value">
                       {selectedItem.contentType.charAt(0).toUpperCase() +
                         selectedItem.contentType.slice(1)}
@@ -434,7 +436,7 @@ export const ClipboardHistoryView: React.FC<ClipboardHistoryViewProps> = ({ onCl
                     <>
                       {selectedItem.charCount !== undefined && (
                         <div className="metadata-row">
-                          <span className="metadata-label">Characters</span>
+                          <span className="metadata-label">{t('metadata.characters')}</span>
                           <span className="metadata-value">
                             {selectedItem.charCount.toLocaleString()}
                           </span>
@@ -442,7 +444,7 @@ export const ClipboardHistoryView: React.FC<ClipboardHistoryViewProps> = ({ onCl
                       )}
                       {selectedItem.wordCount !== undefined && (
                         <div className="metadata-row">
-                          <span className="metadata-label">Words</span>
+                          <span className="metadata-label">{t('metadata.words')}</span>
                           <span className="metadata-value">
                             {selectedItem.wordCount.toLocaleString()}
                           </span>
@@ -456,7 +458,7 @@ export const ClipboardHistoryView: React.FC<ClipboardHistoryViewProps> = ({ onCl
                       {selectedItem.imageWidth !== undefined &&
                         selectedItem.imageHeight !== undefined && (
                           <div className="metadata-row">
-                            <span className="metadata-label">Dimensions</span>
+                            <span className="metadata-label">{t('metadata.dimensions')}</span>
                             <span className="metadata-value">
                               {selectedItem.imageWidth}×{selectedItem.imageHeight}
                             </span>
@@ -464,7 +466,7 @@ export const ClipboardHistoryView: React.FC<ClipboardHistoryViewProps> = ({ onCl
                         )}
                       {selectedItem.fileSize !== undefined && (
                         <div className="metadata-row">
-                          <span className="metadata-label">Size</span>
+                          <span className="metadata-label">{t('metadata.size')}</span>
                           <span className="metadata-value">
                             {formatFileSize(selectedItem.fileSize)}
                           </span>
@@ -474,7 +476,7 @@ export const ClipboardHistoryView: React.FC<ClipboardHistoryViewProps> = ({ onCl
                   )}
 
                   <div className="metadata-row">
-                    <span className="metadata-label">Copied</span>
+                    <span className="metadata-label">{t('metadata.copied')}</span>
                     <span className="metadata-value">
                       {formatTimestamp(selectedItem.timestamp)}
                     </span>
@@ -486,14 +488,14 @@ export const ClipboardHistoryView: React.FC<ClipboardHistoryViewProps> = ({ onCl
             {/* Actions footer */}
             <div className="details-actions">
               <button className="action-button primary" onClick={() => handlePaste(selectedItem)}>
-                <span>Paste</span>
+                <span>{t('actions.paste')}</span>
                 <kbd>↵</kbd>
               </button>
               <button className="action-button" onClick={() => handleTogglePin(selectedItem)}>
-                {selectedItem.pinned ? 'Unpin' : 'Pin'}
+                {selectedItem.pinned ? t('actions.unpin') : t('actions.pin')}
               </button>
               <button className="action-button danger" onClick={() => handleDelete(selectedItem)}>
-                Delete
+                {t('actions.delete')}
               </button>
             </div>
           </div>
@@ -504,11 +506,11 @@ export const ClipboardHistoryView: React.FC<ClipboardHistoryViewProps> = ({ onCl
       <div className="clipboard-footer">
         <div className="footer-left">
           <div className="footer-icon">📋</div>
-          <span>Clipboard History</span>
+          <span>{t('footer.title')}</span>
         </div>
         <div className="footer-right">
           <span className="footer-hint">
-            <kbd>↑</kbd> <kbd>↓</kbd> Navigate • <kbd>↵</kbd> Paste • <kbd>Esc</kbd> Close
+            <kbd>↑</kbd> <kbd>↓</kbd> {t('footer.hint')} • <kbd>↵</kbd> {t('footer.hintPaste')} • <kbd>Esc</kbd> {t('footer.hintClose')}
           </span>
         </div>
       </div>

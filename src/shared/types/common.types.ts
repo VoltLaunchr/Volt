@@ -135,6 +135,7 @@ export interface GeneralSettings {
   startWithWindows: boolean;
   maxResults: number;
   closeOnLaunch: boolean;
+  language: 'auto' | 'en' | 'fr';
 }
 
 export interface AppearanceSettings {

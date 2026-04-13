@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   X,
   Sparkles,
@@ -60,6 +61,7 @@ const getIcon = (iconName: string): React.ReactNode => {
 };
 
 export const ChangelogView: React.FC<ChangelogViewProps> = ({ onClose }) => {
+  const { t } = useTranslation('changelog');
   const [changelog, setChangelog] = useState<ChangelogVersionData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -110,7 +112,7 @@ export const ChangelogView: React.FC<ChangelogViewProps> = ({ onClose }) => {
       <div className="changelog-view" tabIndex={0} onKeyDown={handleKeyDown}>
         <div className="changelog-loading">
           <Loader2 size={32} className="changelog-loading-spinner" />
-          <p>Loading changelog...</p>
+          <p>{t('loading')}</p>
         </div>
       </div>
     );
@@ -125,8 +127,8 @@ export const ChangelogView: React.FC<ChangelogViewProps> = ({ onClose }) => {
             <div className="changelog-header-title">
               <AlertCircle size={24} className="changelog-header-icon error" />
               <div>
-                <h2>Unable to Load Changelog</h2>
-                <p className="changelog-subtitle">Something went wrong</p>
+                <h2>{t('error.title')}</h2>
+                <p className="changelog-subtitle">{t('error.subtitle')}</p>
               </div>
             </div>
             <button className="changelog-close-button" onClick={onClose} aria-label="Close">
@@ -143,7 +145,7 @@ export const ChangelogView: React.FC<ChangelogViewProps> = ({ onClose }) => {
               rel="noopener noreferrer"
               className="changelog-error-link"
             >
-              View releases on GitHub →
+              {t('error.viewReleases')}
             </a>
           </div>
         </div>
@@ -158,8 +160,8 @@ export const ChangelogView: React.FC<ChangelogViewProps> = ({ onClose }) => {
           <div className="changelog-header-title">
             <Sparkles size={24} className="changelog-header-icon" />
             <div>
-              <h2>What's New in Volt</h2>
-              <p className="changelog-subtitle">Your productivity companion just got better</p>
+              <h2>{t('header.title')}</h2>
+              <p className="changelog-subtitle">{t('header.subtitle')}</p>
             </div>
           </div>
           <button className="changelog-close-button" onClick={onClose} aria-label="Close">
@@ -218,7 +220,7 @@ export const ChangelogView: React.FC<ChangelogViewProps> = ({ onClose }) => {
       <div className="changelog-footer">
         <div className="changelog-footer-content">
           <span className="changelog-footer-hint">
-            Press <kbd>Esc</kbd> to close
+            {t('footer.pressEsc')} <kbd>{t('footer.escKey')}</kbd> {t('footer.toClose')}
           </span>
           <a
             href={changelog.footer.links.releases}
@@ -226,7 +228,7 @@ export const ChangelogView: React.FC<ChangelogViewProps> = ({ onClose }) => {
             rel="noopener noreferrer"
             className="changelog-footer-link"
           >
-            View All Releases →
+            {t('footer.viewAllReleases')}
           </a>
         </div>
       </div>

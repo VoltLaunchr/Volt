@@ -1,0 +1,14 @@
+{
+  "cpu": "CPU",
+  "memory": "Memoire",
+  "disk": "Disque",
+  "available": "{{value}} Go disponibles",
+  "free": "{{value}} Go libres",
+  "usage": {
+    "critical": "Utilisation critique",
+    "high": "Utilisation elevee",
+    "moderate": "Utilisation moderee",
+    "normal": "Normal"
+  },
+  "clipboardTitle": "Performance Systeme"
+}

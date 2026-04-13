@@ -1,0 +1,45 @@
+{
+  "search": {
+    "placeholder": "Search for apps and commands...",
+    "placeholderLoading": "Loading applications...",
+    "noResults": "No results found",
+    "resultCount_one": "{{count}} result found",
+    "resultCount_other": "{{count}} results found",
+    "clearSearch": "Clear search",
+    "label": "Search"
+  },
+  "footer": {
+    "openCommand": "Open Command",
+    "actions": "Actions",
+    "indexing": "Indexing"
+  },
+  "errors": {
+    "generic": "An error occurred",
+    "retry": "Retry",
+    "dismiss": "Dismiss"
+  },
+  "accessibility": {
+    "skipToSearch": "Skip to search"
+  },
+  "viewRouter": {
+    "loading": "Loading applications...",
+    "error": "Error"
+  },
+  "suggestionsBadge": {
+    "command": "Command"
+  },
+  "suggestions": {
+    "whats-new": { "title": "See what's new", "subtitle": "v0.0.2" },
+    "settings": { "title": "Settings", "subtitle": "Application Settings" },
+    "clipboard-history": { "title": "Clipboard History", "subtitle": "View Clipboard" },
+    "search-files": { "title": "Search Files", "subtitle": "File Search" },
+    "search-emoji": { "title": "Search Emoji & Symbols", "subtitle": "Emoji Picker" },
+    "about": { "title": "About", "subtitle": "Volt Information" },
+    "account": { "title": "Account", "subtitle": "User Settings" },
+    "system-monitor": { "title": "System Monitor", "subtitle": "View Performance" },
+    "calculator": { "title": "Calculator", "subtitle": "Quick Math" },
+    "timer": { "title": "Timer", "subtitle": "Set Timer" },
+    "web-search": { "title": "Web Search", "subtitle": "Search Online" },
+    "steam-games": { "title": "Games", "subtitle": "Launch Games" }
+  }
+}

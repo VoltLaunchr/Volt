@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { ChangelogView } from '../../features/changelog';
 import { ClipboardHistoryView } from '../../features/clipboard';
 import { FileSearchView } from '../../features/files';
@@ -23,6 +24,7 @@ interface ViewRouterProps {
 }
 
 export function ViewRouter({ onSelectEmoji, onLaunchResult }: ViewRouterProps) {
+  const { t } = useTranslation('common');
   const activeView = useUiStore((s) => s.activeView);
   const searchQuery = useSearchStore((s) => s.searchQuery);
   const results = useSearchStore((s) => s.results);
@@ -124,20 +126,12 @@ export function ViewRouter({ onSelectEmoji, onLaunchResult }: ViewRouterProps) {
       return <GameView onClose={resetToSearchView} />;
   }
 
-  if (isLoading) {
-    return (
-      <div className="loading-container">
-        <Spinner size="medium" message="Loading applications..." />
-      </div>
-    );
-  }
-
   if (error) {
     return (
       <div className="error-container">
         <ErrorMessage
           message={error}
-          title="Error"
+          title={t('viewRouter.error')}
           variant="inline"
           onRetry={clearError}
           onDismiss={clearError}
@@ -154,6 +148,14 @@ export function ViewRouter({ onSelectEmoji, onLaunchResult }: ViewRouterProps) {
         onSelect={handleSuggestionSelect}
         onActivate={handleSuggestionActivate}
       />
+    );
+  }
+
+  if (isLoading && searchQuery.trim() && results.length === 0) {
+    return (
+      <div className="loading-container">
+        <Spinner size="medium" message={t('viewRouter.loading')} />
+      </div>
     );
   }
 

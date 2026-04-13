@@ -1,0 +1,18 @@
+{
+  "loading": "Loading changelog...",
+  "error": {
+    "title": "Unable to Load Changelog",
+    "subtitle": "Something went wrong",
+    "viewReleases": "View releases on GitHub →"
+  },
+  "header": {
+    "title": "What's New in Volt",
+    "subtitle": "Your productivity companion just got better"
+  },
+  "footer": {
+    "pressEsc": "Press",
+    "escKey": "Esc",
+    "toClose": "to close",
+    "viewAllReleases": "View All Releases →"
+  }
+}

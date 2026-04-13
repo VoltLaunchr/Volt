@@ -1,0 +1,18 @@
+{
+  "start": "Start {{duration}} Timer",
+  "clickToStart": "Click to start",
+  "pomodoroWork": "Pomodoro Work (25 minutes)",
+  "pomodoroWorkDesc": "Standard Pomodoro work session",
+  "shortBreak": "Short Break (5 minutes)",
+  "shortBreakDesc": "Pomodoro short break",
+  "longBreak": "Long Break (15 minutes)",
+  "longBreakDesc": "Pomodoro long break",
+  "oneMinute": "1 Minute Timer",
+  "oneMinuteDesc": "Quick 60 second countdown",
+  "fiveMinutes": "5 Minutes Timer",
+  "fiveMinutesDesc": "Short break timer",
+  "tenMinutes": "10 Minutes Timer",
+  "tenMinutesDesc": "Medium duration timer",
+  "pomodoro25": "25 Minutes (Pomodoro)",
+  "pomodoro25Desc": "Standard Pomodoro work session"
+}

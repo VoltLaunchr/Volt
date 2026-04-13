@@ -14,3 +14,13 @@ vi.mock('@tauri-apps/api/core', () => ({
 vi.mock('@tauri-apps/plugin-opener', () => ({
   openUrl: vi.fn(async () => undefined),
 }));
+
+vi.mock('i18next', () => ({
+  default: {
+    addResourceBundle: vi.fn(),
+    use: vi.fn().mockReturnThis(),
+    init: vi.fn(),
+    t: vi.fn((key: string) => key),
+    changeLanguage: vi.fn(),
+  },
+}));

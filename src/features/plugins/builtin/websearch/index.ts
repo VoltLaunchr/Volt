@@ -1,3 +1,9 @@
+import i18n from 'i18next';
+import enWebsearch from './locales/en.json';
+import frWebsearch from './locales/fr.json';
+i18n.addResourceBundle('en', 'websearch', enWebsearch);
+i18n.addResourceBundle('fr', 'websearch', frWebsearch);
+
 import { Plugin, PluginContext, PluginResult, PluginResultType } from '../../types';
 import { openUrl } from '../../utils/helpers';
 

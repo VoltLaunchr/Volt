@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { CalculatorPlugin } from '../index';
 import { copyToClipboard } from '../../../utils/helpers';
 import { addToHistory, clearHistory, getHistory, CalculationHistoryItem } from '../utils/history';
@@ -13,6 +14,7 @@ export const CalculatorView: React.FC<CalculatorViewProps> = ({
   onClose,
   initialExpression = '',
 }) => {
+  const { t } = useTranslation('calculator');
   const [expression, setExpression] = useState(initialExpression);
   const [result, setResult] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -136,7 +138,7 @@ export const CalculatorView: React.FC<CalculatorViewProps> = ({
         <button className="back-button" onClick={onClose} aria-label="Back">
           ←
         </button>
-        <span className="calculator-title">Calculator</span>
+        <span className="calculator-title">{t('view.title')}</span>
       </div>
 
       {/* Content */}
@@ -154,7 +156,7 @@ export const CalculatorView: React.FC<CalculatorViewProps> = ({
                 setSelectedHistoryIndex(-1);
               }}
               onKeyDown={handleKeyDown}
-              placeholder="Type a calculation..."
+              placeholder={t('view.placeholder')}
               spellCheck={false}
               autoFocus
             />
@@ -171,16 +173,16 @@ export const CalculatorView: React.FC<CalculatorViewProps> = ({
             {result && !error && (
               <div className="calculator-result-container">
                 <div className="result-content">
-                  <div className="result-label">Result</div>
+                  <div className="result-label">{t('view.result')}</div>
                   <div className="result-value">{result}</div>
                 </div>
                 <button
                   className="copy-button"
                   onClick={handleCopyResult}
-                  title="Copy result (Enter)"
+                  title={t('view.copyResult')}
                 >
                   <span className="copy-button-icon">📋</span>
-                  Copy
+                  {t('view.copy')}
                 </button>
               </div>
             )}
@@ -191,19 +193,19 @@ export const CalculatorView: React.FC<CalculatorViewProps> = ({
         <div className="calculator-quick-actions">
           <button className="quick-action" onClick={() => setExpression('sqrt(')}>
             <span className="quick-action-icon">√</span>
-            <span className="quick-action-label">Square Root</span>
+            <span className="quick-action-label">{t('view.quickActions.squareRoot')}</span>
           </button>
           <button className="quick-action" onClick={() => setExpression(expression + '^2')}>
             <span className="quick-action-icon">x²</span>
-            <span className="quick-action-label">Square</span>
+            <span className="quick-action-label">{t('view.quickActions.square')}</span>
           </button>
           <button className="quick-action" onClick={() => setExpression(expression + ' to ')}>
             <span className="quick-action-icon">⟷</span>
-            <span className="quick-action-label">Convert</span>
+            <span className="quick-action-label">{t('view.quickActions.convert')}</span>
           </button>
           <button className="quick-action" onClick={() => setExpression('time in ')}>
             <span className="quick-action-icon">🌍</span>
-            <span className="quick-action-label">Timezone</span>
+            <span className="quick-action-label">{t('view.quickActions.timezone')}</span>
           </button>
         </div>
 
@@ -212,9 +214,9 @@ export const CalculatorView: React.FC<CalculatorViewProps> = ({
           {history.length > 0 ? (
             <>
               <div className="history-header">
-                <span className="history-title">History</span>
+                <span className="history-title">{t('view.history')}</span>
                 <button className="clear-history-button" onClick={handleClearHistory}>
-                  Clear
+                  {t('view.clear')}
                 </button>
               </div>
               <div className="history-list">
@@ -238,8 +240,8 @@ export const CalculatorView: React.FC<CalculatorViewProps> = ({
               <div className="history-empty-icon">
                 <img src="/icons/history-stroke-rounded.svg" alt="History" width="48" height="48" />
               </div>
-              <div className="history-empty-text">No history yet</div>
-              <div className="history-empty-hint">Try: 2+2, 10km to miles, time in Tokyo</div>
+              <div className="history-empty-text">{t('view.noHistory')}</div>
+              <div className="history-empty-hint">{t('view.historyHint')}</div>
             </div>
           )}
         </div>
@@ -248,14 +250,14 @@ export const CalculatorView: React.FC<CalculatorViewProps> = ({
       {/* Footer */}
       <div className="calculator-footer">
         <div className="footer-hint">
-          <kbd>Enter</kbd> Copy
+          <kbd>Enter</kbd> {t('view.footer.copy')}
         </div>
         <div className="footer-hint">
           <kbd>↑</kbd>
-          <kbd>↓</kbd> History
+          <kbd>↓</kbd> {t('view.footer.history')}
         </div>
         <div className="footer-hint">
-          <kbd>Esc</kbd> Close
+          <kbd>Esc</kbd> {t('view.footer.close')}
         </div>
       </div>
     </div>

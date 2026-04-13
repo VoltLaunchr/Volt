@@ -1,0 +1,154 @@
+{
+  "title": "Paramètres",
+  "titlebar": "Volt Paramètres",
+  "sections": {
+    "general": "Général",
+    "shortcuts": "Raccourcis",
+    "extensions": "Extensions",
+    "advanced": "Avancé",
+    "about": "À propos",
+    "applications": "Applications",
+    "plugins": "Plugins",
+    "fileSearch": "Recherche de fichiers",
+    "clipboard": "Historique du presse-papiers",
+    "builtIn": "INTÉGRÉ"
+  },
+  "general": {
+    "title": "Général",
+    "language": "Langue",
+    "languageAuto": "Auto (Système)",
+    "languageEn": "English",
+    "languageFr": "Français",
+    "followSystemAppearance": "Suivre l'apparence du système",
+    "openAtLogin": "Ouvrir au démarrage",
+    "closeOnLaunch": "Fermer après le lancement",
+    "voltHotkey": "Raccourci Volt",
+    "hotkeyDesc": "Appuyez sur une combinaison de touches pour définir votre raccourci global"
+  },
+  "shortcuts": {
+    "title": "Raccourcis",
+    "searchPlaceholder": "Rechercher par nom ou alias",
+    "allCategories": "Toutes les catégories",
+    "syncApps": "Synchroniser les apps",
+    "tableHeaders": {
+      "name": "Nom",
+      "alias": "Alias",
+      "hotkey": "Raccourci"
+    },
+    "addAlias": "Ajouter un alias",
+    "noShortcuts": "Aucun raccourci disponible. Cliquez sur « Synchroniser les apps » pour charger vos applications.",
+    "noMatch": "Aucun raccourci ne correspond à votre recherche."
+  },
+  "advanced": {
+    "title": "Avancé",
+    "showVoltOn": "Afficher Volt sur",
+    "positions": {
+      "center": "Centre de l'écran",
+      "topCenter": "Haut au centre",
+      "topLeft": "Haut à gauche",
+      "topRight": "Haut à droite",
+      "bottomLeft": "Bas à gauche",
+      "bottomCenter": "Bas au centre",
+      "bottomRight": "Bas à droite",
+      "leftCenter": "Centre gauche",
+      "rightCenter": "Centre droit"
+    },
+    "maxResults": "Nombre de résultats max",
+    "maxResultsDesc": "Nombre maximum de résultats de recherche affichés",
+    "results": "{{count}} résultats",
+    "windowTransparency": "Transparence de la fenêtre",
+    "transparencyDesc": "Ajuster la transparence de l'arrière-plan de la fenêtre",
+    "theme": "Thème",
+    "themeLight": "Clair",
+    "themeDark": "Sombre",
+    "themeAuto": "Auto"
+  },
+  "about": {
+    "title": "À propos",
+    "description": "Lanceur de bureau rapide et élégant pour Windows, macOS et Linux",
+    "officialWebsite": "Site officiel",
+    "githubRepo": "Dépôt GitHub",
+    "reportIssue": "Signaler un problème",
+    "releaseNotes": "Notes de version",
+    "openLogs": "Ouvrir le dossier des journaux",
+    "copyDiagnostics": "Copier les diagnostics",
+    "copied": "Copié !",
+    "copyright": "© 2026 VoltLaunchr Contributors • Sous licence Apache 2.0",
+    "builtWith": "Construit avec Tauri, React et Rust"
+  },
+  "fileSearch": {
+    "title": "Recherche de fichiers",
+    "indexOnStartup": "Indexer au démarrage",
+    "indexOnStartupDesc": "Indexer automatiquement les fichiers au démarrage de Volt",
+    "foldersToIndex": "Dossiers à indexer",
+    "foldersToIndexDesc": "Répertoires à analyser pour les fichiers (ex. : Documents, Téléchargements)",
+    "addFolder": "Ajouter un dossier",
+    "fileExtensions": "Extensions de fichiers",
+    "fileExtensionsDesc": "Types de fichiers à inclure (séparés par des virgules)",
+    "fileExtensionsPlaceholder": "pdf, docx, txt, xlsx",
+    "excludedPaths": "Chemins exclus",
+    "excludedPathsDesc": "Chemins ou dossiers à ignorer lors de l'indexation",
+    "addPath": "Ajouter une exclusion",
+    "indexStatus": "État de l'index",
+    "indexStatusDesc": "Statistiques et maintenance de l'index SQLite persistant",
+    "loadingStats": "Chargement des stats…",
+    "stats": {
+      "indexedFiles": "Fichiers indexés",
+      "dbSize": "Taille de la BDD",
+      "lastScan": "Dernière analyse complète",
+      "watcher": "Surveillance des fichiers",
+      "active": "Actif",
+      "inactive": "Inactif",
+      "never": "Jamais",
+      "rebuild": "Reconstruire l'index",
+      "rebuildDesc": "Efface la base de données et réanalyse tous les dossiers configurés",
+      "rebuilding": "Reconstruction…"
+    }
+  },
+  "plugins": {
+    "title": "Plugins",
+    "builtin": "Intégré",
+    "names": {
+      "calculator": "Calculatrice",
+      "webSearch": "Recherche Web",
+      "systemCommands": "Commandes système",
+      "timer": "Minuteur",
+      "systemMonitor": "Moniteur système",
+      "games": "Jeux",
+      "clipboardHistory": "Historique du presse-papiers"
+    }
+  },
+  "clipboard": {
+    "title": "Historique du presse-papiers",
+    "infoText": "L'historique du presse-papiers stocke vos entrées récentes pour un accès rapide. Utilisez",
+    "infoTextSuffix": "suivi de votre terme de recherche pour retrouver des éléments copiés.",
+    "monitoring": "Activer la surveillance du presse-papiers",
+    "monitoringDesc": "Suivre automatiquement les modifications du presse-papiers",
+    "clearHistory": "Effacer l'historique",
+    "clearHistoryDesc": "Supprimer tous les éléments de l'historique du presse-papiers",
+    "clear": "Effacer"
+  },
+  "applications": {
+    "title": "Applications",
+    "infoText": "Volt analyse automatiquement les applications installées sur votre système. Les applications sont actualisées à chaque démarrage de Volt.",
+    "scanApps": "Analyser les applications",
+    "scanAppsDesc": "Déclencher manuellement une analyse des applications installées",
+    "scanNow": "Analyser maintenant"
+  },
+  "saveBar": {
+    "unsavedChanges": "Vous avez des modifications non enregistrées",
+    "discard": "Annuler",
+    "saveChanges": "Enregistrer"
+  },
+  "loading": "Chargement des paramètres...",
+  "actions": {
+    "save": "Enregistrer",
+    "saving": "Enregistrement...",
+    "close": "Fermer",
+    "reset": "Réinitialiser"
+  },
+  "errors": {
+    "loadFailed": "Impossible de charger les paramètres",
+    "saveFailed": "Impossible d'enregistrer les paramètres"
+  }
+}

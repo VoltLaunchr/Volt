@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import { loadEmojiData, getEmojisByGroup } from '../utils/emojiData';
 import { searchEmojis } from '../utils/search';
 import { applyPreferredSkinTone } from '../utils/skinTones';
@@ -12,20 +13,6 @@ interface EmojiPickerViewProps {
   onSelectEmoji: (emoji: string) => void;
   initialQuery?: string;
 }
-
-const CATEGORY_LABELS: Record<string, string> = {
-  all: 'All Categories',
-  frequent: 'Frequently Used',
-  'smileys-emotion': 'Smileys & People',
-  'people-body': 'People & Body',
-  'animals-nature': 'Animals & Nature',
-  'food-drink': 'Food & Drink',
-  'travel-places': 'Travel & Places',
-  activities: 'Activity',
-  objects: 'Objects',
-  symbols: 'Symbols',
-  flags: 'Flags',
-};
 
 const CATEGORY_ICONS: Record<string, string> = {
   all: '🔍',
@@ -41,11 +28,27 @@ const CATEGORY_ICONS: Record<string, string> = {
   flags: '🏴',
 };
 
+// Map from emoji group key to i18n translation key
+const CATEGORY_I18N_KEY: Record<string, string> = {
+  all: 'all',
+  frequent: 'frequent',
+  'smileys-emotion': 'smileys',
+  'people-body': 'people',
+  'animals-nature': 'animals',
+  'food-drink': 'food',
+  'travel-places': 'travel',
+  activities: 'activity',
+  objects: 'objects',
+  symbols: 'symbols',
+  flags: 'flags',
+};
+
 export const EmojiPickerView: React.FC<EmojiPickerViewProps> = ({
   onClose,
   onSelectEmoji,
   initialQuery = '',
 }) => {
+  const { t } = useTranslation('emoji-picker');
   const [allEmojis, setAllEmojis] = useState<SearchableEmoji[]>([]);
   const [displayedEmojis, setDisplayedEmojis] = useState<SearchableEmoji[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
@@ -156,6 +159,14 @@ export const EmojiPickerView: React.FC<EmojiPickerViewProps> = ({
     }
   }, [selectedIndex]);
 
+  const getCategoryLabel = (category: string): string => {
+    const i18nKey = CATEGORY_I18N_KEY[category];
+    if (i18nKey) {
+      return t(`view.categories.${i18nKey}`);
+    }
+    return category;
+  };
+
   const availableCategories = ['all', 'frequent', ...Object.values(EMOJI_GROUPS)];
 
   return (
@@ -183,7 +194,7 @@ export const EmojiPickerView: React.FC<EmojiPickerViewProps> = ({
         <input
           type="text"
           className="emoji-search-input"
-          placeholder="Search Emoji & Symbols..."
+          placeholder={t('view.placeholder')}
           value={searchQuery}
           onChange={handleSearchChange}
           autoFocus
@@ -195,7 +206,7 @@ export const EmojiPickerView: React.FC<EmojiPickerViewProps> = ({
             onClick={() => setShowCategoryDropdown(!showCategoryDropdown)}
           >
             <span className="category-icon">{CATEGORY_ICONS[selectedCategory] || '🔍'}</span>
-            <span>{CATEGORY_LABELS[selectedCategory] || 'All Categories'}</span>
+            <span>{getCategoryLabel(selectedCategory)}</span>
             <svg
               width="12"
               height="12"
@@ -221,7 +232,7 @@ export const EmojiPickerView: React.FC<EmojiPickerViewProps> = ({
                   onClick={() => handleCategoryChange(category)}
                 >
                   <span className="category-icon">{CATEGORY_ICONS[category] || '📁'}</span>
-                  <span>{CATEGORY_LABELS[category] || category}</span>
+                  <span>{getCategoryLabel(category)}</span>
                 </button>
               ))}
             </div>
@@ -231,21 +242,19 @@ export const EmojiPickerView: React.FC<EmojiPickerViewProps> = ({
 
       {/* Category info */}
       <div className="category-info">
-        <span className="category-name">
-          {CATEGORY_LABELS[selectedCategory] || 'All Categories'}
-        </span>
+        <span className="category-name">{getCategoryLabel(selectedCategory)}</span>
         <span className="emoji-count">{displayedEmojis.length}</span>
       </div>
 
       {/* Emoji Grid */}
       <div className="emoji-grid-container">
         {isLoading ? (
-          <div className="loading-state">Loading emojis...</div>
+          <div className="loading-state">{t('loading')}</div>
         ) : displayedEmojis.length === 0 ? (
           <div className="empty-state">
             <div className="empty-icon">🔍</div>
-            <div className="empty-message">No emojis found</div>
-            <div className="empty-hint">Try searching with different keywords</div>
+            <div className="empty-message">{t('view.noEmojis')}</div>
+            <div className="empty-hint">{t('view.tryDifferent')}</div>
           </div>
         ) : (
           <div className="emoji-grid">

@@ -1,0 +1,154 @@
+{
+  "title": "Settings",
+  "titlebar": "Volt Settings",
+  "sections": {
+    "general": "General",
+    "shortcuts": "Shortcuts",
+    "extensions": "Extensions",
+    "advanced": "Advanced",
+    "about": "About",
+    "applications": "Applications",
+    "plugins": "Plugins",
+    "fileSearch": "File Search",
+    "clipboard": "Clipboard History",
+    "builtIn": "BUILT-IN"
+  },
+  "general": {
+    "title": "General",
+    "language": "Language",
+    "languageAuto": "Auto (System)",
+    "languageEn": "English",
+    "languageFr": "Français",
+    "followSystemAppearance": "Follow System Appearance",
+    "openAtLogin": "Open at Login",
+    "closeOnLaunch": "Close on Launch",
+    "voltHotkey": "Volt Hotkey",
+    "hotkeyDesc": "Press a key combination to set your global shortcut"
+  },
+  "shortcuts": {
+    "title": "Shortcuts",
+    "searchPlaceholder": "Search by name or alias",
+    "allCategories": "All categories",
+    "syncApps": "Sync Apps",
+    "tableHeaders": {
+      "name": "Name",
+      "alias": "Alias",
+      "hotkey": "Hotkey"
+    },
+    "addAlias": "Add Alias",
+    "noShortcuts": "No shortcuts available. Click \"Sync Apps\" to load your applications.",
+    "noMatch": "No shortcuts match your search."
+  },
+  "advanced": {
+    "title": "Advanced",
+    "showVoltOn": "Show Volt on",
+    "positions": {
+      "center": "Center of screen",
+      "topCenter": "Top center",
+      "topLeft": "Top left",
+      "topRight": "Top right",
+      "bottomLeft": "Bottom left",
+      "bottomCenter": "Bottom center",
+      "bottomRight": "Bottom right",
+      "leftCenter": "Left center",
+      "rightCenter": "Right center"
+    },
+    "maxResults": "Max Results",
+    "maxResultsDesc": "Maximum number of search results displayed",
+    "results": "{{count}} results",
+    "windowTransparency": "Window Transparency",
+    "transparencyDesc": "Adjust the window background transparency",
+    "theme": "Theme",
+    "themeLight": "Light",
+    "themeDark": "Dark",
+    "themeAuto": "Auto"
+  },
+  "about": {
+    "title": "About",
+    "description": "Fast, beautiful desktop launcher for Windows, macOS, and Linux",
+    "officialWebsite": "Official Website",
+    "githubRepo": "GitHub Repository",
+    "reportIssue": "Report an Issue",
+    "releaseNotes": "Release Notes",
+    "openLogs": "Open logs folder",
+    "copyDiagnostics": "Copy diagnostics",
+    "copied": "Copied!",
+    "copyright": "© 2026 VoltLaunchr Contributors • Licensed under Apache 2.0",
+    "builtWith": "Built with Tauri, React, and Rust"
+  },
+  "fileSearch": {
+    "title": "File Search",
+    "indexOnStartup": "Index on Startup",
+    "indexOnStartupDesc": "Automatically index files when Volt starts",
+    "foldersToIndex": "Folders to Index",
+    "foldersToIndexDesc": "Directories to scan for files (e.g., Documents, Downloads)",
+    "addFolder": "Add Folder",
+    "fileExtensions": "File Extensions",
+    "fileExtensionsDesc": "File types to include (comma-separated)",
+    "fileExtensionsPlaceholder": "pdf, docx, txt, xlsx",
+    "excludedPaths": "Excluded Paths",
+    "excludedPathsDesc": "Paths or folders to skip during indexing",
+    "addPath": "Add Exclusion",
+    "indexStatus": "Index Status",
+    "indexStatusDesc": "Persistent SQLite index statistics and maintenance",
+    "loadingStats": "Loading stats…",
+    "stats": {
+      "indexedFiles": "Indexed files",
+      "dbSize": "DB size",
+      "lastScan": "Last full scan",
+      "watcher": "File watcher",
+      "active": "Active",
+      "inactive": "Inactive",
+      "never": "Never",
+      "rebuild": "Rebuild Index",
+      "rebuildDesc": "Clears the database and re-scans all configured folders from scratch",
+      "rebuilding": "Rebuilding…"
+    }
+  },
+  "plugins": {
+    "title": "Plugins",
+    "builtin": "Built-in",
+    "names": {
+      "calculator": "Calculator",
+      "webSearch": "Web Search",
+      "systemCommands": "System Commands",
+      "timer": "Timer",
+      "systemMonitor": "System Monitor",
+      "games": "Games",
+      "clipboardHistory": "Clipboard History"
+    }
+  },
+  "clipboard": {
+    "title": "Clipboard History",
+    "infoText": "Clipboard History stores your recent clipboard entries for quick access. Use",
+    "infoTextSuffix": "followed by your search term to find past clipboard items.",
+    "monitoring": "Enable Clipboard Monitoring",
+    "monitoringDesc": "Automatically track clipboard changes",
+    "clearHistory": "Clear History",
+    "clearHistoryDesc": "Remove all clipboard history items",
+    "clear": "Clear"
+  },
+  "applications": {
+    "title": "Applications",
+    "infoText": "Volt automatically scans for installed applications on your system. Applications are refreshed each time Volt starts.",
+    "scanApps": "Scan Applications",
+    "scanAppsDesc": "Manually trigger a scan for installed applications",
+    "scanNow": "Scan Now"
+  },
+  "saveBar": {
+    "unsavedChanges": "You have unsaved changes",
+    "discard": "Discard",
+    "saveChanges": "Save Changes"
+  },
+  "loading": "Loading settings...",
+  "actions": {
+    "save": "Save",
+    "saving": "Saving...",
+    "close": "Close",
+    "reset": "Reset to defaults"
+  },
+  "errors": {
+    "loadFailed": "Failed to load settings",
+    "saveFailed": "Failed to save settings"
+  }
+}

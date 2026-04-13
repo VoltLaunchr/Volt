@@ -1,3 +1,9 @@
+import i18n from 'i18next';
+import enSteam from './locales/en.json';
+import frSteam from './locales/fr.json';
+i18n.addResourceBundle('en', 'steam', enSteam);
+i18n.addResourceBundle('fr', 'steam', frSteam);
+
 import { invoke } from '@tauri-apps/api/core';
 import { logger } from '../../../../shared/utils/logger';
 import { Plugin, PluginContext, PluginResult, PluginResultType } from '../../types';

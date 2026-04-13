@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { Search, X } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import './SearchBar.css';
 
 interface SearchBarProps {
@@ -19,6 +20,7 @@ export const SearchBar: React.FC<SearchBarProps> = ({
   autoFocus = true,
   resultCount,
 }) => {
+  const { t } = useTranslation('common');
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -30,9 +32,8 @@ export const SearchBar: React.FC<SearchBarProps> = ({
   // Derive the live-region announcement from the current state
   const liveAnnouncement = (() => {
     if (resultCount === undefined || !value.trim()) return '';
-    if (resultCount === 0) return 'No results found';
-    if (resultCount === 1) return '1 result found';
-    return `${resultCount} results found`;
+    if (resultCount === 0) return t('search.noResults');
+    return t('search.resultCount', { count: resultCount });
   })();
 
   return (
@@ -53,12 +54,12 @@ export const SearchBar: React.FC<SearchBarProps> = ({
         autoComplete="off"
         autoCorrect="off"
         autoCapitalize="off"
-        aria-label="Search"
+        aria-label={t('search.label')}
         aria-autocomplete="list"
         aria-controls="results-listbox"
       />
       {value && (
-        <button className="clear-button" onClick={() => onChange('')} aria-label="Clear search">
+        <button className="clear-button" onClick={() => onChange('')} aria-label={t('search.clearSearch')}>
           <X size={16} strokeWidth={2} />
         </button>
       )}

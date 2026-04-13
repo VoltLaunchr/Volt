@@ -1,4 +1,5 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import { Modal } from './Modal';
 import './HelpDialog.css';
 
@@ -12,47 +13,49 @@ interface ShortcutGroup {
   shortcuts: ShortcutEntry[];
 }
 
-const SHORTCUT_GROUPS: ShortcutGroup[] = [
-  {
-    title: 'Navigation',
-    shortcuts: [
-      { keys: ['↑', '↓'], description: 'Move between results' },
-      { keys: ['Home'], description: 'Jump to first result' },
-      { keys: ['End'], description: 'Jump to last result' },
-      { keys: ['PgUp', 'PgDn'], description: 'Move 5 results at a time' },
-    ],
-  },
-  {
-    title: 'Actions',
-    shortcuts: [
-      { keys: ['Enter'], description: 'Launch selected result' },
-      { keys: ['Tab'], description: 'Autocomplete with selected title' },
-      { keys: ['Shift+Enter'], description: 'Launch as administrator' },
-      { keys: ['Ctrl+Enter'], description: 'Launch without closing Volt' },
-      { keys: ['Alt+1–9'], description: 'Quick-launch result by number' },
-    ],
-  },
-  {
-    title: 'File & App Commands',
-    shortcuts: [
-      { keys: ['Ctrl+O'], description: 'Open containing folder' },
-      { keys: ['Ctrl+C'], description: 'Copy path to clipboard' },
-      { keys: ['Ctrl+I'], description: 'Show item properties' },
-      { keys: ['Ctrl+Delete'], description: 'Remove from launch history' },
-    ],
-  },
-  {
-    title: 'Application',
-    shortcuts: [
-      { keys: ['Esc'], description: 'Clear search / close Volt' },
-      { keys: ['Ctrl+K'], description: 'Clear search input' },
-      { keys: ['Ctrl+,'], description: 'Open Settings' },
-      { keys: ['Ctrl+R'], description: 'Reload Volt' },
-      { keys: ['Ctrl+Q'], description: 'Quit / hide Volt' },
-      { keys: ['F1', '?'], description: 'Show this help dialog' },
-    ],
-  },
-];
+function getShortcutGroups(t: (key: string) => string): ShortcutGroup[] {
+  return [
+    {
+      title: t('groups.navigation.title'),
+      shortcuts: [
+        { keys: ['↑', '↓'], description: t('groups.navigation.moveResults') },
+        { keys: ['Home'], description: t('groups.navigation.jumpFirst') },
+        { keys: ['End'], description: t('groups.navigation.jumpLast') },
+        { keys: ['PgUp', 'PgDn'], description: t('groups.navigation.moveFive') },
+      ],
+    },
+    {
+      title: t('groups.actions.title'),
+      shortcuts: [
+        { keys: ['Enter'], description: t('groups.actions.launch') },
+        { keys: ['Tab'], description: t('groups.actions.autocomplete') },
+        { keys: ['Shift+Enter'], description: t('groups.actions.launchAdmin') },
+        { keys: ['Ctrl+Enter'], description: t('groups.actions.launchKeepOpen') },
+        { keys: ['Alt+1–9'], description: t('groups.actions.quickLaunch') },
+      ],
+    },
+    {
+      title: t('groups.fileApp.title'),
+      shortcuts: [
+        { keys: ['Ctrl+O'], description: t('groups.fileApp.openFolder') },
+        { keys: ['Ctrl+C'], description: t('groups.fileApp.copyPath') },
+        { keys: ['Ctrl+I'], description: t('groups.fileApp.showProperties') },
+        { keys: ['Ctrl+Delete'], description: t('groups.fileApp.removeHistory') },
+      ],
+    },
+    {
+      title: t('groups.application.title'),
+      shortcuts: [
+        { keys: ['Esc'], description: t('groups.application.clearClose') },
+        { keys: ['Ctrl+K'], description: t('groups.application.clearInput') },
+        { keys: ['Ctrl+,'], description: t('groups.application.openSettings') },
+        { keys: ['Ctrl+R'], description: t('groups.application.reload') },
+        { keys: ['Ctrl+Q'], description: t('groups.application.quit') },
+        { keys: ['F1', '?'], description: t('groups.application.showHelp') },
+      ],
+    },
+  ];
+}
 
 export interface HelpDialogProps {
   isOpen: boolean;
@@ -60,10 +63,12 @@ export interface HelpDialogProps {
 }
 
 export const HelpDialog: React.FC<HelpDialogProps> = ({ isOpen, onClose }) => {
+  const { t } = useTranslation('help');
+  const shortcutGroups = getShortcutGroups(t);
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Keyboard Shortcuts" size="medium">
+    <Modal isOpen={isOpen} onClose={onClose} title={t('title')} size="medium">
       <div className="help-dialog-content">
-        {SHORTCUT_GROUPS.map((group) => (
+        {shortcutGroups.map((group) => (
           <section key={group.title} className="help-group">
             <h3 className="help-group-title">{group.title}</h3>
             <ul className="help-shortcut-list" role="list">
@@ -88,7 +93,7 @@ export const HelpDialog: React.FC<HelpDialogProps> = ({ isOpen, onClose }) => {
           </section>
         ))}
         <p className="help-dialog-footer">
-          Press <kbd className="help-key">Esc</kbd> to close
+          {t('closeHint', { key: 'Esc' })}
         </p>
       </div>
     </Modal>

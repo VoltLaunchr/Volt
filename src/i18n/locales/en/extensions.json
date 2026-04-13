@@ -1,0 +1,35 @@
+{
+  "loading": "Loading extensions...",
+  "header": {
+    "title": "Extension Store",
+    "refresh": "Refresh"
+  },
+  "tabs": {
+    "browse": "Browse",
+    "installed": "Installed"
+  },
+  "searchPlaceholder": "Search extensions...",
+  "empty": {
+    "noExtensions": "No extensions found",
+    "tryDifferent": "Try a different search term",
+    "noneInstalled": "No extensions installed",
+    "browseOrLink": "Browse extensions or link a dev extension"
+  },
+  "dev": {
+    "linkButton": "Link Dev Extension",
+    "linking": "Linking...",
+    "sectionTitle": "Development",
+    "badge": "DEV"
+  },
+  "sections": {
+    "installed": "Installed"
+  },
+  "actions": {
+    "install": "Install",
+    "installing": "Installing...",
+    "installed": "Installed",
+    "disable": "Disable",
+    "enable": "Enable",
+    "uninstall": "Uninstall"
+  }
+}

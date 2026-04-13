@@ -1,0 +1,27 @@
+{
+  "openCalculator": "Open Calculator",
+  "description": "Math, conversions, dates, and timezones",
+  "copyHint": "Click to copy",
+  "view": {
+    "title": "Calculator",
+    "placeholder": "Type a calculation...",
+    "result": "Result",
+    "copyResult": "Copy result (Enter)",
+    "copy": "Copy",
+    "quickActions": {
+      "squareRoot": "Square Root",
+      "square": "Square",
+      "convert": "Convert",
+      "timezone": "Timezone"
+    },
+    "history": "History",
+    "clear": "Clear",
+    "noHistory": "No history yet",
+    "historyHint": "Try: 2+2, 10km to miles, time in Tokyo",
+    "footer": {
+      "copy": "Copy",
+      "history": "History",
+      "close": "Close"
+    }
+  }
+}

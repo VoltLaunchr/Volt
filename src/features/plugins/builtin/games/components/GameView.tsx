@@ -1,5 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import React, { useCallback, useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { logger } from '../../../../../shared/utils/logger';
 import { GameInfo, PlatformInfo } from '../index';
 import './GameView.css';
@@ -36,6 +37,7 @@ interface GameViewProps {
 type PlatformFilter = 'all' | string;
 
 export const GameView: React.FC<GameViewProps> = ({ onClose }) => {
+  const { t } = useTranslation('games');
   const [games, setGames] = useState<GameInfo[]>([]);
   const [filteredGames, setFilteredGames] = useState<GameInfo[]>([]);
   const [platforms, setPlatforms] = useState<PlatformInfo[]>([]);
@@ -183,16 +185,16 @@ export const GameView: React.FC<GameViewProps> = ({ onClose }) => {
 
   // Format last played timestamp
   const formatLastPlayed = (timestamp?: number): string => {
-    if (!timestamp) return 'Never played';
+    if (!timestamp) return t('view.neverPlayed');
     const date = new Date(timestamp * 1000);
     const now = new Date();
     const diffMs = now.getTime() - date.getTime();
     const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
 
-    if (diffDays === 0) return 'Today';
-    if (diffDays === 1) return 'Yesterday';
-    if (diffDays < 7) return `${diffDays} days ago`;
-    if (diffDays < 30) return `${Math.floor(diffDays / 7)} weeks ago`;
+    if (diffDays === 0) return t('view.today');
+    if (diffDays === 1) return t('view.yesterday');
+    if (diffDays < 7) return t('view.daysAgo', { count: diffDays });
+    if (diffDays < 30) return t('view.weeksAgo', { count: Math.floor(diffDays / 7) });
     return date.toLocaleDateString();
   };
 
@@ -223,7 +225,7 @@ export const GameView: React.FC<GameViewProps> = ({ onClose }) => {
           <input
             type="text"
             className="filter-input"
-            placeholder="Search games..."
+            placeholder={t('view.searchPlaceholder')}
             value={filterQuery}
             onChange={(e) => setFilterQuery(e.target.value)}
             autoFocus
@@ -245,7 +247,7 @@ export const GameView: React.FC<GameViewProps> = ({ onClose }) => {
             >
               <path d="M22 3H2l8 9.46V19l4 2v-8.54L22 3z" />
             </svg>
-            <span>{platformFilter === 'all' ? 'All Platforms' : platformFilter}</span>
+            <span>{platformFilter === 'all' ? t('view.allPlatforms') : platformFilter}</span>
             <svg
               width="12"
               height="12"
@@ -267,7 +269,7 @@ export const GameView: React.FC<GameViewProps> = ({ onClose }) => {
                   setShowPlatformDropdown(false);
                 }}
               >
-                All Platforms ({games.length})
+                {t('view.allPlatforms')} ({games.length})
               </button>
               {platforms.map((platform) => (
                 <button
@@ -290,7 +292,7 @@ export const GameView: React.FC<GameViewProps> = ({ onClose }) => {
           className="rescan-button"
           onClick={handleRescan}
           disabled={isRescanning}
-          title="Rescan games"
+          title={t('view.rescan')}
         >
           <svg
             width="16"
@@ -312,7 +314,7 @@ export const GameView: React.FC<GameViewProps> = ({ onClose }) => {
         {/* Games list */}
         <div className="game-list">
           {isLoading ? (
-            <div className="loading-state">Loading games...</div>
+            <div className="loading-state">{t('view.loading')}</div>
           ) : filteredGames.length === 0 ? (
             <div className="empty-state">
               {games.length === 0 ? (
@@ -320,15 +322,13 @@ export const GameView: React.FC<GameViewProps> = ({ onClose }) => {
                   <span className="empty-icon">
                     <GameControllerIcon size={48} />
                   </span>
-                  <span>No games found</span>
-                  <span className="empty-hint">
-                    Install games from Steam, Epic, GOG, or other launchers
-                  </span>
+                  <span>{t('view.noGames')}</span>
+                  <span className="empty-hint">{t('view.noGamesHint')}</span>
                 </>
               ) : (
                 <>
                   <span className="empty-icon">🔍</span>
-                  <span>No matching games</span>
+                  <span>{t('view.noMatchingGames')}</span>
                 </>
               )}
             </div>
@@ -433,25 +433,25 @@ export const GameView: React.FC<GameViewProps> = ({ onClose }) => {
               {/* Metadata */}
               <div className="details-metadata">
                 <div className="metadata-section">
-                  <h3>Information</h3>
+                  <h3>{t('view.information')}</h3>
 
                   <div className="metadata-row">
-                    <span className="metadata-label">Platform</span>
+                    <span className="metadata-label">{t('view.platform')}</span>
                     <span className="metadata-value">{selectedGame.platform}</span>
                   </div>
 
                   <div className="metadata-row">
-                    <span className="metadata-label">Status</span>
+                    <span className="metadata-label">{t('view.status')}</span>
                     <span
                       className={`metadata-value status-${selectedGame.isInstalled ? 'installed' : 'not-installed'}`}
                     >
-                      {selectedGame.isInstalled ? 'Installed' : 'Not Installed'}
+                      {selectedGame.isInstalled ? t('view.installed') : t('view.notInstalled')}
                     </span>
                   </div>
 
                   {selectedGame.lastPlayed && (
                     <div className="metadata-row">
-                      <span className="metadata-label">Last Played</span>
+                      <span className="metadata-label">{t('view.lastPlayed')}</span>
                       <span className="metadata-value">
                         {formatLastPlayed(selectedGame.lastPlayed)}
                       </span>
@@ -459,7 +459,7 @@ export const GameView: React.FC<GameViewProps> = ({ onClose }) => {
                   )}
 
                   <div className="metadata-row">
-                    <span className="metadata-label">Install Path</span>
+                    <span className="metadata-label">{t('view.installPath')}</span>
                     <span className="metadata-value path" title={selectedGame.installPath}>
                       {selectedGame.installPath}
                     </span>
@@ -478,7 +478,7 @@ export const GameView: React.FC<GameViewProps> = ({ onClose }) => {
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
                   <path d="M8 5v14l11-7z" />
                 </svg>
-                <span>Play</span>
+                <span>{t('view.play')}</span>
                 <kbd>Enter</kbd>
               </button>
               <button
@@ -497,7 +497,7 @@ export const GameView: React.FC<GameViewProps> = ({ onClose }) => {
                 >
                   <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
                 </svg>
-                <span>Open Folder</span>
+                <span>{t('view.openFolder')}</span>
               </button>
             </div>
           </div>
@@ -510,16 +510,17 @@ export const GameView: React.FC<GameViewProps> = ({ onClose }) => {
           <div className="footer-icon">
             <GameControllerIcon size={16} />
           </div>
-          <span>Games Library</span>
+          <span>{t('view.gamesLibrary')}</span>
           <span className="footer-count">
-            {filteredGames.length} {filteredGames.length === 1 ? 'game' : 'games'}
+            {filteredGames.length}{' '}
+            {filteredGames.length === 1 ? t('view.game') : t('view.games')}
           </span>
         </div>
         <div className="footer-right">
           <span className="footer-hint">
-            <kbd>↑</kbd> <kbd>↓</kbd> Navigate
-            <kbd>Enter</kbd> Play
-            <kbd>Esc</kbd> Close
+            <kbd>↑</kbd> <kbd>↓</kbd> {t('view.footer.navigate')}
+            <kbd>Enter</kbd> {t('view.footer.play')}
+            <kbd>Esc</kbd> {t('view.footer.close')}
           </span>
         </div>
       </div>

@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { applicationService } from '../../features/applications/services/applicationService';
 import { ContextMenu } from '../../shared/components/ui';
 import { AppInfo, FileInfo, SearchResult, SearchResultType } from '../../shared/types/common.types';
@@ -27,6 +28,8 @@ export function ResultContextMenu({
   onShowProperties,
   onClose,
 }: ResultContextMenuProps) {
+  const { t } = useTranslation('results');
+
   return (
     <ContextMenu
       isOpen={state.isOpen}
@@ -34,16 +37,16 @@ export function ResultContextMenu({
       actions={[
         {
           id: 'launch',
-          label: 'Launch',
+          label: t('contextMenu.launch'),
           icon: '🚀',
-          shortcut: 'Enter',
+          shortcut: t('shortcuts.enter'),
           onClick: () => {
             if (state.result) onLaunch(state.result);
           },
         },
         {
           id: 'open-location',
-          label: 'Open File Location',
+          label: t('contextMenu.openFolder'),
           icon: '📁',
           onClick: () => {
             if (state.result) {
@@ -53,7 +56,7 @@ export function ResultContextMenu({
         },
         {
           id: 'copy-path',
-          label: 'Copy Path',
+          label: t('contextMenu.copyPath'),
           icon: '📋',
           onClick: () => {
             if (state.result) {
@@ -69,7 +72,7 @@ export function ResultContextMenu({
         },
         {
           id: 'properties',
-          label: 'Properties',
+          label: t('contextMenu.properties'),
           icon: 'ℹ️',
           onClick: () => {
             if (state.result) onShowProperties(state.result);

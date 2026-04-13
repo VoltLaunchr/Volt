@@ -1,0 +1,40 @@
+{
+  "back": "Back",
+  "filterPlaceholder": "Type to filter entries...",
+  "filters": {
+    "all": "All Types",
+    "text": "Text",
+    "image": "Image",
+    "files": "Files"
+  },
+  "states": {
+    "loading": "Loading...",
+    "empty": "No clipboard items found"
+  },
+  "groups": {
+    "today": "Today",
+    "yesterday": "Yesterday"
+  },
+  "metadata": {
+    "title": "Information",
+    "source": "Source",
+    "type": "Type",
+    "characters": "Characters",
+    "words": "Words",
+    "dimensions": "Dimensions",
+    "size": "Size",
+    "copied": "Copied"
+  },
+  "actions": {
+    "paste": "Paste",
+    "pin": "Pin",
+    "unpin": "Unpin",
+    "delete": "Delete"
+  },
+  "footer": {
+    "title": "Clipboard History",
+    "hint": "Navigate",
+    "hintPaste": "Paste",
+    "hintClose": "Close"
+  }
+}
