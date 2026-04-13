@@ -33,6 +33,8 @@ pub struct ExtensionManifest {
     pub author: ExtensionAuthor,
     pub icon: Option<String>,
     pub keywords: Option<Vec<String>>,
+    #[serde(default)]
+    pub prefix: Option<String>,
     pub category: Option<String>,
     pub repository: Option<String>,
     pub homepage: Option<String>,

@@ -29,6 +29,8 @@ export interface ExtensionManifest {
   author: ExtensionAuthor;
   icon?: string;
   keywords?: string[];
+  /** Trigger prefix for Worker sandbox canHandle (e.g., "pass" matches queries starting with "pass") */
+  prefix?: string;
   category?: ExtensionCategory;
   repository?: string;
   homepage?: string;
