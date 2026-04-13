@@ -10,10 +10,12 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import { transform } from 'sucrase';
+import i18n from 'i18next';
 import { logger } from '../../../shared/utils/logger';
 import { pluginRegistry } from '../../plugins/core';
 import { Plugin } from '../../plugins/types';
 import type { ExtensionManifest } from '../types/extension.types';
+import { WorkerPlugin } from './worker-sandbox';
 
 // Ensure VoltAPI is available globally
 import '../api';
@@ -86,43 +88,118 @@ export class ExtensionLoader {
    * Load a single extension from source
    */
   private async loadExtension(source: ExtensionSource): Promise<LoadedExtension | null> {
-    const { id, manifest, files } = source;
+    const { id, manifest } = source;
 
     console.log(`[ExtensionLoader] Loading extension: ${manifest.name} (${id})`);
-    console.log(`[ExtensionLoader] Files available:`, Object.keys(files));
+    console.log(`[ExtensionLoader] Files available:`, Object.keys(source.files));
 
     try {
-      // Bundle all files into a single executable code
-      const bundledCode = this.bundleExtension(source);
+      // Determine sandbox mode based on manifest
+      const hasKeywords = manifest.keywords && manifest.keywords.length > 0;
+      const hasPrefix = !!manifest.prefix;
 
-      // Debug: Log bundled code
-      console.log(`[ExtensionLoader] Bundled code for ${id}:`, bundledCode);
-
-      // Execute the code and get the plugin
-      const plugin = this.executeExtensionCode(bundledCode, id);
-
-      if (!plugin) {
-        console.warn(`[ExtensionLoader] Extension ${id} did not export a valid plugin`);
-        return null;
+      if (hasKeywords || hasPrefix) {
+        return this.loadInWorker(source);
+      } else {
+        console.warn(
+          `[ExtensionLoader] Extension ${id} has no keywords/prefix — running inline (legacy mode)`
+        );
+        return this.loadInline(source);
       }
-
-      // Register with plugin registry
-      pluginRegistry.register(plugin);
-
-      const loaded: LoadedExtension = {
-        id,
-        manifest,
-        plugin,
-      };
-
-      this.loadedExtensions.set(id, loaded);
-
-      console.log(`[ExtensionLoader] Successfully loaded: ${manifest.name}`);
-      return loaded;
     } catch (error) {
       logger.error(`[ExtensionLoader] Error loading ${id}:`, error);
       return null;
     }
+  }
+
+  /**
+   * Load extension in a Web Worker sandbox.
+   * The Worker gets its own thread — canHandle is declarative on main thread.
+   */
+  private loadInWorker(source: ExtensionSource): LoadedExtension | null {
+    const { id, manifest } = source;
+
+    console.log(`[ExtensionLoader] Loading ${id} in Worker sandbox`);
+
+    // Bundle the extension modules (reuse existing bundling logic)
+    const bundledCode = this.bundleExtension(source);
+
+    // Extract just the module code (remove the header and return statement
+    // that buildBundleWithOrder adds — the Worker bootstrap generates its own)
+    const moduleCode = this.extractModuleCode(bundledCode);
+
+    // Create WorkerPlugin proxy
+    const plugin = new WorkerPlugin({
+      id,
+      name: manifest.name,
+      description: manifest.description || '',
+      keywords: manifest.keywords || [],
+      prefix: manifest.prefix || null,
+      bundledModuleCode: moduleCode,
+      entryPoint: source.entryPoint,
+    });
+
+    // Register with plugin registry
+    pluginRegistry.register(plugin);
+
+    const loaded: LoadedExtension = { id, manifest, plugin };
+    this.loadedExtensions.set(id, loaded);
+
+    console.log(`[ExtensionLoader] Successfully loaded in Worker: ${manifest.name}`);
+    return loaded;
+  }
+
+  /**
+   * Load extension inline (legacy mode — no Worker sandbox).
+   * Used for extensions without keywords/prefix in their manifest.
+   */
+  private loadInline(source: ExtensionSource): LoadedExtension | null {
+    const { id, manifest } = source;
+
+    console.log(`[ExtensionLoader] Loading ${id} inline (legacy mode)`);
+
+    const bundledCode = this.bundleExtension(source);
+    console.log(`[ExtensionLoader] Bundled code for ${id}:`, bundledCode);
+
+    const plugin = this.executeExtensionCode(bundledCode, id);
+
+    if (!plugin) {
+      console.warn(`[ExtensionLoader] Extension ${id} did not export a valid plugin`);
+      return null;
+    }
+
+    pluginRegistry.register(plugin);
+
+    const loaded: LoadedExtension = { id, manifest, plugin };
+    this.loadedExtensions.set(id, loaded);
+
+    console.log(`[ExtensionLoader] Successfully loaded inline: ${manifest.name}`);
+    return loaded;
+  }
+
+  /**
+   * Extract just the module IIFE code from a full bundle.
+   * Strips the header (use strict, helpers, VoltAPI) and footer (entry point return).
+   * This is used by loadInWorker — the Worker bootstrap generates its own header/footer.
+   */
+  private extractModuleCode(fullBundle: string): string {
+    // Find the first module IIFE marker
+    const moduleStart = fullBundle.indexOf('// Module:');
+    // Find the entry point marker
+    const entryStart = fullBundle.indexOf('// Entry point');
+
+    if (moduleStart === -1) {
+      // No modules found — return empty (extension has only entry point inline)
+      return '';
+    }
+
+    if (entryStart === -1) {
+      // No entry point marker — return everything from first module
+      return fullBundle.substring(moduleStart);
+    }
+
+    // Return just the module IIFEs between the markers
+    return fullBundle.substring(moduleStart, entryStart).trim();
   }
 
   /**
@@ -480,6 +557,14 @@ const VoltAPI = window.VoltAPI;
 const PluginResultType = VoltAPI.types.PluginResultType;
 const copyToClipboard = VoltAPI.utils.copyToClipboard;
 
+// i18n API for extensions
+const VoltI18n = {
+  addTranslations: function(lng, namespace, resources) {
+    const prefixed = 'ext-' + namespace;
+    window.__volt_i18n_addBundle__(lng, prefixed, resources);
+  }
+};
+
 `;
 
     // Add each module in sorted order
@@ -556,6 +641,11 @@ return __defaultExport__;
    * Execute extension code and extract the plugin
    */
   private executeExtensionCode(code: string, extensionId: string): Plugin | null {
+    // Expose i18n bridge for extensions
+    (window as any).__volt_i18n_addBundle__ = (lng: string, ns: string, resources: Record<string, string>) => {
+      i18n.addResourceBundle(lng, ns, resources, true, true);
+    };
+
     try {
       // Execute the code
       const factory = new Function(code);
@@ -633,6 +723,11 @@ return __defaultExport__;
 
     // Unregister from plugin registry
     pluginRegistry.unregister(extensionId);
+
+    // Destroy Worker if it's a WorkerPlugin
+    if (extension.plugin && 'destroy' in extension.plugin) {
+      (extension.plugin as WorkerPlugin).destroy();
+    }
 
     // Remove from loaded extensions
     this.loadedExtensions.delete(extensionId);
