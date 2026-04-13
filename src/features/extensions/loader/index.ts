@@ -47,6 +47,24 @@ export class ExtensionLoader {
   private loadedExtensions: Map<string, LoadedExtension> = new Map();
 
   /**
+   * Callback to request permission consent from the user.
+   * Set by the UI layer (e.g., App component).
+   * Returns the list of granted permissions, or empty array if denied.
+   */
+  private permissionRequestHandler:
+    | ((extensionName: string, permissions: string[]) => Promise<string[]>)
+    | null = null;
+
+  /**
+   * Register a handler for permission consent requests.
+   */
+  setPermissionRequestHandler(
+    handler: (extensionName: string, permissions: string[]) => Promise<string[]>
+  ): void {
+    this.permissionRequestHandler = handler;
+  }
+
+  /**
    * Load all enabled extensions
    */
   async loadAllExtensions(): Promise<LoadedExtension[]> {
@@ -85,6 +103,62 @@ export class ExtensionLoader {
   }
 
   /**
+   * Get granted permissions for an installed extension from the backend.
+   */
+  private async getGrantedPermissions(extensionId: string): Promise<string[]> {
+    try {
+      const installed = await invoke<{ manifest: { id: string }; grantedPermissions?: string[] }[]>(
+        'get_installed_extensions'
+      );
+      const ext = installed.find((e) => e.manifest.id === extensionId);
+      return ext?.grantedPermissions || [];
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * Resolve permissions for an extension: check if already granted, prompt if not.
+   * Returns the granted permissions array.
+   */
+  private async resolvePermissions(
+    extensionId: string,
+    extensionName: string,
+    requiredPermissions: string[]
+  ): Promise<string[]> {
+    if (!requiredPermissions || requiredPermissions.length === 0) {
+      return [];
+    }
+
+    // Check what's already granted
+    const alreadyGranted = await this.getGrantedPermissions(extensionId);
+    const missing = requiredPermissions.filter((p) => !alreadyGranted.includes(p));
+
+    if (missing.length === 0) {
+      return alreadyGranted;
+    }
+
+    // Ask user for consent
+    if (this.permissionRequestHandler) {
+      const granted = await this.permissionRequestHandler(extensionName, requiredPermissions);
+      if (granted.length > 0) {
+        // Persist granted permissions
+        await invoke('update_extension_permissions', {
+          extensionId,
+          permissions: granted,
+        }).catch((err) => {
+          console.warn(`[ExtensionLoader] Failed to persist permissions for ${extensionId}:`, err);
+        });
+      }
+      return granted;
+    }
+
+    // No handler registered — deny by default
+    console.warn(`[ExtensionLoader] No permission handler — denying permissions for ${extensionId}`);
+    return [];
+  }
+
+  /**
    * Load a single extension from source
    */
   private async loadExtension(source: ExtensionSource): Promise<LoadedExtension | null> {
@@ -94,12 +168,25 @@ export class ExtensionLoader {
     console.log(`[ExtensionLoader] Files available:`, Object.keys(source.files));
 
     try {
-      // Determine sandbox mode based on manifest
       const hasKeywords = manifest.keywords && manifest.keywords.length > 0;
       const hasPrefix = !!manifest.prefix;
 
+      // Resolve permissions before loading
+      const requiredPermissions = manifest.permissions || [];
+      const grantedPermissions = await this.resolvePermissions(
+        id,
+        manifest.name,
+        requiredPermissions
+      );
+
+      // If extension requires permissions but none were granted, skip it
+      if (requiredPermissions.length > 0 && grantedPermissions.length === 0) {
+        console.warn(`[ExtensionLoader] Extension ${id} skipped — permissions denied`);
+        return null;
+      }
+
       if (hasKeywords || hasPrefix) {
-        return this.loadInWorker(source);
+        return this.loadInWorker(source, grantedPermissions);
       } else {
         console.warn(
           `[ExtensionLoader] Extension ${id} has no keywords/prefix — running inline (legacy mode)`
@@ -116,7 +203,7 @@ export class ExtensionLoader {
    * Load extension in a Web Worker sandbox.
    * The Worker gets its own thread — canHandle is declarative on main thread.
    */
-  private loadInWorker(source: ExtensionSource): LoadedExtension | null {
+  private loadInWorker(source: ExtensionSource, grantedPermissions: string[]): LoadedExtension | null {
     const { id, manifest } = source;
 
     console.log(`[ExtensionLoader] Loading ${id} in Worker sandbox`);
@@ -138,7 +225,7 @@ export class ExtensionLoader {
       prefix: manifest.prefix || null,
       bundledModuleCode: moduleCode,
       entryPoint: source.entryPoint,
-      grantedPermissions: [],
+      grantedPermissions,
     });
 
     // Register with plugin registry
