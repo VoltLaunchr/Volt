@@ -36,6 +36,12 @@ export const useToastStore = create<ToastStore>()((set) => ({
     })),
 }));
 
+/** Convenience hook for showing toasts. */
+export function useToast() {
+  const addToast = useToastStore((s) => s.addToast);
+  return { showToast: addToast };
+}
+
 function ToastIcon({ type }: { type: ToastItem['type'] }) {
   switch (type) {
     case 'success':

@@ -224,16 +224,36 @@ export function useAppLifecycle(): UseAppLifecycleResult {
         setIsIndexing(true);
         const { addToast } = useToastStore.getState();
         addToast(`Indexing ${foldersToIndex.length} folder(s)...`, 'info');
+
+        // Listen for progress events from backend
+        const unlistenPromise = listen<{
+          phase: string;
+          indexedFiles: number;
+          totalFiles: number;
+          isComplete: boolean;
+        }>('indexing-progress', (event) => {
+          const { phase, indexedFiles } = event.payload;
+
+          if (phase === 'complete') {
+            setIsIndexing(false);
+            addToast(`Indexing complete — ${indexedFiles} files indexed`, 'success');
+            unlistenPromise.then((fn) => fn());
+          } else if (phase === 'error') {
+            setIsIndexing(false);
+            addToast('Indexing failed', 'error', 0); // duration 0 = persistent
+            unlistenPromise.then((fn) => fn());
+          }
+        });
+
+        // Start indexing (returns immediately, work happens in background)
         await invoke('start_indexing', {
           folders: foldersToIndex,
           excludedPaths: settings.indexing.excludedPaths,
           fileExtensions: settings.indexing.fileExtensions,
         });
-        addToast('Indexing complete', 'success');
       } catch (err) {
         logger.error('Failed to start file indexing:', err);
-        useToastStore.getState().addToast('Indexing failed', 'error');
-      } finally {
+        useToastStore.getState().addToast('Indexing failed', 'error', 0);
         setIsIndexing(false);
       }
     };
