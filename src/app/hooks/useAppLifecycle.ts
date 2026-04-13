@@ -55,10 +55,23 @@ export function useAppLifecycle(): UseAppLifecycleResult {
   } = useApplications();
 
   const settings = useAppStore((s) => s.settings);
-  const { setSettings, setIsIndexing } = useAppStore.getState();
+  const { setSettings, setIsIndexing, setAllApps, setIsLoading, setAppError } = useAppStore.getState();
 
   const indexingStarted = useRef(false); // Prevent double indexing (StrictMode)
   const updateCheckDone = useRef(false); // Prevent double update check
+
+  // Sync app data into store
+  useEffect(() => {
+    setAllApps(allApps);
+  }, [allApps, setAllApps]);
+
+  useEffect(() => {
+    setIsLoading(isLoading);
+  }, [isLoading, setIsLoading]);
+
+  useEffect(() => {
+    setAppError(appError);
+  }, [appError, setAppError]);
 
   // Load settings, theme, and initialize plugins on mount
   useEffect(() => {
