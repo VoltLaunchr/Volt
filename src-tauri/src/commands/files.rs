@@ -7,7 +7,7 @@ use crate::indexer::{
 };
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use tauri::State;
+use tauri::{AppHandle, Emitter, State};
 use tracing::{error, info, warn};
 
 /// Parse a category string into FileCategory
@@ -130,6 +130,15 @@ impl FileIndexState {
     }
 }
 
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct IndexingProgress {
+    phase: String,
+    indexed_files: usize,
+    total_files: usize,
+    is_complete: bool,
+}
+
 /// Starts file indexing based on settings.
 ///
 /// On the first call the DB is empty so a full scan runs.  On subsequent
@@ -137,6 +146,7 @@ impl FileIndexState {
 /// scan only runs if `force` is true or no files are in the DB.
 #[tauri::command]
 pub async fn start_indexing(
+    app_handle: AppHandle,
     state: State<'_, FileIndexState>,
     folders: Vec<String>,
     excluded_paths: Vec<String>,
@@ -184,6 +194,7 @@ pub async fn start_indexing(
     let files_arc = state.files.clone();
     let status_arc = state.status.clone();
     let db_arc = state.db.clone();
+    let app_handle = app_handle.clone();
 
     // Run indexing in background
     tauri::async_runtime::spawn(async move {
@@ -213,12 +224,32 @@ pub async fn start_indexing(
                                 status.last_updated = chrono::Utc::now().timestamp();
                             }
                             info!("In-memory cache populated from DB ({} files)", file_count);
+                            let _ = app_handle.emit(
+                                "indexing-progress",
+                                IndexingProgress {
+                                    phase: "complete".to_string(),
+                                    indexed_files: file_count,
+                                    total_files: file_count,
+                                    is_complete: true,
+                                },
+                            );
                             return;
                         }
                         Err(e) => warn!("Failed to load from DB, falling back to scan: {}", e),
                     }
                 }
-                Ok(_) => info!("DB is empty – performing full scan"),
+                Ok(_) => {
+                    info!("DB is empty – performing full scan");
+                    let _ = app_handle.emit(
+                        "indexing-progress",
+                        IndexingProgress {
+                            phase: "scanning".to_string(),
+                            indexed_files: 0,
+                            total_files: 0,
+                            is_complete: false,
+                        },
+                    );
+                }
                 Err(e) => warn!("Could not check DB count: {}", e),
             }
         }
@@ -251,9 +282,27 @@ pub async fn start_indexing(
                 }
 
                 info!("Full scan complete: {} files indexed", file_count);
+                let _ = app_handle.emit(
+                    "indexing-progress",
+                    IndexingProgress {
+                        phase: "complete".to_string(),
+                        indexed_files: file_count,
+                        total_files: file_count,
+                        is_complete: true,
+                    },
+                );
             }
             Err(e) => {
                 error!("Indexing failed: {}", e);
+                let _ = app_handle.emit(
+                    "indexing-progress",
+                    IndexingProgress {
+                        phase: "error".to_string(),
+                        indexed_files: 0,
+                        total_files: 0,
+                        is_complete: true,
+                    },
+                );
                 if let Ok(mut status) = status_arc.lock() {
                     status.is_indexing = false;
                 }
