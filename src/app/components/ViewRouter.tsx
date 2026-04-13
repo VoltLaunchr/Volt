@@ -11,60 +11,117 @@ import { SuggestionsView } from '../../features/suggestions';
 import { ErrorMessage, Spinner } from '../../shared/components/ui';
 import { defaultSuggestions } from '../../shared/constants/suggestions';
 import { SearchResult } from '../../shared/types/common.types';
-import type { ActiveView } from '../../stores/uiStore';
+import { logger } from '../../shared/utils/logger';
+import { useAppStore } from '../../stores/appStore';
+import { useSearchStore } from '../../stores/searchStore';
+import { useUiStore } from '../../stores/uiStore';
+import { openSettingsWindow } from '../utils';
 
 interface ViewRouterProps {
-  activeView: ActiveView;
-  isLoading: boolean;
-  error: string | null;
-  searchQuery: string;
-  results: SearchResult[];
-  selectedIndex: number;
-  onResetView: () => void;
   onSelectEmoji: (emoji: string) => void;
-  onRetry: () => void;
-  onClearError: () => void;
-  onSelectResult: (index: number) => void;
   onLaunchResult: (result: SearchResult) => void;
-  onSuggestionSelect: (categoryIndex: number, itemIndex: number) => void;
-  onSuggestionActivate: (categoryIndex: number, itemIndex: number) => Promise<void>;
 }
 
-export function ViewRouter({
-  activeView,
-  isLoading,
-  error,
-  searchQuery,
-  results,
-  selectedIndex,
-  onResetView,
-  onSelectEmoji,
-  onRetry,
-  onClearError,
-  onSelectResult,
-  onLaunchResult,
-  onSuggestionSelect,
-  onSuggestionActivate,
-}: ViewRouterProps) {
+export function ViewRouter({ onSelectEmoji, onLaunchResult }: ViewRouterProps) {
+  const activeView = useUiStore((s) => s.activeView);
+  const searchQuery = useSearchStore((s) => s.searchQuery);
+  const results = useSearchStore((s) => s.results);
+  const selectedIndex = useSearchStore((s) => s.selectedIndex);
+  const isLoading = useAppStore((s) => s.isLoading);
+  const searchError = useSearchStore((s) => s.searchError);
+  const appError = useAppStore((s) => s.appError);
+
+  const error = appError || searchError;
+
+  const resetToSearchView = () => {
+    useSearchStore.getState().clearSearch();
+    useUiStore.getState().setActiveView({ type: 'search' });
+  };
+
+  const clearError = () => {
+    useAppStore.getState().setAppError(null);
+    useSearchStore.getState().setSearchError(null);
+  };
+
+  const handleSuggestionSelect = (categoryIndex: number, itemIndex: number) => {
+    let globalIndex = 0;
+    for (let i = 0; i < categoryIndex; i++) {
+      globalIndex += defaultSuggestions[i].items.length;
+    }
+    useSearchStore.getState().setSelectedIndex(globalIndex + itemIndex);
+  };
+
+  const handleSuggestionActivate = async (categoryIndex: number, itemIndex: number) => {
+    const category = defaultSuggestions[categoryIndex];
+    const item = category.items[itemIndex];
+    const { setQuery } = useSearchStore.getState();
+    const { setActiveView } = useUiStore.getState();
+
+    switch (item.id) {
+      case 'whats-new':
+        setActiveView({ type: 'changelog' });
+        break;
+      case 'settings':
+      case 'account':
+        await openSettingsWindow();
+        break;
+      case 'about':
+        try {
+          const { openUrl } = await import('@tauri-apps/plugin-opener');
+          await openUrl('https://voltlaunchr.com');
+        } catch (err) {
+          logger.error('Failed to open website:', err);
+          window.open('https://voltlaunchr.com', '_blank');
+        }
+        break;
+      case 'clipboard-history':
+        setActiveView({ type: 'clipboard' });
+        break;
+      case 'search-emoji':
+        setQuery(':');
+        break;
+      case 'search-files':
+        setActiveView({ type: 'files' });
+        break;
+      case 'system-monitor':
+        setQuery('system ');
+        break;
+      case 'calculator':
+        setActiveView({ type: 'calculator' });
+        break;
+      case 'timer':
+        setQuery('timer ');
+        break;
+      case 'web-search':
+        setQuery('? ');
+        break;
+      case 'steam-games':
+        setActiveView({ type: 'games' });
+        break;
+      default:
+        console.log('Unknown suggestion:', item.id);
+    }
+  };
+
   switch (activeView.type) {
     case 'changelog':
-      return <ChangelogView onClose={onResetView} />;
+      return <ChangelogView onClose={resetToSearchView} />;
     case 'calculator':
-      return <CalculatorView onClose={onResetView} />;
+      return <CalculatorView onClose={resetToSearchView} />;
     case 'emoji':
       return (
         <EmojiPickerView
-          onClose={onResetView}
+          onClose={resetToSearchView}
           onSelectEmoji={onSelectEmoji}
           initialQuery={activeView.initialQuery || ''}
         />
       );
     case 'clipboard':
-      return <ClipboardHistoryView onClose={onResetView} />;
+      return <ClipboardHistoryView onClose={resetToSearchView} />;
     case 'files':
-      return <FileSearchView onClose={onResetView} />;
+      return <FileSearchView onClose={resetToSearchView} />;
     case 'games':
-      return <GameView onClose={onResetView} />;
+      return <GameView onClose={resetToSearchView} />;
   }
 
   if (isLoading) {
@@ -82,8 +139,8 @@ export function ViewRouter({
           message={error}
           title="Error"
           variant="inline"
-          onRetry={onRetry}
-          onDismiss={onClearError}
+          onRetry={clearError}
+          onDismiss={clearError}
         />
       </div>
     );
@@ -94,8 +151,8 @@ export function ViewRouter({
       <SuggestionsView
         suggestions={defaultSuggestions}
         selectedIndex={selectedIndex}
-        onSelect={onSuggestionSelect}
-        onActivate={onSuggestionActivate}
+        onSelect={handleSuggestionSelect}
+        onActivate={handleSuggestionActivate}
       />
     );
   }
@@ -104,7 +161,7 @@ export function ViewRouter({
     <ResultsList
       results={results}
       selectedIndex={selectedIndex}
-      onSelect={onSelectResult}
+      onSelect={(index: number) => useSearchStore.getState().setSelectedIndex(index)}
       onLaunch={onLaunchResult}
     />
   );

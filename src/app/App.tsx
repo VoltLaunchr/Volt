@@ -6,7 +6,6 @@ import { useWindowState } from '../features/window';
 import { Footer } from '../shared/components/layout';
 import { HelpDialog, OnboardingModal, PropertiesDialog, ToastContainer } from '../shared/components/ui';
 import { settingsService } from '../features/settings';
-import { defaultSuggestions } from '../shared/constants/suggestions';
 import { SearchResult } from '../shared/types/common.types';
 import { useAppStore } from '../stores/appStore';
 import { useSearchStore } from '../stores/searchStore';
@@ -22,7 +21,7 @@ import '../styles/accessibility.css';
 import './App.css';
 
 function App() {
-  const { isLoading, appError, refreshApps, clearAppError } = useAppLifecycle();
+  const { isLoading } = useAppLifecycle();
   const { hide: hideWindow, startDragging } = useWindowState();
 
   // App store
@@ -32,11 +31,8 @@ function App() {
   // Search store
   const searchQuery = useSearchStore((s) => s.searchQuery);
   const results = useSearchStore((s) => s.results);
-  const selectedIndex = useSearchStore((s) => s.selectedIndex);
-  const searchError = useSearchStore((s) => s.searchError);
   const showSnowEffect = useSearchStore((s) => s.showSnowEffect);
-  const { setQuery, setSelectedIndex, setSearchError, clearSearch } =
-    useSearchStore.getState();
+  const { setQuery, clearSearch } = useSearchStore.getState();
 
   // UI store
   const activeView = useUiStore((s) => s.activeView);
@@ -52,13 +48,7 @@ function App() {
     suspended: activeView.type !== 'search',
   });
 
-  const error = appError || searchError;
   const closeOnLaunch = settings?.general.closeOnLaunch !== false;
-
-  const clearError = useCallback(() => {
-    clearAppError();
-    setSearchError(null);
-  }, [clearAppError, setSearchError]);
 
   // Switch to emoji picker when query starts with `:`
   useEffect(() => {
@@ -74,17 +64,6 @@ function App() {
     hideWindow,
     openSettingsWindow,
   });
-
-  const handleSuggestionSelect = useCallback(
-    (categoryIndex: number, itemIndex: number) => {
-      let globalIndex = 0;
-      for (let i = 0; i < categoryIndex; i++) {
-        globalIndex += defaultSuggestions[i].items.length;
-      }
-      setSelectedIndex(globalIndex + itemIndex);
-    },
-    [setSelectedIndex]
-  );
 
   const handleShowProperties = useCallback(
     (result: SearchResult) => {
@@ -128,11 +107,6 @@ function App() {
     useAppStore.getState().setSettings(updated);
   }, [settings]);
 
-  const handleRetry = useCallback(async () => {
-    clearError();
-    await refreshApps();
-  }, [clearError, refreshApps]);
-
   const handleSelectEmoji = useCallback(
     async (emoji: string) => {
       await navigator.clipboard.writeText(emoji).catch(() => {});
@@ -163,20 +137,8 @@ function App() {
       )}
 
       <ViewRouter
-        activeView={activeView}
-        isLoading={isLoading}
-        error={error}
-        searchQuery={searchQuery}
-        results={results}
-        selectedIndex={selectedIndex}
-        onResetView={resetToSearchView}
         onSelectEmoji={handleSelectEmoji}
-        onRetry={handleRetry}
-        onClearError={clearError}
-        onSelectResult={setSelectedIndex}
         onLaunchResult={handleLaunch}
-        onSuggestionSelect={handleSuggestionSelect}
-        onSuggestionActivate={handleSuggestionActivate}
       />
 
       {activeView.type === 'search' && (
