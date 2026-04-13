@@ -351,13 +351,18 @@ export function SettingsApp() {
 
         <div className="settings-row">
           <div className="settings-row-info">
-            <span className="settings-row-label">Volt Hotkey</span>
+            <span className="settings-row-label" id="hotkey-label">Volt Hotkey</span>
+            <span className="settings-row-desc" id="hotkey-desc">
+              Press a key combination to set your global shortcut
+            </span>
           </div>
           <div className="settings-row-action">
             <HotkeyCapture
               value={settings.hotkeys.toggleWindow}
               onChange={handleToggleWindowHotkeyChange}
               onError={setHotkeyError}
+              aria-labelledby="hotkey-label"
+              aria-describedby="hotkey-desc"
             />
           </div>
         </div>
@@ -902,11 +907,11 @@ export function SettingsApp() {
           <div className="settings-section-divider" />
 
           <h3 className="settings-subsection-title">Folders to Index</h3>
-          <p className="settings-subsection-desc">
+          <p className="settings-subsection-desc" id="folders-desc">
             Directories to scan for files (e.g., Documents, Downloads)
           </p>
 
-          <div className="folder-list">
+          <div className="folder-list" aria-describedby="folders-desc">
             {settings.indexing.folders.map((folder, index) => (
               <div key={index} className="folder-item">
                 <Folder size={16} className="folder-icon" />
@@ -930,11 +935,12 @@ export function SettingsApp() {
           <div className="settings-section-divider" />
 
           <h3 className="settings-subsection-title">File Extensions</h3>
-          <p className="settings-subsection-desc">File types to include (comma-separated)</p>
+          <p className="settings-subsection-desc" id="extensions-desc">File types to include (comma-separated)</p>
 
           <input
             type="text"
             className="settings-text-input"
+            aria-describedby="extensions-desc"
             value={settings.indexing.fileExtensions.join(', ')}
             onChange={(e) => {
               const extensions = e.target.value

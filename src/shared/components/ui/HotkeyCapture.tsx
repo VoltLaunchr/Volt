@@ -6,9 +6,18 @@ export interface HotkeyCaptureProps {
   onChange: (hotkey: string) => void;
   onError?: (error: string) => void;
   disabled?: boolean;
+  'aria-labelledby'?: string;
+  'aria-describedby'?: string;
 }
 
-export function HotkeyCapture({ value, onChange, onError, disabled }: HotkeyCaptureProps) {
+export function HotkeyCapture({
+  value,
+  onChange,
+  onError,
+  disabled,
+  'aria-labelledby': ariaLabelledBy,
+  'aria-describedby': ariaDescribedBy,
+}: HotkeyCaptureProps) {
   const [isRecording, setIsRecording] = useState(false);
   const [pressedKeys, setPressedKeys] = useState<Set<string>>(new Set());
 
@@ -136,7 +145,7 @@ export function HotkeyCapture({ value, onChange, onError, disabled }: HotkeyCapt
   };
 
   return (
-    <div className="hotkey-capture">
+    <div className="hotkey-capture" aria-labelledby={ariaLabelledBy} aria-describedby={ariaDescribedBy}>
       {isRecording ? (
         <div className="hotkey-recording">
           <div className="hotkey-recording-display">
