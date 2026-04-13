@@ -10,6 +10,18 @@ interface SuggestionsViewProps {
   onActivate: (categoryIndex: number, itemIndex: number) => void;
 }
 
+/** Map category titles to i18n keys */
+const CATEGORY_HEADER_KEYS: Record<string, string> = {
+  Suggestions: 'suggestionsHeaders.suggestions',
+  Commands: 'suggestionsHeaders.commands',
+};
+
+/** Map shortcut badge values to i18n keys */
+const BADGE_KEYS: Record<string, string> = {
+  Command: 'suggestionsBadge.command',
+  Changelog: 'suggestionsBadge.changelog',
+};
+
 export const SuggestionsView: React.FC<SuggestionsViewProps> = ({
   suggestions,
   selectedIndex,
@@ -32,41 +44,55 @@ export const SuggestionsView: React.FC<SuggestionsViewProps> = ({
 
   return (
     <div className="suggestions-view">
-      {suggestions.map((category, categoryIndex) => (
-        <div key={category.title} className="suggestion-category">
-          <div className="suggestion-category-header">
-            <h3 className="suggestion-category-title">{category.title}</h3>
-          </div>
-          <div className="suggestion-items">
-            {category.items.map((item, itemIndex) => {
-              const currentIndex = globalIndex++;
-              const isSelected = currentIndex === selectedIndex;
+      {suggestions.map((category, categoryIndex) => {
+        // Translate category header
+        const headerKey = CATEGORY_HEADER_KEYS[category.title];
+        const categoryTitle = headerKey ? t(headerKey) : category.title;
 
-              return (
-                <div
-                  key={item.id}
-                  ref={isSelected ? selectedRef : null}
-                  className={`suggestion-item ${isSelected ? 'selected' : ''}`}
-                  onClick={() => onActivate(categoryIndex, itemIndex)}
-                  onMouseEnter={() => onSelect(categoryIndex, itemIndex)}
-                >
-                  <div className="suggestion-item-icon">
-                    <item.icon size={20} strokeWidth={2} />
+        return (
+          <div key={category.title} className="suggestion-category">
+            <div className="suggestion-category-header">
+              <h3 className="suggestion-category-title">{categoryTitle}</h3>
+            </div>
+            <div className="suggestion-items">
+              {category.items.map((item, itemIndex) => {
+                const currentIndex = globalIndex++;
+                const isSelected = currentIndex === selectedIndex;
+
+                // Translate title and subtitle from common.suggestions.{id}
+                const translatedTitle = t(`suggestions.${item.id}.title`, { defaultValue: item.title });
+                const translatedSubtitle = t(`suggestions.${item.id}.subtitle`, { defaultValue: item.subtitle });
+
+                // Translate badge
+                const badgeKey = item.shortcut ? BADGE_KEYS[item.shortcut] : undefined;
+                const translatedBadge = badgeKey ? t(badgeKey) : item.shortcut;
+
+                return (
+                  <div
+                    key={item.id}
+                    ref={isSelected ? selectedRef : null}
+                    className={`suggestion-item ${isSelected ? 'selected' : ''}`}
+                    onClick={() => onActivate(categoryIndex, itemIndex)}
+                    onMouseEnter={() => onSelect(categoryIndex, itemIndex)}
+                  >
+                    <div className="suggestion-item-icon">
+                      <item.icon size={20} strokeWidth={2} />
+                    </div>
+                    <div className="suggestion-item-content">
+                      <div className="suggestion-item-title">{translatedTitle}</div>
+                      <div className="suggestion-item-subtitle">{translatedSubtitle}</div>
+                    </div>
+                    {translatedBadge && <div className="suggestion-item-badge">{translatedBadge}</div>}
+                    {!item.shortcut && item.category === 'command' && (
+                      <div className="suggestion-item-badge">{t('suggestionsBadge.command')}</div>
+                    )}
                   </div>
-                  <div className="suggestion-item-content">
-                    <div className="suggestion-item-title">{item.title}</div>
-                    <div className="suggestion-item-subtitle">{item.subtitle}</div>
-                  </div>
-                  {item.shortcut && <div className="suggestion-item-badge">{item.shortcut}</div>}
-                  {!item.shortcut && item.category === 'command' && (
-                    <div className="suggestion-item-badge">{t('suggestionsBadge.command')}</div>
-                  )}
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 };

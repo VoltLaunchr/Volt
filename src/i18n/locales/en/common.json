@@ -26,7 +26,12 @@
     "error": "Error"
   },
   "suggestionsBadge": {
-    "command": "Command"
+    "command": "Command",
+    "changelog": "Changelog"
+  },
+  "suggestionsHeaders": {
+    "suggestions": "Suggestions",
+    "commands": "Commands"
   },
   "suggestions": {
     "whats-new": { "title": "See what's new", "subtitle": "v0.0.2" },
