@@ -74,6 +74,8 @@ export interface InstalledExtension {
   installedAt: string;
   enabled: boolean;
   path: string;
+  /** Permissions granted by the user at install/first-load time */
+  grantedPermissions?: ExtensionPermission[];
 }
 
 /**
@@ -86,6 +88,8 @@ export interface DevExtension {
   enabled: boolean;
   /** Always true for dev extensions */
   isDev: boolean;
+  /** Permissions granted by the user */
+  grantedPermissions?: ExtensionPermission[];
 }
 
 export interface ExtensionRegistry {

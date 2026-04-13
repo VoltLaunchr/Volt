@@ -375,6 +375,7 @@ pub fn run() {
             install_extension,
             uninstall_extension,
             toggle_extension,
+            update_extension_permissions,
             check_extension_updates,
             update_extension,
             get_extension_details,

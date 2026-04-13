@@ -67,6 +67,8 @@ pub struct InstalledExtension {
     pub installed_at: String,
     pub enabled: bool,
     pub path: String,
+    #[serde(default)]
+    pub granted_permissions: Vec<String>,
 }
 
 /// Extension registry from GitHub
@@ -381,6 +383,7 @@ pub async fn install_extension(
         installed_at: chrono::Utc::now().to_rfc3339(),
         enabled: true,
         path: extension_dir.to_string_lossy().to_string(),
+        granted_permissions: Vec::new(),
     };
 
     // Update installed state
@@ -443,6 +446,29 @@ pub async fn toggle_extension(
             extension_id
         )))
     }
+}
+
+/// Update granted permissions for an installed extension
+#[tauri::command]
+pub async fn update_extension_permissions(
+    app: AppHandle,
+    extension_id: String,
+    permissions: Vec<String>,
+) -> VoltResult<()> {
+    validate_extension_id(&extension_id)?;
+
+    let mut state = load_installed_state(&app)?;
+
+    let ext = state
+        .extensions
+        .iter_mut()
+        .find(|e| e.manifest.id == extension_id)
+        .ok_or_else(|| VoltError::NotFound(format!("Extension {} not found", extension_id)))?;
+
+    ext.granted_permissions = permissions;
+    save_installed_state(&app, &state)?;
+
+    Ok(())
 }
 
 /// Check for extension updates
