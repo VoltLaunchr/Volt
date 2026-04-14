@@ -420,6 +420,8 @@ pub fn run() {
             expand_snippet,
             import_snippets,
             export_snippets,
+            // Streaming search
+            search_streaming,
         ])
         .run(tauri::generate_context!())
         .unwrap_or_else(|e| {
