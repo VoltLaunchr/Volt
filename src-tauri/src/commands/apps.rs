@@ -873,7 +873,7 @@ fn extract_macos_app_icon(app_path: &std::path::Path) -> Option<String> {
 
 #[cfg(target_os = "macos")]
 fn convert_icns_to_base64_png(icns_path: &std::path::Path) -> Result<String, String> {
-    use icns::IconFamily;
+    use icns::{IconFamily, IconType, PixelFormat};
     use std::io::Cursor;
 
     let icns_data = std::fs::read(icns_path).map_err(|e| e.to_string())?;
@@ -882,24 +882,26 @@ fn convert_icns_to_base64_png(icns_path: &std::path::Path) -> Result<String, Str
 
     // Extract the best available icon (512x512 preferred, then 256x256, then 128x128)
     let image_data = icon_family
-        .get_icon_with_type(icns::IconType::RGB512)
-        .or_else(|_| icon_family.get_icon_with_type(icns::IconType::RGB256))
-        .or_else(|_| icon_family.get_icon_with_type(icns::IconType::RGB128))
+        .get_icon_with_type(IconType::RGBA32_512x512)
+        .or_else(|_| icon_family.get_icon_with_type(IconType::RGBA32_256x256))
+        .or_else(|_| icon_family.get_icon_with_type(IconType::RGBA32_128x128))
         .map_err(|_| "Could not extract icon from icns file".to_string())?;
 
-    let (width, height) = image_data.dimensions();
-    let rgba_data = image_data.to_rgba8();
+    let width = image_data.width();
+    let height = image_data.height();
+    let rgba_image = image_data.convert_to(PixelFormat::RGBA);
+    let rgba_data = rgba_image.data();
 
     // Convert to PNG
     let mut png_buffer = Vec::new();
     {
-        let mut encoder = png::Encoder::new(&mut png_buffer, width as u32, height as u32);
+        let mut encoder = png::Encoder::new(&mut png_buffer, width, height);
         encoder.set_color(png::ColorType::Rgba);
         let mut writer = encoder
             .write_header()
             .map_err(|e| format!("PNG encoding error: {}", e))?;
         writer
-            .write_image_data(&rgba_data)
+            .write_image_data(rgba_data)
             .map_err(|e| format!("PNG write error: {}", e))?;
     }
 

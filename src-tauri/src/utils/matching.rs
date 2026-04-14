@@ -142,8 +142,10 @@ mod tests {
 
     #[test]
     fn test_calculate_match_score_nucleo_word_boundary_bonus() {
-        // "vsc" matching "Visual Studio Code" should score higher than
-        // "vsc" matching "Very Slow Calculator" because of word-boundary alignment
+        // Both "Visual Studio Code" and "Very Slow Calculator" match "vsc" at word
+        // boundaries, so nucleo may score them similarly. We verify both get a fuzzy
+        // score in the expected range and that a true word-boundary match beats a
+        // non-boundary match.
         let vscode_score = calculate_match_score("Visual Studio Code", "vsc");
         let slow_calc_score = calculate_match_score("Very Slow Calculator", "vsc");
         assert!(vscode_score > 0.0, "vsc should match Visual Studio Code");
@@ -151,12 +153,20 @@ mod tests {
             slow_calc_score > 0.0,
             "vsc should match Very Slow Calculator"
         );
-        // nucleo gives word-boundary bonuses, so V-S-C at word starts should score higher
+        // Both should be in the fuzzy range (50-89)
         assert!(
-            vscode_score >= slow_calc_score,
-            "Visual Studio Code ({}) should score >= Very Slow Calculator ({})",
+            vscode_score >= 50.0 && vscode_score <= 89.0,
+            "Visual Studio Code score ({}) should be in fuzzy range",
+            vscode_score
+        );
+
+        // Word-boundary match should beat a non-boundary match
+        let no_boundary = calculate_match_score("avscript handler", "vsc");
+        assert!(
+            vscode_score > no_boundary,
+            "Word-boundary match ({}) should beat non-boundary match ({})",
             vscode_score,
-            slow_calc_score
+            no_boundary
         );
     }
 
