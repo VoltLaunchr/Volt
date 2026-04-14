@@ -227,7 +227,8 @@ utils/
 ├── mod.rs        # Module exports
 ├── icon.rs       # Icon extraction
 ├── matching.rs   # Search algorithms
-└── path.rs       # Path utilities
+├── path.rs       # Path utilities
+└── shell_apps.rs # (Windows) Shell AppsFolder enumeration for Store/UWP apps, junk app filtering
 ```
 
 ### Icon Utilities (`icon.rs`)
@@ -273,6 +274,8 @@ Application search and ranking.
 
 ```rust
 pub fn search_applications(query: &str, apps: Vec<AppInfo>) -> Vec<AppInfo>
+pub fn search_applications_with_frecency(query: &str, apps: Vec<AppInfo>, history: &LaunchHistory) -> Vec<AppInfo>
+pub fn calculate_frecency(frequency: u32, last_used: DateTime<Utc>) -> f64
 ```
 
 Features:
@@ -281,6 +284,8 @@ Features:
 - Score-based ranking
 - Empty query handling
 - Sorted results (highest score first)
+- Frecency ranking: `calculate_frecency()` with exponential time decay (1-week half-life)
+- `search_applications_with_frecency()` combines match score with frecency for personalized ranking
 
 ---
 
@@ -328,7 +333,9 @@ All commands return `VoltResult<T>` using the `VoltError` discriminated union.
 - **launcher.rs**: Launch history tracking
 - **logging.rs**: Logging configuration and log file management
 - **plugins.rs**: Plugin lifecycle commands
+- **preview.rs**: File preview command (`get_file_preview`: text/image/folder/app/binary detection)
 - **settings.rs**: Settings management
+- **snippets.rs**: Snippet CRUD (get/create/update/delete/expand/import/export) with JSON storage
 - **steam.rs**: Steam library integration
 - **system_monitor.rs**: System resource monitoring
 
@@ -370,7 +377,8 @@ indexer/
 ├── database.rs        # Indexed file database
 ├── watcher.rs         # File system watcher (notify v6)
 ├── types.rs           # Indexer-specific types
-└── file_history.rs    # File access history tracking
+├── file_history.rs    # File access history tracking
+└── windows_search.rs  # (Windows) Windows Search Index OLE DB query as supplementary file source
 ```
 
 - In-memory state: `FileIndexState` (Arc<Mutex<Vec<FileInfo>>>)

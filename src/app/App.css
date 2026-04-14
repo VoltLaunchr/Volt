@@ -11,6 +11,19 @@
   isolation: isolate;
 }
 
+.search-content {
+  display: flex;
+  flex-direction: row;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.search-content > :first-child {
+  flex: 1;
+  min-width: 0;
+}
+
 .drag-region {
   position: absolute;
   top: 0;

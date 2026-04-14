@@ -70,16 +70,51 @@ pub fn launch_with_options(
 }
 
 /// Launch URL in default browser
+///
+/// Only allows http:// and https:// URLs to prevent command injection.
 pub fn launch_url(url: &str) -> Result<LaunchResult, LaunchError> {
+    // Validate URL scheme to prevent command injection
+    if !url.starts_with("http://") && !url.starts_with("https://") {
+        return Err(LaunchError::SpawnFailed {
+            path: url.to_string(),
+            message: "Only http:// and https:// URLs are allowed".to_string(),
+        });
+    }
+
     #[cfg(target_os = "windows")]
     {
-        Command::new("cmd")
-            .args(["/C", "start", "", url])
-            .spawn()
-            .map_err(|e| LaunchError::SpawnFailed {
-                path: url.to_string(),
-                message: e.to_string(),
-            })?;
+        // Use ShellExecuteW instead of cmd /C start to avoid command injection
+        use std::ffi::OsStr;
+        use std::os::windows::ffi::OsStrExt;
+        use std::ptr;
+        use winapi::um::shellapi::ShellExecuteW;
+
+        let operation: Vec<u16> = OsStr::new("open")
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect();
+        let url_wide: Vec<u16> = OsStr::new(url)
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect();
+
+        unsafe {
+            let result = ShellExecuteW(
+                ptr::null_mut(),
+                operation.as_ptr(),
+                url_wide.as_ptr(),
+                ptr::null(),
+                ptr::null(),
+                1, // SW_SHOWNORMAL
+            );
+
+            if (result as usize) <= 32 {
+                return Err(LaunchError::SpawnFailed {
+                    path: url.to_string(),
+                    message: format!("ShellExecuteW failed with code: {}", result as usize),
+                });
+            }
+        }
     }
 
     #[cfg(target_os = "macos")]
@@ -142,7 +177,7 @@ fn launch_windows(
             let path_lower = path.to_lowercase();
             if path_lower.ends_with(".ps1") {
                 let mut cmd = Command::new("powershell");
-                cmd.args(["-ExecutionPolicy", "Bypass", "-File", path]);
+                cmd.args(["-File", path]);
                 cmd
             } else {
                 // .bat or .cmd

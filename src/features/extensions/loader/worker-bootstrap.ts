@@ -241,6 +241,11 @@ self.fetch = function(url, options) {
   return VoltAPI.fetch(url, options);
 };
 
+// Block importScripts to prevent loading remote code
+self.importScripts = function() {
+  throw new Error('importScripts is blocked in sandboxed extensions');
+};
+
 // Signal ready
 self.postMessage({ type: 'ready', id: 0, payload: null });
 `;

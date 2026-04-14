@@ -10,7 +10,6 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import { transform } from 'sucrase';
-import i18n from 'i18next';
 import { logger } from '../../../shared/utils/logger';
 import { pluginRegistry } from '../../plugins/core';
 import { Plugin } from '../../plugins/types';
@@ -188,10 +187,14 @@ export class ExtensionLoader {
       if (hasKeywords || hasPrefix) {
         return this.loadInWorker(source, grantedPermissions);
       } else {
+        // Extensions without keywords/prefix cannot be loaded safely in the Worker sandbox.
+        // Inline execution (legacy mode) is disabled for security — it would run untrusted
+        // code in the main renderer with full access to the DOM and Tauri IPC.
         console.warn(
-          `[ExtensionLoader] Extension ${id} has no keywords/prefix — running inline (legacy mode)`
+          `[ExtensionLoader] Extension ${id} has no keywords/prefix — cannot load safely. ` +
+          `Add "keywords" or "prefix" to the extension manifest to enable Worker sandbox loading.`
         );
-        return this.loadInline(source);
+        return null;
       }
     } catch (error) {
       logger.error(`[ExtensionLoader] Error loading ${id}:`, error);
@@ -235,34 +238,6 @@ export class ExtensionLoader {
     this.loadedExtensions.set(id, loaded);
 
     console.log(`[ExtensionLoader] Successfully loaded in Worker: ${manifest.name}`);
-    return loaded;
-  }
-
-  /**
-   * Load extension inline (legacy mode — no Worker sandbox).
-   * Used for extensions without keywords/prefix in their manifest.
-   */
-  private loadInline(source: ExtensionSource): LoadedExtension | null {
-    const { id, manifest } = source;
-
-    console.log(`[ExtensionLoader] Loading ${id} inline (legacy mode)`);
-
-    const bundledCode = this.bundleExtension(source);
-    console.log(`[ExtensionLoader] Bundled code for ${id}:`, bundledCode);
-
-    const plugin = this.executeExtensionCode(bundledCode, id);
-
-    if (!plugin) {
-      console.warn(`[ExtensionLoader] Extension ${id} did not export a valid plugin`);
-      return null;
-    }
-
-    pluginRegistry.register(plugin);
-
-    const loaded: LoadedExtension = { id, manifest, plugin };
-    this.loadedExtensions.set(id, loaded);
-
-    console.log(`[ExtensionLoader] Successfully loaded inline: ${manifest.name}`);
     return loaded;
   }
 
@@ -724,81 +699,6 @@ return __defaultExport__;
     }
 
     return sorted;
-  }
-
-  /**
-   * Execute extension code and extract the plugin
-   */
-  private executeExtensionCode(code: string, extensionId: string): Plugin | null {
-    // Expose i18n bridge for extensions
-    (window as any).__volt_i18n_addBundle__ = (lng: string, ns: string, resources: Record<string, string>) => {
-      i18n.addResourceBundle(lng, ns, resources, true, true);
-    };
-
-    try {
-      // Execute the code
-      const factory = new Function(code);
-      const result = factory();
-
-      console.log(`[ExtensionLoader] Execution result for ${extensionId}:`, result);
-      console.log(`[ExtensionLoader] Result type:`, typeof result);
-
-      if (!result) {
-        console.warn(`[ExtensionLoader] No export found in ${extensionId}`);
-        return null;
-      }
-
-      // If result is a class constructor, instantiate it
-      let plugin: Plugin;
-      if (typeof result === 'function') {
-        try {
-          plugin = new result();
-        } catch {
-          // If it's not a constructor, try calling it as a factory
-          plugin = result();
-        }
-      } else {
-        plugin = result;
-      }
-
-      // Validate the plugin has required methods
-      if (!this.validatePlugin(plugin)) {
-        console.warn(`[ExtensionLoader] Invalid plugin structure in ${extensionId}`);
-        return null;
-      }
-
-      // Ensure the plugin ID matches the extension ID
-      if (plugin.id !== extensionId) {
-        console.log(`[ExtensionLoader] Updating plugin ID from ${plugin.id} to ${extensionId}`);
-        plugin.id = extensionId;
-      }
-
-      return plugin;
-    } catch (error) {
-      logger.error(`[ExtensionLoader] Execution error in ${extensionId}:`, error);
-      return null;
-    }
-  }
-
-  /**
-   * Validate that an object implements the Plugin interface
-   */
-  private validatePlugin(obj: unknown): obj is Plugin {
-    if (!obj || typeof obj !== 'object') {
-      return false;
-    }
-
-    const plugin = obj as Partial<Plugin>;
-
-    return (
-      typeof plugin.id === 'string' &&
-      typeof plugin.name === 'string' &&
-      typeof plugin.description === 'string' &&
-      typeof plugin.enabled === 'boolean' &&
-      typeof plugin.canHandle === 'function' &&
-      typeof plugin.match === 'function' &&
-      typeof plugin.execute === 'function'
-    );
   }
 
   /**

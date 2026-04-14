@@ -105,7 +105,9 @@ All commands return `VoltResult<T>` using the `VoltError` discriminated union.
 - **launcher.rs**: Launch history, pinned apps, tags
 - **logging.rs**: Logging configuration and log file management
 - **plugins.rs**: Plugin lifecycle commands
+- **preview.rs**: File preview (`get_file_preview` detects file type and returns appropriate preview data for text/image/folder/app/binary)
 - **settings.rs**: Load/save user settings
+- **snippets.rs**: Snippet CRUD with JSON persistence; `SnippetState` managed state; variable expansion (`{date}`, `{time}`, etc.); import/export support
 - **steam.rs**: Steam library integration
 - **system_monitor.rs**: System resource monitoring
 
@@ -132,11 +134,18 @@ Reusable utility functions shared across modules.
 - `find_exe_in_directory()`: Find executables (non-recursive)
 - `is_executable()`: Check if file is executable (Linux)
 
+#### `utils::shell_apps` (Windows only)
+
+- Shell AppsFolder enumeration for discovering Store/UWP apps
+- Junk app filtering (removes known non-launchable entries)
+
 ### `search/`
 
 Search and ranking algorithms.
 
 - `search_applications()`: Search apps by query with scoring
+- `search_applications_with_frecency()`: Combines match score with frecency for personalized ranking
+- `calculate_frecency()`: Exponential time decay with 1-week half-life; penalizes unused apps
 
 ### `window/`
 
@@ -174,8 +183,10 @@ File system indexing for fast file search.
 - **watcher.rs**: File system watcher (notify v6)
 - **types.rs**: Indexer-specific types
 - **file_history.rs**: File access history tracking
+- **windows_search.rs**: (Windows) Windows Search Index OLE DB query as supplementary file source
 - Background scanning with incremental updates
 - Configurable paths and extensions
+- Windows integration: Registry Uninstall + Shell AppsFolder + Windows Search Index as supplementary sources
 
 ### `core/`
 

@@ -1,12 +1,21 @@
 import { invoke } from '@tauri-apps/api/core';
 import { useCallback, useEffect, useRef } from 'react';
-import { applicationService } from '../../features/applications/services/applicationService';
 import { pluginRegistry } from '../../features/plugins/core';
 import { PluginResult as PluginResultData } from '../../features/plugins/types';
-import { FileInfo, SearchResult, SearchResultType } from '../../shared/types/common.types';
+import { AppInfo, FileInfo, SearchResult, SearchResultType } from '../../shared/types/common.types';
 import { logger } from '../../shared/utils/logger';
+import { parseQuery } from '../../shared/utils/queryParser';
 import { useAppStore } from '../../stores/appStore';
 import { useSearchStore } from '../../stores/searchStore';
+
+/** Shorten a file path for display: C:\Users\Noluc\Documents\foo.txt → ~\Documents\foo.txt */
+function shortenPath(fullPath: string): string {
+  const home = fullPath.match(/^([A-Z]:\\Users\\[^\\]+)/i)?.[1];
+  if (home) {
+    return fullPath.replace(home, '~');
+  }
+  return fullPath;
+}
 
 // Search result priority scores (higher = appears first)
 export const SEARCH_PRIORITIES = {
@@ -15,6 +24,20 @@ export const SEARCH_PRIORITIES = {
   PLUGIN_BASE: 100,
   PLUGIN_KEYWORD_BOOST: 300, // Boost plugins when query matches their keywords exactly
 } as const;
+
+/** Shape returned by search_applications_frecency */
+interface AppInfoWithScore extends AppInfo {
+  score: number;
+}
+
+/** Shape returned by get_frecency_suggestions */
+interface LaunchRecord {
+  path: string;
+  name: string;
+  launchCount: number;
+  lastLaunched: number;
+  pinned: boolean;
+}
 
 // Plugin keywords map - when query starts with these, boost that plugin significantly
 const PLUGIN_KEYWORDS: Record<string, string[]> = {
@@ -83,17 +106,44 @@ export function useSearchPipeline({
 
   const performSearch = useCallback(
     async (query: string) => {
-      // Do not search while apps are loading or absent yet
-      if (isLoading || allApps.length === 0) {
-        setResults([]);
-        return;
-      }
+      // If apps aren't loaded yet, still allow plugin-only search
+      const appsReady = !isLoading && allApps.length > 0;
 
       if (!query.trim()) {
-        setResults([]);
+        // Predictive results: show top frecency suggestions
+        try {
+          const suggestions = await invoke<LaunchRecord[]>('get_frecency_suggestions', {
+            limit: maxResults,
+          }).catch(() => [] as LaunchRecord[]);
+
+          if (suggestions.length > 0) {
+            const predictiveResults: SearchResult[] = suggestions.map((record, i) => ({
+              id: `frecency-${record.path}`,
+              type: SearchResultType.Application,
+              title: record.name,
+              subtitle: undefined,
+              score: 1000 - i, // preserve frecency order
+              data: {
+                id: `frecency-${record.path}`,
+                name: record.name,
+                path: record.path,
+                usageCount: record.launchCount,
+              } as AppInfo,
+            }));
+            setResults(predictiveResults);
+          } else {
+            setResults([]);
+          }
+        } catch {
+          setResults([]);
+        }
         setShowSnowEffect(false);
         return;
       }
+
+      // Parse operators from query
+      const parsed = parseQuery(query);
+      const effectiveQuery = parsed.hasOperators ? parsed.searchQuery : query;
 
       // Check if query is about Christmas (for snow effect)
       const isChristmasQuery =
@@ -105,14 +155,29 @@ export function useSearchPipeline({
       try {
         const searchId = ++latestSearchId.current;
 
-        // Search applications, files, and plugins in parallel
-        const [searchedApps, searchedFiles, pluginResults] = await Promise.all([
-          applicationService.searchApplications({ query }, allApps),
+        // Search applications with frecency, files (with operators), and plugins in parallel
+        const [frecencyApps, searchedFiles, pluginResults] = await Promise.all([
+          appsReady
+            ? invoke<AppInfoWithScore[]>('search_applications_frecency', {
+                query: effectiveQuery,
+                apps: allApps,
+              }).catch(() => [] as AppInfoWithScore[])
+            : Promise.resolve([] as AppInfoWithScore[]),
           invoke<FileInfo[]>('search_files', {
-            query,
-            limit: maxResults,
-          }).catch(() => [] as FileInfo[]), // Gracefully handle if file indexing not started
-          pluginRegistry.query({ query }).catch(() => [] as PluginResultData[]), // Gracefully handle plugin errors
+            query: effectiveQuery,
+            limit: maxResults * 2,
+            ...(parsed.hasOperators
+              ? {
+                  ext: parsed.operators.ext,
+                  dir: parsed.operators.dir,
+                  sizeMin: parsed.operators.sizeMin,
+                  sizeMax: parsed.operators.sizeMax,
+                  modifiedAfter: parsed.operators.modifiedAfter,
+                  modifiedBefore: parsed.operators.modifiedBefore,
+                }
+              : {}),
+          }).catch(() => [] as FileInfo[]),
+          pluginRegistry.query({ query: effectiveQuery }).catch(() => [] as PluginResultData[]),
         ]);
 
         // Drop stale responses
@@ -120,23 +185,23 @@ export function useSearchPipeline({
           return;
         }
 
-        // Convert apps to search results (highest priority)
-        const appResults: SearchResult[] = searchedApps.map((app) => ({
-          id: app.id,
+        // Convert apps with frecency scores — no path in subtitle (clean like Raycast)
+        const appResults: SearchResult[] = frecencyApps.map((appWithScore) => ({
+          id: appWithScore.id,
           type: SearchResultType.Application,
-          title: app.name,
-          subtitle: app.path,
-          icon: app.icon,
-          score: SEARCH_PRIORITIES.APPLICATION,
-          data: app,
+          title: appWithScore.name,
+          subtitle: appWithScore.description || undefined,
+          icon: appWithScore.icon,
+          score: SEARCH_PRIORITIES.APPLICATION + appWithScore.score,
+          data: appWithScore as AppInfo,
         }));
 
-        // Convert files to search results (lower priority than apps)
+        // Convert files — shortened paths (~\Documents instead of C:\Users\...)
         const fileResults: SearchResult[] = searchedFiles.map((file) => ({
           id: file.id,
           type: SearchResultType.File,
           title: file.name,
-          subtitle: file.path,
+          subtitle: shortenPath(file.path),
           icon: file.icon,
           score: SEARCH_PRIORITIES.FILE,
           data: file,
@@ -157,6 +222,9 @@ export function useSearchPipeline({
               break;
             case 'game':
               searchResultType = SearchResultType.Game;
+              break;
+            case 'timer':
+              searchResultType = SearchResultType.Timer;
               break;
             default:
               searchResultType = SearchResultType.Plugin;
@@ -182,7 +250,7 @@ export function useSearchPipeline({
         // Merge and sort by score, then limit
         const allResults = [...appResults, ...fileResults, ...pluginSearchResults]
           .sort((a, b) => b.score - a.score)
-          .slice(0, maxResults);
+          .slice(0, maxResults + 4);
 
         setResults(allResults);
       } catch (err) {

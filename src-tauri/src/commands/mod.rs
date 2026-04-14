@@ -7,7 +7,9 @@ pub mod games;
 pub mod launcher;
 pub mod logging;
 pub mod plugins;
+pub mod preview;
 pub mod settings;
+pub mod snippets;
 pub mod steam;
 pub mod system_monitor;
 
@@ -20,6 +22,8 @@ pub use games::*;
 pub use launcher::*;
 pub use logging::*;
 pub use plugins::*;
+pub use preview::*;
 pub use settings::*;
+pub use snippets::*;
 pub use steam::*;
 pub use system_monitor::*;

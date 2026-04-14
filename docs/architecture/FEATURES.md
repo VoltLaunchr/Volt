@@ -284,6 +284,74 @@ Press `Ctrl+I` to view:
 - Icon
 - Quick actions
 
+## Phase 3-4 Features
+
+### 🔒 Web Worker Sandbox
+
+Extensions with `keywords`/`prefix` defined in their manifest run in dedicated Web Workers. The `canHandle` check is declarative (main thread, <0.1ms). `match`/`execute` calls are dispatched via `postMessage` with a 500ms timeout. Crash recovery: a terminated Worker is automatically recreated on the next call.
+
+### 🛡️ Permission Enforcement
+
+A consent dialog is shown on first extension load. Granted permissions are persisted in `installed.json`. Permission checks gate clipboard, network, and notification actions. Network access from Workers is proxied: Worker `fetch` calls are relayed via `postMessage` to the main thread.
+
+### 👁️ Preview Panel
+
+A side panel (350px wide) toggled with `Ctrl+P`. The main window resizes from 800px to 1100px when open. Supports:
+
+- **Text preview**: First 2KB rendered in monospace
+- **Image preview**: Loaded via the Tauri asset protocol
+- **Folder listings**: Directory contents displayed inline
+- **App/file metadata**: Size, dates, path, type information
+
+Preview updates are debounced at 200ms for smooth keyboard navigation.
+
+### ✂️ Snippets System
+
+Text expansion with configurable triggers (e.g., `;email` expands to your email address).
+
+**Variables**:
+- `{date}` — current date
+- `{time}` — current time
+- `{datetime}` — current date and time
+- `{clipboard}` — current clipboard contents
+- `{random}` — random value
+
+Snippets are stored as JSON with import/export support and category organization. Implemented as a builtin plugin activated with the `;` prefix.
+
+### 📈 Frecency Scoring
+
+Applications are ranked by `match_score + frecency_bonus`.
+
+- **Formula**: `launch_count * exp(-age_hours / 168)` (168 hours = 1 week half-life)
+- **Penalty**: Never-used apps receive a 30% score reduction when launch history exists
+- **Predictive suggestions**: On empty query, results are ordered by frecency alone
+
+### ⚡ Power-User Operators
+
+Advanced file search operators typed directly in the search bar:
+
+| Operator | Example | Description |
+|----------|---------|-------------|
+| `ext:` | `ext:pdf` | Filter by file extension |
+| `in:` | `in:~/Documents` | Restrict search to directory |
+| `size:>` | `size:>10mb` | Minimum file size |
+| `size:<` | `size:<1gb` | Maximum file size |
+| `modified:<` | `modified:<7d` | Modified within last N days |
+| `modified:>` | `modified:>30d` | Not modified in last N days |
+
+Parsed by `queryParser.ts` on the frontend, then passed as filter parameters to the `search_files` backend command.
+
+### 📑 Results Grouping
+
+Raycast-style section headers organize results by type: **Applications**, **Commands**, **Games**, **Files**. Each result displays a type badge. Section headers are only shown when results span multiple sections.
+
+### 🪟 Windows Native Integration
+
+- **Registry Uninstall scan**: Reads `HKLM\...\Uninstall` for clean display names
+- **Shell AppsFolder**: Enumerates Store/UWP apps via the Shell namespace
+- **Windows Search Index**: Used as a supplementary file source alongside the built-in indexer
+- **Junk app filtering**: Known system/bloatware entries are excluded from results
+
 ## Performance Optimizations
 
 ### Search Optimization
@@ -349,4 +417,4 @@ Press `Ctrl+I` to view:
 
 For feature requests or bug reports, visit our [GitHub repository](https://github.com/VoltLaunchr/Volt).
 
-Last updated: April 12, 2026
+Last updated: April 14, 2026

@@ -25,7 +25,7 @@ plugins/       # Plugin system with builtin plugins
   builtin/     # clipboard_manager, game_scanner, system_monitor
   api.rs       # VoltPluginAPI (path validation, state)
   registry.rs  # Thread-safe PluginRegistry (Arc<RwLock<HashMap>>)
-utils/         # Reusable (icon extraction, fuzzy matching, path utils)
+utils/         # Reusable (icon extraction, fuzzy matching, path utils, shell_apps.rs for Win Shell AppsFolder)
 search/        # Search algorithms with scoring
 window/        # Window management commands
 commands/      # Tauri command handlers
@@ -38,12 +38,14 @@ commands/      # Tauri command handlers
   games.rs     # Game scanning
   steam.rs     # Steam integration
   system_monitor.rs # CPU/RAM/disk metrics
+  preview.rs   # File preview for preview panel
+  snippets.rs  # Snippet CRUD + variable expansion
   plugins.rs   # Plugin commands
   hotkey.rs    # Hotkey commands
   autostart.rs # Autostart management
   logging.rs   # Log management
 hotkey/        # Global hotkey management
-indexer/       # File indexing system (scanner, watcher, search_engine, SQLite)
+indexer/       # File indexing system (scanner, watcher, search_engine, SQLite, windows_search.rs)
 launcher/      # Cross-platform app launching (history, process)
 ```
 
@@ -61,7 +63,7 @@ src/
     extensions/                  # Extension store (api, loader, services, types)
     files/                       # File search components
     plugins/                     # Plugin system
-      builtin/                   # calculator, emoji-picker, timer, websearch, steam, systemcommands, systemmonitor
+      builtin/                   # calculator, emoji-picker, timer, websearch, steam, systemcommands, systemmonitor, snippets
       core/registry.ts           # Plugin registry singleton (500ms timeout)
       types/                     # Plugin, PluginResult, PluginContext interfaces
     settings/                    # Settings management
@@ -71,9 +73,9 @@ src/
     types/common.types.ts        # SearchResult, AppInfo, etc.
     constants/                   # Configuration
     hooks/                       # Reusable React hooks
-    components/ui/               # HotkeyCapture, ContextMenu, Modal, HelpDialog, PropertiesDialog
+    components/ui/               # HotkeyCapture, ContextMenu, Modal, HelpDialog, PropertiesDialog, PreviewPanel
     components/layout/           # Footer, Header
-    utils/                       # logger, clipboard helpers
+    utils/                       # logger, clipboard helpers, queryParser.ts (power-user operators)
   styles/                        # Global styles, themes
 ```
 
@@ -86,12 +88,19 @@ src/
 
 **Type sync**: Use `#[serde(rename_all = "camelCase")]` for Rust structs (TS is camelCase, Rust is snake_case)
 
+**Feature shortcuts**:
+- Preview panel: `Ctrl+P` toggle, window resizes 800->1100px
+- Snippets: `;` prefix in search bar triggers snippet plugin
+
 ## Important Implementation Details
 
 ### Search Flow
 1. Frontend: 150ms debounce + `latestSearchId` for stale response protection
 2. Backend: `search_applications()` uses scoring (exact=100, startsWith=90, contains=80-position, fuzzy=50)
-3. Results sorted by score descending
+3. Frecency scoring: apps ranked by match_score + frecency_bonus (launch_count x recency_decay)
+4. Predictive suggestions: empty query shows top frecency apps
+5. Power-user operators: `ext:pdf`, `in:dir`, `size:>10mb`, `modified:<7d` parsed by `queryParser.ts`
+6. Results grouped by section (Applications, Commands, Games, Files) and sorted by score descending
 
 ### File Indexing
 - In-memory state: `FileIndexState` (Arc<Mutex<Vec<FileInfo>>>)
@@ -111,6 +120,9 @@ src/
 - Manifest-based: ExtensionManifest with id, name, version, permissions
 - Dynamic loading via ExtensionLoader + Sucrase transpilation
 - Management: `src/features/extensions/` (install, uninstall, toggle)
+- Web Worker sandbox: extensions with `keywords`/`prefix` in manifest run in dedicated Worker
+- Permission enforcement: consent dialog on first load, `grantedPermissions` persisted
+- Network proxy: Worker fetch requests proxied via postMessage if network permission granted
 
 ### Hotkey
 - Default: `Ctrl+Space` (configurable in Settings)
@@ -135,6 +147,7 @@ Always-on-top, transparent, 600x400px, no decorations, skips taskbar (see `tauri
 - **nucleo-matcher** — fuzzy matching
 - **sysinfo** — system metrics
 - **tracing** + tracing-appender — structured logging with rotating files
+- **uuid** — UUID generation for snippets
 - **Windows**: winapi, winreg, lnk
 
 ### Frontend (TypeScript)
@@ -167,6 +180,15 @@ Always-on-top, transparent, 600x400px, no decorations, skips taskbar (see `tauri
 | `/volt-docs` | Fetch official docs (Tauri v2, React 19, Rust) via context7 + web |
 | `/volt-debug` | Diagnose & fix bugs across the full stack |
 | `/volt-feature` | Architect & implement new features end-to-end |
+| `/volt-senior-dev` | Senior full-stack dev: clean code, reviews, implementation |
+| `/volt-cto` | CTO/Architect: strategic decisions, trade-offs, architecture |
+| `/volt-rust-expert` | Rust expert: async, perf, safety, idiomatic patterns |
+| `/volt-tauri-expert` | Tauri v2 expert: IPC, plugins, capabilities, config |
+| `/volt-test` | Testing expert: Vitest, cargo test, coverage, TDD |
+| `/volt-perf` | Performance: profiling, bundle, memory, latency optimization |
+| `/volt-security` | Security audit: capabilities, XSS, extensions, IPC |
+| `/volt-ux` | UX & Accessibility: keyboard-first, WCAG 2.2, ARIA |
+| `/volt-extension-dev` | Extension guide: create plugins & extensions, boilerplate |
 
 ## Best Practices
 

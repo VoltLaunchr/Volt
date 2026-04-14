@@ -30,7 +30,6 @@ tauri-plugin-autostart = "2"
 tauri-plugin-dialog = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-md5 = "0.7"
 whoami = "1.5"
 png = "0.17"
 chrono = "0.4"
@@ -56,11 +55,12 @@ tracing-appender = "0.2"
 reqwest = { version = "0.12", features = ["json"] }
 zip = "2.2"
 url = "2.5"
+uuid = { version = "1", features = ["v4"] }
 
 [target.'cfg(windows)'.dependencies]
 winapi = { version = "0.3", features = ["shellapi", "winuser", "wingdi", "winnt", "winreg", "fileapi"] }
 winreg = "0.52"
-lnk = "0.5"
+lnk = "0.6"
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-positioner = "2"

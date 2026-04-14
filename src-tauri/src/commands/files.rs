@@ -329,19 +329,73 @@ pub async fn search_files(
     state: State<'_, FileIndexState>,
     query: String,
     limit: Option<usize>,
+    ext: Option<String>,
+    dir: Option<String>,
+    size_min: Option<u64>,
+    size_max: Option<u64>,
+    modified_after: Option<i64>,
+    modified_before: Option<i64>,
 ) -> VoltResult<Vec<FileInfo>> {
-    let files = state
-        .files
-        .lock()
-        .map_err(|e| VoltError::Unknown(e.to_string()))?;
+    // Clone the file list to release the mutex before searching
+    let files = {
+        let guard = state
+            .files
+            .lock()
+            .map_err(|e| VoltError::Unknown(e.to_string()))?;
+        guard.clone()
+    };
 
-    let mut results = search_indexed_files(&query, &files);
+    let has_operators = ext.is_some()
+        || dir.is_some()
+        || size_min.is_some()
+        || size_max.is_some()
+        || modified_after.is_some()
+        || modified_before.is_some();
 
-    if let Some(max_results) = limit {
+    if has_operators {
+        // Use advanced search engine with operator filters
+        use crate::indexer::search_engine::{SearchEngine, SearchOptions};
+        let mut engine = SearchEngine::new();
+        let options = SearchOptions {
+            limit,
+            ext_filter: ext,
+            dir_filter: dir,
+            size_min,
+            size_max,
+            modified_after,
+            modified_before,
+            recency_boost: Some(1.3),
+            frequency_boost: Some(1.2),
+            ..Default::default()
+        };
+        let results = engine.search(&query, &files, &options);
+        Ok(results.into_iter().map(|r| r.file).collect())
+    } else {
+        // Fast path: use simple search (no operators)
+        let mut results = search_indexed_files(&query, &files);
+        let max_results = limit.unwrap_or(20);
+
+        // Supplement with Windows Search Index if our results are sparse
+        #[cfg(target_os = "windows")]
+        if results.len() < max_results {
+            let needed = max_results - results.len();
+            if let Ok(ws_results) =
+                crate::indexer::windows_search::search_windows_index(&query, needed)
+            {
+                // Dedup by path
+                let existing_paths: std::collections::HashSet<String> =
+                    results.iter().map(|f| f.path.clone()).collect();
+                for file in ws_results {
+                    if !existing_paths.contains(&file.path) {
+                        results.push(file);
+                    }
+                }
+            }
+        }
+
         results.truncate(max_results);
+        Ok(results)
     }
-
-    Ok(results)
 }
 
 /// Gets the total number of indexed files
@@ -514,6 +568,47 @@ pub async fn get_default_index_folders() -> VoltResult<Vec<String>> {
     Ok(folders)
 }
 
+/// Shared implementation for advanced file search (with or without highlighting indices)
+fn search_files_impl(
+    state: &State<'_, FileIndexState>,
+    query: &str,
+    limit: Option<usize>,
+    categories: Option<Vec<String>>,
+    include_hidden: Option<bool>,
+    filename_only: Option<bool>,
+    min_score: Option<u32>,
+    with_indices: bool,
+) -> VoltResult<Vec<FileSearchResult>> {
+    let files = {
+        let guard = state
+            .files
+            .lock()
+            .map_err(|e| VoltError::Unknown(format!("Failed to acquire file index lock: {}", e)))?;
+        guard.clone()
+    };
+
+    let mut engine = SearchEngine::new();
+
+    let options = SearchOptions {
+        limit,
+        categories: parse_category_filter(categories),
+        include_hidden: include_hidden.unwrap_or(false),
+        filename_only: filename_only.unwrap_or(false),
+        min_score,
+        recency_boost: Some(1.3),
+        frequency_boost: Some(1.2),
+        ..Default::default()
+    };
+
+    let results = if with_indices {
+        engine.search_with_indices(query, &files, &options)
+    } else {
+        engine.search(query, &files, &options)
+    };
+
+    Ok(results.into_iter().map(FileSearchResult::from).collect())
+}
+
 /// Advanced file search with category filtering and scoring
 #[tauri::command]
 pub async fn search_files_advanced(
@@ -525,26 +620,7 @@ pub async fn search_files_advanced(
     filename_only: Option<bool>,
     min_score: Option<u32>,
 ) -> VoltResult<Vec<FileSearchResult>> {
-    let files = state
-        .files
-        .lock()
-        .map_err(|e| VoltError::Unknown(format!("Failed to acquire file index lock: {}", e)))?;
-
-    let mut engine = SearchEngine::new();
-
-    let options = SearchOptions {
-        limit,
-        categories: parse_category_filter(categories),
-        include_hidden: include_hidden.unwrap_or(false),
-        filename_only: filename_only.unwrap_or(false),
-        min_score,
-        recency_boost: Some(1.3),   // 30% boost for recent files
-        frequency_boost: Some(1.2), // 20% boost for apps/games
-    };
-
-    let results = engine.search(&query, &files, &options);
-
-    Ok(results.into_iter().map(FileSearchResult::from).collect())
+    search_files_impl(&state, &query, limit, categories, include_hidden, filename_only, min_score, false)
 }
 
 /// Advanced file search with highlighting support (returns matched character indices)
@@ -558,27 +634,7 @@ pub async fn search_files_with_highlighting(
     filename_only: Option<bool>,
     min_score: Option<u32>,
 ) -> VoltResult<Vec<FileSearchResult>> {
-    let files = state
-        .files
-        .lock()
-        .map_err(|e| VoltError::Unknown(format!("Failed to acquire file index lock: {}", e)))?;
-
-    let mut engine = SearchEngine::new();
-
-    let options = SearchOptions {
-        limit,
-        categories: parse_category_filter(categories),
-        include_hidden: include_hidden.unwrap_or(false),
-        filename_only: filename_only.unwrap_or(false),
-        min_score,
-        recency_boost: Some(1.3),
-        frequency_boost: Some(1.2),
-    };
-
-    // Use search_with_indices for highlighting support
-    let results = engine.search_with_indices(&query, &files, &options);
-
-    Ok(results.into_iter().map(FileSearchResult::from).collect())
+    search_files_impl(&state, &query, limit, categories, include_hidden, filename_only, min_score, true)
 }
 
 /// Get available file categories
@@ -602,10 +658,13 @@ pub async fn get_file_categories() -> Vec<&'static str> {
 /// Get index statistics by category
 #[tauri::command]
 pub async fn get_index_stats(state: State<'_, FileIndexState>) -> VoltResult<IndexStats> {
-    let files = state
-        .files
-        .lock()
-        .map_err(|e| VoltError::Unknown(e.to_string()))?;
+    let files = {
+        let guard = state
+            .files
+            .lock()
+            .map_err(|e| VoltError::Unknown(e.to_string()))?;
+        guard.clone()
+    };
 
     let mut stats = IndexStats {
         total_files: files.len(),

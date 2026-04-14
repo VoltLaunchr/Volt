@@ -1,8 +1,3 @@
-import i18n from 'i18next';
-import enSystemCommands from './locales/en.json';
-import frSystemCommands from './locales/fr.json';
-i18n.addResourceBundle('en', 'systemcommands', enSystemCommands);
-i18n.addResourceBundle('fr', 'systemcommands', frSystemCommands);
 
 import { logger } from '../../../../shared/utils/logger';
 import { Plugin, PluginContext, PluginResult, PluginResultType } from '../../types';
@@ -140,13 +135,10 @@ export class SystemCommandsPlugin implements Plugin {
 
   private async openWebsite(): Promise<void> {
     try {
-      // Open Volt website using Tauri opener plugin
       const { openUrl } = await import('@tauri-apps/plugin-opener');
       await openUrl('https://voltlaunchr.com');
     } catch (error) {
       logger.error('Failed to open website:', error);
-      // Fallback: open in default browser
-      window.open('https://voltlaunchr.com', '_blank');
     }
   }
 

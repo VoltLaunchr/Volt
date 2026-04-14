@@ -14,6 +14,7 @@ import {
   TimerPlugin,
   WebSearchPlugin,
 } from '../../features/plugins/builtin';
+import { SnippetsPlugin } from '../../features/plugins/builtin/snippets';
 import { pluginRegistry } from '../../features/plugins/core';
 import {
   applyTheme,
@@ -60,18 +61,12 @@ export function useAppLifecycle(): UseAppLifecycleResult {
   const indexingStarted = useRef(false); // Prevent double indexing (StrictMode)
   const updateCheckDone = useRef(false); // Prevent double update check
 
-  // Sync app data into store
+  // Sync app data into store (single effect to avoid cascading re-renders)
   useEffect(() => {
     setAllApps(allApps);
-  }, [allApps, setAllApps]);
-
-  useEffect(() => {
     setIsLoading(isLoading);
-  }, [isLoading, setIsLoading]);
-
-  useEffect(() => {
     setAppError(appError);
-  }, [appError, setAppError]);
+  }, [allApps, isLoading, appError, setAllApps, setIsLoading, setAppError]);
 
   // Load settings, theme, and initialize plugins on mount
   useEffect(() => {
@@ -92,6 +87,7 @@ export function useAppLifecycle(): UseAppLifecycleResult {
           pluginRegistry.register(new SystemMonitorPlugin());
           pluginRegistry.register(new SteamPlugin());
           pluginRegistry.register(new GamesPlugin()); // Unified games plugin (all platforms)
+          pluginRegistry.register(new SnippetsPlugin());
 
           // Start clipboard monitoring
           await ClipboardPlugin.startMonitoring();
@@ -184,6 +180,9 @@ export function useAppLifecycle(): UseAppLifecycleResult {
     };
   }, []);
 
+  // Ref to track the indexing listener for cleanup on unmount
+  const indexingUnlistenRef = useRef<(() => void) | null>(null);
+
   // Start file indexing if enabled in settings
   useEffect(() => {
     const startFileIndexing = async () => {
@@ -238,11 +237,18 @@ export function useAppLifecycle(): UseAppLifecycleResult {
             setIsIndexing(false);
             addToast(`Indexing complete — ${indexedFiles} files indexed`, 'success');
             unlistenPromise.then((fn) => fn());
+            indexingUnlistenRef.current = null;
           } else if (phase === 'error') {
             setIsIndexing(false);
             addToast('Indexing failed', 'error', 0); // duration 0 = persistent
             unlistenPromise.then((fn) => fn());
+            indexingUnlistenRef.current = null;
           }
+        });
+
+        // Store unlisten for cleanup on unmount
+        unlistenPromise.then((fn) => {
+          indexingUnlistenRef.current = fn;
         });
 
         // Start indexing (returns immediately, work happens in background)
@@ -261,6 +267,14 @@ export function useAppLifecycle(): UseAppLifecycleResult {
     if (settings) {
       startFileIndexing();
     }
+
+    return () => {
+      // Clean up indexing listener on unmount
+      if (indexingUnlistenRef.current) {
+        indexingUnlistenRef.current();
+        indexingUnlistenRef.current = null;
+      }
+    };
   }, [settings, setIsIndexing]);
 
   return {

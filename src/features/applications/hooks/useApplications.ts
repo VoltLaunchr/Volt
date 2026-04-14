@@ -3,7 +3,8 @@
  * Handles loading, caching, and refreshing applications
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { invoke } from '@tauri-apps/api/core';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { AppInfo } from '../../../shared/types/common.types';
 import { applicationService } from '../services/applicationService';
 import type { ApplicationsState, ScanStatus } from '../types';
@@ -45,8 +46,12 @@ export interface UseApplicationsReturn {
  */
 export function useApplications(autoLoad = true): UseApplicationsReturn {
   const [state, setState] = useState<ApplicationsState>(INITIAL_APPLICATIONS_STATE);
+  const iconLoadAbort = useRef<AbortController | null>(null);
 
   const refresh = useCallback(async () => {
+    // Abort any in-progress icon loading
+    iconLoadAbort.current?.abort();
+
     setState((prev) => ({
       ...prev,
       isLoading: true,
@@ -62,6 +67,7 @@ export function useApplications(autoLoad = true): UseApplicationsReturn {
     try {
       const apps = await applicationService.scanApplications();
 
+      // Set apps immediately (without icons) so the UI is usable right away
       setState((prev) => ({
         ...prev,
         apps,
@@ -75,6 +81,37 @@ export function useApplications(autoLoad = true): UseApplicationsReturn {
         },
         lastRefresh: Date.now(),
       }));
+
+      // Load icons lazily in the background (batches of 10)
+      const abortCtrl = new AbortController();
+      iconLoadAbort.current = abortCtrl;
+      const BATCH_SIZE = 10;
+      const appsNeedingIcons = apps.filter((a) => !a.icon);
+
+      for (let i = 0; i < appsNeedingIcons.length; i += BATCH_SIZE) {
+        if (abortCtrl.signal.aborted) break;
+
+        const batch = appsNeedingIcons.slice(i, i + BATCH_SIZE);
+        const iconResults = await Promise.all(
+          batch.map((app) =>
+            invoke<string | null>('get_app_icon', { path: app.path }).catch(() => null)
+          )
+        );
+
+        if (abortCtrl.signal.aborted) break;
+
+        // Update state with newly loaded icons
+        setState((prev) => {
+          const updatedApps = prev.apps.map((app) => {
+            const batchIdx = batch.findIndex((b) => b.id === app.id);
+            if (batchIdx !== -1 && iconResults[batchIdx]) {
+              return { ...app, icon: iconResults[batchIdx] };
+            }
+            return app;
+          });
+          return { ...prev, apps: updatedApps };
+        });
+      }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
 

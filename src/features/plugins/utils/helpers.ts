@@ -43,34 +43,75 @@ export function fuzzyScore(query: string, target: string): number {
 }
 
 /**
- * Parse a simple math expression
- * Returns result or null if invalid
+ * Compute a math expression safely via recursive descent parsing.
+ * No dynamic code execution — only supports arithmetic.
+ *
+ * Supported: +, -, *, /, %, ^ (exponentiation), parentheses, decimal numbers
  */
 export function evaluateExpression(expr: string): number | null {
   try {
-    // Clean the expression
     const cleaned = expr.trim().replace(/\s+/g, '');
+    if (!/^[\d+\-*/.()%^]+$/.test(cleaned)) return null;
+    if (cleaned.length === 0) return null;
 
-    // Only allow safe characters: digits, operators, parentheses, and decimal point
-    if (!/^[\d+\-*/.()%^]+$/.test(cleaned)) {
-      return null;
-    }
+    let pos = 0;
 
-    // Prevent dangerous patterns
-    if (cleaned.includes('//') || cleaned.includes('/*')) {
-      return null;
-    }
-
-    // Replace ^ with ** for exponentiation
-    const normalized = cleaned.replace(/\^/g, '**');
-
-    // Use Function constructor for safe evaluation (better than eval)
-    const result = new Function(`'use strict'; return (${normalized})`)();
-
-    if (typeof result === 'number' && !isNaN(result) && isFinite(result)) {
+    function parseExpr(): number {
+      let result = parseTerm();
+      while (pos < cleaned.length && (cleaned[pos] === '+' || cleaned[pos] === '-')) {
+        const op = cleaned[pos++];
+        const right = parseTerm();
+        result = op === '+' ? result + right : result - right;
+      }
       return result;
     }
 
+    function parseTerm(): number {
+      let result = parseExp();
+      while (pos < cleaned.length && (cleaned[pos] === '*' || cleaned[pos] === '/' || cleaned[pos] === '%')) {
+        const op = cleaned[pos++];
+        const right = parseExp();
+        if (op === '*') result *= right;
+        else if (op === '/') result /= right;
+        else result %= right;
+      }
+      return result;
+    }
+
+    function parseExp(): number {
+      let result = parseUnary();
+      while (pos < cleaned.length && cleaned[pos] === '^') {
+        pos++;
+        const right = parseUnary();
+        result = Math.pow(result, right);
+      }
+      return result;
+    }
+
+    function parseUnary(): number {
+      if (cleaned[pos] === '-') { pos++; return -parsePrimary(); }
+      if (cleaned[pos] === '+') { pos++; }
+      return parsePrimary();
+    }
+
+    function parsePrimary(): number {
+      if (cleaned[pos] === '(') {
+        pos++;
+        const result = parseExpr();
+        if (cleaned[pos] === ')') pos++;
+        return result;
+      }
+      const start = pos;
+      while (pos < cleaned.length && ((cleaned[pos] >= '0' && cleaned[pos] <= '9') || cleaned[pos] === '.')) {
+        pos++;
+      }
+      if (pos === start) throw new Error('Unexpected token');
+      return parseFloat(cleaned.substring(start, pos));
+    }
+
+    const result = parseExpr();
+    if (pos !== cleaned.length) return null;
+    if (typeof result === 'number' && !isNaN(result) && isFinite(result)) return result;
     return null;
   } catch {
     return null;

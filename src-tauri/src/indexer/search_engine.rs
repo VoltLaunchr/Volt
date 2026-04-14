@@ -29,6 +29,19 @@ pub struct SearchOptions {
     pub include_hidden: bool,
     /// Match only filename (not full path)
     pub filename_only: bool,
+    // --- Power-user operator filters ---
+    /// Filter by file extension (e.g., "pdf")
+    pub ext_filter: Option<String>,
+    /// Filter by directory prefix (e.g., "/home/user/Documents")
+    pub dir_filter: Option<String>,
+    /// Minimum file size in bytes
+    pub size_min: Option<u64>,
+    /// Maximum file size in bytes
+    pub size_max: Option<u64>,
+    /// Only files modified after this timestamp (seconds)
+    pub modified_after: Option<i64>,
+    /// Only files modified before this timestamp (seconds)
+    pub modified_before: Option<i64>,
 }
 
 /// A search result with scoring information
@@ -92,6 +105,44 @@ impl SearchEngine {
                 // Hidden file filter
                 if !options.include_hidden && file.name.starts_with('.') {
                     return false;
+                }
+
+                // Extension filter (e.g., ext:pdf)
+                if let Some(ref ext) = options.ext_filter {
+                    if !file.extension.eq_ignore_ascii_case(ext) {
+                        return false;
+                    }
+                }
+
+                // Directory filter (e.g., in:~/Documents)
+                if let Some(ref dir) = options.dir_filter {
+                    if !file.path.starts_with(dir.as_str()) {
+                        return false;
+                    }
+                }
+
+                // Size filters
+                if let Some(min) = options.size_min {
+                    if file.size < min {
+                        return false;
+                    }
+                }
+                if let Some(max) = options.size_max {
+                    if file.size > max {
+                        return false;
+                    }
+                }
+
+                // Modified time filters
+                if let Some(after) = options.modified_after {
+                    if file.modified < after {
+                        return false;
+                    }
+                }
+                if let Some(before) = options.modified_before {
+                    if file.modified > before {
+                        return false;
+                    }
                 }
 
                 true
@@ -296,7 +347,7 @@ mod tests {
 
     fn create_test_file(name: &str, path: &str, category: FileCategory) -> FileInfo {
         FileInfo {
-            id: format!("{:x}", md5::compute(path.as_bytes())),
+            id: crate::utils::hash_id(path),
             name: name.to_string(),
             path: path.to_string(),
             extension: name.rsplit('.').next().unwrap_or("").to_string(),

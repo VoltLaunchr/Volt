@@ -5,7 +5,6 @@
  * Extensions can access this via the global `VoltAPI` object.
  */
 
-import { invoke } from '@tauri-apps/api/core';
 import {
   Plugin,
   PluginContext,
@@ -21,6 +20,10 @@ import {
 
 /**
  * The Volt API interface exposed to extensions
+ *
+ * NOTE: invoke() is intentionally NOT exposed to extensions.
+ * Extensions must use the safe utility methods (copyToClipboard, openUrl, etc.)
+ * to interact with the system. Direct Tauri IPC access would bypass permission checks.
  */
 export interface VoltAPIInterface {
   // Types for creating plugins
@@ -35,9 +38,6 @@ export interface VoltAPIInterface {
     openUrl: typeof openUrl;
     formatNumber: typeof formatNumber;
   };
-
-  // Tauri invoke wrapper
-  invoke: typeof invoke;
 
   // Events
   events: {
@@ -64,8 +64,6 @@ export function createVoltAPI(): VoltAPIInterface {
       openUrl,
       formatNumber,
     },
-
-    invoke,
 
     events: {
       emit: (event: string, detail?: unknown) => {

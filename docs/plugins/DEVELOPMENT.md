@@ -937,6 +937,56 @@ Si vous créez un plugin utile, n'hésitez pas à soumettre une Pull Request !
 
 ---
 
+## Extension Development (volt-extensions repo)
+
+Extensions are community/third-party plugins that live in the [volt-extensions](https://github.com/VoltLaunchr/volt-extensions) repo and run inside a Web Worker sandbox.
+
+### Manifest configuration
+
+Add `keywords` and/or `prefix` to `manifest.json` to enable Worker sandbox execution:
+
+```json
+{
+  "id": "my-extension",
+  "name": "My Extension",
+  "version": "1.0.0",
+  "prefix": "mx",
+  "keywords": ["myext", "lookup"],
+  "permissions": ["clipboard", "network", "notifications"]
+}
+```
+
+### Permissions
+
+Declare all required permissions in the manifest. Available permissions:
+
+- `clipboard` — read/write clipboard
+- `filesystem` — access files (scoped to extension data dir)
+- `network` — make HTTP requests
+- `shell` — execute shell commands
+- `notifications` — show desktop notifications
+
+Actions that require undeclared permissions are silently dropped at runtime.
+
+### Worker sandbox behavior
+
+- `canHandle` is **declarative** — evaluated from `keywords`/`prefix` on the main thread, no extension code runs
+- `match()` and `execute()` run inside a dedicated Web Worker via `postMessage`
+- A mock `VoltAPI` is injected into the Worker; calls to `copyToClipboard`, `openUrl`, `notify`, etc. are captured as action commands and forwarded to the main thread after permission checks
+- Each extension call has a **500ms timeout**
+
+### CLI tooling
+
+Use the `volt-plugin` CLI to scaffold, test, and publish extensions:
+
+```bash
+volt-plugin init my-extension      # scaffold a new extension
+volt-plugin test                   # run extension tests locally
+volt-plugin publish                # publish to the extension store
+```
+
+---
+
 ## Support
 
 Besoin d'aide ?

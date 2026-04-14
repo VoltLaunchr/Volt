@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-use std::panic::{AssertUnwindSafe, catch_unwind, set_hook, take_hook};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 use tokio::sync::{RwLock, Semaphore};
@@ -356,6 +355,13 @@ pub async fn scan_applications() -> VoltResult<Vec<AppInfo>> {
     scan_applications_with_options(false).await
 }
 
+/// Extracts icon for a single application by its executable path.
+/// Used for lazy icon loading after the initial scan returns apps without icons.
+#[tauri::command]
+pub fn get_app_icon(path: String) -> Option<String> {
+    extract_icon(&path)
+}
+
 /// Force a fresh scan without using cache (for sync operations)
 pub async fn scan_applications_fresh() -> VoltResult<Vec<AppInfo>> {
     scan_applications_with_options(true).await
@@ -596,11 +602,117 @@ async fn scan_applications_windows() -> Result<Vec<AppInfo>, String> {
         }
     }
 
+    // Scan registry for installed applications (better names)
+    match scan_registry_apps() {
+        Ok(registry_apps) => {
+            info!("Registry: Found {} apps", registry_apps.len());
+            apps.extend(registry_apps);
+        }
+        Err(e) => warn!("Registry scan failed: {}", e),
+    }
+
+    // Scan Shell AppsFolder for Store/UWP apps
+    match crate::utils::shell_apps::enumerate_apps_folder() {
+        Ok(shell_apps) => {
+            info!("AppsFolder: Found {} apps", shell_apps.len());
+            apps.extend(shell_apps);
+        }
+        Err(e) => warn!("AppsFolder scan failed: {}", e),
+    }
+
     // Remove duplicates based on path
     apps.sort_by(|a, b| a.path.cmp(&b.path));
     apps.dedup_by(|a, b| a.path == b.path);
 
     info!("Application scan complete: {} apps found", apps.len());
+
+    Ok(apps)
+}
+
+/// Scan Windows registry Uninstall keys for installed applications
+#[cfg(target_os = "windows")]
+fn scan_registry_apps() -> Result<Vec<AppInfo>, String> {
+    use winreg::enums::*;
+    use winreg::RegKey;
+
+    let mut apps = Vec::new();
+    let hklm = RegKey::predef(HKEY_LOCAL_MACHINE);
+
+    let keys = [
+        r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
+        r"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall",
+    ];
+
+    for key_path in &keys {
+        let Ok(uninstall_key) = hklm.open_subkey(key_path) else {
+            continue;
+        };
+
+        for name in uninstall_key.enum_keys().filter_map(|k| k.ok()) {
+            let Ok(subkey) = uninstall_key.open_subkey(&name) else {
+                continue;
+            };
+
+            let display_name: String = match subkey.get_value("DisplayName") {
+                Ok(v) => v,
+                Err(_) => continue,
+            };
+
+            // Skip system components and updates
+            let system_component: u32 = subkey.get_value("SystemComponent").unwrap_or(0);
+            if system_component == 1 {
+                continue;
+            }
+
+            // Skip junk entries (uninstallers, updaters, SDK tools, etc.)
+            if crate::utils::shell_apps::is_junk_app(&display_name) {
+                continue;
+            }
+
+            // Need either InstallLocation or DisplayIcon to find the executable
+            let install_location: String = subkey.get_value("InstallLocation").unwrap_or_default();
+            let display_icon: String = subkey.get_value("DisplayIcon").unwrap_or_default();
+
+            let path = if !install_location.is_empty() {
+                // Try to find an executable in the install location
+                let install_path = std::path::PathBuf::from(&install_location);
+                if let Some(exe) = find_main_executable(&install_path) {
+                    exe.to_string_lossy().to_string()
+                } else {
+                    install_location.clone()
+                }
+            } else if !display_icon.is_empty() {
+                // DisplayIcon often points to the executable
+                let icon_path = display_icon.split(',').next().unwrap_or("").trim().to_string();
+                if icon_path.to_lowercase().ends_with(".exe") && std::path::Path::new(&icon_path).exists() {
+                    icon_path
+                } else {
+                    continue;
+                }
+            } else {
+                continue;
+            };
+
+            if path.is_empty() {
+                continue;
+            }
+
+            let publisher: String = subkey.get_value("Publisher").unwrap_or_default();
+            let id = crate::utils::hash_id(&path);
+
+            apps.push(AppInfo {
+                id,
+                name: display_name,
+                path,
+                icon: None,
+                description: if publisher.is_empty() { None } else { Some(publisher) },
+                keywords: None,
+                last_used: None,
+                usage_count: 0,
+                category: None,
+            });
+        }
+    }
 
     Ok(apps)
 }
@@ -638,7 +750,7 @@ async fn scan_applications_macos() -> Result<Vec<AppInfo>, String> {
 
                         let category = detect_app_category(&name, &path_str);
                         apps.push(AppInfo {
-                            id: format!("{:x}", md5::compute(path_str.as_bytes())),
+                            id: crate::utils::hash_id(&path_str),
                             name,
                             path: path_str,
                             icon,
@@ -664,17 +776,11 @@ async fn scan_applications_macos() -> Result<Vec<AppInfo>, String> {
 }
 
 #[cfg(target_os = "macos")]
-fn extract_macos_app_icon(app_path: &std::path::Path) -> Option<String> {
-    // Try to read Info.plist to get icon file name
-    let info_plist = app_path.join("Contents/Info.plist");
-
-    if info_plist.exists() {
-        // For now, return None - icon extraction on macOS requires more complex handling
-        // Could use icns crate or native APIs in the future
-        None
-    } else {
-        None
-    }
+fn extract_macos_app_icon(_app_path: &std::path::Path) -> Option<String> {
+    // macOS icon extraction requires parsing Info.plist and reading .icns files.
+    // This is non-trivial and needs the `icns` crate or native `NSWorkspace` APIs.
+    // TODO: Implement using icns crate for proper icon extraction.
+    None
 }
 
 // ============================================================================
@@ -730,7 +836,7 @@ async fn scan_applications_linux() -> Result<Vec<AppInfo>, String> {
                             if !apps.iter().any(|a| a.path == path_str) {
                                 let category = detect_app_category(&name_str, &path_str);
                                 apps.push(AppInfo {
-                                    id: format!("{:x}", md5::compute(path_str.as_bytes())),
+                                    id: crate::utils::hash_id(&path_str),
                                     name: name_str,
                                     path: path_str,
                                     icon: None,
@@ -840,7 +946,7 @@ fn parse_desktop_file(path: &std::path::Path) -> Option<AppInfo> {
 
     let category = detect_app_category(&name, &exec);
     Some(AppInfo {
-        id: format!("{:x}", md5::compute(exec.as_bytes())),
+        id: crate::utils::hash_id(&exec),
         name,
         path: exec,
         icon: icon_data,
@@ -860,6 +966,30 @@ fn parse_desktop_file(path: &std::path::Path) -> Option<AppInfo> {
 #[tauri::command]
 pub async fn search_applications(query: String, apps: Vec<AppInfo>) -> VoltResult<Vec<AppInfo>> {
     Ok(crate::search::search_applications(&query, apps))
+}
+
+/// Search applications with frecency scoring from launch history
+#[tauri::command]
+pub async fn search_applications_frecency(
+    query: String,
+    apps: Vec<AppInfo>,
+    history_state: tauri::State<'_, crate::commands::launcher::LaunchHistoryState>,
+) -> VoltResult<Vec<AppInfoWithScore>> {
+    let history = history_state.history.get_all();
+    let results = crate::search::search_applications_with_frecency(&query, apps, &history);
+    Ok(results
+        .into_iter()
+        .map(|(app, score)| AppInfoWithScore { app, score })
+        .collect())
+}
+
+/// App info with an attached score for frontend consumption
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AppInfoWithScore {
+    #[serde(flatten)]
+    pub app: AppInfo,
+    pub score: f32,
 }
 
 /// Launches an application by its path
@@ -946,14 +1076,14 @@ fn scan_directory_recursive(
             {
                 let path_str = exe_path.to_string_lossy().to_string();
                 let app_name_str = app_name.to_string_lossy().to_string();
-                let icon = extract_icon(&path_str);
                 let category = detect_app_category(&app_name_str, &path_str);
 
+                // Icons are loaded lazily via get_app_icon command
                 apps.push(AppInfo {
-                    id: format!("{:x}", md5::compute(path_str.as_bytes())),
+                    id: crate::utils::hash_id(&path_str),
                     name: app_name_str,
                     path: path_str,
-                    icon,
+                    icon: None,
                     description: None,
                     keywords: None,
                     last_used: None,
@@ -980,75 +1110,45 @@ fn scan_directory_recursive(
 
 /// Resolves a Windows .lnk shortcut file to get the target path and icon location.
 /// Returns (target_path, icon_location) where icon_location may differ from target.
-///
-/// This function uses `catch_unwind` to handle panics from the `lnk` crate when
-/// encountering malformed or corrupted .lnk files, ensuring the scan continues.
 #[cfg(target_os = "windows")]
 fn resolve_lnk_shortcut(lnk_path: &std::path::Path) -> Option<(String, Option<String>)> {
-    // Install a custom panic hook that silences lnk crate panics
-    let old_hook = take_hook();
-    set_hook(Box::new(|_| {
-        // Silently ignore panics during .lnk parsing
-    }));
-
-    // Wrap the entire operation in catch_unwind to prevent panics from corrupted .lnk files
-    let result = catch_unwind(AssertUnwindSafe(|| {
-        match ShellLink::open(lnk_path) {
-            Ok(shell_link) => {
-                // Get the target path from the link
-                if let Some(link_info) = shell_link.link_info()
-                    && let Some(local_base_path) = link_info.local_base_path()
-                {
-                    let target_path = local_base_path.to_string();
-
-                    // Verify the target exists
-                    if std::path::Path::new(&target_path).exists() {
-                        // Try to get icon location from the shell link
-                        let icon_location =
-                            shell_link.icon_location().as_ref().map(|s| s.to_string());
-                        return Some((target_path, icon_location));
-                    }
-                }
-
-                // Fallback: try relative path if local_base_path didn't work
-                if let Some(relative_path) = shell_link.relative_path() {
-                    let relative = relative_path.to_string();
-                    if !relative.is_empty() {
-                        // Try to resolve relative to the .lnk file's directory
-                        if let Some(parent) = lnk_path.parent() {
-                            let resolved = parent.join(&relative);
-                            if resolved.exists() {
-                                let icon_location =
-                                    shell_link.icon_location().as_ref().map(|s| s.to_string());
-                                return Some((
-                                    resolved.to_string_lossy().to_string(),
-                                    icon_location,
-                                ));
-                            }
-                        }
-                    }
-                }
-
-                None
+    match ShellLink::open(lnk_path, lnk::encoding::WINDOWS_1252) {
+        Ok(shell_link) => {
+            // Use the high-level link_target() which handles all path resolution
+            if let Some(target_path) = shell_link.link_target()
+                && std::path::Path::new(&target_path).exists()
+            {
+                let icon_location = shell_link
+                    .string_data()
+                    .icon_location()
+                    .as_ref()
+                    .map(|s| s.to_string());
+                return Some((target_path, icon_location));
             }
-            Err(e) => {
-                warn!("Failed to parse .lnk file {:?}: {:?}", lnk_path, e);
-                None
+
+            // Fallback: try relative path from string_data
+            if let Some(relative_path) = shell_link.string_data().relative_path()
+                && !relative_path.is_empty()
+                && let Some(parent) = lnk_path.parent()
+            {
+                let resolved = parent.join(relative_path);
+                if resolved.exists() {
+                    let icon_location = shell_link
+                        .string_data()
+                        .icon_location()
+                        .as_ref()
+                        .map(|s| s.to_string());
+                    return Some((
+                        resolved.to_string_lossy().to_string(),
+                        icon_location,
+                    ));
+                }
             }
+
+            None
         }
-    }));
-
-    // Restore the original panic hook
-    set_hook(old_hook);
-
-    match result {
-        Ok(value) => value,
-        Err(_) => {
-            // Panic was caught - log the corrupted file and continue
-            warn!(
-                "Skipping corrupted .lnk file (panic caught): {:?}",
-                lnk_path
-            );
+        Err(e) => {
+            warn!("Failed to parse .lnk file {:?}: {:?}", lnk_path, e);
             None
         }
     }
@@ -1075,48 +1175,25 @@ fn scan_shortcuts(dir_path: &str) -> Result<Vec<AppInfo>, String> {
                     && let Some(name) = path.file_stem()
                 {
                     #[cfg(target_os = "windows")]
-                    let (path_str, icon) = {
+                    let path_str = {
                         // Try to resolve the .lnk shortcut to its actual target
                         match resolve_lnk_shortcut(&path) {
-                            Some((target_path, icon_location)) => {
-                                // Use icon from the .lnk's icon location if specified,
-                                // otherwise extract from the resolved target
-                                let icon = if let Some(icon_loc) = icon_location {
-                                    // Icon location might have an index suffix like "path,0"
-                                    let icon_path = icon_loc.split(',').next().unwrap_or(&icon_loc);
-                                    if std::path::Path::new(icon_path).exists() {
-                                        extract_icon(icon_path)
-                                    } else {
-                                        extract_icon(&target_path)
-                                    }
-                                } else {
-                                    extract_icon(&target_path)
-                                };
-                                (target_path, icon)
-                            }
-                            None => {
-                                // Fallback: use the .lnk file path if resolution fails
-                                let lnk_path = path.to_string_lossy().to_string();
-                                let icon = extract_icon(&lnk_path);
-                                (lnk_path, icon)
-                            }
+                            Some((target_path, _icon_location)) => target_path,
+                            None => path.to_string_lossy().to_string(),
                         }
                     };
 
                     #[cfg(not(target_os = "windows"))]
-                    let (path_str, icon) = {
-                        let lnk_path = path.to_string_lossy().to_string();
-                        let icon = extract_icon(&lnk_path);
-                        (lnk_path, icon)
-                    };
+                    let path_str = path.to_string_lossy().to_string();
 
+                    // Icons are loaded lazily via get_app_icon command
                     let name_str = name.to_string_lossy().to_string();
                     let category = detect_app_category(&name_str, &path_str);
                     apps.push(AppInfo {
-                        id: format!("{:x}", md5::compute(path_str.as_bytes())),
+                        id: crate::utils::hash_id(&path_str),
                         name: name_str,
                         path: path_str,
-                        icon,
+                        icon: None,
                         description: None,
                         keywords: None,
                         last_used: None,

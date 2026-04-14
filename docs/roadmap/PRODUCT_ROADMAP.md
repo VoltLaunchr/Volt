@@ -42,11 +42,29 @@
 - Scan en arriere-plan avec filtres (extensions, exclusions, profondeur max)
 - Recherche fuzzy sur les fichiers indexes
 - Configuration des dossiers a indexer depuis les parametres
+- Evenements Tauri temps reel pour la progression d'indexation
+
+**State management**
+- Zustand stores (searchStore, appStore, uiStore) — zero prop drilling
+- ViewRouter decouple avec 2 props (vs 13 avant)
+
+**Accessibilite**
+- Skip link visible au focus
+- Contraste WCAG AA sur themes light + dark
+- aria-describedby sur les champs cles des parametres
+- Focus trap dans Modal
+- ARIA live region dans SearchBar
+
+**UX**
+- Systeme de toast (info, success, error) avec auto-dismiss configurable
+- Toast persistant pour les erreurs d'indexation
+- Onboarding modal premier lancement (3 etapes : hotkey, indexation, plugins)
+- Help dialog (F1) avec raccourcis clavier
 
 **Infrastructure**
 - Auto-updater fonctionnel (signature minisign, endpoint GitHub Releases)
 - CI/CD multi-plateforme : Windows (MSI/NSIS), macOS Intel+ARM (DMG), Linux (deb/AppImage/rpm)
-- 130 tests frontend + 113 tests Rust
+- 152 tests frontend + 113 tests Rust
 - Logging structure (tracing) avec rotation quotidienne, accessible depuis Settings
 - CSP securise
 
@@ -98,99 +116,152 @@
 
 ---
 
-## Phase 2 — v1.x "Quality & Polish"
+## Phase 2 — v1.x "Quality & Polish" ✅ Complete (2026-04-13)
 
 **Valeur utilisateur :** Une experience soignee, accessible, et agreable au quotidien.
 
-### Accessibilite (WCAG AA)
+### WS1 — Accessibilite (WCAG AA) ✅
 
-- ResultsList en pattern `role="listbox"` + `aria-activedescendant`
-- Focus trap dans Modal et Settings (Tab ne sort pas)
-- ARIA live region : annonce "N resultats trouves" apres recherche
-- Verification contraste WCAG AA sur themes light + dark
-- Audit Lighthouse/axe : 0 erreur a11y critique
+- ✅ Skip link invisible, visible au focus, saute vers le champ de recherche
+- ✅ Contraste WCAG AA corrige sur themes light + dark (opacites augmentees)
+- ✅ Focus trap dans Modal (Tab/Shift+Tab cycle)
+- ✅ ARIA live region dans SearchBar (annonce uniquement quand les resultats changent)
+- ✅ `aria-describedby` sur HotkeyCapture, folder picker, file extensions
+- ✅ ResultsList avec `role="listbox"` + `aria-selected`
 
-### Onboarding premier lancement
+### WS2 — Store Zustand ✅
 
-- Tour guide de 3 ecrans : hotkey globale, indexation, plugins disponibles
-- Possibilite de skip pour les utilisateurs avances
+- ✅ 3 stores : `searchStore`, `appStore`, `uiStore`
+- ✅ App.tsx : 0 useState
+- ✅ ViewRouter : 2 props (vs 13 avant) — zero prop drilling
+- ✅ Hooks (`useSearchPipeline`, `useResultActions`, `useGlobalHotkey`) lisent les stores directement
+- ✅ 152 tests frontend passent sans regression
 
-### Indicateur d'indexation
+### WS3 — Indicateur d'indexation ✅
 
-- Toast discret au premier demarrage : "Indexation en cours... N fichiers"
-- Indicateur visuel pendant le scan en arriere-plan (aujourd'hui silencieux)
+- ✅ Systeme de toast (info, success, error) avec max 3 visibles, auto-dismiss 5s
+- ✅ Tauri Events temps reel (`indexing-progress`) au lieu de polling
+- ✅ Toast "Indexing N folder(s)..." au demarrage + "Indexing complete — N files" a la fin
+- ✅ Toast erreur persistant (duration=0) pour ne pas rater les erreurs
+- ✅ Hook `useToast()` exporte pour usage simplifie
 
-### Store Zustand (decouplage etat)
+### WS4 — Onboarding premier lancement ✅
 
-- Remplacer le state monolithique React par un store Zustand
-- Meilleure separation des responsabilites entre composants
-- Report de M2.1 — PR dediee pour ne pas melanger ajout de dep et refactor
+- ✅ Modal 3 etapes : hotkey globale, indexation, plugins
+- ✅ Navigation dots + Skip + Next/Get Started
+- ✅ `hasSeenOnboarding` persiste dans settings (Rust + TS)
+- ✅ Focus trap herite de Modal
+- ✅ Jamais reaffiche apres completion
 
-### Autres ameliorations UX
+### Autres ameliorations UX ✅
 
-- Help dialog integre (F1 ou `?`) listant les raccourcis
-- Toast contextuel sur erreurs (branche sur `logger.error` existant)
+- ✅ Help dialog (F1) listant les raccourcis
+- ✅ Indicateur d'indexation anime dans le footer
 
 ---
 
-## Phase 3 — v1.5 "Platform & Extensibility"
+## Phase 3 — v1.5 "Platform & Extensibility" ✅ Complete (2026-04-14)
 
 **Valeur utilisateur :** Demarrage instantane meme avec des dossiers enormes. Possibilite d'installer des plugins communautaires sans recompiler Volt.
 
-### Index persistant SQLite + watcher incremental
+### Index persistant SQLite + watcher incremental ✅
 
-- Base SQLite pour l'index fichiers (plus de rescan complet au demarrage)
-- File watcher incremental via `notify` : creation/modification/suppression detectees en < 2s
-- Demarrage app avec 50k fichiers indexes < 500ms
-- Settings > Indexing : taille DB, derniere mise a jour, bouton "Rebuild"
+- ✅ Base SQLite pour l'index fichiers (WAL mode, transactions, indices)
+- ✅ File watcher incremental via `notify` : creation/modification/suppression avec debounce 100ms
+- ✅ Fast path : chargement depuis DB au demarrage (< 500ms pour 50k fichiers)
+- ✅ Settings > Indexing : taille DB, derniere mise a jour, statut watcher, bouton "Rebuild"
+- ✅ Commands : `invalidate_index`, `get_db_index_stats`, `start_file_watcher`, `stop_file_watcher`
 
-### Plugin loader externe
+### Plugin loader externe ✅
 
-- Plugins TypeScript compiles en JS dans `~/.volt/plugins/`
-- Format : dossier `.volt-plugin` avec `manifest.json` + `index.js`
-- Sandbox JS via Web Worker (isolation, timeout, pas d'acces systeme sans permission)
-- Modele de permissions : network, fs, clipboard — confirmation utilisateur au premier load
-- Plugin exemple `hello-world-plugin/` distribue dans `examples/`
+- ✅ Extensions TypeScript chargees dynamiquement (Sucrase transpilation + module bundling)
+- ✅ Format : dossier avec `manifest.json` + `index.ts` + fichiers source
+- ✅ Installation/desinstallation via Settings > Extensions > Store
+- ✅ Dev mode : link de dossiers locaux (npm-link style) avec hot-reload
 
-### Extension marketplace & registry
+### Web Worker Sandbox ✅ (2026-04-13)
 
-- Registry JSON statique heberge sur GitHub Pages
-- Publication par PR sur le repo registry avec manifest
-- UI dans Settings > Extensions > Store : recherche, install, update
-- Auto-update : notification quand une version plus recente est disponible
+- ✅ Extensions avec `keywords`/`prefix` dans le manifest → executees dans un Worker dedie
+- ✅ `canHandle` declaratif (main thread, < 0.1ms, pas de code extension execute)
+- ✅ `match`/`execute` via postMessage avec timeout 500ms
+- ✅ Crash recovery : Worker termine automatiquement recree au prochain appel
+- ✅ Fallback inline pour extensions legacy (sans keywords/prefix)
+- ✅ Mock VoltAPI dans le Worker (capture d'actions au lieu d'execution directe)
 
-### Plugin SDK / CLI
+### Permission Enforcement ✅ (2026-04-13)
 
-- CLI `volt-plugin` pour scaffolder, tester et publier un plugin
-- Documentation complete et exemples
+- ✅ Permission consent dialog au premier chargement (Grant/Deny)
+- ✅ Permissions persistees dans `installed.json` (`grantedPermissions`)
+- ✅ Verification avant chaque action : clipboard, network, notifications
+- ✅ Actions bloquees avec warning si permission non accordee
+- ✅ Network proxy : `fetch` dans le Worker → execute cote main thread si permission `network` accordee
+- ✅ Command Tauri `update_extension_permissions` pour persister
+
+### Extension marketplace & registry ✅
+
+- ✅ Registry JSON statique (GitHub)
+- ✅ UI dans Settings > Extensions > Store : recherche, install, categories, enable/disable
+- ✅ Check updates + update extensions
+- ✅ Download count, stars, verified badges
+
+### Plugin SDK / CLI ✅ (2026-04-14)
+
+- ✅ CLI `volt-plugin` avec 3 commandes : `init`, `test`, `publish`
+- ✅ `init` : scaffolding interactif (prompts nom, categorie, permissions, prefix, keywords)
+- ✅ `test` : validation manifest + type-check TypeScript + verification interface Plugin
+- ✅ `publish` : packaging ZIP cross-platform (archiver) + generation entree registry
+- ✅ 19 tests unitaires (manifest validation, template generation, registry entry)
+- ✅ Documentation complete (README CLI)
 
 ---
 
-## Phase 4 — v2.0 "Power Features"
+## Phase 4 — v2.0 "Power Features" (en cours)
 
 **Valeur utilisateur :** Volt devient un hub de productivite, pas juste un lanceur.
 
-### Recherche avancee
+### Recherche avancee (style Raycast) ✅ (2026-04-14)
 
-- **Frecency scoring** : melange recency + frequence d'utilisation (donnees deja trackees dans `file_history.db` et `launcher/history`)
-- **Prefixes de scope** : `f:` fichiers, `a:` apps, `!` plugin force, `>` commande shell
-- **Operateurs** : `ext:pdf`, `in:~/Documents`, `size:>10mb`, `modified:<7d`
-- **Resultats predictifs** : top suggestions avant frappe basees sur frecency
+- ✅ **Frecency scoring** : apps classees par (match_score + launch_count * recency_decay), plus de score fixe
+- ✅ **Resultats predictifs** : query vide → top frecency apps (pinned first, puis frecency desc)
+- ✅ **Operateurs power-user** : `ext:pdf`, `in:~/Documents`, `size:>10mb`, `size:<1gb`, `modified:<7d`, `modified:>30d`
+- ✅ **Query parser** : extraction automatique des operateurs, filtrage backend via SearchEngine
+- ✅ Commandes Tauri : `search_applications_frecency`, `get_frecency_suggestions`
+- ✅ 166 tests frontend + 123 tests Rust
 
-### Snippets & text expansion
+### Snippets & text expansion ✅ (2026-04-14)
 
-- Triggers rapides → texte ou commande pre-definie
-- Gestion depuis Settings avec import/export
+- ✅ Backend CRUD complet : create, update, delete, get, import, export (snippets.json)
+- ✅ Variables dynamiques : `{date}`, `{time}`, `{datetime}`, `{clipboard}`, `{random}`
+- ✅ Plugin builtin : prefixe `;` pour rechercher et executer des snippets
+- ✅ Categories et descriptions optionnelles
+- ✅ Import/export JSON pour portabilite
 
-### Preview panel
+### Preview panel ✅ (2026-04-14)
 
-- Panneau lateral affichant le contenu des fichiers (texte, images, PDF)
-- Activation via raccourci ou clic
+- ✅ Panneau lateral 350px (toggle Ctrl+P) avec resize dynamique (800→1100px)
+- ✅ Apercu texte (2KB, monospace), images (asset protocol), dossiers (liste enfants)
+- ✅ Metadata : taille, date modification, chemin, nb lignes, extension
+- ✅ Backend `get_file_preview` avec detection auto du type (text/image/folder/app/binary)
+- ✅ Debounce 200ms + cache pour navigation clavier fluide
+- ✅ 135 tests Rust + 166 tests frontend
 
 ### Clipboard manager avance
 
 - Pin, recherche, redaction automatique des mots de passe detectes
 - Historique persistant avec limite configurable
+
+### Integrations OS natives (Windows) ✅ (2026-04-14)
+
+- ✅ **Registry Uninstall** : scan `HKLM\...\Uninstall` + `WOW6432Node` pour noms propres d'apps (DisplayName, Publisher)
+- ✅ **Shell AppsFolder** : enumeration des apps Store/UWP via PowerShell Get-AppxPackage
+- ✅ **Windows Search Index** : query OLE DB du SystemIndex comme source supplementaire pour les fichiers
+- ✅ Nettoyage noms : `Microsoft.WindowsCalculator` → `Windows Calculator`
+- ✅ Filtrage apps systeme (VCLibs, .NET, DirectX, etc.)
+- ✅ Fallback gracieux : si une source echoue, les autres continuent
+- ✅ Resultats groupes par section (Applications, Commands, Games, Files) style Raycast
+- ✅ Badges de type sur chaque resultat
+- ✅ Chemins raccourcis (~\Documents au lieu de C:\Users\...)
+- ✅ Apps sans chemin dans le sous-titre
 
 ### Shell commands inline
 
@@ -209,11 +280,10 @@
 - Editeur de theme UI dans Settings
 - Theme marketplace (suit l'extension marketplace)
 
-### Integrations OS natives
+### Integrations OS natives (restant)
 
 - **Linux** : support Wayland propre (aujourd'hui X11 implicite)
 - **macOS** : option pour piggyback sur l'index Spotlight
-- **Windows** : alternative au scan custom via Windows Search Index
 
 ### Protocoles custom
 
@@ -245,13 +315,13 @@ Idees non priorisees, a evaluer selon les retours utilisateurs :
 
 ## Timeline estimee
 
-| Phase | Version cible | Duree estimee | Description |
-|-------|---------------|---------------|-------------|
-| Phase 1 | v1.0 | ~3 semaines | Stable, signee, installable |
-| Phase 2 | v1.x | ~3-4 semaines | Qualite, accessibilite, polish |
-| Phase 3 | v1.5 | ~5-8 semaines | Index persistant, plugins externes, marketplace |
-| Phase 4 | v2.0 | ~6-8 semaines | Recherche avancee, snippets, preview, shell |
-| Phase 5 | v2.x | Continu | Themes, integrations OS, sync cloud |
+| Phase | Version cible | Duree estimee | Statut |
+|-------|---------------|---------------|--------|
+| Phase 1 | v1.0 | ~3 semaines | En cours (bloque certificats) |
+| Phase 2 | v1.x | ~3-4 semaines | ✅ Complete (2026-04-13) |
+| Phase 3 | v1.5 | ~5-8 semaines | ✅ Complete (2026-04-14) |
+| Phase 4 | v2.0 | ~6-8 semaines | Backlog |
+| Phase 5 | v2.x | Continu | Backlog |
 
 > Estimations basees sur un developpeur solo a temps partiel (~3h/jour). Les phases 1-3 representent ~3-4 mois. La phase 4 marque le passage a une v2.0 majeure.
 

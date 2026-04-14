@@ -27,6 +27,7 @@ interface UseGlobalHotkeyOptions {
   onOpenSettings: () => void | Promise<void>;
   onOpenCalculator: () => void;
   onOpenHelp: () => void;
+  onTogglePreview: () => void;
 }
 
 export interface UseGlobalHotkeyResult {
@@ -51,10 +52,8 @@ export function useGlobalHotkey({
   onOpenSettings,
   onOpenCalculator,
   onOpenHelp,
+  onTogglePreview,
 }: UseGlobalHotkeyOptions): UseGlobalHotkeyResult {
-  const results = useSearchStore((s) => s.results);
-  const selectedIndex = useSearchStore((s) => s.selectedIndex);
-  const searchQuery = useSearchStore((s) => s.searchQuery);
   const { setSelectedIndex, setQuery: setSearchQuery, setResults } = useSearchStore.getState();
   // Setup global keyboard shortcuts (F1 / ? for help)
   useEffect(() => {
@@ -89,6 +88,8 @@ export function useGlobalHotkey({
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>) => {
+      // Read current state inside callback to avoid stale closures and unnecessary re-renders
+      const { results, selectedIndex, searchQuery } = useSearchStore.getState();
       const isShowingSuggestions = !searchQuery.trim() && results.length === 0;
       const totalSuggestions = defaultSuggestions.reduce((sum, cat) => sum + cat.items.length, 0);
       const maxIndex = isShowingSuggestions ? totalSuggestions - 1 : results.length - 1;
@@ -141,6 +142,13 @@ export function useGlobalHotkey({
       if (e.key === 'F1' || (e.key === '?' && !e.ctrlKey && !e.altKey && !searchQuery.trim())) {
         e.preventDefault();
         onOpenHelp();
+        return;
+      }
+
+      // --- Ctrl+P: Toggle preview panel ---
+      if (e.key === 'p' && e.ctrlKey && !e.shiftKey && !e.altKey) {
+        e.preventDefault();
+        onTogglePreview();
         return;
       }
 
@@ -308,9 +316,6 @@ export function useGlobalHotkey({
       }
     },
     [
-      results,
-      selectedIndex,
-      searchQuery,
       setSelectedIndex,
       setSearchQuery,
       setResults,
@@ -321,6 +326,7 @@ export function useGlobalHotkey({
       onShowProperties,
       onOpenSettings,
       onOpenHelp,
+      onTogglePreview,
     ]
   );
 

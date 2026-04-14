@@ -10,6 +10,7 @@ mod window;
 
 use commands::files::{FileHistoryState, FileIndexState, WatcherState};
 use commands::launcher::LaunchHistoryState;
+use commands::system_monitor::SystemMonitorState;
 use commands::*;
 use hotkey::HotkeyState;
 use plugins::api::VoltPluginAPI;
@@ -233,6 +234,9 @@ pub fn run() {
             // Initialize file history state
             app.manage(FileHistoryState::new(data_dir.clone()));
 
+            // Initialize snippet state
+            app.manage(SnippetState::new(data_dir.clone()));
+
             // Initialize plugin system
             let plugin_api = Arc::new(VoltPluginAPI::new(data_dir));
             let plugin_registry = PluginRegistry::new();
@@ -248,7 +252,14 @@ pub fn run() {
             // Store plugin state
             app.manage(PluginState {
                 registry: plugin_registry,
-                api: plugin_api,
+                api: plugin_api.clone(),
+            });
+
+            // Store persistent system monitor instance for accurate CPU readings
+            app.manage(SystemMonitorState {
+                monitor: std::sync::Mutex::new(
+                    plugins::builtin::SystemMonitorPlugin::new().with_api(plugin_api),
+                ),
             });
 
             // Log plugin count
@@ -267,7 +278,9 @@ pub fn run() {
             // App commands
             scan_applications,
             search_applications,
+            search_applications_frecency,
             launch_application,
+            get_app_icon,
             // Launcher commands (with history tracking)
             launch_app,
             get_recent_apps,
@@ -283,6 +296,7 @@ pub fn run() {
             clear_launch_history,
             remove_from_history,
             get_history_count,
+            get_frecency_suggestions,
             // File indexing commands
             start_indexing,
             get_index_status,
@@ -390,7 +404,20 @@ pub fn run() {
             refresh_dev_extension,
             // Logging commands
             get_log_file_path,
+            // Preview panel commands
+            get_file_preview,
+            // Snippet commands
+            get_snippets,
+            create_snippet,
+            update_snippet,
+            delete_snippet,
+            expand_snippet,
+            import_snippets,
+            export_snippets,
         ])
         .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .unwrap_or_else(|e| {
+            error!("Fatal error while running Tauri application: {}", e);
+            std::process::exit(1);
+        });
 }

@@ -217,9 +217,9 @@ impl ClipboardManagerPlugin {
         }
     }
 
-    /// Calculate MD5 hash for content deduplication
+    /// Calculate hash for content deduplication
     fn calculate_hash(&self, content: &str) -> String {
-        format!("{:x}", md5::compute(content.as_bytes()))
+        crate::utils::hash_id(content)
     }
 
     /// Calculate metadata for content
@@ -687,7 +687,7 @@ impl ClipboardManagerPlugin {
                                     let base64_content =
                                         general_purpose::STANDARD.encode(&png_bytes);
                                     let current_hash =
-                                        format!("{:x}", md5::compute(base64_content.as_bytes()));
+                                        crate::utils::hash_id(&base64_content);
 
                                     let mut last_hash_guard = last_content_hash.lock().unwrap();
                                     let should_add =
@@ -741,7 +741,7 @@ impl ClipboardManagerPlugin {
                         }
 
                         // Check if content has changed
-                        let current_hash = format!("{:x}", md5::compute(text.as_bytes()));
+                        let current_hash = crate::utils::hash_id(&text);
                         let mut last_hash_guard = last_content_hash.lock().unwrap();
 
                         let should_add = if let Some(last_hash) = last_hash_guard.as_ref() {

@@ -1,6 +1,6 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { SearchResult } from '../../../shared/types/common.types';
+import { SearchResult, SearchResultType } from '../../../shared/types/common.types';
 import { ResultItem } from './ResultItem';
 import './ResultsList.css';
 
@@ -10,6 +10,39 @@ interface ResultsListProps {
   onSelect: (index: number) => void;
   onLaunch: (result: SearchResult) => void;
 }
+
+interface ResultSection {
+  label: string;
+  results: { result: SearchResult; globalIndex: number }[];
+}
+
+/** Map result type → section key for grouping */
+function getSectionKey(type: SearchResultType): string {
+  switch (type) {
+    case SearchResultType.Application:
+      return 'applications';
+    case SearchResultType.Game:
+      return 'games';
+    case SearchResultType.SystemCommand:
+      return 'commands';
+    case SearchResultType.File:
+      return 'files';
+    default:
+      return 'results';
+  }
+}
+
+/** Section display order */
+const SECTION_ORDER = ['applications', 'commands', 'games', 'results', 'files'];
+
+/** Section labels */
+const SECTION_LABELS: Record<string, string> = {
+  applications: 'Applications',
+  commands: 'Commands',
+  games: 'Games',
+  results: 'Results',
+  files: 'Files',
+};
 
 export const ResultsList: React.FC<ResultsListProps> = ({
   results,
@@ -29,6 +62,33 @@ export const ResultsList: React.FC<ResultsListProps> = ({
       });
     }
   }, [selectedIndex]);
+
+  // Group results by section, preserving score order within each section
+  const sections = useMemo(() => {
+    const grouped = new Map<string, { result: SearchResult; globalIndex: number }[]>();
+
+    results.forEach((result, globalIndex) => {
+      const key = getSectionKey(result.type);
+      if (!grouped.has(key)) grouped.set(key, []);
+      grouped.get(key)!.push({ result, globalIndex });
+    });
+
+    // Only show section headers if there are multiple sections
+    const sectionCount = grouped.size;
+
+    const ordered: ResultSection[] = [];
+    for (const key of SECTION_ORDER) {
+      const items = grouped.get(key);
+      if (items && items.length > 0) {
+        ordered.push({
+          label: sectionCount > 1 ? SECTION_LABELS[key] || key : '',
+          results: items,
+        });
+      }
+    }
+
+    return ordered;
+  }, [results]);
 
   if (results.length === 0) {
     return (
@@ -64,21 +124,28 @@ export const ResultsList: React.FC<ResultsListProps> = ({
       aria-label="Search results"
       aria-activedescendant={selectedItemId}
     >
-      {results.map((result, index) => (
-        <div
-          key={`${result.id}-${index}`}
-          ref={index === selectedIndex ? selectedRef : null}
-          id={`result-item-${index}`}
-          role="option"
-          aria-selected={index === selectedIndex}
-        >
-          <ResultItem
-            result={result}
-            isSelected={index === selectedIndex}
-            index={index}
-            onSelect={() => onSelect(index)}
-            onLaunch={() => onLaunch(result)}
-          />
+      {sections.map((section) => (
+        <div key={section.label || 'single'} className="results-section">
+          {section.label && (
+            <div className="results-section-header">{section.label}</div>
+          )}
+          {section.results.map(({ result, globalIndex }) => (
+            <div
+              key={`${result.id}-${globalIndex}`}
+              ref={globalIndex === selectedIndex ? selectedRef : null}
+              id={`result-item-${globalIndex}`}
+              role="option"
+              aria-selected={globalIndex === selectedIndex}
+            >
+              <ResultItem
+                result={result}
+                isSelected={globalIndex === selectedIndex}
+                index={globalIndex}
+                onSelect={() => onSelect(globalIndex)}
+                onLaunch={() => onLaunch(result)}
+              />
+            </div>
+          ))}
         </div>
       ))}
     </div>

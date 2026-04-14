@@ -893,4 +893,38 @@ pub async fn my_command() -> VoltResult<Vec<Data>> {
 
 ---
 
+---
+
+## Web Worker Sandbox
+
+Extensions that declare `keywords` or `prefix` in their manifest run inside a dedicated Web Worker for isolation.
+
+### How it works
+
+- **canHandle is declarative** — the main thread evaluates `keywords`/`prefix` from the manifest; no extension code runs on the main thread
+- **match/execute via postMessage** — the registry sends the query to the Worker and awaits a response with a **500ms timeout**
+- **Mock VoltAPI** — inside the Worker, a mock `VoltAPI` captures actions (`copyToClipboard`, `openUrl`, `notify`) as action commands returned to the main thread
+- **Permission checks** — before executing captured actions, the runtime checks the extension's declared permissions (`clipboard`, `network`, `notifications`); unauthorized actions are silently dropped
+- **One Worker per extension** — each extension with keywords/prefix gets its own Worker instance, preventing cross-extension interference
+
+### Lifecycle
+
+```
+Main Thread                          Worker
+     │                                  │
+     ├─ manifest.keywords/prefix ──→ canHandle (declarative, no Worker call)
+     │                                  │
+     ├─ postMessage({ type: 'match', query }) ──→ extension.match()
+     │                                  │
+     │  ←── postMessage({ results }) ───┤
+     │                                  │
+     ├─ postMessage({ type: 'execute', result }) ──→ extension.execute()
+     │                                  │
+     │  ←── postMessage({ actions }) ───┤  (captured VoltAPI calls)
+     │                                  │
+     ├─ check permissions & run actions │
+```
+
+---
+
 Cette documentation API complète tous les aspects techniques des plugins Volt. Consultez [DEVELOPMENT.md](./DEVELOPMENT.md) pour un guide plus général avec exemples pratiques.

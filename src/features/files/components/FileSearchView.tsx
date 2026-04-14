@@ -1,4 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 import React, { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { FileInfo } from '../../../shared/types/common.types';
@@ -31,15 +32,18 @@ export const FileSearchView: React.FC<FileSearchViewProps> = ({ onClose }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [showTypeDropdown, setShowTypeDropdown] = useState(false);
   const [recentFiles, setRecentFiles] = useState<FileInfo[]>([]);
+  const [indexedCount, setIndexedCount] = useState(0);
 
-  // Load recently accessed files
+  // Load recently accessed files + indexed count
   const loadRecentFiles = useCallback(async () => {
     try {
       setIsLoading(true);
-      const recent = await invoke<FileInfo[]>('get_recent_files', {
-        limit: 10,
-      });
+      const [recent, count] = await Promise.all([
+        invoke<FileInfo[]>('get_recent_files', { limit: 10 }),
+        invoke<number>('get_indexed_file_count').catch(() => 0),
+      ]);
       setRecentFiles(recent);
+      setIndexedCount(count);
     } catch (error) {
       logger.error('Failed to load recent files:', error);
       setRecentFiles([]);
@@ -50,6 +54,17 @@ export const FileSearchView: React.FC<FileSearchViewProps> = ({ onClose }) => {
 
   useEffect(() => {
     loadRecentFiles();
+  }, [loadRecentFiles]);
+
+  // Refresh when indexing completes
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    listen<{ phase: string }>('indexing-progress', ({ payload }) => {
+      if (payload.phase === 'complete' || payload.phase === 'db_loaded') {
+        loadRecentFiles();
+      }
+    }).then((fn) => { unlisten = fn; });
+    return () => { unlisten?.(); };
   }, [loadRecentFiles]);
 
   // Perform file search
@@ -297,10 +312,20 @@ export const FileSearchView: React.FC<FileSearchViewProps> = ({ onClose }) => {
                 t('states.noFiles')
               ) : (
                 <div style={{ textAlign: 'center', padding: '20px' }}>
-                  <div style={{ marginBottom: '12px', fontSize: '14px' }}>{t('states.notIndexed')}</div>
-                  <div style={{ fontSize: '12px', color: 'var(--color-text-tertiary)' }}>
-                    {t('states.configureHint')}
-                  </div>
+                  {indexedCount > 0 ? (
+                    <>
+                      <div style={{ marginBottom: '12px', fontSize: '14px' }}>
+                        {indexedCount} fichiers indexés — tapez pour rechercher
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div style={{ marginBottom: '12px', fontSize: '14px' }}>{t('states.notIndexed')}</div>
+                      <div style={{ fontSize: '12px', color: 'var(--color-text-tertiary)' }}>
+                        {t('states.configureHint')}
+                      </div>
+                    </>
+                  )}
                 </div>
               )}
             </div>

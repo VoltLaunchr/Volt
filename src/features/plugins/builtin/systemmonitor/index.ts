@@ -1,8 +1,3 @@
-import i18n from 'i18next';
-import enSystemMonitor from './locales/en.json';
-import frSystemMonitor from './locales/fr.json';
-i18n.addResourceBundle('en', 'systemmonitor', enSystemMonitor);
-i18n.addResourceBundle('fr', 'systemmonitor', frSystemMonitor);
 
 import { invoke } from '@tauri-apps/api/core';
 import { logger } from '../../../../shared/utils/logger';

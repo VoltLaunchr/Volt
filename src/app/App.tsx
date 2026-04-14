@@ -2,11 +2,12 @@ import { useCallback, useEffect } from 'react';
 import Snowfall from 'react-snowfall';
 import { useTranslation } from 'react-i18next';
 import { listen } from '@tauri-apps/api/event';
+import { getCurrentWindow, LogicalSize } from '@tauri-apps/api/window';
 import { TimerDisplay } from '../features/plugins/builtin';
 import { SearchBar } from '../features/search/components/SearchBar';
 import { useWindowState } from '../features/window';
 import { Footer } from '../shared/components/layout';
-import { HelpDialog, OnboardingModal, PropertiesDialog, ToastContainer } from '../shared/components/ui';
+import { HelpDialog, OnboardingModal, PreviewPanel, PropertiesDialog, ToastContainer } from '../shared/components/ui';
 import { settingsService } from '../features/settings';
 import { SearchResult } from '../shared/types/common.types';
 import { useAppStore } from '../stores/appStore';
@@ -22,6 +23,10 @@ import { openSettingsWindow } from './utils';
 import i18n from '../i18n';
 import '../styles/accessibility.css';
 import './App.css';
+
+const WINDOW_WIDTH_DEFAULT = 800;
+const WINDOW_WIDTH_PREVIEW = 1100;
+const WINDOW_HEIGHT = 550;
 
 function App() {
   useAppLifecycle();
@@ -44,8 +49,21 @@ function App() {
   const isPropertiesOpen = useUiStore((s) => s.isPropertiesOpen);
   const propertiesResult = useUiStore((s) => s.propertiesResult);
   const isHelpOpen = useUiStore((s) => s.isHelpOpen);
-  const { setActiveView, closeContextMenu, openProperties, closeProperties, toggleHelp } =
+  const isPreviewOpen = useUiStore((s) => s.isPreviewOpen);
+  const { setActiveView, closeContextMenu, openProperties, closeProperties, toggleHelp, togglePreview } =
     useUiStore.getState();
+
+  // Get selected result for preview panel
+  const selectedIndex = useSearchStore((s) => s.selectedIndex);
+  const selectedResult = results[selectedIndex] ?? null;
+
+  // Resize window when preview panel opens/closes
+  useEffect(() => {
+    const width = isPreviewOpen ? WINDOW_WIDTH_PREVIEW : WINDOW_WIDTH_DEFAULT;
+    getCurrentWindow()
+      .setSize(new LogicalSize(width, WINDOW_HEIGHT))
+      .catch(() => {});
+  }, [isPreviewOpen]);
 
   useSearchPipeline({
     maxResults: settings?.general.maxResults ?? 8,
@@ -107,6 +125,7 @@ function App() {
     onOpenSettings: openSettingsWindow,
     onOpenCalculator: handleOpenCalculatorView,
     onOpenHelp: handleOpenHelp,
+    onTogglePreview: togglePreview,
   });
 
   const handleOnboardingComplete = useCallback(async () => {
@@ -148,10 +167,13 @@ function App() {
         </>
       )}
 
-      <ViewRouter
-        onSelectEmoji={handleSelectEmoji}
-        onLaunchResult={handleLaunch}
-      />
+      <div className={`search-content${isPreviewOpen ? ' with-preview' : ''}`}>
+        <ViewRouter
+          onSelectEmoji={handleSelectEmoji}
+          onLaunchResult={handleLaunch}
+        />
+        <PreviewPanel result={selectedResult} isOpen={isPreviewOpen} />
+      </div>
 
       {activeView.type === 'search' && (
         <>

@@ -35,10 +35,11 @@ src-tauri/
 │   │   ├── mod.rs                     # Module exports
 │   │   ├── icon.rs                    # extract_icon(), hicon_to_png_base64(), base64_encode()
 │   │   ├── matching.rs                # fuzzy_match(), calculate_match_score()
-│   │   └── path.rs                    # get_all_drives(), find_main_executable(), is_executable()
+│   │   ├── path.rs                    # get_all_drives(), find_main_executable(), is_executable()
+│   │   └── shell_apps.rs             # (Windows) Shell AppsFolder enumeration for Store/UWP apps
 │   │
 │   ├── search/                        🔍 SEARCH
-│   │   └── mod.rs                     # search_applications() with scoring
+│   │   └── mod.rs                     # search_applications(), calculate_frecency(), search_applications_with_frecency()
 │   │
 │   ├── window/                        🪟 WINDOW MANAGEMENT
 │   │   └── mod.rs                     # show/hide/toggle/center_window()
@@ -55,7 +56,9 @@ src-tauri/
 │   │   ├── launcher.rs                # launch history, pins, tags
 │   │   ├── logging.rs                 # logging configuration
 │   │   ├── plugins.rs                 # plugin commands
+│   │   ├── preview.rs                 # file preview (text/image/folder/app/binary)
 │   │   ├── settings.rs                # load/save settings
+│   │   ├── snippets.rs                # snippet CRUD with JSON storage
 │   │   ├── steam.rs                   # Steam integration
 │   │   └── system_monitor.rs          # system monitoring
 │   │
@@ -70,7 +73,8 @@ src-tauri/
 │   │   ├── database.rs                # Indexed file database
 │   │   ├── watcher.rs                 # File system watcher (notify v6)
 │   │   ├── types.rs                   # Indexer-specific types
-│   │   └── file_history.rs            # File access history tracking
+│   │   ├── file_history.rs            # File access history tracking
+│   │   └── windows_search.rs          # (Windows) Windows Search Index OLE DB query
 │   │
 │   ├── launcher/                      🚀 PROCESS LAUNCHER
 │   │   ├── mod.rs
@@ -101,10 +105,10 @@ src-tauri/
 | ------------ | ------------------------- | ------------------------------------------- | ----------------------------------------------------- |
 | **core**     | Foundation types & traits | types.rs, traits.rs, constants.rs, error.rs | AppCategory, Platform, Plugin trait, VoltError        |
 | **plugins**  | Plugin system             | registry.rs, loader.rs, api.rs, builtin/    | PluginRegistry, 3 built-in plugins                    |
-| **utils**    | Reusable utilities        | icon.rs, matching.rs, path.rs               | extract_icon(), fuzzy_match(), find_main_executable() |
-| **search**   | Search algorithms         | mod.rs                                      | search_applications()                                 |
+| **utils**    | Reusable utilities        | icon.rs, matching.rs, path.rs, shell_apps.rs | extract_icon(), fuzzy_match(), find_main_executable() |
+| **search**   | Search algorithms         | mod.rs                                      | search_applications(), calculate_frecency()           |
 | **window**   | Window management         | mod.rs                                      | show/hide/toggle/center commands                      |
-| **commands** | Tauri handlers            | 13 command files (apps, settings, files, etc.) | All #[tauri::command] functions                    |
+| **commands** | Tauri handlers            | 15 command files (apps, settings, files, etc.) | All #[tauri::command] functions                    |
 | **hotkey**   | Global shortcuts          | mod.rs                                      | Hotkey registration                                   |
 | **indexer**  | File scanning             | scanner.rs, search.rs, database.rs, watcher.rs, etc. | File indexing system                           |
 | **launcher** | App launching             | process.rs, history.rs, types.rs            | Cross-platform launcher                               |
@@ -114,16 +118,16 @@ src-tauri/
 ```
 core/         5 files
 plugins/      6+ files (+ builtin subdirectories + README)
-utils/        4 files
+utils/        5 files
 search/       1 file
 window/       1 file
-commands/     14 files (mod.rs + 13 command files)
+commands/     16 files (mod.rs + 15 command files)
 hotkey/       1 file
-indexer/      8 files
+indexer/      9 files
 launcher/     4 files
 icons/        N/A
 ──────────────────
-Total:        44+ Rust files
+Total:        48+ Rust files
 ```
 
 ## 🔗 Module Dependencies

@@ -28,6 +28,12 @@ Search apps, files, do math, convert units, set timers, and run commands — wit
 - **Timers** — `timer 5m` and forget
 - **Web search** — `?` prefix to query Google/Bing/DuckDuckGo
 - **Plugin system** — extend Volt with TypeScript plugins (built-in plugins use the same API)
+- **Frecency-based ranking** — most used apps appear first, with exponential time decay
+- **Preview panel** — press `Ctrl+P` to preview files, images, folders, and app metadata
+- **Text snippets** — reusable text blocks with variable expansion (`{date}`, `{time}`, etc.)
+- **Power-user search operators** — filter by `ext:`, `size:`, `modified:` in file search
+- **Windows Store/UWP app support** — discovers apps via Shell AppsFolder and Registry
+- **Results grouped by type** — Applications, Commands, Games, Files shown in distinct sections
 - **Glassmorphism UI** — minimal, transparent, always on top, themable
 - **Native performance** — Rust backend, ~15 MB binary, instant startup
 
@@ -69,8 +75,8 @@ bun run dev
 
 Run tests:
 ```bash
-bun run test                                                  # frontend (vitest, 130+ tests)
-cd src-tauri && cargo test --lib                              # backend (cargo, 110+ tests)
+bun run test                                                  # frontend (vitest, 166 tests)
+cd src-tauri && cargo test --lib                              # backend (cargo, 138 tests)
 cd src-tauri && cargo clippy --all-features --all-targets -- -D warnings   # lint
 ```
 

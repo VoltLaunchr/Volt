@@ -32,3 +32,5 @@ export { ToastContainer, useToastStore, useToast } from './Toast';
 export type { ToastItem } from './Toast';
 
 export { OnboardingModal } from './OnboardingModal';
+
+export { PreviewPanel } from './PreviewPanel';

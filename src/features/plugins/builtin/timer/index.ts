@@ -1,8 +1,3 @@
-import i18n from 'i18next';
-import enTimer from './locales/en.json';
-import frTimer from './locales/fr.json';
-i18n.addResourceBundle('en', 'timer', enTimer);
-i18n.addResourceBundle('fr', 'timer', frTimer);
 
 import { Plugin, PluginContext, PluginResult, PluginResultType } from '../../types';
 import { timerStore } from './timerStore';

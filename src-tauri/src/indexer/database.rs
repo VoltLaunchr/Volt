@@ -261,7 +261,7 @@ impl FileIndexDb {
             .filter_map(|r| r.ok())
             .map(|(path, name, extension, size, modified, category_str)| {
                 let category = parse_category(&category_str);
-                let id = format!("{:x}", md5::compute(path.as_bytes()));
+                let id = crate::utils::hash_id(&path);
                 FileInfo {
                     id,
                     name,
@@ -316,7 +316,7 @@ impl FileIndexDb {
             .filter_map(|r| r.ok())
             .map(|(path, name, extension, size, modified, category_str)| {
                 let category = parse_category(&category_str);
-                let id = format!("{:x}", md5::compute(path.as_bytes()));
+                let id = crate::utils::hash_id(&path);
                 FileInfo {
                     id,
                     name,
@@ -444,7 +444,7 @@ mod tests {
 
     fn make_file(name: &str, path: &str) -> FileInfo {
         FileInfo {
-            id: format!("{:x}", md5::compute(path.as_bytes())),
+            id: crate::utils::hash_id(&path),
             name: name.to_string(),
             path: path.to_string(),
             extension: name.rsplit('.').next().unwrap_or("").to_string(),

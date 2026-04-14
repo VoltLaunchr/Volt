@@ -1,5 +1,68 @@
 use crate::commands::apps::AppInfo;
+use crate::launcher::LaunchRecord;
 use crate::utils::matching::calculate_match_score;
+
+/// Calculate frecency score for a launch record.
+/// Combines frequency (launch_count) with recency (time decay).
+/// Half-life of 1 week (168 hours): recent items score higher.
+pub fn calculate_frecency(record: &LaunchRecord) -> f64 {
+    let now_ms = chrono::Utc::now().timestamp_millis();
+    let age_hours = ((now_ms - record.last_launched) as f64 / 3_600_000.0).max(0.0);
+    let recency_weight = (-age_hours / 168.0).exp().max(0.2);
+    record.launch_count as f64 * recency_weight
+}
+
+/// Search applications with frecency scoring from launch history.
+/// Returns apps sorted by (match_score + frecency_bonus) descending.
+pub fn search_applications_with_frecency(
+    query: &str,
+    apps: Vec<AppInfo>,
+    history: &[LaunchRecord],
+) -> Vec<(AppInfo, f32)> {
+    if query.trim().is_empty() {
+        return Vec::new();
+    }
+
+    // Build path→frecency lookup
+    let frecency_map: std::collections::HashMap<&str, f64> = history
+        .iter()
+        .map(|r| (r.path.as_str(), calculate_frecency(r)))
+        .collect();
+
+    let has_history = !frecency_map.is_empty();
+
+    let mut results: Vec<(AppInfo, f32)> = apps
+        .into_iter()
+        .filter_map(|app| {
+            let match_score = calculate_match_score(&app.name, query);
+            if match_score <= 0.0 {
+                return None;
+            }
+
+            let frecency = frecency_map.get(app.path.as_str()).copied().unwrap_or(0.0);
+
+            let final_score = if frecency > 0.0 {
+                // Used app: match_score + frecency bonus (up to 50 pts)
+                match_score + (frecency * 10.0).min(50.0) as f32
+            } else if has_history {
+                // Never-used app when we have history: penalize by 30%
+                // so used apps rank above never-used ones
+                match_score * 0.7
+            } else {
+                // No history at all: pure match score
+                match_score
+            };
+
+            Some((app, final_score))
+        })
+        .collect();
+
+    results.sort_by(|a, b| {
+        b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal)
+    });
+
+    results
+}
 
 /// Searches applications based on a query string
 ///
@@ -51,7 +114,7 @@ mod tests {
 
     fn create_test_app(name: &str, path: &str) -> AppInfo {
         AppInfo {
-            id: format!("{:x}", md5::compute(path.as_bytes())),
+            id: crate::utils::hash_id(path),
             name: name.to_string(),
             path: path.to_string(),
             icon: None,

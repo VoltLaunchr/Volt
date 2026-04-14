@@ -2,8 +2,28 @@
   display: flex;
   flex-direction: column;
   overflow-y: auto;
-  max-height: calc(var(--result-item-height) * 8);
+  max-height: calc(var(--result-item-height) * 8 + 80px);
   padding: var(--spacing-sm);
+}
+
+.results-section {
+  display: flex;
+  flex-direction: column;
+}
+
+.results-section-header {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-muted);
+  padding: var(--spacing-sm) var(--spacing-md);
+  margin-top: var(--spacing-xs);
+  user-select: none;
+}
+
+.results-section:first-child .results-section-header {
+  margin-top: 0;
 }
 
 .results-empty {

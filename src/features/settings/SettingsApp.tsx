@@ -57,6 +57,8 @@ export function SettingsApp() {
   const [searchQuery, setSearchQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [diagnosticsCopied, setDiagnosticsCopied] = useState(false);
+  const [isScanningApps, setIsScanningApps] = useState(false);
+  const [scanResult, setScanResult] = useState<{ count: number; error: string | null } | null>(null);
   const appVersion = '0.0.2';
 
   // Indexing stats for the File Search panel
@@ -1136,17 +1138,33 @@ export function SettingsApp() {
           </div>
           <Button
             variant="secondary"
+            disabled={isScanningApps}
             onClick={async () => {
+              setIsScanningApps(true);
+              setScanResult(null);
               try {
-                await invoke('scan_applications');
+                const apps = await invoke<unknown[]>('scan_applications');
+                setScanResult({ count: apps.length, error: null });
               } catch (err) {
                 logger.error('Failed to scan applications:', err);
+                setScanResult({ count: 0, error: String(err) });
+              } finally {
+                setIsScanningApps(false);
               }
             }}
           >
-            {t('applications.scanNow')}
+            {isScanningApps ? 'Analyse en cours...' : t('applications.scanNow')}
           </Button>
         </div>
+        {scanResult && (
+          <div className="settings-info-box" style={{ marginTop: 8 }}>
+            {scanResult.error ? (
+              <p style={{ color: 'var(--color-error)' }}>Erreur: {scanResult.error}</p>
+            ) : (
+              <p>{scanResult.count} applications trouvées</p>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

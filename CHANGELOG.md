@@ -7,6 +7,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased] - 2026-04-14
+
+### Added — Phase 3: Platform & Extensibility
+- Web Worker sandbox for extensions (keywords/prefix in manifest, 500ms timeout, crash recovery)
+- Permission enforcement with consent dialog (clipboard, network, notifications)
+- Network proxy for Worker extensions (fetch via postMessage with permission check)
+- Plugin SDK CLI (`volt-plugin init/test/publish`) in volt-extensions repo
+- Extension marketplace with install/uninstall/update from registry
+
+### Added — Phase 4: Power Features  
+- **Frecency scoring** for applications (launch_count × recency_decay)
+- **Predictive suggestions** on empty query (top frecency apps)
+- **Power-user operators**: `ext:pdf`, `in:~/Documents`, `size:>10mb`, `modified:<7d`
+- **Preview panel** (Ctrl+P) with dynamic window resize 800→1100px
+  - Text preview (first 2KB, monospace), image preview, folder listing
+  - Debounced 200ms for keyboard navigation
+- **Snippets system** with text expansion
+  - CRUD backend with JSON storage
+  - Variables: `{date}`, `{time}`, `{datetime}`, `{clipboard}`, `{random}`
+  - Import/export JSON, categories
+  - Builtin plugin with `;` prefix trigger
+- **Results grouped by section** (Applications, Commands, Games, Files) like Raycast
+- **Type badges** on every result (Application, File, Game, Command, etc.)
+- **Shortened file paths** (~\Documents instead of C:\Users\...)
+- Clean app display (no paths in subtitle)
+
+### Added — Windows Native Integration
+- **Registry Uninstall** scanning for better app names (DisplayName, Publisher)
+- **Shell AppsFolder** enumeration for Store/UWP apps via PowerShell
+- **Windows Search Index** as supplementary file source (OLE DB via PowerShell)
+- Junk app filtering (SDK samples, documentation, dev tools, uninstallers)
+- Frecency penalization for never-used apps (30% score reduction)
+
+### Changed
+- App search uses frecency scoring instead of flat priority score
+- File search limit doubled, total results increased for section grouping
+- Search pipeline uses queryParser for operator extraction
+
+### Fixed
+- "Analyser maintenant" button in Settings now shows feedback (count + spinner)
+- File search view refreshes when indexing completes (listens to indexing-progress events)
+- File search shows "X fichiers indexés" instead of "Aucun fichier indexé" when files are indexed but none recently accessed
+
+---
+
 ## [0.0.4] - 2026-04-12
 
 ### 🔧 Improvements

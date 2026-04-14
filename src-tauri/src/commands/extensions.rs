@@ -116,6 +116,18 @@ fn validate_extension_id(id: &str) -> VoltResult<()> {
     Ok(())
 }
 
+/// Check if host is in the 172.16.0.0/12 private range (172.16.x.x - 172.31.x.x)
+fn is_private_172(host: &str) -> bool {
+    if let Some(rest) = host.strip_prefix("172.") {
+        if let Some(second_octet_str) = rest.split('.').next() {
+            if let Ok(second_octet) = second_octet_str.parse::<u8>() {
+                return (16..=31).contains(&second_octet);
+            }
+        }
+    }
+    false
+}
+
 /// Validate download URL to ensure it's a safe HTTPS URL
 fn validate_download_url(url: &str) -> VoltResult<()> {
     if url.is_empty() {
@@ -135,13 +147,20 @@ fn validate_download_url(url: &str) -> VoltResult<()> {
         ));
     }
 
-    // Block localhost and private IPs
+    // Block localhost, private IPs, and link-local addresses
     if let Some(host) = parsed.host_str() {
         let host_lower = host.to_lowercase();
         if host_lower == "localhost"
             || host_lower == "127.0.0.1"
+            || host_lower == "0.0.0.0"
+            || host_lower == "[::1]"
+            || host_lower == "::1"
             || host_lower.starts_with("192.168.")
             || host_lower.starts_with("10.")
+            || host_lower.starts_with("169.254.")
+            || is_private_172(host_lower.as_str())
+            || host_lower.starts_with("fc")
+            || host_lower.starts_with("fd")
         {
             return Err(VoltError::InvalidConfig(
                 "Downloads from local/private addresses are not allowed".to_string(),
@@ -209,9 +228,50 @@ fn save_installed_state(app: &AppHandle, state: &InstalledExtensionsState) -> Vo
     Ok(())
 }
 
+/// Allowed hosts for extension registry fetches (prevents SSRF)
+const ALLOWED_REGISTRY_HOSTS: &[&str] = &[
+    "github.com",
+    "raw.githubusercontent.com",
+    "objects.githubusercontent.com",
+    "api.github.com",
+];
+
+/// Validate that a registry URL points to an allowed host
+fn validate_registry_url(url: &str) -> VoltResult<()> {
+    let parsed = url::Url::parse(url)
+        .map_err(|_| VoltError::InvalidConfig("Invalid registry URL format".to_string()))?;
+
+    if parsed.scheme() != "https" {
+        return Err(VoltError::InvalidConfig(
+            "Only HTTPS registry URLs are allowed".to_string(),
+        ));
+    }
+
+    match parsed.host_str() {
+        Some(host) => {
+            let host_lower = host.to_lowercase();
+            if !ALLOWED_REGISTRY_HOSTS.iter().any(|&h| host_lower == h) {
+                return Err(VoltError::InvalidConfig(format!(
+                    "Registry host '{}' is not in the allowlist",
+                    host
+                )));
+            }
+        }
+        None => {
+            return Err(VoltError::InvalidConfig(
+                "Registry URL must have a valid host".to_string(),
+            ));
+        }
+    }
+
+    Ok(())
+}
+
 /// Fetch the extension registry from GitHub
 #[tauri::command]
 pub async fn fetch_extension_registry(url: String) -> VoltResult<ExtensionRegistry> {
+    validate_registry_url(&url)?;
+
     let client = reqwest::Client::new();
 
     let response = client
@@ -399,6 +459,7 @@ pub async fn install_extension(
 /// Uninstall an extension
 #[tauri::command]
 pub async fn uninstall_extension(app: AppHandle, extension_id: String) -> VoltResult<()> {
+    validate_extension_id(&extension_id)?;
     let extensions_dir = get_extensions_dir(&app)?;
     let extension_dir = extensions_dir.join(&extension_id);
 
@@ -425,6 +486,7 @@ pub async fn toggle_extension(
     extension_id: String,
     enabled: bool,
 ) -> VoltResult<()> {
+    validate_extension_id(&extension_id)?;
     let mut state = load_installed_state(&app)?;
 
     if let Some(ext) = state
@@ -488,8 +550,16 @@ pub async fn check_extension_updates(
             .iter()
             .find(|e| e.manifest.id == installed_ext.manifest.id)
         {
-            // Simple version comparison (could be improved with semver)
-            if registry_ext.manifest.version != installed_ext.manifest.version {
+            // Use semver comparison: only show update if registry version is newer
+            let is_newer = match (
+                semver::Version::parse(&registry_ext.manifest.version),
+                semver::Version::parse(&installed_ext.manifest.version),
+            ) {
+                (Ok(reg_ver), Ok(inst_ver)) => reg_ver > inst_ver,
+                // Fall back to string comparison if semver parsing fails
+                _ => registry_ext.manifest.version != installed_ext.manifest.version,
+            };
+            if is_newer {
                 updates.push(ExtensionUpdateInfo {
                     extension_id: installed_ext.manifest.id.clone(),
                     current_version: installed_ext.manifest.version.clone(),
@@ -530,6 +600,7 @@ pub async fn get_extension_details(
     app: AppHandle,
     extension_id: String,
 ) -> VoltResult<Option<InstalledExtension>> {
+    validate_extension_id(&extension_id)?;
     let state = load_installed_state(&app)?;
 
     Ok(state
@@ -545,6 +616,7 @@ pub async fn read_extension_source(
     app: AppHandle,
     extension_id: String,
 ) -> VoltResult<ExtensionSource> {
+    validate_extension_id(&extension_id)?;
     let extensions_dir = get_extensions_dir(&app)?;
     let extension_dir = extensions_dir.join(&extension_id);
 
@@ -886,6 +958,22 @@ pub async fn link_dev_extension(app: AppHandle, path: String) -> VoltResult<DevE
             path
         )));
     }
+
+    // Canonicalize path to prevent symlink traversal
+    let canonical_path = extension_dir.canonicalize().map_err(|e| {
+        VoltError::FileSystem(format!("Failed to resolve path: {}", e))
+    })?;
+
+    // Validate that the path is within the user's home directory
+    if let Some(home) = dirs::home_dir() {
+        if !canonical_path.starts_with(&home) {
+            return Err(VoltError::InvalidConfig(
+                "Dev extensions must be within the user's home directory".to_string(),
+            ));
+        }
+    }
+
+    let extension_dir = canonical_path;
 
     // Check for manifest.json
     let manifest_path = extension_dir.join("manifest.json");

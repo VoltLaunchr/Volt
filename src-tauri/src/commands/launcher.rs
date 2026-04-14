@@ -186,3 +186,26 @@ pub async fn remove_from_history(
 pub async fn get_history_count(history_state: State<'_, LaunchHistoryState>) -> VoltResult<usize> {
     Ok(history_state.history.count())
 }
+
+/// Get top frecency suggestions (for empty query / predictive results)
+#[tauri::command]
+pub async fn get_frecency_suggestions(
+    limit: Option<usize>,
+    history_state: State<'_, LaunchHistoryState>,
+) -> VoltResult<Vec<LaunchRecord>> {
+    let limit = limit.unwrap_or(8);
+    let mut records = history_state.history.get_all();
+
+    // Sort by frecency score descending
+    records.sort_by(|a, b| {
+        let fa = crate::search::calculate_frecency(a);
+        let fb = crate::search::calculate_frecency(b);
+        fb.partial_cmp(&fa).unwrap_or(std::cmp::Ordering::Equal)
+    });
+
+    // Pinned items always first
+    records.sort_by(|a, b| b.pinned.cmp(&a.pinned));
+
+    records.truncate(limit);
+    Ok(records)
+}

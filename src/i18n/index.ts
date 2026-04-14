@@ -12,6 +12,16 @@ import enFileSearch from './locales/en/fileSearch.json';
 import enExtensions from './locales/en/extensions.json';
 import enChangelog from './locales/en/changelog.json';
 
+// Plugin namespace imports — EN
+import enCalculator from '../features/plugins/builtin/calculator/locales/en.json';
+import enWebsearch from '../features/plugins/builtin/websearch/locales/en.json';
+import enSystemCommands from '../features/plugins/builtin/systemcommands/locales/en.json';
+import enSystemMonitor from '../features/plugins/builtin/systemmonitor/locales/en.json';
+import enTimer from '../features/plugins/builtin/timer/locales/en.json';
+import enSteam from '../features/plugins/builtin/steam/locales/en.json';
+import enGames from '../features/plugins/builtin/games/locales/en.json';
+import enEmojiPicker from '../features/plugins/builtin/emoji-picker/locales/en.json';
+
 // Global namespace imports — FR
 import frCommon from './locales/fr/common.json';
 import frSettings from './locales/fr/settings.json';
@@ -22,6 +32,16 @@ import frClipboard from './locales/fr/clipboard.json';
 import frFileSearch from './locales/fr/fileSearch.json';
 import frExtensions from './locales/fr/extensions.json';
 import frChangelog from './locales/fr/changelog.json';
+
+// Plugin namespace imports — FR
+import frCalculator from '../features/plugins/builtin/calculator/locales/fr.json';
+import frWebsearch from '../features/plugins/builtin/websearch/locales/fr.json';
+import frSystemCommands from '../features/plugins/builtin/systemcommands/locales/fr.json';
+import frSystemMonitor from '../features/plugins/builtin/systemmonitor/locales/fr.json';
+import frTimer from '../features/plugins/builtin/timer/locales/fr.json';
+import frSteam from '../features/plugins/builtin/steam/locales/fr.json';
+import frGames from '../features/plugins/builtin/games/locales/fr.json';
+import frEmojiPicker from '../features/plugins/builtin/emoji-picker/locales/fr.json';
 
 const SUPPORTED_LANGUAGES = ['en', 'fr'] as const;
 type SupportedLanguage = (typeof SUPPORTED_LANGUAGES)[number];
@@ -55,7 +75,10 @@ export async function initI18n(savedLanguage?: string): Promise<void> {
   await i18n.use(initReactI18next).init({
     lng,
     fallbackLng: 'en',
-    ns: ['common', 'settings', 'help', 'onboarding', 'results', 'clipboard', 'fileSearch', 'extensions', 'changelog'],
+    ns: [
+      'common', 'settings', 'help', 'onboarding', 'results', 'clipboard', 'fileSearch', 'extensions', 'changelog',
+      'calculator', 'websearch', 'systemcommands', 'systemmonitor', 'timer', 'steam', 'games', 'emoji-picker',
+    ],
     defaultNS: 'common',
     interpolation: {
       escapeValue: false,
@@ -74,6 +97,14 @@ export async function initI18n(savedLanguage?: string): Promise<void> {
         fileSearch: enFileSearch,
         extensions: enExtensions,
         changelog: enChangelog,
+        calculator: enCalculator,
+        websearch: enWebsearch,
+        systemcommands: enSystemCommands,
+        systemmonitor: enSystemMonitor,
+        timer: enTimer,
+        steam: enSteam,
+        games: enGames,
+        'emoji-picker': enEmojiPicker,
       },
       fr: {
         common: frCommon,
@@ -85,6 +116,14 @@ export async function initI18n(savedLanguage?: string): Promise<void> {
         fileSearch: frFileSearch,
         extensions: frExtensions,
         changelog: frChangelog,
+        calculator: frCalculator,
+        websearch: frWebsearch,
+        systemcommands: frSystemCommands,
+        systemmonitor: frSystemMonitor,
+        timer: frTimer,
+        steam: frSteam,
+        games: frGames,
+        'emoji-picker': frEmojiPicker,
       },
     },
   });

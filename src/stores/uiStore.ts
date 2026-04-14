@@ -22,6 +22,7 @@ interface UiState {
   isPropertiesOpen: boolean;
   propertiesResult: SearchResult | null;
   isHelpOpen: boolean;
+  isPreviewOpen: boolean;
 }
 
 interface UiActions {
@@ -31,6 +32,7 @@ interface UiActions {
   openProperties: (result: SearchResult) => void;
   closeProperties: () => void;
   toggleHelp: () => void;
+  togglePreview: () => void;
 }
 
 export const useUiStore = create<UiState & UiActions>()((set) => ({
@@ -39,6 +41,7 @@ export const useUiStore = create<UiState & UiActions>()((set) => ({
   isPropertiesOpen: false,
   propertiesResult: null,
   isHelpOpen: false,
+  isPreviewOpen: false,
 
   setActiveView: (view) => set({ activeView: view }),
   openContextMenu: (position, result) =>
@@ -48,4 +51,5 @@ export const useUiStore = create<UiState & UiActions>()((set) => ({
   openProperties: (result) => set({ isPropertiesOpen: true, propertiesResult: result }),
   closeProperties: () => set({ isPropertiesOpen: false }),
   toggleHelp: () => set((state) => ({ isHelpOpen: !state.isHelpOpen })),
+  togglePreview: () => set((state) => ({ isPreviewOpen: !state.isPreviewOpen })),
 }));

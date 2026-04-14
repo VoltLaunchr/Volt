@@ -22,7 +22,7 @@ export const useAppStore = create<AppState & AppActions>()((set) => ({
   settings: null,
   isIndexing: false,
   allApps: [],
-  isLoading: true,
+  isLoading: false,
   appError: null,
 
   setSettings: (settings) => set({ settings }),

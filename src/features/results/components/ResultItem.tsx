@@ -46,7 +46,7 @@ interface ResultItemProps {
 export const ResultItem: React.FC<ResultItemProps> = ({
   result,
   isSelected,
-  index,
+  index: _index,
   onSelect,
   onLaunch,
 }) => {
@@ -142,7 +142,12 @@ export const ResultItem: React.FC<ResultItemProps> = ({
             ) : result.type === SearchResultType.Application ? (
               <Gamepad2 size={24} strokeWidth={2} />
             ) : result.type === SearchResultType.Calculator ? (
-              <Calculator size={24} strokeWidth={2} className="plugin-icon calculator" />
+              // Check if this is a timezone result
+              result.data?.queryType === 'timezone' ? (
+                <Clock size={24} strokeWidth={2} className="plugin-icon timer" />
+              ) : (
+                <Calculator size={24} strokeWidth={2} className="plugin-icon calculator" />
+              )
             ) : result.type === SearchResultType.WebSearch ? (
               <Search size={24} strokeWidth={2} className="plugin-icon websearch" />
             ) : result.type === SearchResultType.SystemCommand ? (
@@ -165,15 +170,21 @@ export const ResultItem: React.FC<ResultItemProps> = ({
         </div>
       )}
 
-      {/* Show badge if available, otherwise show shortcut */}
+      {/* Show badge: explicit badge > type badge > shortcut */}
       {result.badge ? (
         <div className="result-badge">{result.badge}</div>
       ) : (
-        index < 9 && (
-          <div className="result-shortcut">
-            <kbd>Alt+{index + 1}</kbd>
-          </div>
-        )
+        <div className="result-badge type-badge">
+          {result.type === SearchResultType.Application && 'Application'}
+          {result.type === SearchResultType.File && 'File'}
+          {result.type === SearchResultType.Game && 'Game'}
+          {result.type === SearchResultType.SystemCommand && 'Command'}
+          {result.type === SearchResultType.Calculator && 'Calculator'}
+          {result.type === SearchResultType.WebSearch && 'Web Search'}
+          {result.type === SearchResultType.Timer && 'Timer'}
+          {result.type === SearchResultType.SystemMonitor && 'System'}
+          {result.type === SearchResultType.Plugin && 'Plugin'}
+        </div>
       )}
     </div>
   );

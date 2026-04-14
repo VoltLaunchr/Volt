@@ -48,12 +48,12 @@ src/                    # Frontend (React + TypeScript)
 src-tauri/src/          # Backend (Rust)
   core/                 # Foundation: types, traits, constants, errors
   plugins/              # Plugin system and built-in plugins
-  commands/             # Tauri command handlers (13 modules: apps, files, settings, launcher, autostart, clipboard, extensions, games, steam, system_monitor, plugins, hotkey, logging)
+  commands/             # Tauri command handlers (15 modules: apps, files, settings, launcher, autostart, clipboard, extensions, games, steam, system_monitor, plugins, hotkey, logging, preview, snippets)
   search/               # Search algorithms and scoring
-  utils/                # Reusable utilities (icons, fuzzy matching, paths)
+  utils/                # Reusable utilities (icons, fuzzy matching, paths, shell_apps [Windows])
   window/               # Window management
   hotkey/               # Global hotkey registration
-  indexer/              # File indexing system
+  indexer/              # File indexing system (includes windows_search [Windows])
   launcher/             # Cross-platform app launching
 
 docs/                   # Documentation
@@ -115,13 +115,13 @@ Run the full check suite:
 ```bash
 # Frontend
 bun run lint                    # Prettier + ESLint
-bun run test                    # 130+ vitest tests
+bun run test                    # 166+ vitest tests
 
 # Backend
 cd src-tauri
 cargo fmt --check               # Formatting
 cargo clippy --all-features --all-targets -- -D warnings   # Lints
-cargo test --lib                # 113+ tests
+cargo test --lib                # 138+ tests
 ```
 
 All checks must pass. CI will run these automatically on your PR, but running locally first saves time.
@@ -162,6 +162,8 @@ Not sure where to begin? Here are some ideas:
 ## Plugin & Extension Contributions
 
 For external plugin/extension contributions, please use the [Volt Extensions](https://github.com/VoltLaunchr/extensions) repository. The core Volt repo contains only built-in plugins; community extensions are managed separately.
+
+The **Plugin SDK CLI** (`volt-plugin`) can scaffold, validate, and build extensions. See the [Plugin Development Guide](docs/plugins/DEVELOPMENT.md) for details.
 
 ## What We Won't Merge
 

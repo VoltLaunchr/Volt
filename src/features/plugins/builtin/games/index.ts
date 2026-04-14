@@ -1,8 +1,3 @@
-import i18n from 'i18next';
-import enGames from './locales/en.json';
-import frGames from './locales/fr.json';
-i18n.addResourceBundle('en', 'games', enGames);
-i18n.addResourceBundle('fr', 'games', frGames);
 
 import { invoke } from '@tauri-apps/api/core';
 import { logger } from '../../../../shared/utils/logger';

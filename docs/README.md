@@ -25,6 +25,26 @@ docs/
 
 **Référence complète des raccourcis clavier** — hotkeys globaux, contrôle des vues, navigation, actions sur les résultats, raccourcis des plugins.
 
+### Preview Panel
+
+**Panneau de prévisualisation** — aperçu en temps réel des fichiers, applications et résultats directement dans Volt sans quitter le launcher.
+
+### Snippets System
+
+**Système de snippets** — créez, gérez et insérez rapidement des fragments de texte réutilisables via le plugin snippets.
+
+### Power-user Operators
+
+**Opérateurs avancés** — syntaxe de recherche étendue pour filtrer par type, chemin, extension et combiner des critères (ex: `>`, `~`, `ext:`).
+
+### Windows Native Integration
+
+**Intégration native Windows** — recherche Windows Search, extraction d'icônes Shell, découverte d'applications UWP/MSIX, intégration registre.
+
+### Plugin SDK CLI (`volt-plugin`)
+
+**Outil CLI pour le développement de plugins** — scaffolding, validation, build et publication de plugins et extensions Volt.
+
 ---
 
 ## 🏗️ Architecture
@@ -236,7 +256,7 @@ Volt/
 │   │       └── useResultActions.ts
 │   ├── features/                 # Features organisées par domaine
 │   │   ├── plugins/             # Système de plugins
-│   │   │   ├── builtin/         # 9 plugins intégrés
+│   │   │   ├── builtin/         # 10 plugins intégrés
 │   │   │   ├── core/            # Registry et infrastructure
 │   │   │   └── types/           # Types TypeScript
 │   │   ├── applications/        # Gestion des applications

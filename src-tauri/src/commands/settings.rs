@@ -3,6 +3,11 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 use tauri::{AppHandle, Manager};
+use tokio::sync::Mutex;
+
+/// Mutex to serialize settings read-modify-write operations and prevent race conditions
+static SETTINGS_LOCK: once_cell::sync::Lazy<Mutex<()>> =
+    once_cell::sync::Lazy::new(|| Mutex::new(()));
 
 /// General application settings
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -220,11 +225,13 @@ fn save_settings_to_file(path: &PathBuf, settings: &Settings) -> VoltResult<()> 
 }
 
 /// Generic helper to update a settings section
-/// Reduces code duplication across update_*_settings functions
+/// Reduces code duplication across update_*_settings functions.
+/// Uses a mutex to serialize read-modify-write and prevent concurrent overwrites.
 async fn update_settings_section<F>(app_handle: AppHandle, update_fn: F) -> VoltResult<Settings>
 where
     F: FnOnce(&mut Settings),
 {
+    let _guard = SETTINGS_LOCK.lock().await;
     let mut settings = load_settings(app_handle.clone()).await?;
     update_fn(&mut settings);
     save_settings(app_handle, settings.clone()).await?;

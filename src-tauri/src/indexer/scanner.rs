@@ -273,7 +273,7 @@ fn create_file_info(path: &Path, metadata: &fs::Metadata) -> Option<FileInfo> {
         .and_then(|t| t.duration_since(SystemTime::UNIX_EPOCH).ok())
         .map(|d| d.as_secs() as i64);
 
-    let id = format!("{:x}", md5::compute(path_str.as_bytes()));
+    let id = crate::utils::hash_id(&path_str);
     let icon = get_file_icon(path);
 
     // Detect file category based on extension and path
@@ -332,7 +332,7 @@ fn create_directory_info(path: &Path, metadata: &fs::Metadata) -> Option<FileInf
         .and_then(|t| t.duration_since(SystemTime::UNIX_EPOCH).ok())
         .map(|d| d.as_secs() as i64);
 
-    let id = format!("{:x}", md5::compute(path_str.as_bytes()));
+    let id = crate::utils::hash_id(&path_str);
     let icon = get_file_icon(path);
 
     // Detect if this is a game folder

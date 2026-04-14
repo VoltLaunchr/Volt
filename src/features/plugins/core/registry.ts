@@ -77,11 +77,13 @@ export class PluginRegistry implements IPluginRegistry {
         // Get results with timeout protection
         const timeoutMs = 500; // 500ms max per plugin
         const matchPromise = Promise.resolve(plugin.match(context));
-        const timeoutPromise = new Promise<null>((resolve) =>
-          setTimeout(() => resolve(null), timeoutMs)
-        );
+        let timeoutId: ReturnType<typeof setTimeout>;
+        const timeoutPromise = new Promise<null>((resolve) => {
+          timeoutId = setTimeout(() => resolve(null), timeoutMs);
+        });
 
         const pluginResults = await Promise.race([matchPromise, timeoutPromise]);
+        clearTimeout(timeoutId!);
 
         if (pluginResults && Array.isArray(pluginResults)) {
           // Add plugin ID to each result for execution later

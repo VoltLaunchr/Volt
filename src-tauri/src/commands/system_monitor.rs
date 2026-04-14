@@ -1,8 +1,16 @@
-use crate::PluginState;
 /// System Monitor plugin commands
-use crate::core::error::VoltResult;
+use crate::core::error::{VoltError, VoltResult};
+use crate::plugins::builtin::SystemMonitorPlugin;
 use serde::{Deserialize, Serialize};
+use std::sync::Mutex;
 use tauri::State;
+
+/// Persistent system monitor instance for accurate readings (especially CPU).
+/// A single instance is reused across calls so that `sysinfo::System` can
+/// produce meaningful CPU readings (requires at least two refresh cycles).
+pub struct SystemMonitorState {
+    pub monitor: Mutex<SystemMonitorPlugin>,
+}
 
 /// System metrics information
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -19,37 +27,41 @@ pub struct SystemMetrics {
 
 /// Get CPU usage percentage
 #[tauri::command]
-pub fn get_cpu_usage(plugin_state: State<PluginState>) -> VoltResult<f32> {
-    use crate::plugins::builtin::SystemMonitorPlugin;
-
-    let monitor = SystemMonitorPlugin::new().with_api(plugin_state.api.clone());
+pub fn get_cpu_usage(monitor_state: State<SystemMonitorState>) -> VoltResult<f32> {
+    let monitor = monitor_state
+        .monitor
+        .lock()
+        .map_err(|e| VoltError::Unknown(format!("Monitor lock poisoned: {}", e)))?;
     Ok(monitor.cpu_usage())
 }
 
 /// Get memory usage percentage
 #[tauri::command]
-pub fn get_memory_usage(plugin_state: State<PluginState>) -> VoltResult<f32> {
-    use crate::plugins::builtin::SystemMonitorPlugin;
-
-    let monitor = SystemMonitorPlugin::new().with_api(plugin_state.api.clone());
+pub fn get_memory_usage(monitor_state: State<SystemMonitorState>) -> VoltResult<f32> {
+    let monitor = monitor_state
+        .monitor
+        .lock()
+        .map_err(|e| VoltError::Unknown(format!("Monitor lock poisoned: {}", e)))?;
     Ok(monitor.memory_usage())
 }
 
 /// Get disk usage percentage
 #[tauri::command]
-pub fn get_disk_usage(plugin_state: State<PluginState>) -> VoltResult<f32> {
-    use crate::plugins::builtin::SystemMonitorPlugin;
-
-    let monitor = SystemMonitorPlugin::new().with_api(plugin_state.api.clone());
+pub fn get_disk_usage(monitor_state: State<SystemMonitorState>) -> VoltResult<f32> {
+    let monitor = monitor_state
+        .monitor
+        .lock()
+        .map_err(|e| VoltError::Unknown(format!("Monitor lock poisoned: {}", e)))?;
     Ok(monitor.disk_usage())
 }
 
 /// Get all system metrics at once
 #[tauri::command]
-pub fn get_system_metrics(plugin_state: State<PluginState>) -> VoltResult<SystemMetrics> {
-    use crate::plugins::builtin::SystemMonitorPlugin;
-
-    let monitor = SystemMonitorPlugin::new().with_api(plugin_state.api.clone());
+pub fn get_system_metrics(monitor_state: State<SystemMonitorState>) -> VoltResult<SystemMetrics> {
+    let monitor = monitor_state
+        .monitor
+        .lock()
+        .map_err(|e| VoltError::Unknown(format!("Monitor lock poisoned: {}", e)))?;
     let info = monitor.get_system_info();
 
     Ok(SystemMetrics {

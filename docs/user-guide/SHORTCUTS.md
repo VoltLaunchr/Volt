@@ -14,6 +14,7 @@ Complete reference guide for all keyboard shortcuts in Volt.
 | Shortcut | Action |
 |----------|--------|
 | `Ctrl+,` | Open Settings |
+| `Ctrl+P` | Toggle preview panel |
 | `Ctrl+R` | Reload Volt |
 | `Ctrl+Q` | Quit Volt / Close window |
 | `Esc` | Close window |
@@ -103,11 +104,23 @@ Complete reference guide for all keyboard shortcuts in Volt.
 |-------|--------|
 | `clipboard` | Open clipboard history |
 
+### Snippets
+
+| Query | Action |
+|-------|--------|
+| `;keyword` | Search snippets by trigger (e.g., `;email`) |
+
 ### File Search
 
 | Query | Action |
 |-------|--------|
 | `filename` | Search indexed files |
+| `ext:pdf` | Filter files by extension |
+| `in:~/Documents` | Restrict search to a directory |
+| `size:>10mb` | Filter by minimum file size |
+| `size:<1gb` | Filter by maximum file size |
+| `modified:<7d` | Files modified within last 7 days |
+| `modified:>30d` | Files not modified in last 30 days |
 
 ## Special Views Navigation
 
@@ -148,4 +161,4 @@ The system will warn you if your chosen hotkey is already registered by another 
 
 ---
 
-Last updated: April 12, 2026
+Last updated: April 14, 2026
