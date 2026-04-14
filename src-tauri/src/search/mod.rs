@@ -48,13 +48,13 @@ pub fn search_applications_with_frecency(
             }
 
             // Also try matching against keywords if available
-            if match_score < 50.0 {
-                if let Some(ref keywords) = app.keywords {
-                    for kw in keywords {
-                        let kw_score = calculate_match_score(kw, query);
-                        if kw_score > match_score {
-                            match_score = kw_score * 0.85;
-                        }
+            if match_score < 50.0
+                && let Some(ref keywords) = app.keywords
+            {
+                for kw in keywords {
+                    let kw_score = calculate_match_score(kw, query);
+                    if kw_score > match_score {
+                        match_score = kw_score * 0.85;
                     }
                 }
             }

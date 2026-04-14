@@ -50,10 +50,10 @@ pub fn setup_global_hotkey(app: &AppHandle) -> Result<(), Box<dyn std::error::Er
                     let _ = window.hide();
                 } else {
                     // Position on the correct monitor before showing
-                    if let Some(state) = handle_clone.try_state::<ShowOnScreenState>() {
-                        if let Ok(val) = state.value.lock() {
-                            let _ = center_on_target_monitor(&window, &val);
-                        }
+                    if let Some(state) = handle_clone.try_state::<ShowOnScreenState>()
+                        && let Ok(val) = state.value.lock()
+                    {
+                        let _ = center_on_target_monitor(&window, &val);
                     }
                     let _ = window.show();
                     let _ = window.set_focus();
@@ -125,10 +125,10 @@ pub fn set_global_hotkey(
                         let _ = window.hide();
                     } else {
                         // Position on the correct monitor before showing
-                        if let Some(state) = app_handle.try_state::<ShowOnScreenState>() {
-                            if let Ok(val) = state.value.lock() {
-                                let _ = center_on_target_monitor(&window, &val);
-                            }
+                        if let Some(state) = app_handle.try_state::<ShowOnScreenState>()
+                            && let Ok(val) = state.value.lock()
+                        {
+                            let _ = center_on_target_monitor(&window, &val);
                         }
                         let _ = window.show();
                         let _ = window.set_focus();

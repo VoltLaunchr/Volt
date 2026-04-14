@@ -133,11 +133,11 @@ pub fn run() {
                 match commands::settings::load_settings(app_handle.clone()).await {
                     Ok(settings) => {
                         // Apply show_on_screen setting
-                        if let Some(state) = app_handle.try_state::<ShowOnScreenState>() {
-                            if let Ok(mut val) = state.value.lock() {
-                                *val = settings.general.show_on_screen.clone();
-                                info!("Applied show_on_screen setting: {}", *val);
-                            }
+                        if let Some(state) = app_handle.try_state::<ShowOnScreenState>()
+                            && let Ok(mut val) = state.value.lock()
+                        {
+                            *val = settings.general.show_on_screen.clone();
+                            info!("Applied show_on_screen setting: {}", *val);
                         }
 
                         // Apply hotkey from settings

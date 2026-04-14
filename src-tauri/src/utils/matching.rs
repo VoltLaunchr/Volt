@@ -62,14 +62,13 @@ pub fn calculate_match_score(text: &str, query: &str) -> f32 {
     match pattern.score(haystack, &mut matcher) {
         Some(raw_score) => {
             // Normalize nucleo scores to the 50-89 range.
-            let normalized = if raw_score == 0 {
+            if raw_score == 0 {
                 50.0
             } else {
                 let log_score = (raw_score as f32).ln();
                 // Map ln range [0, 10] to [50, 89]
-                (50.0 + log_score * (39.0 / 10.0)).min(89.0).max(50.0)
-            };
-            normalized
+                (50.0 + log_score * (39.0 / 10.0)).clamp(50.0, 89.0)
+            }
         }
         None => 0.0,
     }

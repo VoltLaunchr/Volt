@@ -133,22 +133,22 @@ pub fn migrate_from_json_if_needed() {
                 }
                 // Store metadata (saved_at, enabled)
                 let meta_key = format!("{}_meta", service);
-                if let Ok(meta_json) = serde_json::to_string(cred_val) {
-                    if let Err(e) = store(&meta_key, &meta_json) {
-                        warn!("Migration: failed to store meta for {}: {}", service, e);
-                    }
+                if let Ok(meta_json) = serde_json::to_string(cred_val)
+                    && let Err(e) = store(&meta_key, &meta_json)
+                {
+                    warn!("Migration: failed to store meta for {}: {}", service, e);
                 }
             }
         }
 
         // Supabase auth session
-        if let Some(auth_val) = map.get("supabase_auth") {
-            if let Ok(auth_json) = serde_json::to_string(auth_val) {
-                if let Err(e) = store("supabase_auth", &auth_json) {
-                    warn!("Migration: failed to store supabase_auth: {}", e);
-                } else {
-                    migrated += 1;
-                }
+        if let Some(auth_val) = map.get("supabase_auth")
+            && let Ok(auth_json) = serde_json::to_string(auth_val)
+        {
+            if let Err(e) = store("supabase_auth", &auth_json) {
+                warn!("Migration: failed to store supabase_auth: {}", e);
+            } else {
+                migrated += 1;
             }
         }
 

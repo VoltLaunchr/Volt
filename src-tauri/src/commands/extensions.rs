@@ -118,12 +118,11 @@ fn validate_extension_id(id: &str) -> VoltResult<()> {
 
 /// Check if host is in the 172.16.0.0/12 private range (172.16.x.x - 172.31.x.x)
 fn is_private_172(host: &str) -> bool {
-    if let Some(rest) = host.strip_prefix("172.") {
-        if let Some(second_octet_str) = rest.split('.').next() {
-            if let Ok(second_octet) = second_octet_str.parse::<u8>() {
-                return (16..=31).contains(&second_octet);
-            }
-        }
+    if let Some(rest) = host.strip_prefix("172.")
+        && let Some(second_octet_str) = rest.split('.').next()
+        && let Ok(second_octet) = second_octet_str.parse::<u8>()
+    {
+        return (16..=31).contains(&second_octet);
     }
     false
 }
@@ -965,12 +964,12 @@ pub async fn link_dev_extension(app: AppHandle, path: String) -> VoltResult<DevE
         .map_err(|e| VoltError::FileSystem(format!("Failed to resolve path: {}", e)))?;
 
     // Validate that the path is within the user's home directory
-    if let Some(home) = dirs::home_dir() {
-        if !canonical_path.starts_with(&home) {
-            return Err(VoltError::InvalidConfig(
-                "Dev extensions must be within the user's home directory".to_string(),
-            ));
-        }
+    if let Some(home) = dirs::home_dir()
+        && !canonical_path.starts_with(&home)
+    {
+        return Err(VoltError::InvalidConfig(
+            "Dev extensions must be within the user's home directory".to_string(),
+        ));
     }
 
     let extension_dir = canonical_path;

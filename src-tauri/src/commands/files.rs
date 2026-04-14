@@ -324,6 +324,7 @@ pub async fn get_index_status(state: State<'_, FileIndexState>) -> VoltResult<In
 }
 
 /// Searches indexed files, returning results with match scores.
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn search_files(
     state: State<'_, FileIndexState>,
@@ -585,6 +586,7 @@ pub async fn get_default_index_folders() -> VoltResult<Vec<String>> {
 }
 
 /// Shared implementation for advanced file search (with or without highlighting indices)
+#[allow(clippy::too_many_arguments)]
 fn search_files_impl(
     state: &State<'_, FileIndexState>,
     query: &str,

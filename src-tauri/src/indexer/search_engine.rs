@@ -108,41 +108,41 @@ impl SearchEngine {
                 }
 
                 // Extension filter (e.g., ext:pdf)
-                if let Some(ref ext) = options.ext_filter {
-                    if !file.extension.eq_ignore_ascii_case(ext) {
-                        return false;
-                    }
+                if let Some(ref ext) = options.ext_filter
+                    && !file.extension.eq_ignore_ascii_case(ext)
+                {
+                    return false;
                 }
 
                 // Directory filter (e.g., in:~/Documents)
-                if let Some(ref dir) = options.dir_filter {
-                    if !file.path.starts_with(dir.as_str()) {
-                        return false;
-                    }
+                if let Some(ref dir) = options.dir_filter
+                    && !file.path.starts_with(dir.as_str())
+                {
+                    return false;
                 }
 
                 // Size filters
-                if let Some(min) = options.size_min {
-                    if file.size < min {
-                        return false;
-                    }
+                if let Some(min) = options.size_min
+                    && file.size < min
+                {
+                    return false;
                 }
-                if let Some(max) = options.size_max {
-                    if file.size > max {
-                        return false;
-                    }
+                if let Some(max) = options.size_max
+                    && file.size > max
+                {
+                    return false;
                 }
 
                 // Modified time filters
-                if let Some(after) = options.modified_after {
-                    if file.modified < after {
-                        return false;
-                    }
+                if let Some(after) = options.modified_after
+                    && file.modified < after
+                {
+                    return false;
                 }
-                if let Some(before) = options.modified_before {
-                    if file.modified > before {
-                        return false;
-                    }
+                if let Some(before) = options.modified_before
+                    && file.modified > before
+                {
+                    return false;
                 }
 
                 true
@@ -322,6 +322,7 @@ impl SearchEngine {
 }
 
 /// Quick search function for backwards compatibility
+#[allow(dead_code)]
 pub fn search_files_advanced(
     query: &str,
     files: &[FileInfo],

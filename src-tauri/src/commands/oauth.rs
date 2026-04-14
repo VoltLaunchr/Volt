@@ -136,7 +136,7 @@ pub fn handle_oauth_callback(
     debug!("Handling OAuth callback for service: {}", service);
 
     // Validate service
-    let valid_services = vec!["github", "notion"];
+    let valid_services = ["github", "notion"];
     if !valid_services.contains(&service.as_str()) {
         return Err(format!("Invalid service: {}", service));
     }
