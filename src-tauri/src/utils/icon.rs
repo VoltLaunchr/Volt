@@ -192,12 +192,10 @@ fn base64_encode(data: &[u8]) -> String {
 #[cfg(target_os = "linux")]
 pub fn resolve_linux_icon(icon_name: &str) -> Option<String> {
     // If it's already a full path
-    if icon_name.starts_with('/') {
-        if std::path::Path::new(icon_name).exists() {
-            // Could load and convert to base64 here
-            // For now, return None to avoid large data
-            return None;
-        }
+    if icon_name.starts_with('/') && std::path::Path::new(icon_name).exists() {
+        // Could load and convert to base64 here
+        // For now, return None to avoid large data
+        return None;
     }
 
     // Common icon theme locations

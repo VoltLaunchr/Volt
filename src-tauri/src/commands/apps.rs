@@ -1,9 +1,14 @@
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
-use tokio::sync::{RwLock, Semaphore};
+use tokio::sync::RwLock;
+#[cfg(target_os = "windows")]
+use tokio::sync::Semaphore;
+#[cfg(target_os = "windows")]
 use tokio::time::timeout;
-use tracing::{info, warn};
+use tracing::info;
+#[cfg(target_os = "windows")]
+use tracing::warn;
 
 use crate::core::error::{VoltError, VoltResult};
 use crate::launcher::{LaunchError, launch};
@@ -927,10 +932,10 @@ async fn scan_applications_linux() -> Result<Vec<AppInfo>, String> {
                 let path = entry.path();
 
                 // Parse .desktop files
-                if path.extension().map(|e| e == "desktop").unwrap_or(false) {
-                    if let Some(app_info) = parse_desktop_file(&path) {
-                        apps.push(app_info);
-                    }
+                if path.extension().map(|e| e == "desktop").unwrap_or(false)
+                    && let Some(app_info) = parse_desktop_file(&path)
+                {
+                    apps.push(app_info);
                 }
             }
         }
@@ -944,29 +949,27 @@ async fn scan_applications_linux() -> Result<Vec<AppInfo>, String> {
         if let Ok(entries) = std::fs::read_dir(bin_path) {
             for entry in entries.flatten() {
                 let path = entry.path();
-                if let Ok(metadata) = entry.metadata() {
-                    // Check if it's an executable file
-                    if metadata.is_file() && is_executable(&path) {
-                        if let Some(name) = path.file_name() {
-                            let name_str = name.to_string_lossy().to_string();
-                            let path_str = path.to_string_lossy().to_string();
+                if let Ok(metadata) = entry.metadata()
+                    && metadata.is_file() && is_executable(&path)
+                    && let Some(name) = path.file_name()
+                {
+                    let name_str = name.to_string_lossy().to_string();
+                    let path_str = path.to_string_lossy().to_string();
 
-                            // Skip if already found via .desktop file
-                            if !apps.iter().any(|a| a.path == path_str) {
-                                let category = detect_app_category(&name_str, &path_str);
-                                apps.push(AppInfo {
-                                    id: crate::utils::hash_id(&path_str),
-                                    name: name_str,
-                                    path: path_str,
-                                    icon: None,
-                                    description: None,
-                                    keywords: None,
-                                    last_used: None,
-                                    usage_count: 0,
-                                    category: Some(category),
-                                });
-                            }
-                        }
+                    // Skip if already found via .desktop file
+                    if !apps.iter().any(|a| a.path == path_str) {
+                        let category = detect_app_category(&name_str, &path_str);
+                        apps.push(AppInfo {
+                            id: crate::utils::hash_id(&path_str),
+                            name: name_str,
+                            path: path_str,
+                            icon: None,
+                            description: None,
+                            keywords: None,
+                            last_used: None,
+                            usage_count: 0,
+                            category: Some(category),
+                        });
                     }
                 }
             }
@@ -1157,6 +1160,7 @@ pub async fn launch_application(path: String) -> VoltResult<()> {
 // ============================================================================
 
 /// Recursively scans a directory for applications up to a given depth
+#[allow(dead_code)]
 fn scan_directory_recursive(
     dir_path: &str,
     current_depth: usize,
@@ -1276,6 +1280,7 @@ fn resolve_lnk_shortcut(lnk_path: &std::path::Path) -> Option<(String, Option<St
     }
 }
 
+#[allow(dead_code)]
 fn scan_shortcuts(dir_path: &str) -> Result<Vec<AppInfo>, String> {
     let mut apps = Vec::new();
 

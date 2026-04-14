@@ -7,6 +7,7 @@
 //! - multi-monitor positioning
 
 use tauri::{AppHandle, Manager, Window};
+#[cfg(target_os = "windows")]
 use tracing::warn;
 
 /// Shows the main window and sets focus
