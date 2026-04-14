@@ -1,0 +1,15 @@
+{
+  "openQuicklink": "Open {{name}}",
+  "createQuicklink": "Create Quicklink",
+  "createDescription": "Create a new quicklink shortcut",
+  "listQuicklinks": "List Quicklinks",
+  "listDescription": "View all saved quicklinks",
+  "removeQuicklink": "Remove Quicklink",
+  "removeDescription": "Remove a quicklink by name",
+  "noQuicklinks": "No quicklinks saved yet",
+  "types": {
+    "url": "URL",
+    "folder": "Folder",
+    "command": "Command"
+  }
+}

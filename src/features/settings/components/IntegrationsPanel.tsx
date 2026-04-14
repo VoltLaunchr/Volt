@@ -4,6 +4,7 @@
  */
 
 import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   Github,
   Database,
@@ -11,7 +12,6 @@ import {
   CheckCircle,
   Eye,
   EyeOff,
-  Plus,
   Trash2,
   ExternalLink,
   Loader2,
@@ -19,6 +19,7 @@ import {
   Shield,
   type LucideIcon,
 } from 'lucide-react';
+import { invoke } from '@tauri-apps/api/core';
 import { logger } from '../../../shared/utils/logger';
 import { credentialsService } from '../services/credentialsService';
 
@@ -26,10 +27,9 @@ interface IntegrationConfig {
   id: 'github' | 'notion';
   name: string;
   icon: LucideIcon;
-  description: string;
+  descriptionKey: string;
   setupUrl: string;
   docUrl: string;
-  color: string;
   placeholder: string;
 }
 
@@ -38,25 +38,24 @@ const INTEGRATIONS: IntegrationConfig[] = [
     id: 'github',
     name: 'GitHub',
     icon: Github,
-    description: 'Search repositories, issues, PRs, and gists from Volt',
-    setupUrl: 'https://github.com/settings/tokens/new?scopes=public_repo&description=Volt',
+    descriptionKey: 'integrations.github.description',
+    setupUrl: 'https://voltlaunchr.com/api/oauth/github',
     docUrl: 'https://github.com/VoltLaunchr/volt-extensions/blob/main/plugins/github/README.md',
-    color: 'from-gray-900 to-gray-700',
     placeholder: 'ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
   },
   {
     id: 'notion',
     name: 'Notion',
     icon: Database,
-    description: 'Access and search your Notion workspace from Volt',
-    setupUrl: 'https://www.notion.so/my-integrations',
+    descriptionKey: 'integrations.notion.description',
+    setupUrl: 'https://voltlaunchr.com/api/oauth/notion',
     docUrl: 'https://github.com/VoltLaunchr/volt-extensions/blob/main/plugins/notion/README.md',
-    color: 'from-black to-gray-800',
     placeholder: 'secret_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
   },
 ];
 
 export function IntegrationsPanel() {
+  const { t } = useTranslation('settings');
   const [credentials, setCredentials] = useState<Record<string, boolean>>({});
   const [showTokens, setShowTokens] = useState<Record<string, boolean>>({});
   const [tokenInputs, setTokenInputs] = useState<Record<string, string>>({});
@@ -65,8 +64,8 @@ export function IntegrationsPanel() {
   const [success, setSuccess] = useState<Record<string, boolean>>({});
   const [testingTokens, setTestingTokens] = useState<Record<string, boolean>>({});
   const [tokenStatus, setTokenStatus] = useState<Record<string, 'valid' | 'invalid' | 'unchecked'>>({});
+  const [oauthLoading, setOauthLoading] = useState<Record<string, boolean>>({});
 
-  // Load existing credentials
   useEffect(() => {
     const loadCredentials = async () => {
       const status: Record<string, boolean> = {};
@@ -76,104 +75,102 @@ export function IntegrationsPanel() {
       }
       setCredentials(status);
     };
-
     loadCredentials();
   }, []);
 
+  const handleOAuthStart = async (serviceId: 'github' | 'notion') => {
+    setOauthLoading((prev) => ({ ...prev, [serviceId]: true }));
+    setErrors((prev) => ({ ...prev, [serviceId]: '' }));
+    try {
+      const command = serviceId === 'github' ? 'get_github_oauth_url' : 'get_notion_oauth_url';
+      const url = await invoke<string>(command);
+      try {
+        const { openUrl } = await import('@tauri-apps/plugin-opener');
+        await openUrl(url);
+      } catch {
+        logger.warn('Tauri opener unavailable, falling back to window.open');
+        window.open(url, '_blank');
+      }
+      setOauthLoading((prev) => ({ ...prev, [serviceId]: false }));
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : t('integrations.oauthFailed');
+      setErrors((prev) => ({ ...prev, [serviceId]: errorMessage }));
+      setOauthLoading((prev) => ({ ...prev, [serviceId]: false }));
+      logger.error(`OAuth start failed for ${serviceId}:`, error);
+    }
+  };
+
   const handleSaveToken = async (serviceId: 'github' | 'notion') => {
     const token = tokenInputs[serviceId];
-
     if (!token || token.trim().length === 0) {
-      setErrors({ ...errors, [serviceId]: 'Token cannot be empty' });
+      setErrors((prev) => ({ ...prev, [serviceId]: t('integrations.tokenEmpty') }));
       return;
     }
-
-    setLoading({ ...loading, [serviceId]: true });
-    setErrors({ ...errors, [serviceId]: '' });
-
+    setLoading((prev) => ({ ...prev, [serviceId]: true }));
+    setErrors((prev) => ({ ...prev, [serviceId]: '' }));
     try {
       await credentialsService.saveToken(serviceId, token);
-      setCredentials({ ...credentials, [serviceId]: true });
-      setTokenInputs({ ...tokenInputs, [serviceId]: '' });
-      setSuccess({ ...success, [serviceId]: true });
-      setTokenStatus({ ...tokenStatus, [serviceId]: 'unchecked' });
-
-      setTimeout(() => {
-        setSuccess({ ...success, [serviceId]: false });
-      }, 3000);
-
+      setCredentials((prev) => ({ ...prev, [serviceId]: true }));
+      setTokenInputs((prev) => ({ ...prev, [serviceId]: '' }));
+      setSuccess((prev) => ({ ...prev, [serviceId]: true }));
+      setTokenStatus((prev) => ({ ...prev, [serviceId]: 'unchecked' }));
+      setTimeout(() => setSuccess((prev) => ({ ...prev, [serviceId]: false })), 3000);
       logger.info(`${serviceId} token saved successfully`);
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to save token';
-      setErrors({ ...errors, [serviceId]: errorMessage });
+      const errorMessage = error instanceof Error ? error.message : t('integrations.saveFailed');
+      setErrors((prev) => ({ ...prev, [serviceId]: errorMessage }));
       logger.error(`Failed to save ${serviceId} token:`, error);
     } finally {
-      setLoading({ ...loading, [serviceId]: false });
+      setLoading((prev) => ({ ...prev, [serviceId]: false }));
     }
   };
 
   const handleTestToken = async (serviceId: 'github' | 'notion') => {
     const token = tokenInputs[serviceId];
-
     if (!token || token.trim().length === 0) {
-      setErrors({ ...errors, [serviceId]: 'Enter a token first' });
+      setErrors((prev) => ({ ...prev, [serviceId]: t('integrations.enterTokenFirst') }));
       return;
     }
-
-    setTestingTokens({ ...testingTokens, [serviceId]: true });
-    setErrors({ ...errors, [serviceId]: '' });
-
+    setTestingTokens((prev) => ({ ...prev, [serviceId]: true }));
+    setErrors((prev) => ({ ...prev, [serviceId]: '' }));
     try {
       const isValid = await credentialsService.testToken(serviceId, token);
-      setTokenStatus({ ...tokenStatus, [serviceId]: isValid ? 'valid' : 'invalid' });
-
+      setTokenStatus((prev) => ({ ...prev, [serviceId]: isValid ? 'valid' : 'invalid' }));
       if (!isValid) {
-        setErrors({ ...errors, [serviceId]: `Invalid ${serviceId} token. Check the token and try again.` });
+        setErrors((prev) => ({ ...prev, [serviceId]: t('integrations.invalidToken', { service: serviceId }) }));
       }
-    } catch (error) {
-      setTokenStatus({ ...tokenStatus, [serviceId]: 'invalid' });
-      setErrors({ ...errors, [serviceId]: 'Failed to test token' });
+    } catch {
+      setTokenStatus((prev) => ({ ...prev, [serviceId]: 'invalid' }));
+      setErrors((prev) => ({ ...prev, [serviceId]: t('integrations.testFailed') }));
     } finally {
-      setTestingTokens({ ...testingTokens, [serviceId]: false });
+      setTestingTokens((prev) => ({ ...prev, [serviceId]: false }));
     }
   };
 
   const handleDeleteToken = async (serviceId: 'github' | 'notion') => {
-    if (!confirm(`Are you sure you want to remove the ${serviceId} token?`)) {
-      return;
-    }
-
+    if (!confirm(t('integrations.confirmDelete', { service: serviceId }))) return;
     try {
       await credentialsService.deleteToken(serviceId);
-      setCredentials({ ...credentials, [serviceId]: false });
-      setTokenInputs({ ...tokenInputs, [serviceId]: '' });
-      setShowTokens({ ...showTokens, [serviceId]: false });
-      setTokenStatus({ ...tokenStatus, [serviceId]: 'unchecked' });
+      setCredentials((prev) => ({ ...prev, [serviceId]: false }));
+      setTokenInputs((prev) => ({ ...prev, [serviceId]: '' }));
+      setShowTokens((prev) => ({ ...prev, [serviceId]: false }));
+      setTokenStatus((prev) => ({ ...prev, [serviceId]: 'unchecked' }));
       logger.info(`${serviceId} token removed`);
-    } catch (error) {
-      setErrors({ ...errors, [serviceId]: 'Failed to delete token' });
-      logger.error(`Failed to delete ${serviceId} token:`, error);
+    } catch {
+      setErrors((prev) => ({ ...prev, [serviceId]: t('integrations.deleteFailed') }));
     }
   };
 
   return (
-    <div className="space-y-6 pb-12">
-      {/* Header */}
-      <div className="border-b border-gray-200 dark:border-gray-700 pb-6">
-        <div className="flex items-center gap-3 mb-2">
-          <Shield className="w-5 h-5 text-blue-600 dark:text-blue-400" />
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-            Integrations
-          </h2>
-        </div>
-        <p className="text-sm text-gray-600 dark:text-gray-400">
-          Connect your accounts to enable features from external extensions. Your tokens are encrypted
-          and stored securely locally.
-        </p>
+    <div className="settings-panel">
+      <div className="settings-panel-header">
+        <h2 className="settings-panel-title">{t('integrations.title')}</h2>
       </div>
+      <div className="settings-panel-content">
+        <p style={{ fontSize: 13, color: 'var(--color-text-tertiary)', marginBottom: 20 }}>
+          {t('integrations.description')}
+        </p>
 
-      {/* Integrations Grid */}
-      <div className="space-y-4">
         {INTEGRATIONS.map((integration) => (
           <IntegrationCard
             key={integration.id}
@@ -183,31 +180,40 @@ export function IntegrationsPanel() {
             isShowingToken={showTokens[integration.id] || false}
             isLoading={loading[integration.id] || false}
             isTesting={testingTokens[integration.id] || false}
+            isOAuthLoading={oauthLoading[integration.id] || false}
             error={errors[integration.id]}
             success={success[integration.id] || false}
             tokenStatus={tokenStatus[integration.id] || 'unchecked'}
-            onTokenChange={(value) => setTokenInputs({ ...tokenInputs, [integration.id]: value })}
+            onTokenChange={(value) => setTokenInputs((prev) => ({ ...prev, [integration.id]: value }))}
             onToggleVisibility={() =>
-              setShowTokens({ ...showTokens, [integration.id]: !showTokens[integration.id] })
+              setShowTokens((prev) => ({ ...prev, [integration.id]: !prev[integration.id] }))
             }
             onSave={() => handleSaveToken(integration.id)}
             onTest={() => handleTestToken(integration.id)}
             onDelete={() => handleDeleteToken(integration.id)}
+            onOAuthStart={() => handleOAuthStart(integration.id)}
+            t={t}
           />
         ))}
-      </div>
 
-      {/* Security Notice */}
-      <div className="bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
-        <div className="flex gap-3">
-          <Shield className="w-5 h-5 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" />
-          <div className="text-sm text-blue-800 dark:text-blue-300">
-            <p className="font-medium mb-1">🔒 Your tokens are safe</p>
-            <ul className="space-y-1 text-xs">
-              <li>• Tokens are encrypted using platform-native secure storage</li>
-              <li>• Never transmitted or logged</li>
-              <li>• Stored locally on your machine</li>
-              <li>• You can delete anytime</li>
+        {/* Security Notice */}
+        <div style={{
+          marginTop: 24,
+          padding: 16,
+          borderRadius: 10,
+          background: 'rgba(99, 102, 241, 0.08)',
+          border: '1px solid rgba(99, 102, 241, 0.2)',
+          display: 'flex',
+          gap: 12,
+        }}>
+          <Shield size={18} style={{ color: 'var(--color-accent)', flexShrink: 0, marginTop: 2 }} />
+          <div style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>
+            <p style={{ fontWeight: 600, marginBottom: 6 }}>{t('integrations.security.title')}</p>
+            <ul style={{ margin: 0, paddingLeft: 16, lineHeight: 1.8 }}>
+              <li>{t('integrations.security.encrypted')}</li>
+              <li>{t('integrations.security.neverTransmitted')}</li>
+              <li>{t('integrations.security.storedLocally')}</li>
+              <li>{t('integrations.security.deletable')}</li>
             </ul>
           </div>
         </div>
@@ -223,6 +229,7 @@ interface IntegrationCardProps {
   isShowingToken: boolean;
   isLoading: boolean;
   isTesting: boolean;
+  isOAuthLoading: boolean;
   error?: string;
   success?: boolean;
   tokenStatus: 'valid' | 'invalid' | 'unchecked';
@@ -231,7 +238,63 @@ interface IntegrationCardProps {
   onSave: () => void;
   onTest: () => void;
   onDelete: () => void;
+  onOAuthStart: () => void;
+  t: (key: string, options?: Record<string, string>) => string;
 }
+
+const cardStyle: React.CSSProperties = {
+  borderRadius: 10,
+  background: 'rgba(255, 255, 255, 0.03)',
+  border: '1px solid rgba(255, 255, 255, 0.08)',
+  marginBottom: 16,
+  overflow: 'hidden',
+};
+
+const cardHeaderStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  padding: '14px 16px',
+  borderBottom: '1px solid rgba(255, 255, 255, 0.06)',
+};
+
+const badgeStyle: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 4,
+  fontSize: 11,
+  fontWeight: 500,
+  padding: '3px 10px',
+  borderRadius: 20,
+  background: 'rgba(34, 197, 94, 0.15)',
+  color: '#22c55e',
+};
+
+const inputStyle: React.CSSProperties = {
+  width: '100%',
+  padding: '8px 36px 8px 12px',
+  borderRadius: 8,
+  background: 'rgba(255, 255, 255, 0.06)',
+  border: '1px solid rgba(255, 255, 255, 0.1)',
+  color: 'var(--color-text-primary)',
+  fontSize: 13,
+  outline: 'none',
+  boxSizing: 'border-box',
+};
+
+const btnBase: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  gap: 6,
+  padding: '7px 14px',
+  borderRadius: 8,
+  fontSize: 13,
+  fontWeight: 500,
+  cursor: 'pointer',
+  border: 'none',
+  transition: 'all 0.15s ease',
+};
 
 function IntegrationCard({
   integration,
@@ -240,6 +303,7 @@ function IntegrationCard({
   isShowingToken,
   isLoading,
   isTesting,
+  isOAuthLoading,
   error,
   success,
   tokenStatus,
@@ -248,151 +312,184 @@ function IntegrationCard({
   onSave,
   onTest,
   onDelete,
+  onOAuthStart,
+  t,
 }: IntegrationCardProps) {
   const Icon = integration.icon;
 
   return (
-    <div className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
+    <div style={cardStyle}>
       {/* Header */}
-      <div className={`bg-gradient-to-r ${integration.color} p-4 text-white flex items-center justify-between`}>
-        <div className="flex items-center gap-3">
-          <Icon className="w-6 h-6" />
+      <div style={cardHeaderStyle}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <Icon size={20} style={{ color: 'var(--color-text-secondary)' }} />
           <div>
-            <h3 className="font-semibold">{integration.name}</h3>
-            <p className="text-sm opacity-90">{integration.description}</p>
+            <div style={{ fontWeight: 600, fontSize: 14, color: 'var(--color-text-primary)' }}>
+              {integration.name}
+            </div>
+            <div style={{ fontSize: 12, color: 'var(--color-text-tertiary)', marginTop: 2 }}>
+              {t(integration.descriptionKey)}
+            </div>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          {isConfigured && (
-            <div className="flex items-center gap-1 bg-white/20 px-3 py-1 rounded-full text-sm">
-              <CheckCircle className="w-4 h-4" />
-              Configured
-            </div>
-          )}
-        </div>
+        {isConfigured && (
+          <span style={badgeStyle}>
+            <CheckCircle size={12} />
+            {t('integrations.connected')}
+          </span>
+        )}
       </div>
 
       {/* Content */}
-      <div className="p-4 space-y-4 bg-white dark:bg-gray-900">
-        {isConfigured && !token ? (
-          <div className="bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800 rounded p-3 flex items-center gap-3">
-            <CheckCircle className="w-5 h-5 text-green-600 dark:text-green-400 flex-shrink-0" />
-            <div className="text-sm text-green-800 dark:text-green-300">
-              <p className="font-medium">Token saved securely</p>
-              <p className="text-xs opacity-75">Your token is stored and ready to use</p>
-            </div>
-          </div>
-        ) : null}
-
-        {/* Error State */}
-        {error && (
-          <div className="bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 rounded p-3 flex items-center gap-3">
-            <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400 flex-shrink-0" />
-            <p className="text-sm text-red-800 dark:text-red-300">{error}</p>
-          </div>
+      <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
+        {/* Status messages */}
+        {isConfigured && !token && (
+          <StatusBanner type="success" message={t('integrations.tokenSavedSecure')} />
         )}
+        {error && <StatusBanner type="error" message={error} />}
+        {success && <StatusBanner type="success" message={t('integrations.tokenSaved')} />}
+        {tokenStatus === 'valid' && <StatusBanner type="success" message={t('integrations.tokenValid')} />}
+        {tokenStatus === 'invalid' && <StatusBanner type="error" message={t('integrations.tokenInvalid')} />}
 
-        {/* Success State */}
-        {success && (
-          <div className="bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800 rounded p-3 flex items-center gap-3">
-            <CheckCircle className="w-5 h-5 text-green-600 dark:text-green-400 flex-shrink-0" />
-            <p className="text-sm text-green-800 dark:text-green-300">Token saved successfully!</p>
-          </div>
-        )}
-
-        {/* Token Status */}
-        {tokenStatus !== 'unchecked' && (
-          <div className={`rounded p-3 flex items-center gap-3 ${
-            tokenStatus === 'valid'
-              ? 'bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800'
-              : 'bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800'
-          }`}>
-            {tokenStatus === 'valid' ? (
-              <>
-                <CheckCircle className="w-5 h-5 text-green-600 dark:text-green-400 flex-shrink-0" />
-                <p className="text-sm text-green-800 dark:text-green-300">✓ Token is valid</p>
-              </>
-            ) : (
-              <>
-                <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400 flex-shrink-0" />
-                <p className="text-sm text-red-800 dark:text-red-300">✗ Token is invalid</p>
-              </>
-            )}
-          </div>
-        )}
-
-        {/* Token Input */}
-        <div className="space-y-2">
-          <label className="text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center gap-2">
-            <Key className="w-4 h-4" />
-            API Token
+        {/* Token input */}
+        <div>
+          <label style={{
+            display: 'flex', alignItems: 'center', gap: 6,
+            fontSize: 13, fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: 6,
+          }}>
+            <Key size={14} />
+            {t('integrations.apiToken')}
           </label>
-          <div className="relative">
+          <div style={{ position: 'relative' }}>
             <input
               type={isShowingToken ? 'text' : 'password'}
               value={token}
               onChange={(e) => onTokenChange(e.target.value)}
               placeholder={integration.placeholder}
               disabled={isLoading}
-              className="w-full px-3 py-2 pr-10 bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg text-sm placeholder-gray-400 dark:placeholder-gray-500 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+              style={{
+                ...inputStyle,
+                opacity: isLoading ? 0.5 : 1,
+              }}
             />
             <button
               type="button"
               onClick={onToggleVisibility}
-              disabled={isLoading}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 disabled:opacity-50"
+              style={{
+                position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)',
+                background: 'none', border: 'none', color: 'var(--color-text-tertiary)',
+                cursor: 'pointer', padding: 4,
+              }}
             >
-              {isShowingToken ? (
-                <EyeOff className="w-4 h-4" />
-              ) : (
-                <Eye className="w-4 h-4" />
-              )}
+              {isShowingToken ? <EyeOff size={14} /> : <Eye size={14} />}
             </button>
           </div>
-          <p className="text-xs text-gray-500 dark:text-gray-400">
-            <a href={integration.setupUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1 inline-flex">
-              Get a token
-              <ExternalLink className="w-3 h-3" />
+          <div style={{ display: 'flex', gap: 8, marginTop: 6, fontSize: 12 }}>
+            <a href={integration.setupUrl} target="_blank" rel="noopener noreferrer"
+              style={{ color: 'var(--color-accent)', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+              {t('integrations.getToken')} <ExternalLink size={10} />
             </a>
-            {' / '}
-            <a href={integration.docUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1 inline-flex">
-              Learn more
-              <ExternalLink className="w-3 h-3" />
+            <span style={{ color: 'var(--color-text-tertiary)' }}>/</span>
+            <a href={integration.docUrl} target="_blank" rel="noopener noreferrer"
+              style={{ color: 'var(--color-accent)', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+              {t('integrations.learnMore')} <ExternalLink size={10} />
             </a>
-          </p>
+          </div>
         </div>
 
-        {/* Action Buttons */}
-        <div className="flex gap-2 pt-2">
+        {/* Actions */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, paddingTop: 4 }}>
           <button
-            onClick={onTest}
-            disabled={isLoading || isTesting || !token}
-            className="px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center gap-2"
+            onClick={onOAuthStart}
+            disabled={isOAuthLoading || isConfigured}
+            style={{
+              ...btnBase,
+              width: '100%',
+              background: isConfigured ? 'rgba(34, 197, 94, 0.15)' : 'rgba(34, 197, 94, 0.8)',
+              color: isConfigured ? '#22c55e' : '#fff',
+              opacity: (isOAuthLoading || isConfigured) ? 0.6 : 1,
+              cursor: (isOAuthLoading || isConfigured) ? 'not-allowed' : 'pointer',
+            }}
           >
-            {isTesting && <Loader2 className="w-4 h-4 animate-spin" />}
-            Test Token
+            {isOAuthLoading && <Loader2 size={14} className="animate-spin" />}
+            {isConfigured ? t('integrations.connectedOAuth') : t('integrations.connectOAuth')}
           </button>
 
-          <button
-            onClick={onSave}
-            disabled={isLoading || !token}
-            className="px-3 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 dark:bg-blue-700 dark:hover:bg-blue-800 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center gap-2 flex-1"
-          >
-            {isLoading && <Loader2 className="w-4 h-4 animate-spin" />}
-            {isConfigured ? 'Update Token' : 'Save Token'}
-          </button>
-
-          {isConfigured && (
-            <button
-              onClick={onDelete}
-              disabled={isLoading}
-              className="px-3 py-2 text-sm font-medium text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 rounded-lg hover:bg-red-100 dark:hover:bg-red-950/50 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
-            >
-              <Trash2 className="w-4 h-4" />
-            </button>
+          {!isConfigured && (
+            <div style={{
+              textAlign: 'center', fontSize: 11, color: 'var(--color-text-tertiary)',
+              padding: '4px 0', borderTop: '1px solid rgba(255,255,255,0.06)',
+            }}>
+              {t('integrations.pasteManually')}
+            </div>
           )}
+
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button
+              onClick={onTest}
+              disabled={isLoading || isTesting || !token}
+              style={{
+                ...btnBase,
+                background: 'rgba(255, 255, 255, 0.06)',
+                color: 'var(--color-text-secondary)',
+                border: '1px solid rgba(255, 255, 255, 0.1)',
+                opacity: (isLoading || isTesting || !token) ? 0.4 : 1,
+                cursor: (isLoading || isTesting || !token) ? 'not-allowed' : 'pointer',
+              }}
+            >
+              {isTesting && <Loader2 size={14} className="animate-spin" />}
+              {t('integrations.testToken')}
+            </button>
+
+            <button
+              onClick={onSave}
+              disabled={isLoading || !token}
+              style={{
+                ...btnBase,
+                flex: 1,
+                background: 'var(--color-accent)',
+                color: '#fff',
+                opacity: (isLoading || !token) ? 0.4 : 1,
+                cursor: (isLoading || !token) ? 'not-allowed' : 'pointer',
+              }}
+            >
+              {isLoading && <Loader2 size={14} className="animate-spin" />}
+              {isConfigured ? t('integrations.updateToken') : t('integrations.saveToken')}
+            </button>
+
+            {isConfigured && (
+              <button
+                onClick={onDelete}
+                disabled={isLoading}
+                style={{
+                  ...btnBase,
+                  background: 'rgba(239, 68, 68, 0.1)',
+                  color: '#ef4444',
+                  border: '1px solid rgba(239, 68, 68, 0.2)',
+                  padding: '7px 10px',
+                }}
+              >
+                <Trash2 size={14} />
+              </button>
+            )}
+          </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+function StatusBanner({ type, message }: { type: 'success' | 'error'; message: string }) {
+  const isSuccess = type === 'success';
+  const IconComponent = isSuccess ? CheckCircle : AlertCircle;
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderRadius: 8,
+      background: isSuccess ? 'rgba(34, 197, 94, 0.1)' : 'rgba(239, 68, 68, 0.1)',
+      border: `1px solid ${isSuccess ? 'rgba(34, 197, 94, 0.2)' : 'rgba(239, 68, 68, 0.2)'}`,
+    }}>
+      <IconComponent size={16} style={{ color: isSuccess ? '#22c55e' : '#ef4444', flexShrink: 0 }} />
+      <span style={{ fontSize: 13, color: isSuccess ? '#22c55e' : '#ef4444' }}>{message}</span>
     </div>
   );
 }

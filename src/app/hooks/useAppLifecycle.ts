@@ -8,6 +8,8 @@ import {
   CalculatorPlugin,
   EmojiPickerPlugin,
   GamesPlugin,
+  QuicklinksPlugin,
+  WindowManagementPlugin,
   SteamPlugin,
   SystemCommandsPlugin,
   SystemMonitorPlugin,
@@ -88,6 +90,8 @@ export function useAppLifecycle(): UseAppLifecycleResult {
           pluginRegistry.register(new SteamPlugin());
           pluginRegistry.register(new GamesPlugin()); // Unified games plugin (all platforms)
           pluginRegistry.register(new SnippetsPlugin());
+          pluginRegistry.register(new QuicklinksPlugin());
+          pluginRegistry.register(new WindowManagementPlugin());
 
           // Start clipboard monitoring
           await ClipboardPlugin.startMonitoring();

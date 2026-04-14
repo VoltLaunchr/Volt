@@ -1,60 +1,88 @@
 # Security Policy
 
-## Supported versions
+## Supported Versions
 
-| Version | Supported |
-|---------|-----------|
-| Latest  | Yes       |
-| < latest | No       |
+| Version | Supported          |
+| ------- | ------------------ |
+| Latest  | Yes                |
+| < Latest | No                |
 
-Only the latest published release receives security patches. Update to the latest version before reporting.
+Only the most recent release of Volt receives security updates. Users are strongly encouraged to keep their installation up to date.
 
-## Reporting a vulnerability
+## Reporting a Vulnerability
 
-**Do NOT open a public issue for security vulnerabilities.**
+If you discover a security vulnerability in Volt, please report it responsibly. **Do not open a public GitHub issue.**
 
-### Preferred: GitHub Security Advisory (private)
+### How to Report
 
-1. Go to [Security Advisories](https://github.com/VoltLaunchr/Volt/security/advisories/new)
-2. Click **New draft security advisory**
-3. Fill in the details and submit
+- **Email:** [security@voltlauncher.com](mailto:security@voltlauncher.com)
+- **GitHub Security Advisories:** [Report via GitHub](https://github.com/VoltLaunchr/Volt/security/advisories/new)
 
-This creates a private channel visible only to maintainers.
+### What to Include
 
-### Alternative: email
+- A clear description of the vulnerability and its potential impact.
+- Steps to reproduce the issue, including any relevant configuration or environment details.
+- Proof-of-concept code or screenshots, if available.
+- Your suggested severity assessment (Critical, High, Medium, Low).
 
-Send an email to **pro.voltlaunchr@outlook.com** with the subject line:
+### What to Expect
 
-```
-[SECURITY] Volt: <brief title>
-```
+| Stage                | Timeline       |
+| -------------------- | -------------- |
+| Acknowledgment       | Within 48 hours |
+| Initial assessment   | Within 7 days  |
+| Status update        | Every 14 days  |
+| Fix or mitigation    | Best effort, typically within 90 days |
 
-### What to include
+We will keep you informed throughout the process and coordinate on disclosure timing.
 
-- Affected version(s) and OS
-- Step-by-step reproduction instructions
-- Impact assessment (what an attacker could achieve)
-- Proposed fix or mitigation, if any
-- Whether you want to be credited in the advisory
+## Scope
 
-## Response timeline
+### In Scope
 
-| Stage | Target |
-|-------|--------|
-| Acknowledgment | 7 days |
-| Triage and severity assessment | 14 days |
-| Fix or mitigation (critical) | 30 days |
-| Fix or mitigation (moderate/low) | 90 days |
-| Public disclosure | After fix is released, or 90 days from acknowledgment (whichever comes first) |
+The following categories of issues are considered valid security vulnerabilities:
 
-## Coordinated disclosure
+- **IPC bypass** -- circumventing Tauri command permission boundaries or capability restrictions.
+- **Extension sandbox escape** -- an extension breaking out of its Web Worker sandbox or bypassing granted permissions.
+- **Privilege escalation** -- gaining elevated system privileges through Volt or its update mechanism.
+- **Data exfiltration** -- unauthorized access to clipboard history, credentials, file index data, or other sensitive information managed by Volt.
+- **Code injection** -- remote or local code execution via crafted search queries, extension manifests, plugin inputs, or deep links.
+- **Authentication or authorization flaws** -- bypassing OAuth flows or accessing protected functionality without proper authorization.
+- **Supply chain risks** -- compromised dependencies or build pipeline vulnerabilities.
 
-We follow a coordinated disclosure model. We ask reporters to keep the vulnerability confidential until a fix is available. We will credit reporters in the security advisory unless they request anonymity.
+### Out of Scope
 
-## Out of scope
+The following are **not** considered security vulnerabilities:
 
-- Vulnerabilities in upstream dependencies (report to the upstream project)
-- Social engineering or phishing
-- Physical access attacks
-- Denial of service via resource exhaustion (unless trivially exploitable remotely)
-- Issues in development/test tooling that don't affect end users
+- Social engineering attacks against users or maintainers.
+- Denial of service on a local machine (Volt is a local desktop application).
+- Attacks requiring physical access to the device.
+- Issues in third-party dependencies that do not have a demonstrated impact on Volt.
+- Bugs that require the user to have already granted full system permissions.
+- Self-inflicted issues from running Volt with elevated privileges contrary to documentation.
+- Vulnerabilities in community extensions hosted in the [volt-extensions](https://github.com/VoltLaunchr/volt-extensions) repository (report those in that repository directly).
+
+## Coordinated Disclosure Policy
+
+We follow a **90-day coordinated disclosure** process:
+
+1. The reporter submits the vulnerability through one of the channels listed above.
+2. We acknowledge receipt, investigate, and develop a fix.
+3. Once a fix is ready, we coordinate a release date with the reporter.
+4. The vulnerability is disclosed publicly no sooner than **90 days** after the initial report, or when the fix is released, whichever comes first.
+5. If we are unable to address the issue within 90 days, we will negotiate an extended timeline with the reporter.
+
+We ask that reporters refrain from public disclosure until the coordinated disclosure date.
+
+## Recognition
+
+We value the work of security researchers. With your permission, we will credit you in:
+
+- The release notes for the version containing the fix.
+- Our **Security Hall of Fame** (maintained in this repository).
+
+If you would like to be credited under a specific name, handle, or organization, please let us know when submitting your report.
+
+## Contact
+
+For any questions about this policy, reach out to [security@voltlauncher.com](mailto:security@voltlauncher.com).

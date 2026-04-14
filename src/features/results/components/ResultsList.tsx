@@ -112,6 +112,7 @@ export const ResultsList: React.FC<ResultsListProps> = ({
           strokeWidth="1.5"
           strokeLinecap="round"
           strokeLinejoin="round"
+          aria-hidden="true"
         >
           <circle cx="11" cy="11" r="8" />
           <path d="m21 21-4.35-4.35" />
@@ -135,9 +136,14 @@ export const ResultsList: React.FC<ResultsListProps> = ({
       aria-activedescendant={selectedItemId}
     >
       {sections.map((section) => (
-        <div key={section.label || 'single'} className="results-section">
+        <div
+          key={section.label || 'single'}
+          className="results-section"
+          role="group"
+          aria-label={section.label || undefined}
+        >
           {section.label && (
-            <div className="results-section-header">{section.label}</div>
+            <div className="results-section-header" aria-hidden="true">{section.label}</div>
           )}
           {section.results.map(({ result, globalIndex }) => (
             <div
@@ -146,6 +152,7 @@ export const ResultsList: React.FC<ResultsListProps> = ({
               id={`result-item-${globalIndex}`}
               role="option"
               aria-selected={globalIndex === selectedIndex}
+              aria-label={`${result.title}${result.subtitle ? ` - ${result.subtitle}` : ''}`}
             >
               <ResultItem
                 result={result}

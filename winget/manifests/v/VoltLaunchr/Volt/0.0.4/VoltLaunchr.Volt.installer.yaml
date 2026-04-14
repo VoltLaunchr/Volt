@@ -13,6 +13,7 @@ Installers:
   - Architecture: x64
     InstallerType: nullsoft
     InstallerUrl: https://github.com/VoltLaunchr/Volt/releases/download/v0.0.4/volt_0.0.4_x64-setup.exe
-    InstallerSha256: TODO_SHA256_HASH
+    InstallerSha256: FCD31746C5DDF226C619734FAC350F4161CD3DF184C50166F2C7C1502A1BCE48
+
 ManifestType: installer
 ManifestVersion: 1.6.0

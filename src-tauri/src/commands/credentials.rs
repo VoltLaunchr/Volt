@@ -1,11 +1,16 @@
 /**
  * Credentials Management Commands
- * Securely handle API tokens for integrations
+ *
+ * Stores OAuth tokens (GitHub, Notion) securely in the OS credential store:
+ * - Windows : Windows Credential Manager (DPAPI-protected)
+ * - macOS   : macOS Keychain
+ * - Linux   : D-Bus Secret Service (GNOME Keyring / KWallet)
  */
 
-use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, info};
+
+use super::keyring_store;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StoredCredential {
@@ -14,183 +19,122 @@ pub struct StoredCredential {
     pub enabled: bool,
 }
 
-/// Save API token securely
-///
-/// Stores tokens in a secure location (platform-dependent):
-/// - Windows: Credential Manager
-/// - macOS: Keychain
-/// - Linux: Pass or fallback to encrypted file
+#[derive(Debug, Serialize, Deserialize)]
+struct CredentialMeta {
+    saved_at: String,
+    enabled: bool,
+}
+
+fn validate_service(service: &str) -> Result<(), String> {
+    const VALID: &[&str] = &["github", "notion"];
+    if VALID.contains(&service) {
+        Ok(())
+    } else {
+        Err(format!(
+            "Invalid service: '{}'. Must be one of: {}",
+            service,
+            VALID.join(", ")
+        ))
+    }
+}
+
+#[inline]
+fn token_account(service: &str) -> String {
+    service.to_string()
+}
+
+#[inline]
+fn meta_account(service: &str) -> String {
+    format!("{}_meta", service)
+}
+
+/// Save an API token to the OS keyring.
 #[tauri::command]
 pub fn save_credential(service: String, token: String) -> Result<(), String> {
     debug!("Saving credential for service: {}", service);
+    validate_service(&service)?;
 
-    // Validate service name
-    let valid_services = vec!["github", "notion"];
-    if !valid_services.contains(&service.as_str()) {
-        return Err(format!("Invalid service: {}. Must be one of: github, notion", service));
-    }
-
-    // Validate token is not empty
     if token.trim().is_empty() {
         return Err("Token cannot be empty".to_string());
     }
 
-    // Simulate secure storage (in production, use platform keychain)
-    // For now, we'll store encrypted tokens locally
-    let app_data_dir = get_app_data_dir()
-        .map_err(|e| format!("Failed to get app data dir: {}", e))?;
+    keyring_store::migrate_from_json_if_needed();
 
-    let credentials_file = app_data_dir.join("credentials.json");
+    keyring_store::store(&token_account(&service), &token)?;
 
-    // Read existing credentials
-    let mut creds: serde_json::Map<String, serde_json::Value> = if credentials_file.exists() {
-        let content = std::fs::read_to_string(&credentials_file)
-            .map_err(|e| format!("Failed to read credentials file: {}", e))?;
-        serde_json::from_str(&content)
-            .unwrap_or_default()
-    } else {
-        serde_json::Map::new()
+    let meta = CredentialMeta {
+        saved_at: chrono::Local::now().to_rfc3339(),
+        enabled: true,
     };
-
-    // Store token (in production, encrypt it)
-    let timestamp = chrono::Local::now().to_rfc3339();
-    let credential_data = serde_json::json!({
-        "token": token,
-        "saved_at": timestamp,
-        "enabled": true
-    });
-
-    creds.insert(service.clone(), credential_data);
-
-    // Write credentials back
-    let json = serde_json::to_string_pretty(&creds)
-        .map_err(|e| format!("Failed to serialize credentials: {}", e))?;
-
-    std::fs::write(&credentials_file, json)
-        .map_err(|e| format!("Failed to write credentials file: {}", e))?;
+    let meta_json = serde_json::to_string(&meta)
+        .map_err(|e| format!("Failed to serialize credential metadata: {}", e))?;
+    keyring_store::store(&meta_account(&service), &meta_json)?;
 
     info!("Credential saved for service: {}", service);
     Ok(())
 }
 
-/// Load API token from secure storage
+/// Load an API token from the OS keyring.
 #[tauri::command]
 pub fn load_credential(service: String) -> Result<Option<String>, String> {
     debug!("Loading credential for service: {}", service);
-
-    let app_data_dir = get_app_data_dir()
-        .map_err(|e| format!("Failed to get app data dir: {}", e))?;
-
-    let credentials_file = app_data_dir.join("credentials.json");
-
-    if !credentials_file.exists() {
-        debug!("Credentials file does not exist");
-        return Ok(None);
+    keyring_store::migrate_from_json_if_needed();
+    let token = keyring_store::retrieve(&token_account(&service))?;
+    if token.is_some() {
+        debug!("Credential loaded for service: {}", service);
+    } else {
+        debug!("No credential found for service: {}", service);
     }
-
-    let content = std::fs::read_to_string(&credentials_file)
-        .map_err(|e| format!("Failed to read credentials file: {}", e))?;
-
-    let creds: serde_json::Map<String, serde_json::Value> = serde_json::from_str(&content)
-        .unwrap_or_default();
-
-    if let Some(cred_value) = creds.get(&service) {
-        if let Some(token) = cred_value.get("token").and_then(|v| v.as_str()) {
-            debug!("Credential loaded for service: {}", service);
-            return Ok(Some(token.to_string()));
-        }
-    }
-
-    debug!("No credential found for service: {}", service);
-    Ok(None)
+    Ok(token)
 }
 
-/// Check if credential exists
+/// Return `true` if a token is stored for this service.
 #[tauri::command]
 pub fn has_credential(service: String) -> Result<bool, String> {
-    let result = load_credential(service)?;
+    keyring_store::migrate_from_json_if_needed();
+    let result = keyring_store::retrieve(&token_account(&service))?;
     Ok(result.is_some())
 }
 
-/// Delete stored credential
+/// Delete the stored token and its metadata from the OS keyring.
 #[tauri::command]
 pub fn delete_credential(service: String) -> Result<(), String> {
     debug!("Deleting credential for service: {}", service);
-
-    let app_data_dir = get_app_data_dir()
-        .map_err(|e| format!("Failed to get app data dir: {}", e))?;
-
-    let credentials_file = app_data_dir.join("credentials.json");
-
-    if !credentials_file.exists() {
-        return Ok(());
-    }
-
-    let content = std::fs::read_to_string(&credentials_file)
-        .map_err(|e| format!("Failed to read credentials file: {}", e))?;
-
-    let mut creds: serde_json::Map<String, serde_json::Value> = serde_json::from_str(&content)
-        .unwrap_or_default();
-
-    creds.remove(&service);
-
-    let json = serde_json::to_string_pretty(&creds)
-        .map_err(|e| format!("Failed to serialize credentials: {}", e))?;
-
-    std::fs::write(&credentials_file, json)
-        .map_err(|e| format!("Failed to write credentials file: {}", e))?;
-
+    keyring_store::migrate_from_json_if_needed();
+    keyring_store::remove(&token_account(&service))?;
+    keyring_store::remove(&meta_account(&service))?;
     info!("Credential deleted for service: {}", service);
     Ok(())
 }
 
-/// Get credential metadata (without exposing token)
+/// Return credential metadata (saved_at, enabled) without exposing the token.
 #[tauri::command]
 pub fn get_credential_info(service: String) -> Result<Option<StoredCredential>, String> {
     debug!("Getting credential info for service: {}", service);
+    keyring_store::migrate_from_json_if_needed();
 
-    let app_data_dir = get_app_data_dir()
-        .map_err(|e| format!("Failed to get app data dir: {}", e))?;
-
-    let credentials_file = app_data_dir.join("credentials.json");
-
-    if !credentials_file.exists() {
+    if keyring_store::retrieve(&token_account(&service))?.is_none() {
         return Ok(None);
     }
 
-    let content = std::fs::read_to_string(&credentials_file)
-        .map_err(|e| format!("Failed to read credentials file: {}", e))?;
-
-    let creds: serde_json::Map<String, serde_json::Value> = serde_json::from_str(&content)
-        .unwrap_or_default();
-
-    if let Some(cred_value) = creds.get(&service) {
-        let saved_at = cred_value
-            .get("saved_at")
-            .and_then(|v| v.as_str())
-            .unwrap_or("Unknown")
-            .to_string();
-
-        let enabled = cred_value
-            .get("enabled")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
-
-        return Ok(Some(StoredCredential {
+    match keyring_store::retrieve(&meta_account(&service))? {
+        Some(meta_json) => {
+            let meta: CredentialMeta = serde_json::from_str(&meta_json).unwrap_or(CredentialMeta {
+                saved_at: "Unknown".to_string(),
+                enabled: true,
+            });
+            Ok(Some(StoredCredential {
+                service,
+                saved_at: meta.saved_at,
+                enabled: meta.enabled,
+            }))
+        }
+        None => Ok(Some(StoredCredential {
             service,
-            saved_at,
-            enabled,
-        }));
+            saved_at: "Unknown".to_string(),
+            enabled: true,
+        })),
     }
-
-    Ok(None)
-}
-
-/// Get app data directory
-fn get_app_data_dir() -> Result<PathBuf, String> {
-    dirs::data_dir()
-        .ok_or_else(|| "Failed to determine app data directory".to_string())
-        .map(|path| path.join("Volt"))
 }
 
 #[cfg(test)]
@@ -198,29 +142,22 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_save_and_load_credential() {
-        // Note: In actual tests, use temp directories
-        let service = "github".to_string();
-        let token = "ghp_test_token_123".to_string();
-
-        // This would require mocking file system
-        // let result = save_credential(service.clone(), token.clone());
-        // assert!(result.is_ok());
-
-        // let loaded = load_credential(service);
-        // assert!(loaded.is_ok());
-        // assert_eq!(loaded.unwrap(), Some(token));
-    }
-
-    #[test]
     fn test_invalid_service() {
         let result = save_credential("invalid_service".to_string(), "token".to_string());
         assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Invalid service"));
     }
 
     #[test]
     fn test_empty_token() {
         let result = save_credential("github".to_string(), "".to_string());
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("empty"));
+    }
+
+    #[test]
+    fn test_whitespace_only_token() {
+        let result = save_credential("github".to_string(), "   ".to_string());
         assert!(result.is_err());
     }
 }

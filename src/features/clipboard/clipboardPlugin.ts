@@ -1,6 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { PluginResultType, type Plugin, PluginContext, PluginResult } from '../plugins/types';
 import { logger } from '../../shared/utils';
+import { isClipboardItem } from '../../shared/utils/typeGuards';
 import type { ClipboardItem } from '../../shared/types/clipboard';
 
 /**
@@ -49,22 +50,38 @@ export class ClipboardPlugin implements Plugin {
 
       // Use cache if valid
       const now = Date.now();
-      if (this.cache && now - this.cacheTime < this.CACHE_TTL) {
-        items = this.cache;
+      const cacheValid = this.cache && now - this.cacheTime < this.CACHE_TTL;
+
+      if (cacheValid && searchQuery.length === 0) {
+        // Cache hit, no query - return cached results directly
+        items = this.cache!;
+      } else if (cacheValid && searchQuery.length > 0) {
+        // Cache hit with query - filter from cache in-memory
+        const lowerQuery = searchQuery.toLowerCase();
+        items = this.cache!.filter(
+          (item) =>
+            item.content.toLowerCase().includes(lowerQuery) ||
+            item.preview.toLowerCase().includes(lowerQuery)
+        );
       } else {
-        // Fetch from backend
-        if (searchQuery.length > 0) {
-          items = await invoke<ClipboardItem[]>('search_clipboard_history', {
-            query: searchQuery,
-            limit: 50,
-          });
-        } else {
-          items = await invoke<ClipboardItem[]>('get_clipboard_history', {
-            limit: 50,
-          });
-        }
-        this.cache = items;
+        // Cache miss - fetch full history from backend
+        const fullHistory = await invoke<ClipboardItem[]>('get_clipboard_history', {
+          limit: 50,
+        });
+        this.cache = fullHistory;
         this.cacheTime = now;
+
+        // Filter if needed
+        if (searchQuery.length > 0) {
+          const lowerQuery = searchQuery.toLowerCase();
+          items = fullHistory.filter(
+            (item) =>
+              item.content.toLowerCase().includes(lowerQuery) ||
+              item.preview.toLowerCase().includes(lowerQuery)
+          );
+        } else {
+          items = fullHistory;
+        }
       }
 
       // Convert to plugin results
@@ -79,6 +96,9 @@ export class ClipboardPlugin implements Plugin {
     if (!result.data) return;
 
     const item = result.data as unknown as ClipboardItem;
+    if (!isClipboardItem(item)) {
+      throw new Error('Invalid clipboard item data');
+    }
 
     try {
       // Copy to clipboard
@@ -160,7 +180,7 @@ export class ClipboardPlugin implements Plugin {
   static async startMonitoring(): Promise<void> {
     try {
       await invoke('start_clipboard_monitoring');
-      console.log('✓ Clipboard monitoring started');
+      logger.info('Clipboard monitoring started');
     } catch (error) {
       logger.error('Failed to start clipboard monitoring:', error);
     }
@@ -172,7 +192,7 @@ export class ClipboardPlugin implements Plugin {
   static async stopMonitoring(): Promise<void> {
     try {
       await invoke('stop_clipboard_monitoring');
-      console.log('✓ Clipboard monitoring stopped');
+      logger.info('Clipboard monitoring stopped');
     } catch (error) {
       logger.error('Failed to stop clipboard monitoring:', error);
     }

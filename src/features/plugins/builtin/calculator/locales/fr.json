@@ -1,23 +1,23 @@
 {
   "openCalculator": "Ouvrir la Calculatrice",
   "description": "Maths, conversions, dates et fuseaux horaires",
-  "copyHint": "Cliquer pour copier",
+  "copyHint": "Cliquez pour copier",
   "view": {
     "title": "Calculatrice",
     "placeholder": "Tapez un calcul...",
-    "result": "Resultat",
-    "copyResult": "Copier le resultat (Entree)",
+    "result": "Résultat",
+    "copyResult": "Copier le résultat (Entrée)",
     "copy": "Copier",
     "quickActions": {
-      "squareRoot": "Racine carree",
-      "square": "Carre",
+      "squareRoot": "Racine carrée",
+      "square": "Carré",
       "convert": "Convertir",
       "timezone": "Fuseau horaire"
     },
     "history": "Historique",
     "clear": "Effacer",
     "noHistory": "Pas encore d'historique",
-    "historyHint": "Essayez : 2+2, 10km en miles, heure a Tokyo",
+    "historyHint": "Essayez : 2+2, 10km en miles, heure à Tokyo",
     "footer": {
       "copy": "Copier",
       "history": "Historique",

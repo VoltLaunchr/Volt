@@ -6,5 +6,7 @@ export { SystemMonitorPlugin } from './systemmonitor';
 export { SteamPlugin } from './steam';
 export { GamesPlugin, GameView } from './games';
 export { EmojiPickerPlugin, EmojiPickerView } from './emoji-picker';
+export { QuicklinksPlugin } from './quicklinks';
+export { WindowManagementPlugin } from './window-management';
 export type { ActiveTimer } from './timer';
 export type { GameInfo, PlatformInfo } from './games';

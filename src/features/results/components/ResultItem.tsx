@@ -136,7 +136,14 @@ export const ResultItem: React.FC<ResultItemProps> = ({
       <div className="result-content">
         <div className="result-title truncate">{result.title}</div>
         {result.subtitle && <div className="result-subtitle truncate">{result.subtitle}</div>}
-        <div className="system-monitor-progress">
+        <div
+          className="system-monitor-progress"
+          role="progressbar"
+          aria-valuenow={value}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-label={`${result.title}: ${value}%`}
+        >
           <div className="system-monitor-progress-bg">
             <div
               className="system-monitor-progress-fill"
@@ -157,9 +164,6 @@ export const ResultItem: React.FC<ResultItemProps> = ({
       onClick={onLaunch}
       onMouseEnter={onSelect}
       onKeyDown={handleKeyDown}
-      role="button"
-      tabIndex={0}
-      aria-label={`${result.title} - ${result.subtitle || ''}`}
     >
       <div className="result-icon">
         {result.type === SearchResultType.SystemMonitor ? (

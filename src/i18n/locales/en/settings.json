@@ -11,6 +11,8 @@
     "plugins": "Plugins",
     "fileSearch": "File Search",
     "clipboard": "Clipboard History",
+    "integrations": "Integrations",
+    "account": "Account",
     "builtIn": "BUILT-IN"
   },
   "general": {
@@ -22,6 +24,13 @@
     "followSystemAppearance": "Follow System Appearance",
     "openAtLogin": "Open at Login",
     "closeOnLaunch": "Close on Launch",
+    "featurePreview": "Feature Preview",
+    "featurePreviewDesc": "Enable experimental features. These may be unstable or change without notice.",
+    "searchSensitivity": "Search Sensitivity",
+    "searchSensitivityDesc": "Controls how strict or loose fuzzy search matching is",
+    "sensitivityLow": "Low (strict)",
+    "sensitivityMedium": "Medium",
+    "sensitivityHigh": "High (permissive)",
     "voltHotkey": "Volt Hotkey",
     "hotkeyDesc": "Press a key combination to set your global shortcut"
   },
@@ -53,6 +62,13 @@
       "leftCenter": "Left center",
       "rightCenter": "Right center"
     },
+    "showOnScreen": "Show Volt on",
+    "showOnScreenDesc": "Choose which screen Volt appears on when toggled",
+    "screenOptions": {
+      "cursor": "Screen with cursor",
+      "focusedWindow": "Screen with focused window",
+      "primaryScreen": "Primary screen"
+    },
     "maxResults": "Max Results",
     "maxResultsDesc": "Maximum number of search results displayed",
     "results": "{{count}} results",
@@ -74,7 +90,13 @@
     "copyDiagnostics": "Copy diagnostics",
     "copied": "Copied!",
     "copyright": "© 2026 VoltLaunchr Contributors • Licensed under Apache 2.0",
-    "builtWith": "Built with Tauri, React, and Rust"
+    "builtWith": "Built with Tauri, React, and Rust",
+    "exportSettings": "Export Settings",
+    "importSettings": "Import Settings",
+    "exportSuccess": "Settings exported successfully",
+    "exportError": "Failed to export settings",
+    "importSuccess": "Settings imported successfully",
+    "importError": "Failed to import settings"
   },
   "fileSearch": {
     "title": "File Search",
@@ -115,7 +137,9 @@
       "timer": "Timer",
       "systemMonitor": "System Monitor",
       "games": "Games",
-      "clipboardHistory": "Clipboard History"
+      "clipboardHistory": "Clipboard History",
+      "quicklinks": "Quicklinks",
+      "windowManagement": "Window Management"
     }
   },
   "clipboard": {
@@ -135,6 +159,45 @@
     "scanAppsDesc": "Manually trigger a scan for installed applications",
     "scanNow": "Scan Now"
   },
+  "integrations": {
+    "title": "Integrations",
+    "description": "Connect your accounts to enable features from external extensions. Your tokens are encrypted and stored securely locally.",
+    "getToken": "Get a token",
+    "learnMore": "Learn more",
+    "apiToken": "API Token",
+    "connectOAuth": "Connect with OAuth",
+    "connectedOAuth": "Connected via OAuth",
+    "pasteManually": "Or paste a token manually",
+    "testToken": "Test Token",
+    "saveToken": "Save Token",
+    "updateToken": "Update Token",
+    "tokenSaved": "Token saved successfully!",
+    "tokenSavedSecure": "Token saved securely and ready to use",
+    "tokenValid": "Token is valid",
+    "tokenInvalid": "Token is invalid",
+    "tokenEmpty": "Token cannot be empty",
+    "enterTokenFirst": "Enter a token first",
+    "testFailed": "Failed to test token",
+    "saveFailed": "Failed to save token",
+    "deleteFailed": "Failed to delete token",
+    "oauthFailed": "Failed to start OAuth",
+    "confirmDelete": "Are you sure you want to remove the {{service}} token?",
+    "invalidToken": "Invalid {{service}} token. Check the token and try again.",
+    "connected": "Connected",
+    "security": {
+      "title": "Your tokens are safe",
+      "encrypted": "Encrypted using platform-native secure storage",
+      "neverTransmitted": "Never transmitted or logged",
+      "storedLocally": "Stored locally on your machine",
+      "deletable": "You can delete anytime"
+    },
+    "github": {
+      "description": "Search repositories, issues, PRs, and gists from Volt"
+    },
+    "notion": {
+      "description": "Access and search your Notion workspace from Volt"
+    }
+  },
   "saveBar": {
     "unsavedChanges": "You have unsaved changes",
     "discard": "Discard",
@@ -146,6 +209,13 @@
     "saving": "Saving...",
     "close": "Close",
     "reset": "Reset to defaults"
+  },
+  "account": {
+    "title": "Account",
+    "loading": "Loading account...",
+    "signIn": "Sign in",
+    "signOut": "Sign out",
+    "signInDescription": "Sign in to sync settings and unlock premium features."
   },
   "errors": {
     "loadFailed": "Failed to load settings",

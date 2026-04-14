@@ -3,6 +3,13 @@ import { useCallback, useEffect, useRef } from 'react';
 import { pluginRegistry } from '../../features/plugins/core';
 import { PluginResult as PluginResultData } from '../../features/plugins/types';
 import { AppInfo, FileInfo, SearchResult, SearchResultType } from '../../shared/types/common.types';
+import {
+  SEARCH_SCORING,
+  SEARCH_LIMITS,
+  SEARCH_SENSITIVITY_THRESHOLDS,
+  SEARCH_SENSITIVITY_FUZZY_MULTIPLIER,
+} from '../../shared/constants/searchScoring';
+import type { SearchSensitivity } from '../../features/settings/types/settings.types';
 import { logger } from '../../shared/utils/logger';
 import { parseQuery } from '../../shared/utils/queryParser';
 import { useAppStore } from '../../stores/appStore';
@@ -16,14 +23,6 @@ function shortenPath(fullPath: string): string {
   }
   return fullPath;
 }
-
-// Search result priority scores (higher = appears first)
-export const SEARCH_PRIORITIES = {
-  APPLICATION: 200,
-  FILE: 80,
-  PLUGIN_BASE: 100,
-  PLUGIN_KEYWORD_BOOST: 300, // Boost plugins when query matches their keywords exactly
-} as const;
 
 /** Shape returned by search_applications_frecency */
 interface AppInfoWithScore extends AppInfo {
@@ -76,7 +75,7 @@ const getPluginKeywordBoost = (query: string, pluginId: string): number => {
       lowerQuery.startsWith(keyword + ' ') ||
       lowerQuery.startsWith(keyword)
     ) {
-      return SEARCH_PRIORITIES.PLUGIN_KEYWORD_BOOST;
+      return SEARCH_SCORING.PLUGIN_KEYWORD_BOOST;
     }
   }
 
@@ -94,16 +93,35 @@ interface UseSearchPipelineOptions {
 
 // ---- Conversion helpers (used by streaming callbacks + final merge) ----
 
-const convertApps = (apps: AppInfoWithScore[]): SearchResult[] =>
-  apps.map((appWithScore) => ({
-    id: appWithScore.id,
-    type: SearchResultType.Application,
-    title: appWithScore.name,
-    subtitle: appWithScore.description || undefined,
-    icon: appWithScore.icon,
-    score: SEARCH_PRIORITIES.APPLICATION + appWithScore.score,
-    data: appWithScore as AppInfo,
-  }));
+const convertApps = (
+  apps: AppInfoWithScore[],
+  sensitivity: SearchSensitivity = 'medium',
+): SearchResult[] => {
+  const threshold = SEARCH_SENSITIVITY_THRESHOLDS[sensitivity];
+  const fuzzyMultiplier = SEARCH_SENSITIVITY_FUZZY_MULTIPLIER[sensitivity];
+
+  return apps
+    .filter((app) => {
+      const isFuzzy = app.score < 60;
+      const adjusted = isFuzzy ? Math.round(app.score * fuzzyMultiplier) : app.score;
+      return adjusted >= threshold;
+    })
+    .map((appWithScore) => {
+      const isFuzzy = appWithScore.score < 60;
+      const adjustedScore = isFuzzy
+        ? Math.round(appWithScore.score * fuzzyMultiplier)
+        : appWithScore.score;
+      return {
+        id: appWithScore.id,
+        type: SearchResultType.Application,
+        title: appWithScore.name,
+        subtitle: appWithScore.description || undefined,
+        icon: appWithScore.icon,
+        score: SEARCH_SCORING.APPLICATION + adjustedScore,
+        data: appWithScore as AppInfo,
+      };
+    });
+};
 
 const convertFiles = (files: FileSearchResultCompact[]): SearchResult[] => {
   const maxFileScore = files.reduce((max, f) => Math.max(max, f.score), 1);
@@ -127,7 +145,7 @@ const convertFiles = (files: FileSearchResultCompact[]): SearchResult[] => {
       title: file.name,
       subtitle: shortenPath(file.path),
       icon: file.icon,
-      score: SEARCH_PRIORITIES.FILE + Math.round((file.score / maxFileScore) * 50),
+      score: SEARCH_SCORING.FILE + Math.round((file.score / maxFileScore) * 50),
       data: file as unknown as FileInfo,
     }));
 };
@@ -190,6 +208,8 @@ export function useSearchPipeline({
 }: UseSearchPipelineOptions): void {
   const allApps = useAppStore((s) => s.allApps);
   const isLoading = useAppStore((s) => s.isLoading);
+  const searchSensitivity: SearchSensitivity =
+    useAppStore((s) => s.settings?.general.searchSensitivity) ?? 'medium';
   const searchQuery = useSearchStore((s) => s.searchQuery);
   const results = useSearchStore((s) => s.results);
   const selectedIndex = useSearchStore((s) => s.selectedIndex);
@@ -197,6 +217,7 @@ export function useSearchPipeline({
     useSearchStore.getState();
 
   const latestSearchId = useRef(0); // Prevent stale search responses
+  const activeChannelRef = useRef<Channel<SearchBatch> | null>(null);
 
   const performSearch = useCallback(
     async (query: string) => {
@@ -216,7 +237,7 @@ export function useSearchPipeline({
               type: SearchResultType.Application,
               title: record.name,
               subtitle: undefined,
-              score: 1000 - i, // preserve frecency order
+              score: SEARCH_LIMITS.SEARCH_ORDER_BASE - i, // preserve frecency order
               data: {
                 id: `frecency-${record.path}`,
                 name: record.name,
@@ -255,7 +276,7 @@ export function useSearchPipeline({
             title: app.name,
             subtitle: app.description || undefined,
             icon: app.icon,
-            score: SEARCH_PRIORITIES.APPLICATION + 100 - i,
+            score: SEARCH_SCORING.APPLICATION + 100 - i,
             data: app,
           }));
 
@@ -307,14 +328,21 @@ export function useSearchPipeline({
           .query({ query: effectiveQuery })
           .catch(() => [] as PluginResultData[]);
 
+        // Disconnect previous channel to avoid resource leaks
+        if (activeChannelRef.current) {
+          activeChannelRef.current.onmessage = () => {};
+          activeChannelRef.current = null;
+        }
+
         // Set up the streaming channel for backend search (apps + files)
         const channel = new Channel<SearchBatch>();
+        activeChannelRef.current = channel;
         channel.onmessage = (batch) => {
           // Guard against stale search
           if (searchId !== latestSearchId.current) return;
 
           if (batch.event === 'apps') {
-            streamedApps = convertApps(batch.data.results);
+            streamedApps = convertApps(batch.data.results, searchSensitivity);
             // Show partial results immediately (apps arrived)
             setResults(mergeResults(streamedApps, streamedFiles, streamedPlugins));
           } else if (batch.event === 'files') {
@@ -361,7 +389,7 @@ export function useSearchPipeline({
         if (isGameBrowseQuery) {
           for (const r of streamedPlugins) {
             if (r.type === SearchResultType.Game) {
-              r.score += 500;
+              r.score += SEARCH_SCORING.GAME_BOOST;
             }
           }
         }
@@ -371,16 +399,17 @@ export function useSearchPipeline({
 
         // Fallback: show a "Search the web" result when no results found
         if (allResults.length === 0 && effectiveQuery.trim()) {
+          const fallbackId = `websearch-fallback-${Date.now()}`;
           const googleUrl =
             'https://www.google.com/search?q=' + encodeURIComponent(effectiveQuery);
           allResults.push({
-            id: `websearch-fallback-${Date.now()}`,
+            id: fallbackId,
             type: SearchResultType.WebSearch,
             title: `Search "${effectiveQuery}" on Google`,
             subtitle: 'Press Enter to search the web',
             score: 1,
             data: {
-              id: `websearch-fallback-${Date.now()}`,
+              id: fallbackId,
               type: 'websearch',
               title: `Search "${effectiveQuery}" on Google`,
               subtitle: 'Press Enter to search the web',
@@ -402,7 +431,7 @@ export function useSearchPipeline({
         setSearchError(`Search failed: ${errorMessage}`);
       }
     },
-    [allApps, isLoading, maxResults, setResults, setSearchError, setShowSnowEffect]
+    [allApps, isLoading, maxResults, searchSensitivity, setResults, setSearchError, setShowSnowEffect]
   );
 
   // Debounced search effect — adaptive: 150ms for short queries, 80ms for longer ones

@@ -1,0 +1,15 @@
+{
+  "openQuicklink": "Ouvrir {{name}}",
+  "createQuicklink": "Créer un Quicklink",
+  "createDescription": "Créer un nouveau raccourci rapide",
+  "listQuicklinks": "Lister les Quicklinks",
+  "listDescription": "Voir tous les quicklinks enregistrés",
+  "removeQuicklink": "Supprimer un Quicklink",
+  "removeDescription": "Supprimer un quicklink par nom",
+  "noQuicklinks": "Aucun quicklink enregistré",
+  "types": {
+    "url": "URL",
+    "folder": "Dossier",
+    "command": "Commande"
+  }
+}

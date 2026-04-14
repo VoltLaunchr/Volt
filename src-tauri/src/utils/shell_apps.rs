@@ -18,7 +18,7 @@ pub fn enumerate_apps_folder() -> Result<Vec<AppInfo>, String> {
             "-NonInteractive",
             "-Command",
             r#"
-Get-AppxPackage -PackageTypeFilter Main | Where-Object { $_.IsFramework -eq $false -and $_.SignatureKind -eq 'Store' } | ForEach-Object {
+Get-AppxPackage -PackageTypeFilter Main | Where-Object { $_.IsFramework -eq $false -and ($_.SignatureKind -eq 'Store' -or $_.SignatureKind -eq 'Developer') } | ForEach-Object {
     $pkg = $_
     try {
         $apps = (Get-AppxPackageManifest $pkg).Package.Applications.Application
@@ -125,6 +125,9 @@ fn is_system_app(name: &str) -> bool {
         "Microsoft.Advertising",
         "Microsoft.WinAppRuntime",
         "Microsoft.WindowsAppSDK",
+        "Microsoft.Office.ActionsServer",
+        "Microsoft.OfficePushNotification",
+        "MicrosoftCorporationII.WinML",
     ];
     system_prefixes.iter().any(|p| name.starts_with(p))
 }
@@ -145,6 +148,8 @@ pub fn is_junk_app(name: &str) -> bool {
         "appvdllsurrogate",
         "gameinputrawinputproxy",
         "store purchase app",
+        "aimgr",
+        "aitoolkit.inference",
     ];
     junk_patterns.iter().any(|p| lower.contains(p))
 }

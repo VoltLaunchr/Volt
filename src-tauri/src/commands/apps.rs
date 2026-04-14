@@ -562,13 +562,32 @@ async fn scan_applications_windows() -> Result<Vec<AppInfo>, String> {
             .join("Programs")
             .to_string_lossy()
             .to_string();
+        // Taskbar pinned shortcuts (like Raycast's Search Scopes)
+        let taskbar_pins = profile_path
+            .join("AppData")
+            .join("Roaming")
+            .join("Microsoft")
+            .join("Internet Explorer")
+            .join("Quick Launch")
+            .join("User Pinned")
+            .join("TaskBar")
+            .to_string_lossy()
+            .to_string();
+        // User Desktop shortcuts
+        let user_desktop = profile_path
+            .join("Desktop")
+            .to_string_lossy()
+            .to_string();
 
         vec![
             r"C:\ProgramData\Microsoft\Windows\Start Menu\Programs".to_string(),
             user_start_menu,
+            taskbar_pins,
+            user_desktop,
+            // Public Desktop shortcuts (shared for all users)
+            r"C:\Users\Public\Desktop".to_string(),
         ]
     } else {
-        // Fallback to default C:\ drive if USERPROFILE is not set
         let user_start_menu = format!(
             r"C:\Users\{}\AppData\Roaming\Microsoft\Windows\Start Menu\Programs",
             username
@@ -577,6 +596,9 @@ async fn scan_applications_windows() -> Result<Vec<AppInfo>, String> {
         vec![
             r"C:\ProgramData\Microsoft\Windows\Start Menu\Programs".to_string(),
             user_start_menu,
+            format!(r"C:\Users\{}\AppData\Roaming\Microsoft\Internet Explorer\Quick Launch\User Pinned\TaskBar", username),
+            format!(r"C:\Users\{}\Desktop", username),
+            r"C:\Users\Public\Desktop".to_string(),
         ]
     };
 

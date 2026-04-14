@@ -11,6 +11,5 @@ pub mod windows_search;
 pub use database::{FileIndexDb, IndexStats};
 pub use file_history::*;
 pub use scanner::*;
-pub use search::*;
 pub use search_engine::{SearchEngine, SearchOptions, SearchResult};
 pub use types::*;

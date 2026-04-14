@@ -4,15 +4,15 @@
   "steps": {
     "hotkey": {
       "title": "Raccourci global",
-      "description": "Appuyez sur Ctrl+Espace n'importe ou pour invoquer Volt. Vous pouvez changer ce raccourci dans Parametres > Raccourcis."
+      "description": "Appuyez sur Ctrl+Espace n'importe où pour invoquer Volt. Vous pouvez changer ce raccourci dans Paramètres > Raccourcis."
     },
     "indexing": {
       "title": "Indexation de fichiers",
-      "description": "Volt indexe vos fichiers pour une recherche instantanee. Configurez les dossiers a indexer dans Parametres > Indexation."
+      "description": "Volt indexe vos fichiers pour une recherche instantanée. Configurez les dossiers à indexer dans Paramètres > Indexation."
     },
     "plugins": {
-      "title": "Plugins integres",
-      "description": "Calculatrice, emojis, recherche web, minuteur, moniteur systeme et plus — commencez a taper pour les utiliser."
+      "title": "Plugins intégrés",
+      "description": "Calculatrice, emojis, recherche web, minuteur, moniteur système et plus — commencez à taper pour les utiliser."
     }
   },
   "getStarted": "Commencer",

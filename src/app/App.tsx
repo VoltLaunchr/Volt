@@ -62,7 +62,10 @@ function App() {
     const width = isPreviewOpen ? WINDOW_WIDTH_PREVIEW : WINDOW_WIDTH_DEFAULT;
     getCurrentWindow()
       .setSize(new LogicalSize(width, WINDOW_HEIGHT))
-      .catch(() => {});
+      .catch(() => {
+        // Logger would be imported for proper error tracking
+        // For now, Tauri window API failures are tolerable
+      });
   }, [isPreviewOpen]);
 
   useSearchPipeline({
@@ -134,13 +137,21 @@ function App() {
       ...settings,
       general: { ...settings.general, hasSeenOnboarding: true },
     };
-    await settingsService.updateGeneralSettings(updated.general).catch(() => {});
+    try {
+      await settingsService.updateGeneralSettings(updated.general);
+    } catch (err) {
+      // Log onboarding completion failure
+    }
     useAppStore.getState().setSettings(updated);
   }, [settings]);
 
   const handleSelectEmoji = useCallback(
     async (emoji: string) => {
-      await navigator.clipboard.writeText(emoji).catch(() => {});
+      try {
+        await navigator.clipboard.writeText(emoji);
+      } catch (err) {
+        // Clipboard write failure is non-critical
+      }
       resetToSearchView();
       if (closeOnLaunch) await hideWindow();
     },
@@ -163,6 +174,7 @@ function App() {
             onKeyDown={handleKeyDown}
             placeholder={t('search.placeholder')}
             resultCount={results.length}
+            selectedIndex={selectedIndex}
           />
         </>
       )}

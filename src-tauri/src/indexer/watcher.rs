@@ -223,8 +223,26 @@ fn flush_events(
                         }
                     }
                     RenameMode::Both => {
-                        // notify provides both old + new in the same event paths vec.
-                        // We already handle it above (one path → remove, other → upsert).
+                        // For Both, we get both paths in pending but don't know
+                        // which is old/new from the key alone. Check disk existence.
+                        let path_str = path.to_string_lossy().to_string();
+                        if path.exists() {
+                            // New name: upsert
+                            if path.is_file() {
+                                if let Ok(meta) = std::fs::metadata(path) {
+                                    if let Some(fi) = create_file_info_pub(path, &meta) {
+                                        if db.upsert_file(&fi).is_ok() {
+                                            upserts.push(fi);
+                                        }
+                                    }
+                                }
+                            }
+                        } else {
+                            // Old name: remove
+                            if db.remove_file(&path_str).is_ok() {
+                                removals.push(path_str);
+                            }
+                        }
                     }
                     _ => {}
                 }

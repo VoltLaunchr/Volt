@@ -11,6 +11,8 @@
     "plugins": "Plugins",
     "fileSearch": "Recherche de fichiers",
     "clipboard": "Historique du presse-papiers",
+    "integrations": "Intégrations",
+    "account": "Compte",
     "builtIn": "INTÉGRÉ"
   },
   "general": {
@@ -22,6 +24,13 @@
     "followSystemAppearance": "Suivre l'apparence du système",
     "openAtLogin": "Ouvrir au démarrage",
     "closeOnLaunch": "Fermer après le lancement",
+    "featurePreview": "Aperçu des fonctionnalités",
+    "featurePreviewDesc": "Activer les fonctionnalités expérimentales. Celles-ci peuvent être instables ou changer sans préavis.",
+    "searchSensitivity": "Sensibilité de la recherche",
+    "searchSensitivityDesc": "Contrôle la rigueur de la correspondance floue",
+    "sensitivityLow": "Faible (strict)",
+    "sensitivityMedium": "Moyenne",
+    "sensitivityHigh": "Élevée (permissive)",
     "voltHotkey": "Raccourci Volt",
     "hotkeyDesc": "Appuyez sur une combinaison de touches pour définir votre raccourci global"
   },
@@ -53,6 +62,13 @@
       "leftCenter": "Centre gauche",
       "rightCenter": "Centre droit"
     },
+    "showOnScreen": "Afficher Volt sur",
+    "showOnScreenDesc": "Choisir sur quel écran Volt apparaît lors de l'activation",
+    "screenOptions": {
+      "cursor": "Écran avec le curseur",
+      "focusedWindow": "Écran avec la fenêtre active",
+      "primaryScreen": "Écran principal"
+    },
     "maxResults": "Nombre de résultats max",
     "maxResultsDesc": "Nombre maximum de résultats de recherche affichés",
     "results": "{{count}} résultats",
@@ -74,7 +90,13 @@
     "copyDiagnostics": "Copier les diagnostics",
     "copied": "Copié !",
     "copyright": "© 2026 VoltLaunchr Contributors • Sous licence Apache 2.0",
-    "builtWith": "Construit avec Tauri, React et Rust"
+    "builtWith": "Construit avec Tauri, React et Rust",
+    "exportSettings": "Exporter les paramètres",
+    "importSettings": "Importer les paramètres",
+    "exportSuccess": "Paramètres exportés avec succès",
+    "exportError": "Impossible d'exporter les paramètres",
+    "importSuccess": "Paramètres importés avec succès",
+    "importError": "Impossible d'importer les paramètres"
   },
   "fileSearch": {
     "title": "Recherche de fichiers",
@@ -115,7 +137,9 @@
       "timer": "Minuteur",
       "systemMonitor": "Moniteur système",
       "games": "Jeux",
-      "clipboardHistory": "Historique du presse-papiers"
+      "clipboardHistory": "Historique du presse-papiers",
+      "quicklinks": "Quicklinks",
+      "windowManagement": "Gestion des fenêtres"
     }
   },
   "clipboard": {
@@ -135,6 +159,45 @@
     "scanAppsDesc": "Déclencher manuellement une analyse des applications installées",
     "scanNow": "Analyser maintenant"
   },
+  "integrations": {
+    "title": "Intégrations",
+    "description": "Connectez vos comptes pour activer des fonctionnalités via les extensions externes. Vos tokens sont chiffrés et stockés en toute sécurité localement.",
+    "getToken": "Obtenir un token",
+    "learnMore": "En savoir plus",
+    "apiToken": "Token API",
+    "connectOAuth": "Se connecter avec OAuth",
+    "connectedOAuth": "Connecté via OAuth",
+    "pasteManually": "Ou collez un token manuellement",
+    "testToken": "Tester le token",
+    "saveToken": "Enregistrer le token",
+    "updateToken": "Mettre à jour le token",
+    "tokenSaved": "Token enregistré avec succès !",
+    "tokenSavedSecure": "Token enregistré en toute sécurité et prêt à l'emploi",
+    "tokenValid": "Le token est valide",
+    "tokenInvalid": "Le token est invalide",
+    "tokenEmpty": "Le token ne peut pas être vide",
+    "enterTokenFirst": "Entrez d'abord un token",
+    "testFailed": "Impossible de tester le token",
+    "saveFailed": "Impossible d'enregistrer le token",
+    "deleteFailed": "Impossible de supprimer le token",
+    "oauthFailed": "Impossible de démarrer OAuth",
+    "confirmDelete": "Êtes-vous sûr de vouloir supprimer le token {{service}} ?",
+    "invalidToken": "Token {{service}} invalide. Vérifiez le token et réessayez.",
+    "connected": "Connecté",
+    "security": {
+      "title": "Vos tokens sont en sécurité",
+      "encrypted": "Chiffrés via le stockage sécurisé natif de la plateforme",
+      "neverTransmitted": "Jamais transmis ni journalisés",
+      "storedLocally": "Stockés localement sur votre machine",
+      "deletable": "Supprimables à tout moment"
+    },
+    "github": {
+      "description": "Rechercher des dépôts, issues, PRs et gists depuis Volt"
+    },
+    "notion": {
+      "description": "Accéder et rechercher dans votre espace Notion depuis Volt"
+    }
+  },
   "saveBar": {
     "unsavedChanges": "Vous avez des modifications non enregistrées",
     "discard": "Annuler",
@@ -145,7 +208,14 @@
     "save": "Enregistrer",
     "saving": "Enregistrement...",
     "close": "Fermer",
-    "reset": "Réinitialiser"
+    "reset": "Réinitialiser par défaut"
+  },
+  "account": {
+    "title": "Compte",
+    "loading": "Chargement du compte...",
+    "signIn": "Se connecter",
+    "signOut": "Se déconnecter",
+    "signInDescription": "Connectez-vous pour synchroniser vos paramètres et débloquer les fonctionnalités premium."
   },
   "errors": {
     "loadFailed": "Impossible de charger les paramètres",

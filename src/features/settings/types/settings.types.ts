@@ -3,12 +3,18 @@
  * These types mirror the Rust backend settings structure
  */
 
+export type ShowOnScreen = 'cursor' | 'focusedWindow' | 'primaryScreen';
+export type SearchSensitivity = 'low' | 'medium' | 'high';
+
 export interface GeneralSettings {
   startWithWindows: boolean;
   maxResults: number;
   closeOnLaunch: boolean;
   hasSeenOnboarding: boolean;
   language: 'auto' | 'en' | 'fr';
+  featurePreview: boolean;
+  searchSensitivity: SearchSensitivity;
+  showOnScreen: ShowOnScreen;
 }
 
 export interface CustomPosition {
@@ -113,6 +119,9 @@ export const DEFAULT_SETTINGS: Settings = {
     closeOnLaunch: true,
     hasSeenOnboarding: false,
     language: 'auto',
+    featurePreview: false,
+    searchSensitivity: 'medium',
+    showOnScreen: 'cursor',
   },
   appearance: {
     theme: 'dark',
@@ -139,6 +148,8 @@ export const DEFAULT_SETTINGS: Settings = {
       'system-monitor',
       'steam-games',
       'clipboard-manager',
+      'quicklinks',
+      'window-management',
     ],
     clipboardMonitoring: true,
   },

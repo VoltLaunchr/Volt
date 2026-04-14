@@ -236,14 +236,18 @@ pub async fn record_search_selection(
     result_id: String,
     binding_state: State<'_, QueryBindingState>,
 ) -> VoltResult<()> {
-    let mut store = binding_state
-        .store
-        .lock()
-        .map_err(|e| VoltError::Unknown(e.to_string()))?;
+    // Clone store snapshot while holding the lock briefly, then release before I/O
+    let (store_snapshot, file_path) = {
+        let mut store = binding_state
+            .store
+            .lock()
+            .map_err(|e| VoltError::Unknown(e.to_string()))?;
+        store.record_binding(&query, &result_id);
+        (store.clone(), binding_state.file_path.clone())
+    }; // MutexGuard dropped here — before disk I/O
 
-    store.record_binding(&query, &result_id);
-    store
-        .save(&binding_state.file_path)
+    store_snapshot
+        .save(&file_path)
         .map_err(VoltError::Unknown)?;
 
     info!(

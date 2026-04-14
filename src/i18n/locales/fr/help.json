@@ -3,31 +3,31 @@
   "groups": {
     "navigation": {
       "title": "Navigation",
-      "moveResults": "Naviguer entre les resultats",
-      "jumpFirst": "Aller au premier resultat",
-      "jumpLast": "Aller au dernier resultat",
-      "moveFive": "Deplacer de 5 resultats"
+      "moveResults": "Naviguer entre les résultats",
+      "jumpFirst": "Aller au premier résultat",
+      "jumpLast": "Aller au dernier résultat",
+      "moveFive": "Déplacer de 5 résultats"
     },
     "actions": {
       "title": "Actions",
-      "launch": "Lancer le resultat selectionne",
-      "autocomplete": "Autocompleter avec le titre",
+      "launch": "Lancer le résultat sélectionné",
+      "autocomplete": "Autocompléter avec le titre",
       "launchAdmin": "Lancer en administrateur",
       "launchKeepOpen": "Lancer sans fermer Volt",
-      "quickLaunch": "Lancer rapidement par numero"
+      "quickLaunch": "Lancer rapidement par numéro"
     },
     "fileApp": {
       "title": "Fichiers et Applications",
-      "openFolder": "Ouvrir le dossier parent",
+      "openFolder": "Ouvrir le dossier contenant",
       "copyPath": "Copier le chemin",
-      "showProperties": "Afficher les proprietes",
+      "showProperties": "Afficher les propriétés",
       "removeHistory": "Supprimer de l'historique"
     },
     "application": {
       "title": "Application",
       "clearClose": "Effacer / fermer Volt",
       "clearInput": "Effacer la recherche",
-      "openSettings": "Ouvrir les Parametres",
+      "openSettings": "Ouvrir les Paramètres",
       "reload": "Recharger Volt",
       "quit": "Quitter / masquer Volt",
       "showHelp": "Afficher cette aide"

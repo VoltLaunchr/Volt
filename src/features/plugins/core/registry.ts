@@ -1,3 +1,4 @@
+import { SEARCH_LIMITS } from '../../../shared/constants/searchScoring';
 import { logger } from '../../../shared/utils/logger';
 import { Plugin, PluginRegistry as IPluginRegistry, PluginContext, PluginResult } from '../types';
 
@@ -36,13 +37,13 @@ export class PluginRegistry implements IPluginRegistry {
       return;
     }
     this.plugins.set(plugin.id, plugin);
-    console.log(`✓ Plugin registered: ${plugin.name} (${plugin.id})`);
+    logger.debug(`Plugin registered: ${plugin.name} (${plugin.id})`);
   }
 
   unregister(pluginId: string): void {
     if (this.plugins.has(pluginId)) {
       this.plugins.delete(pluginId);
-      console.log(`✓ Plugin unregistered: ${pluginId}`);
+      logger.debug(`Plugin unregistered: ${pluginId}`);
     }
   }
 
@@ -75,7 +76,7 @@ export class PluginRegistry implements IPluginRegistry {
         }
 
         // Get results with timeout protection
-        const timeoutMs = 500; // 500ms max per plugin
+        const timeoutMs = SEARCH_LIMITS.PLUGIN_TIMEOUT_MS;
         const matchPromise = Promise.resolve(plugin.match(context));
         let timeoutId: ReturnType<typeof setTimeout>;
         const timeoutPromise = new Promise<null>((resolve) => {

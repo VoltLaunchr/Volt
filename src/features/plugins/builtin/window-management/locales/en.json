@@ -1,0 +1,15 @@
+{
+  "leftHalf": { "title": "Left Half", "subtitle": "Snap window to the left half of the screen" },
+  "rightHalf": { "title": "Right Half", "subtitle": "Snap window to the right half of the screen" },
+  "topHalf": { "title": "Top Half", "subtitle": "Snap window to the top half of the screen" },
+  "bottomHalf": { "title": "Bottom Half", "subtitle": "Snap window to the bottom half of the screen" },
+  "topLeft": { "title": "Top Left Quarter", "subtitle": "Snap window to the top-left corner" },
+  "topRight": { "title": "Top Right Quarter", "subtitle": "Snap window to the top-right corner" },
+  "bottomLeft": { "title": "Bottom Left Quarter", "subtitle": "Snap window to the bottom-left corner" },
+  "bottomRight": { "title": "Bottom Right Quarter", "subtitle": "Snap window to the bottom-right corner" },
+  "maximize": { "title": "Maximize", "subtitle": "Maximize the window" },
+  "minimize": { "title": "Minimize", "subtitle": "Minimize the window" },
+  "center": { "title": "Center", "subtitle": "Center window on screen" },
+  "fullscreen": { "title": "Toggle Fullscreen", "subtitle": "Toggle fullscreen mode" },
+  "restore": { "title": "Restore", "subtitle": "Restore window to previous size" }
+}

@@ -8,6 +8,8 @@ on:
 
 jobs:
   publish-tauri:
+    outputs:
+      artifact-id: ${{ steps.upload-unsigned.outputs.artifact-id }}
     permissions:
       contents: write
     strategy:
@@ -67,6 +69,9 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Supabase env vars — required at compile time by build.rs (cargo:rustc-env)
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
           # Updater signing (already in place)
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
@@ -89,16 +94,16 @@ jobs:
             ## 🚀 Volt ${{ github.ref_name }}
 
             ### 📥 Installation
-            - **Windows**: Télécharger `volt_*_x64-setup.exe` (recommandé) ou `.msi`
-            - **macOS Intel**: Télécharger `volt_*_x64.dmg`
-            - **macOS Apple Silicon**: Télécharger `volt_*_aarch64.dmg`
-            - **Linux**: Télécharger `.deb`, `.AppImage` ou `.rpm`
+            - **Windows**: Download `volt_*_x64-setup.exe` (recommended) or `.msi`
+            - **macOS Intel**: Download `volt_*_x64.dmg`
+            - **macOS Apple Silicon**: Download `volt_*_aarch64.dmg`
+            - **Linux**: Download `.deb`, `.AppImage` or `.rpm`
 
-            ### ✨ Nouveautés
-            Voir les commits pour les changements.
+            ### ✨ What's New
+            See the commits for changes.
 
             ---
-            🔄 Les mises à jour automatiques sont activées !
+            🔄 Automatic updates are enabled!
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}
@@ -173,3 +178,175 @@ jobs:
             echo "SignPath signing skipped or failed (non-blocking). Unsigned artifacts remain in the release."
             echo "This is expected if SignPath Foundation approval is still pending."
           fi
+
+  # --- Submit to official winget-pkgs repository ---
+  # Automatically creates a PR to microsoft/winget-pkgs with the new version.
+  # Requires a GitHub PAT (classic) with `public_repo` scope stored as WINGET_GH_PAT.
+  # The PAT owner's GitHub account must be able to fork microsoft/winget-pkgs.
+  #
+  # Setup (one-time):
+  #   1. Go to https://github.com/settings/tokens → Generate new token (classic)
+  #   2. Select scope: public_repo
+  #   3. Copy the token
+  #   4. Go to your repo → Settings → Secrets → Actions → New repository secret
+  #   5. Name: WINGET_GH_PAT, Value: <your token>
+  update-winget:
+    needs: publish-tauri
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract version from tag
+        id: version
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for release assets to be available
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ steps.version.outputs.tag }}"
+          echo "Waiting for Windows installer in release $TAG..."
+          for i in $(seq 1 30); do
+            if gh release view "$TAG" --json assets -q '.assets[].name' | grep -q "x64-setup.exe"; then
+              echo "Installer found!"
+              exit 0
+            fi
+            echo "Attempt $i/30 — waiting 30s..."
+            sleep 30
+          done
+          echo "Installer not found after 15 minutes"
+          exit 1
+
+      - name: Install wingetcreate
+        shell: pwsh
+        run: |
+          # Pin to specific version to avoid supply-chain attacks via the /latest redirect
+          $wingetcreateVersion = "v1.6.5491"
+          $url = "https://github.com/microsoft/winget-create/releases/download/${wingetcreateVersion}/wingetcreate.exe"
+          Invoke-WebRequest -Uri $url -OutFile wingetcreate.exe -UseBasicParsing
+          if ($LASTEXITCODE -and $LASTEXITCODE -ne 0) { throw "Download failed" }
+          # TODO: Pin SHA256 hash here once verified from a trusted source, e.g.:
+          #   $expectedHash = "INSERT_SHA256_HERE"
+          #   $actualHash = (Get-FileHash -Algorithm SHA256 wingetcreate.exe).Hash
+          #   if ($actualHash -ne $expectedHash) { throw "Hash mismatch: expected $expectedHash, got $actualHash" }
+          Write-Host "Downloaded wingetcreate ${wingetcreateVersion}: $((Get-FileHash -Algorithm SHA256 wingetcreate.exe).Hash)"
+
+      - name: Submit to winget-pkgs
+        shell: pwsh
+        env:
+          WINGET_GH_PAT: ${{ secrets.WINGET_GH_PAT }}
+        run: |
+          $version = "${{ steps.version.outputs.version }}"
+          $tag = "${{ steps.version.outputs.tag }}"
+          $url = "https://github.com/VoltLaunchr/Volt/releases/download/${tag}/volt_${version}_x64-setup.exe"
+
+          Write-Host "Submitting VoltLaunchr.Volt v${version} to winget-pkgs..."
+          Write-Host "Installer URL: ${url}"
+
+          .\wingetcreate.exe update VoltLaunchr.Volt `
+            --version $version `
+            --urls $url `
+            --submit `
+            --token $env:WINGET_GH_PAT
+
+      - name: Update local winget manifests
+        shell: bash
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          TAG="${{ steps.version.outputs.tag }}"
+
+          # Download the installer to compute SHA256
+          INSTALLER="volt_${VERSION}_x64-setup.exe"
+          gh release download "$TAG" --pattern "*x64-setup.exe" --dir /tmp
+          SHA256=$(sha256sum /tmp/$INSTALLER | awk '{print toupper($1)}')
+          echo "SHA256: $SHA256"
+
+          MANIFEST_DIR="winget/manifests/v/VoltLaunchr/Volt/${VERSION}"
+          mkdir -p "$MANIFEST_DIR"
+
+          # Version manifest
+          cat > "$MANIFEST_DIR/VoltLaunchr.Volt.yaml" <<'HEREDOC'
+          # yaml-language-server: $schema=https://aka.ms/winget-manifest.version.1.6.0.schema.json
+
+          PackageIdentifier: VoltLaunchr.Volt
+          HEREDOC
+          # Use envsubst-style replacement for dynamic values
+          cat >> "$MANIFEST_DIR/VoltLaunchr.Volt.yaml" <<HEREDOC
+          PackageVersion: ${VERSION}
+          DefaultLocale: en-US
+          ManifestType: version
+          ManifestVersion: 1.6.0
+          HEREDOC
+          sed -i 's/^          //' "$MANIFEST_DIR/VoltLaunchr.Volt.yaml"
+
+          # Installer manifest
+          cat > "$MANIFEST_DIR/VoltLaunchr.Volt.installer.yaml" <<HEREDOC
+          # yaml-language-server: \$schema=https://aka.ms/winget-manifest.installer.1.6.0.schema.json
+
+          PackageIdentifier: VoltLaunchr.Volt
+          PackageVersion: ${VERSION}
+          InstallModes:
+            - interactive
+            - silent
+          InstallerSwitches:
+            Silent: /S
+            SilentWithProgress: /S
+          Installers:
+            - Architecture: x64
+              InstallerType: nullsoft
+              InstallerUrl: https://github.com/VoltLaunchr/Volt/releases/download/${TAG}/volt_${VERSION}_x64-setup.exe
+              InstallerSha256: ${SHA256}
+
+          ManifestType: installer
+          ManifestVersion: 1.6.0
+          HEREDOC
+          sed -i 's/^          //' "$MANIFEST_DIR/VoltLaunchr.Volt.installer.yaml"
+
+          # Locale manifest
+          cat > "$MANIFEST_DIR/VoltLaunchr.Volt.locale.en-US.yaml" <<HEREDOC
+          # yaml-language-server: \$schema=https://aka.ms/winget-manifest.defaultLocale.1.6.0.schema.json
+
+          PackageIdentifier: VoltLaunchr.Volt
+          PackageVersion: ${VERSION}
+          PackageLocale: en-US
+          Publisher: VoltLaunchr
+          PublisherUrl: https://github.com/VoltLaunchr
+          PublisherSupportUrl: https://github.com/VoltLaunchr/Volt/issues
+          PackageName: Volt
+          PackageUrl: https://github.com/VoltLaunchr/Volt
+          License: Apache-2.0
+          LicenseUrl: https://github.com/VoltLaunchr/Volt/blob/main/LICENSE
+          Copyright: Copyright (c) VoltLaunchr contributors
+          ShortDescription: Lightning-fast application launcher
+          Description: Fast, beautiful desktop launcher for Windows, macOS, and Linux
+          Moniker: volt
+          Tags:
+            - launcher
+            - productivity
+            - search
+            - spotlight
+            - alfred
+            - tauri
+          ReleaseNotesUrl: https://github.com/VoltLaunchr/Volt/releases/tag/${TAG}
+          ManifestType: defaultLocale
+          ManifestVersion: 1.6.0
+          HEREDOC
+          sed -i 's/^          //' "$MANIFEST_DIR/VoltLaunchr.Volt.locale.en-US.yaml"
+
+          # Commit to local repo
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add "winget/manifests/v/VoltLaunchr/Volt/${VERSION}/"
+          git commit -m "chore(winget): update manifest for v${VERSION}" || echo "No changes"
+          git push
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

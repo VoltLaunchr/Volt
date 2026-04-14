@@ -1092,6 +1092,26 @@
   transition: color var(--transition-fast);
 }
 
+.settings-status-message {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  margin-top: 8px;
+}
+
+.settings-status-message.status-success {
+  background: rgba(34, 197, 94, 0.1);
+  color: #22c55e;
+}
+
+.settings-status-message.status-error {
+  background: rgba(239, 68, 68, 0.1);
+  color: #ef4444;
+}
+
 .about-credits {
   text-align: center;
 }

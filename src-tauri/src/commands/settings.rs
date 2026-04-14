@@ -20,10 +20,24 @@ pub struct GeneralSettings {
     pub has_seen_onboarding: bool,
     #[serde(default = "default_language")]
     pub language: String,
+    #[serde(default)]
+    pub feature_preview: bool,
+    #[serde(default = "default_search_sensitivity")]
+    pub search_sensitivity: String,
+    #[serde(default = "default_show_on_screen")]
+    pub show_on_screen: String,
 }
 
 fn default_language() -> String {
     "auto".to_string()
+}
+
+fn default_search_sensitivity() -> String {
+    "medium".to_string()
+}
+
+fn default_show_on_screen() -> String {
+    "cursor".to_string()
 }
 
 impl Default for GeneralSettings {
@@ -34,6 +48,9 @@ impl Default for GeneralSettings {
             close_on_launch: true,
             has_seen_onboarding: false,
             language: "auto".to_string(),
+            feature_preview: false,
+            search_sensitivity: "medium".to_string(),
+            show_on_screen: "cursor".to_string(),
         }
     }
 }
@@ -339,6 +356,60 @@ pub async fn delete_app_shortcut(app_handle: AppHandle, shortcut_id: String) -> 
         .app_shortcuts
         .retain(|s| s.id != shortcut_id);
     save_settings(app_handle, settings).await
+}
+
+/// Wrapper for exported settings with metadata
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SettingsExport {
+    pub version: String,
+    pub export_date: String,
+    pub volt_version: String,
+    pub settings: Settings,
+}
+
+/// Export settings to a JSON file at the given path
+#[tauri::command]
+pub async fn export_settings(app_handle: AppHandle, path: String) -> VoltResult<String> {
+    let settings = load_settings(app_handle).await?;
+
+    let export_data = SettingsExport {
+        version: "1.0".to_string(),
+        export_date: chrono::Utc::now().to_rfc3339(),
+        volt_version: env!("CARGO_PKG_VERSION").to_string(),
+        settings,
+    };
+
+    let content = serde_json::to_string_pretty(&export_data)
+        .map_err(|e| VoltError::Serialization(format!("Failed to serialize settings: {}", e)))?;
+
+    fs::write(&path, &content)
+        .map_err(|e| VoltError::FileSystem(format!("Failed to write export file: {}", e)))?;
+
+    Ok(path)
+}
+
+/// Import settings from a JSON file at the given path
+#[tauri::command]
+pub async fn import_settings(app_handle: AppHandle, path: String) -> VoltResult<Settings> {
+    let content = fs::read_to_string(&path)
+        .map_err(|e| VoltError::FileSystem(format!("Failed to read import file: {}", e)))?;
+
+    let export_data: serde_json::Value = serde_json::from_str(&content)
+        .map_err(|e| VoltError::Serialization(format!("Failed to parse import file: {}", e)))?;
+
+    // Validate structure: must have a "settings" key
+    let settings_value = export_data.get("settings").ok_or_else(|| {
+        VoltError::InvalidConfig("Invalid settings file: missing 'settings' key".to_string())
+    })?;
+
+    let settings: Settings = serde_json::from_value(settings_value.clone())
+        .map_err(|e| VoltError::InvalidConfig(format!("Invalid settings structure: {}", e)))?;
+
+    // Save the imported settings
+    save_settings(app_handle, settings.clone()).await?;
+
+    Ok(settings)
 }
 
 /// Sync shortcuts from installed applications
