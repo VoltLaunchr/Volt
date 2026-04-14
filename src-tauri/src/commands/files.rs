@@ -3,7 +3,6 @@ use crate::indexer::watcher::WatcherHandle;
 use crate::indexer::{
     FileCategory, FileHistory, FileIndexDb, FileInfo, IndexConfig, IndexStats as DbIndexStats,
     IndexStatus, SearchEngine, SearchOptions, SearchResult as IndexSearchResult, scan_files,
-    search_files as search_indexed_files,
 };
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -323,7 +322,7 @@ pub async fn get_index_status(state: State<'_, FileIndexState>) -> VoltResult<In
     Ok(status.clone())
 }
 
-/// Searches indexed files
+/// Searches indexed files, returning results with match scores.
 #[tauri::command]
 pub async fn search_files(
     state: State<'_, FileIndexState>,
@@ -335,7 +334,7 @@ pub async fn search_files(
     size_max: Option<u64>,
     modified_after: Option<i64>,
     modified_before: Option<i64>,
-) -> VoltResult<Vec<FileInfo>> {
+) -> VoltResult<Vec<FileSearchResult>> {
     // Clone the file list to release the mutex before searching
     let files = {
         let guard = state
@@ -369,11 +368,23 @@ pub async fn search_files(
             ..Default::default()
         };
         let results = engine.search(&query, &files, &options);
-        Ok(results.into_iter().map(|r| r.file).collect())
+        Ok(results.into_iter().map(FileSearchResult::from).collect())
     } else {
-        // Fast path: use simple search (no operators)
-        let mut results = search_indexed_files(&query, &files);
+        // Use advanced search engine for scoring (instead of simple search)
+        use crate::indexer::search_engine::{SearchEngine, SearchOptions};
         let max_results = limit.unwrap_or(20);
+        let mut engine = SearchEngine::new();
+        let options = SearchOptions {
+            limit: Some(max_results),
+            recency_boost: Some(1.3),
+            frequency_boost: Some(1.2),
+            ..Default::default()
+        };
+        let mut results: Vec<FileSearchResult> = engine
+            .search(&query, &files, &options)
+            .into_iter()
+            .map(FileSearchResult::from)
+            .collect();
 
         // Supplement with Windows Search Index if our results are sparse
         #[cfg(target_os = "windows")]
@@ -384,10 +395,14 @@ pub async fn search_files(
             {
                 // Dedup by path
                 let existing_paths: std::collections::HashSet<String> =
-                    results.iter().map(|f| f.path.clone()).collect();
+                    results.iter().map(|f| f.file.path.clone()).collect();
                 for file in ws_results {
                     if !existing_paths.contains(&file.path) {
-                        results.push(file);
+                        results.push(FileSearchResult {
+                            score: 0,
+                            matched_indices: Vec::new(),
+                            file,
+                        });
                     }
                 }
             }

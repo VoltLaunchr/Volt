@@ -30,6 +30,12 @@ interface AppInfoWithScore extends AppInfo {
   score: number;
 }
 
+/** Shape returned by search_files (FileSearchResult with flattened FileInfo + score) */
+interface FileSearchResult extends FileInfo {
+  score: number;
+  matchedIndices: number[];
+}
+
 /** Shape returned by get_frecency_suggestions */
 interface LaunchRecord {
   path: string;
@@ -163,7 +169,7 @@ export function useSearchPipeline({
                 apps: allApps,
               }).catch(() => [] as AppInfoWithScore[])
             : Promise.resolve([] as AppInfoWithScore[]),
-          invoke<FileInfo[]>('search_files', {
+          invoke<FileSearchResult[]>('search_files', {
             query: effectiveQuery,
             limit: maxResults * 2,
             ...(parsed.hasOperators
@@ -176,7 +182,7 @@ export function useSearchPipeline({
                   modifiedBefore: parsed.operators.modifiedBefore,
                 }
               : {}),
-          }).catch(() => [] as FileInfo[]),
+          }).catch(() => [] as FileSearchResult[]),
           pluginRegistry.query({ query: effectiveQuery }).catch(() => [] as PluginResultData[]),
         ]);
 
@@ -197,14 +203,16 @@ export function useSearchPipeline({
         }));
 
         // Convert files — shortened paths (~\Documents instead of C:\Users\...)
+        // Use backend nucleo scores: normalize to 0-50 range and add to FILE base priority
+        const maxFileScore = searchedFiles.reduce((max, f) => Math.max(max, f.score), 1);
         const fileResults: SearchResult[] = searchedFiles.map((file) => ({
           id: file.id,
           type: SearchResultType.File,
           title: file.name,
           subtitle: shortenPath(file.path),
           icon: file.icon,
-          score: SEARCH_PRIORITIES.FILE,
-          data: file,
+          score: SEARCH_PRIORITIES.FILE + Math.round((file.score / maxFileScore) * 50),
+          data: file as unknown as FileInfo,
         }));
 
         // Convert plugin results to search results
