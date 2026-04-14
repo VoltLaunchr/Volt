@@ -39,6 +39,18 @@ interface LaunchRecord {
   pinned: boolean;
 }
 
+/** File search result with score from the batch endpoint */
+interface FileSearchResultCompact extends FileInfo {
+  score: number;
+}
+
+/** Combined result from the batch search_all command */
+interface SearchAllResult {
+  apps: AppInfoWithScore[];
+  files: FileSearchResultCompact[];
+  frecencySuggestions: LaunchRecord[];
+}
+
 // Plugin keywords map - when query starts with these, boost that plugin significantly
 const PLUGIN_KEYWORDS: Record<string, string[]> = {
   calculator: ['calc', 'calculatrice', 'calculer', 'calcul', '=', 'math'],
@@ -155,30 +167,33 @@ export function useSearchPipeline({
       try {
         const searchId = ++latestSearchId.current;
 
-        // Search applications with frecency, files (with operators), and plugins in parallel
-        const [frecencyApps, searchedFiles, pluginResults] = await Promise.all([
-          appsReady
-            ? invoke<AppInfoWithScore[]>('search_applications_frecency', {
-                query: effectiveQuery,
-                apps: allApps,
-              }).catch(() => [] as AppInfoWithScore[])
-            : Promise.resolve([] as AppInfoWithScore[]),
-          invoke<FileInfo[]>('search_files', {
-            query: effectiveQuery,
-            limit: maxResults * 2,
-            ...(parsed.hasOperators
-              ? {
-                  ext: parsed.operators.ext,
-                  dir: parsed.operators.dir,
-                  sizeMin: parsed.operators.sizeMin,
-                  sizeMax: parsed.operators.sizeMax,
-                  modifiedAfter: parsed.operators.modifiedAfter,
-                  modifiedBefore: parsed.operators.modifiedBefore,
-                }
-              : {}),
-          }).catch(() => [] as FileInfo[]),
+        // Batch IPC: search apps + files + frecency in a single Rust call,
+        // plugins run in parallel on the frontend side (no IPC needed).
+        const [batchResult, pluginResults] = await Promise.all([
+          invoke<SearchAllResult>('search_all', {
+            options: {
+              query: effectiveQuery,
+              maxResults: maxResults * 2,
+              extFilter: parsed.hasOperators ? (parsed.operators.ext || null) : null,
+              dirFilter: parsed.hasOperators ? (parsed.operators.dir || null) : null,
+              sizeMin: parsed.hasOperators ? (parsed.operators.sizeMin || null) : null,
+              sizeMax: parsed.hasOperators ? (parsed.operators.sizeMax || null) : null,
+              modifiedAfter: parsed.hasOperators ? (parsed.operators.modifiedAfter || null) : null,
+              modifiedBefore: parsed.hasOperators
+                ? (parsed.operators.modifiedBefore || null)
+                : null,
+            },
+            apps: appsReady ? allApps : [],
+          }).catch(() => ({
+            apps: [],
+            files: [],
+            frecencySuggestions: [],
+          }) as SearchAllResult),
           pluginRegistry.query({ query: effectiveQuery }).catch(() => [] as PluginResultData[]),
         ]);
+
+        const frecencyApps = batchResult.apps;
+        const searchedFiles: FileInfo[] = batchResult.files;
 
         // Drop stale responses
         if (searchId !== latestSearchId.current) {

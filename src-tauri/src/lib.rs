@@ -297,6 +297,8 @@ pub fn run() {
             remove_from_history,
             get_history_count,
             get_frecency_suggestions,
+            // Batch search command
+            search_all,
             // File indexing commands
             start_indexing,
             get_index_status,
