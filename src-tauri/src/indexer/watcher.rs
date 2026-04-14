@@ -6,6 +6,7 @@
 
 use crate::indexer::database::FileIndexDb;
 use crate::indexer::scanner::{create_directory_info_pub, create_file_info_pub};
+use crate::indexer::types::FileInfo;
 use notify::{
     Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher,
     event::{CreateKind, ModifyKind, RemoveKind, RenameMode},
@@ -50,11 +51,16 @@ impl WatcherHandle {
 
 /// Start watching `directories` and incrementally update `db`.
 ///
+/// When `in_memory_files` is `Some`, the watcher also keeps the in-memory
+/// `Vec<FileInfo>` in sync so new/changed/deleted files are visible to search
+/// without restarting the app.
+///
 /// Returns a `WatcherHandle` whose lifetime controls the watch.  Dropping the
 /// handle stops watching.
 pub fn start_watcher(
     directories: Vec<String>,
     db: Arc<FileIndexDb>,
+    in_memory_files: Option<Arc<Mutex<Arc<Vec<FileInfo>>>>>,
 ) -> Result<WatcherHandle, String> {
     if directories.is_empty() {
         return Err("No directories to watch".to_string());
@@ -84,6 +90,7 @@ pub fn start_watcher(
 
     // Spawn a background thread that drains events with a simple debounce.
     let db_thread = db.clone();
+    let files_thread = in_memory_files;
     std::thread::spawn(move || {
         // pending_events: path → last-seen EventKind
         let mut pending: HashMap<PathBuf, EventKind> = HashMap::new();
@@ -116,7 +123,7 @@ pub fn start_watcher(
 
             // Flush if debounce window elapsed.
             if last_flush.elapsed() >= Duration::from_millis(DEBOUNCE_MS) && !pending.is_empty() {
-                flush_events(&db_thread, &pending);
+                flush_events(&db_thread, files_thread.as_ref(), &pending);
                 pending.clear();
                 last_flush = Instant::now();
             }
@@ -124,7 +131,7 @@ pub fn start_watcher(
 
         // Final flush.
         if !pending.is_empty() {
-            flush_events(&db_thread, &pending);
+            flush_events(&db_thread, files_thread.as_ref(), &pending);
         }
     });
 
@@ -139,7 +146,15 @@ pub fn start_watcher(
 // ---------------------------------------------------------------------------
 
 #[allow(clippy::collapsible_if)]
-fn flush_events(db: &FileIndexDb, events: &HashMap<PathBuf, EventKind>) {
+fn flush_events(
+    db: &FileIndexDb,
+    in_memory: Option<&Arc<Mutex<Arc<Vec<FileInfo>>>>>,
+    events: &HashMap<PathBuf, EventKind>,
+) {
+    // Collect changes to apply to the in-memory vec in one batch.
+    let mut upserts: Vec<FileInfo> = Vec::new();
+    let mut removals: Vec<String> = Vec::new();
+
     for (path, kind) in events {
         match kind {
             // File created or modified – upsert.
@@ -155,6 +170,7 @@ fn flush_events(db: &FileIndexDb, events: &HashMap<PathBuf, EventKind>) {
                                     error!("Watcher upsert failed for {:?}: {}", path, e);
                                 } else {
                                     debug!("Watcher: upserted {:?}", path);
+                                    upserts.push(file_info);
                                 }
                             }
                         }
@@ -165,6 +181,8 @@ fn flush_events(db: &FileIndexDb, events: &HashMap<PathBuf, EventKind>) {
                         if let Some(dir_info) = create_directory_info_pub(path, &meta) {
                             if let Err(e) = db.upsert_file(&dir_info) {
                                 error!("Watcher upsert (dir) failed for {:?}: {}", path, e);
+                            } else {
+                                upserts.push(dir_info);
                             }
                         }
                     }
@@ -180,6 +198,7 @@ fn flush_events(db: &FileIndexDb, events: &HashMap<PathBuf, EventKind>) {
                     error!("Watcher remove failed for {:?}: {}", path, e);
                 } else {
                     debug!("Watcher: removed {:?}", path);
+                    removals.push(path_str);
                 }
             }
 
@@ -188,13 +207,17 @@ fn flush_events(db: &FileIndexDb, events: &HashMap<PathBuf, EventKind>) {
                 match rename_mode {
                     RenameMode::From => {
                         let path_str = path.to_string_lossy().to_string();
-                        let _ = db.remove_file(&path_str);
+                        if db.remove_file(&path_str).is_ok() {
+                            removals.push(path_str);
+                        }
                     }
                     RenameMode::To => {
                         if path.is_file() {
                             if let Ok(meta) = std::fs::metadata(path) {
                                 if let Some(fi) = create_file_info_pub(path, &meta) {
-                                    let _ = db.upsert_file(&fi);
+                                    if db.upsert_file(&fi).is_ok() {
+                                        upserts.push(fi);
+                                    }
                                 }
                             }
                         }
@@ -209,6 +232,33 @@ fn flush_events(db: &FileIndexDb, events: &HashMap<PathBuf, EventKind>) {
 
             _ => {
                 debug!("Watcher: unhandled event kind {:?} for {:?}", kind, path);
+            }
+        }
+    }
+
+    // Apply collected changes to the in-memory cache in one lock acquisition.
+    if let Some(files_mutex) = in_memory {
+        if !upserts.is_empty() || !removals.is_empty() {
+            if let Ok(mut guard) = files_mutex.lock() {
+                let mut new_files: Vec<FileInfo> = (**guard).clone();
+
+                // Apply removals
+                if !removals.is_empty() {
+                    let removal_set: std::collections::HashSet<&str> =
+                        removals.iter().map(|s| s.as_str()).collect();
+                    new_files.retain(|f| !removal_set.contains(f.path.as_str()));
+                }
+
+                // Apply upserts (update existing or insert new)
+                for upsert in upserts {
+                    if let Some(existing) = new_files.iter_mut().find(|f| f.path == upsert.path) {
+                        *existing = upsert;
+                    } else {
+                        new_files.push(upsert);
+                    }
+                }
+
+                *guard = Arc::new(new_files);
             }
         }
     }

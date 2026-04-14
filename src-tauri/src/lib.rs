@@ -301,6 +301,8 @@ pub fn run() {
             get_history_count,
             get_frecency_suggestions,
             record_search_selection,
+            // Batch search command
+            search_all,
             // File indexing commands
             start_indexing,
             get_index_status,

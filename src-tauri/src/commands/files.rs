@@ -53,7 +53,8 @@ impl From<IndexSearchResult> for FileSearchResult {
 
 /// Global file index state (in-memory cache + SQLite backend)
 pub struct FileIndexState {
-    pub files: Arc<Mutex<Vec<FileInfo>>>,
+    /// Inner Arc allows O(1) clone when reading the file list for search.
+    pub files: Arc<Mutex<Arc<Vec<FileInfo>>>>,
     pub status: Arc<Mutex<IndexStatus>>,
     /// SQLite database for persistent storage (None if DB could not be opened)
     pub db: Arc<Option<FileIndexDb>>,
@@ -85,7 +86,7 @@ impl FileHistoryState {
 impl Default for FileIndexState {
     fn default() -> Self {
         Self {
-            files: Arc::new(Mutex::new(Vec::new())),
+            files: Arc::new(Mutex::new(Arc::new(Vec::new()))),
             status: Arc::new(Mutex::new(IndexStatus {
                 is_indexing: false,
                 total_files: 0,
@@ -116,7 +117,7 @@ impl FileIndexState {
         };
 
         Self {
-            files: Arc::new(Mutex::new(Vec::new())),
+            files: Arc::new(Mutex::new(Arc::new(Vec::new()))),
             status: Arc::new(Mutex::new(IndexStatus {
                 is_indexing: false,
                 total_files: 0,
@@ -214,7 +215,7 @@ pub async fn start_indexing(
                         Ok(cached) => {
                             let file_count = cached.len();
                             if let Ok(mut files) = files_arc.lock() {
-                                *files = cached;
+                                *files = Arc::new(cached);
                             }
                             if let Ok(mut status) = status_arc.lock() {
                                 status.is_indexing = false;
@@ -269,7 +270,7 @@ pub async fn start_indexing(
 
                 // Update in-memory cache.
                 if let Ok(mut files) = files_arc.lock() {
-                    *files = scanned_files;
+                    *files = Arc::new(scanned_files);
                 }
 
                 // Update status
@@ -335,13 +336,13 @@ pub async fn search_files(
     modified_after: Option<i64>,
     modified_before: Option<i64>,
 ) -> VoltResult<Vec<FileSearchResult>> {
-    // Clone the file list to release the mutex before searching
+    // O(1) Arc clone to release the mutex before searching
     let files = {
         let guard = state
             .files
             .lock()
             .map_err(|e| VoltError::Unknown(e.to_string()))?;
-        guard.clone()
+        Arc::clone(&guard)
     };
 
     let has_operators = ext.is_some()
@@ -599,7 +600,7 @@ fn search_files_impl(
             .files
             .lock()
             .map_err(|e| VoltError::Unknown(format!("Failed to acquire file index lock: {}", e)))?;
-        guard.clone()
+        Arc::clone(&guard)
     };
 
     let mut engine = SearchEngine::new();
@@ -678,7 +679,7 @@ pub async fn get_index_stats(state: State<'_, FileIndexState>) -> VoltResult<Ind
             .files
             .lock()
             .map_err(|e| VoltError::Unknown(e.to_string()))?;
-        guard.clone()
+        Arc::clone(&guard)
     };
 
     let mut stats = IndexStats {
@@ -752,7 +753,7 @@ pub async fn invalidate_index(
 
     // Clear in-memory cache.
     if let Ok(mut files) = state.files.lock() {
-        files.clear();
+        *files = Arc::new(Vec::new());
     }
 
     // Re-run indexing with the last-known config.
@@ -791,7 +792,7 @@ pub async fn invalidate_index(
                 }
 
                 if let Ok(mut files) = files_arc.lock() {
-                    *files = scanned_files;
+                    *files = Arc::new(scanned_files);
                 }
 
                 if let Ok(mut status) = status_arc.lock() {
@@ -899,7 +900,10 @@ pub async fn start_file_watcher(
             .map_err(|e| VoltError::Unknown(format!("Failed to open watcher DB: {}", e)))?,
     );
 
-    match start_watcher(folders.clone(), db_arc) {
+    // Pass the in-memory files Arc so the watcher can keep it in sync.
+    let in_memory_files = Some(index_state.files.clone());
+
+    match start_watcher(folders.clone(), db_arc, in_memory_files) {
         Ok(handle) => {
             info!("File watcher started for {} director(y/ies)", folders.len());
             if let Ok(mut h) = watcher_state.handle.lock() {

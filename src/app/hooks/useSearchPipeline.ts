@@ -30,12 +30,6 @@ interface AppInfoWithScore extends AppInfo {
   score: number;
 }
 
-/** Shape returned by search_files (FileSearchResult with flattened FileInfo + score) */
-interface FileSearchResult extends FileInfo {
-  score: number;
-  matchedIndices: number[];
-}
-
 /** Shape returned by get_frecency_suggestions */
 interface LaunchRecord {
   path: string;
@@ -43,6 +37,18 @@ interface LaunchRecord {
   launchCount: number;
   lastLaunched: number;
   pinned: boolean;
+}
+
+/** File search result with score from the batch endpoint */
+interface FileSearchResultCompact extends FileInfo {
+  score: number;
+}
+
+/** Combined result from the batch search_all command */
+interface SearchAllResult {
+  apps: AppInfoWithScore[];
+  files: FileSearchResultCompact[];
+  frecencySuggestions: LaunchRecord[];
 }
 
 // Plugin keywords map - when query starts with these, boost that plugin significantly
@@ -202,30 +208,33 @@ export function useSearchPipeline({
       try {
         const searchId = ++latestSearchId.current;
 
-        // Search applications with frecency, files (with operators), and plugins in parallel
-        const [frecencyApps, searchedFiles, pluginResults] = await Promise.all([
-          appsReady
-            ? invoke<AppInfoWithScore[]>('search_applications_frecency', {
-                query: effectiveQuery,
-                apps: allApps,
-              }).catch(() => [] as AppInfoWithScore[])
-            : Promise.resolve([] as AppInfoWithScore[]),
-          invoke<FileSearchResult[]>('search_files', {
-            query: effectiveQuery,
-            limit: maxResults * 2,
-            ...(parsed.hasOperators
-              ? {
-                  ext: parsed.operators.ext,
-                  dir: parsed.operators.dir,
-                  sizeMin: parsed.operators.sizeMin,
-                  sizeMax: parsed.operators.sizeMax,
-                  modifiedAfter: parsed.operators.modifiedAfter,
-                  modifiedBefore: parsed.operators.modifiedBefore,
-                }
-              : {}),
-          }).catch(() => [] as FileSearchResult[]),
+        // Batch IPC: search apps + files + frecency in a single Rust call,
+        // plugins run in parallel on the frontend side (no IPC needed).
+        const [batchResult, pluginResults] = await Promise.all([
+          invoke<SearchAllResult>('search_all', {
+            options: {
+              query: effectiveQuery,
+              maxResults: maxResults * 2,
+              extFilter: parsed.hasOperators ? (parsed.operators.ext || null) : null,
+              dirFilter: parsed.hasOperators ? (parsed.operators.dir || null) : null,
+              sizeMin: parsed.hasOperators ? (parsed.operators.sizeMin || null) : null,
+              sizeMax: parsed.hasOperators ? (parsed.operators.sizeMax || null) : null,
+              modifiedAfter: parsed.hasOperators ? (parsed.operators.modifiedAfter || null) : null,
+              modifiedBefore: parsed.hasOperators
+                ? (parsed.operators.modifiedBefore || null)
+                : null,
+            },
+            apps: appsReady ? allApps : [],
+          }).catch(() => ({
+            apps: [],
+            files: [],
+            frecencySuggestions: [],
+          }) as SearchAllResult),
           pluginRegistry.query({ query: effectiveQuery }).catch(() => [] as PluginResultData[]),
         ]);
+
+        const frecencyApps = batchResult.apps;
+        const searchedFiles = batchResult.files;
 
         // Drop stale responses
         if (searchId !== latestSearchId.current) {
@@ -312,37 +321,29 @@ export function useSearchPipeline({
           };
         });
 
-        // Always prepend top frecency apps (recently/frequently used)
+        // Prepend top frecency apps from batch result (no extra IPC call)
         let finalAppResults = appResults;
-        try {
-          const frecencySuggestions = await invoke<LaunchRecord[]>(
-            'get_frecency_suggestions',
-            { limit: 5 }
-          ).catch(() => [] as LaunchRecord[]);
-
-          if (frecencySuggestions.length > 0) {
-            const existingPaths = new Set(finalAppResults.map((r) => (r.data as AppInfo)?.path));
-            const supplementary: SearchResult[] = frecencySuggestions
-              .filter((r) => !existingPaths.has(r.path))
-              .map((record, i) => ({
+        const frecencySuggestions = batchResult.frecencySuggestions || [];
+        if (frecencySuggestions.length > 0) {
+          const existingPaths = new Set(finalAppResults.map((r) => (r.data as AppInfo)?.path));
+          const supplementary: SearchResult[] = frecencySuggestions
+            .filter((r) => !existingPaths.has(r.path))
+            .map((record, i) => ({
+              id: `frecency-${record.path}`,
+              type: SearchResultType.Application,
+              title: record.name,
+              subtitle: 'Recently used',
+              icon: undefined,
+              score: SEARCH_PRIORITIES.APPLICATION + 40 - i,
+              data: {
                 id: `frecency-${record.path}`,
-                type: SearchResultType.Application,
-                title: record.name,
-                subtitle: 'Recently used',
-                icon: undefined,
-                score: SEARCH_PRIORITIES.APPLICATION + 40 - i, // high score, just below direct matches
-                data: {
-                  id: `frecency-${record.path}`,
-                  name: record.name,
-                  path: record.path,
-                  usageCount: record.launchCount,
-                } as AppInfo,
-              }));
+                name: record.name,
+                path: record.path,
+                usageCount: record.launchCount,
+              } as AppInfo,
+            }));
 
-            finalAppResults = [...finalAppResults, ...supplementary];
-          }
-        } catch {
-          // silently continue
+          finalAppResults = [...finalAppResults, ...supplementary];
         }
 
         // Boost game results when query is game-related
