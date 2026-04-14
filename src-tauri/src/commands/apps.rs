@@ -974,9 +974,15 @@ pub async fn search_applications_frecency(
     query: String,
     apps: Vec<AppInfo>,
     history_state: tauri::State<'_, crate::commands::launcher::LaunchHistoryState>,
+    binding_state: tauri::State<'_, crate::commands::launcher::QueryBindingState>,
 ) -> VoltResult<Vec<AppInfoWithScore>> {
     let history = history_state.history.get_all();
-    let results = crate::search::search_applications_with_frecency(&query, apps, &history);
+    let bindings = binding_state
+        .store
+        .lock()
+        .map_err(|e| crate::core::error::VoltError::Unknown(e.to_string()))?;
+    let results =
+        crate::search::search_applications_with_frecency(&query, apps, &history, Some(&bindings));
     Ok(results
         .into_iter()
         .map(|(app, score)| AppInfoWithScore { app, score })

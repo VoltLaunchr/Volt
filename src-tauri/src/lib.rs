@@ -231,6 +231,9 @@ pub fn run() {
 
             app.manage(LaunchHistoryState::new(data_dir.clone()));
 
+            // Initialize query binding state for query→result learning
+            app.manage(commands::launcher::QueryBindingState::new(data_dir.clone()));
+
             // Initialize file history state
             app.manage(FileHistoryState::new(data_dir.clone()));
 
@@ -297,6 +300,7 @@ pub fn run() {
             remove_from_history,
             get_history_count,
             get_frecency_suggestions,
+            record_search_selection,
             // File indexing commands
             start_indexing,
             get_index_status,
