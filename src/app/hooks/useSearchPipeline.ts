@@ -360,6 +360,31 @@ export function useSearchPipeline({
           .sort((a, b) => b.score - a.score)
           .slice(0, maxResults + 4);
 
+        // Fallback: show a "Search the web" result when no results found
+        if (allResults.length === 0 && effectiveQuery.trim()) {
+          const googleUrl =
+            'https://www.google.com/search?q=' + encodeURIComponent(effectiveQuery);
+          allResults.push({
+            id: `websearch-fallback-${Date.now()}`,
+            type: SearchResultType.WebSearch,
+            title: `Search "${effectiveQuery}" on Google`,
+            subtitle: 'Press Enter to search the web',
+            score: 1,
+            data: {
+              id: `websearch-fallback-${Date.now()}`,
+              type: 'websearch',
+              title: `Search "${effectiveQuery}" on Google`,
+              subtitle: 'Press Enter to search the web',
+              score: 90,
+              data: {
+                query: effectiveQuery,
+                engine: 'google',
+                url: googleUrl,
+              },
+            } as PluginResultData,
+          });
+        }
+
         setResults(allResults);
       } catch (err) {
         const errorMessage = err instanceof Error ? err.message : String(err);
@@ -371,15 +396,17 @@ export function useSearchPipeline({
     [allApps, isLoading, maxResults, setResults, setSearchError, setShowSnowEffect]
   );
 
-  // Debounced search effect (150 ms)
+  // Debounced search effect — adaptive: 150ms for short queries, 80ms for longer ones
   useEffect(() => {
     if (suspended) {
       return;
     }
 
+    const debounceMs = searchQuery.trim().length > 2 ? 80 : 150;
+
     const timeoutId = setTimeout(() => {
       performSearch(searchQuery);
-    }, 150);
+    }, debounceMs);
 
     return () => clearTimeout(timeoutId);
   }, [searchQuery, performSearch, suspended]);
