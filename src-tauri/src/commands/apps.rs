@@ -620,6 +620,14 @@ async fn scan_applications_windows() -> Result<Vec<AppInfo>, String> {
         Err(e) => warn!("AppsFolder scan failed: {}", e),
     }
 
+    // Filter junk apps from ALL sources (SDK samples, documentation, dev tools)
+    let before_filter = apps.len();
+    apps.retain(|app| !crate::utils::shell_apps::is_junk_app(&app.name));
+    let filtered = before_filter - apps.len();
+    if filtered > 0 {
+        info!("Filtered {} junk apps (SDK, docs, tools)", filtered);
+    }
+
     // Remove duplicates based on path
     apps.sort_by(|a, b| a.path.cmp(&b.path));
     apps.dedup_by(|a, b| a.path == b.path);
@@ -776,11 +784,89 @@ async fn scan_applications_macos() -> Result<Vec<AppInfo>, String> {
 }
 
 #[cfg(target_os = "macos")]
-fn extract_macos_app_icon(_app_path: &std::path::Path) -> Option<String> {
-    // macOS icon extraction requires parsing Info.plist and reading .icns files.
-    // This is non-trivial and needs the `icns` crate or native `NSWorkspace` APIs.
-    // TODO: Implement using icns crate for proper icon extraction.
-    None
+fn extract_macos_app_icon(app_path: &std::path::Path) -> Option<String> {
+    use plist::Value;
+
+    // Try to find and parse Info.plist
+    let info_plist_path = app_path.join("Contents").join("Info.plist");
+
+    if !info_plist_path.exists() {
+        return None;
+    }
+
+    let plist_data = match std::fs::read(&info_plist_path) {
+        Ok(data) => data,
+        Err(_) => return None,
+    };
+
+    let plist_value: Value = match plist::from_reader(std::io::Cursor::new(plist_data)) {
+        Ok(v) => v,
+        Err(_) => return None,
+    };
+
+    // Extract CFBundleIconFile from plist
+    let icon_file_name = plist_value
+        .as_dictionary()?
+        .get("CFBundleIconFile")
+        .and_then(|v| v.as_string())?;
+
+    // Try without extension first (macOS adds .icns automatically)
+    let icon_filename_with_ext = if icon_file_name.ends_with(".icns") {
+        icon_file_name.to_string()
+    } else {
+        format!("{}.icns", icon_file_name)
+    };
+
+    let icon_path = app_path
+        .join("Contents")
+        .join("Resources")
+        .join(&icon_filename_with_ext);
+
+    if !icon_path.exists() {
+        return None;
+    }
+
+    // Read and convert .icns to PNG
+    match convert_icns_to_base64_png(&icon_path) {
+        Ok(base64_data) => Some(format!("data:image/png;base64,{}", base64_data)),
+        Err(_) => None,
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn convert_icns_to_base64_png(icns_path: &std::path::Path) -> Result<String, String> {
+    use icns::IconFamily;
+    use std::io::Cursor;
+
+    let icns_data = std::fs::read(icns_path).map_err(|e| e.to_string())?;
+
+    let icon_family = IconFamily::read(Cursor::new(icns_data)).map_err(|e| e.to_string())?;
+
+    // Extract the best available icon (512x512 preferred, then 256x256, then 128x128)
+    let image_data = icon_family
+        .get_icon_with_type(icns::IconType::RGB512)
+        .or_else(|_| icon_family.get_icon_with_type(icns::IconType::RGB256))
+        .or_else(|_| icon_family.get_icon_with_type(icns::IconType::RGB128))
+        .map_err(|_| "Could not extract icon from icns file".to_string())?;
+
+    let (width, height) = image_data.dimensions();
+    let rgba_data = image_data.to_rgba8();
+
+    // Convert to PNG
+    let mut png_buffer = Vec::new();
+    {
+        let mut encoder = png::Encoder::new(&mut png_buffer, width as u32, height as u32);
+        encoder.set_color(png::ColorType::Rgba);
+        let mut writer = encoder
+            .write_header()
+            .map_err(|e| format!("PNG encoding error: {}", e))?;
+        writer
+            .write_image_data(&rgba_data)
+            .map_err(|e| format!("PNG write error: {}", e))?;
+    }
+
+    // Convert to base64
+    Ok(base64::encode(&png_buffer))
 }
 
 // ============================================================================

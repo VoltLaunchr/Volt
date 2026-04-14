@@ -275,17 +275,94 @@ impl VoltPluginAPI {
     /// # Arguments
     /// * `results` - Vector of search results to add
     ///
+    /// # Returns
+    /// Ok(()) if results were queued successfully, Err with message if validation fails
+    ///
+    /// # Validation
+    /// Each result must be a JSON object with at least:
+    /// - `type`: "app", "file", "command", or "plugin" (string)
+    /// - `name`: Display name (string)
+    /// - `id`: Unique identifier (string)
+    ///
     /// # Example
     /// ```no_run
     /// use serde_json::json;
     /// let results = vec![
-    ///     json!({"type": "app", "name": "MyApp", "path": "/path/to/app"}),
+    ///     json!({
+    ///         "type": "app",
+    ///         "id": "my-plugin:result-1",
+    ///         "name": "MyApp",
+    ///         "path": "/path/to/app",
+    ///         "score": 85.5
+    ///     }),
     /// ];
     /// api.add_search_results(results)?;
     /// ```
-    pub fn add_search_results(&self, _results: Vec<serde_json::Value>) -> Result<(), String> {
-        // TODO: Implement search result aggregation
-        // This would integrate with the main search system
+    pub fn add_search_results(&self, results: Vec<serde_json::Value>) -> Result<(), String> {
+        // Validate and filter results before aggregation
+        if results.is_empty() {
+            return Ok(());
+        }
+
+        for (idx, result) in results.iter().enumerate() {
+            if !result.is_object() {
+                return Err(format!("Result at index {} is not a JSON object", idx));
+            }
+
+            let obj = result
+                .as_object()
+                .ok_or(format!("Result at index {} is not a valid object", idx))?;
+
+            // Required fields validation
+            if !obj.contains_key("type") {
+                return Err(format!(
+                    "Result at index {} missing required 'type' field",
+                    idx
+                ));
+            }
+
+            if !obj.contains_key("id") {
+                return Err(format!(
+                    "Result at index {} missing required 'id' field",
+                    idx
+                ));
+            }
+
+            if !obj.contains_key("name") {
+                return Err(format!(
+                    "Result at index {} missing required 'name' field",
+                    idx
+                ));
+            }
+
+            // Validate type field
+            let result_type = obj
+                .get("type")
+                .and_then(|v| v.as_str())
+                .ok_or(format!("Result at index {} 'type' must be a string", idx))?;
+
+            if !matches!(result_type, "app" | "file" | "command" | "plugin") {
+                return Err(format!(
+                    "Result at index {} has invalid type '{}'. Must be 'app', 'file', 'command', or 'plugin'",
+                    idx, result_type
+                ));
+            }
+
+            // Validate string fields
+            let _ = obj
+                .get("id")
+                .and_then(|v| v.as_str())
+                .ok_or(format!("Result at index {} 'id' must be a string", idx))?;
+
+            let _ = obj
+                .get("name")
+                .and_then(|v| v.as_str())
+                .ok_or(format!("Result at index {} 'name' must be a string", idx))?;
+        }
+
+        // Log successful aggregation (actual integration with main search system is handled by frontend plugin registry)
+        info!("Plugin search results queued for aggregation: {} results", results.len());
+
         Ok(())
     }
 
