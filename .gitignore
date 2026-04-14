@@ -70,3 +70,4 @@ Thumbs.db
 *.sw?
 .mcp.json
 mcp.json
+.claude/worktrees/
