@@ -4,7 +4,7 @@
 
 ---
 
-## Etat actuel du produit (v0.0.4)
+## Etat actuel du produit (v0.0.5)
 
 ### Ce qui est livre et fonctionnel
 

@@ -34,7 +34,7 @@
     "commands": "Commandes"
   },
   "suggestions": {
-    "whats-new": { "title": "Voir les nouveautés", "subtitle": "v0.0.2" },
+    "whats-new": { "title": "Voir les nouveautés", "subtitle": "v0.0.5" },
     "settings": { "title": "Paramètres", "subtitle": "Paramètres de l'application" },
     "clipboard-history": { "title": "Historique du presse-papiers", "subtitle": "Voir le presse-papiers" },
     "search-files": { "title": "Rechercher des fichiers", "subtitle": "Recherche de fichiers" },

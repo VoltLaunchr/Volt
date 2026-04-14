@@ -1,6 +1,6 @@
 # Volt — Roadmap
 
-**Version actuelle :** `0.0.4` &nbsp;•&nbsp; **Derniere mise a jour :** 2026-04-14 &nbsp;•&nbsp; **Statut :** P1 finalisation (M1.1 ✅ · M1.2 ✅ · M1.3 🟡 blocage certs · M1.4 ✅) | Phase 2-4 ✅ completes
+**Version actuelle :** `0.0.5` &nbsp;•&nbsp; **Derniere mise a jour :** 2026-04-14 &nbsp;•&nbsp; **Statut :** P1 finalisation (M1.1 ✅ · M1.2 ✅ · M1.3 🟡 blocage certs · M1.4 ✅) | Phase 2-4 ✅ completes
 
 > Document vivant. Les milestones sont groupes en 4 phases. Chaque milestone liste un **but**, des **taches concretes** (avec fichiers), des **criteres d'acceptation** et une **estimation**.
 >

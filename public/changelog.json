@@ -1,6 +1,68 @@
 {
   "versions": [
     {
+      "version": "0.0.5",
+      "date": "2026-04-14",
+      "title": "Authentication, Quick Links & Window Management",
+      "description": "Volt v0.0.5 brings user authentication with OAuth support, two powerful new plugins, a hardened security layer, and a full end-to-end test suite — all wrapped in improved French translations.",
+      "sections": [
+        {
+          "type": "features",
+          "title": "New Features",
+          "icon": "sparkles",
+          "items": [
+            "User authentication with OAuth (GitHub, Google) and account management",
+            "Quick Links plugin — instant access to bookmarks and favorite URLs",
+            "Window Management plugin — snap, resize and move windows from the launcher",
+            "Integrations panel in Settings for connected services",
+            "Improved search pipeline with centralized scoring constants"
+          ]
+        },
+        {
+          "type": "plugins",
+          "title": "Security & Stability",
+          "icon": "zap",
+          "items": [
+            "Global ErrorBoundary to gracefully catch rendering crashes",
+            "Safe invoke wrapper (safeInvoke) for resilient Tauri IPC calls",
+            "Runtime type guards for stricter data validation",
+            "Feature flags system for controlled rollouts",
+            "Secure credential storage via OS keyring"
+          ]
+        },
+        {
+          "type": "system",
+          "title": "Testing & CI/CD",
+          "icon": "cpu",
+          "items": [
+            "End-to-end test suite: accessibility, keyboard navigation, search, smoke tests",
+            "Automated release workflow with platform builds and signing",
+            "Changelog generation workflow (git-cliff)",
+            "Dependabot configuration for dependency updates"
+          ]
+        },
+        {
+          "type": "settings",
+          "title": "Internationalization",
+          "icon": "settings",
+          "items": [
+            "Comprehensive French translations for all plugins and settings",
+            "Improved locale files for calculator, emoji picker, games, timer, and more",
+            "Localized Quick Links and Window Management plugins (EN + FR)"
+          ]
+        }
+      ],
+      "footer": {
+        "gettingStarted": "Press Ctrl+Space to open Volt anytime. Try the new Quick Links plugin or snap windows with the Window Management commands.",
+        "feedback": "Have feedback or found a bug? Visit our GitHub repository to report issues or request features.",
+        "links": {
+          "github": "https://github.com/VoltLaunchr/Volt",
+          "releases": "https://github.com/VoltLaunchr/Volt/releases",
+          "docs": "https://voltlaunchr.com/docs"
+        }
+      }
+    },
+    {
       "version": "0.0.4",
       "date": "2026-01-01",
       "title": "Initial Public Release",
