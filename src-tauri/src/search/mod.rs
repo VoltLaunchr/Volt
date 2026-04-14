@@ -1,5 +1,5 @@
 use crate::commands::apps::AppInfo;
-use crate::launcher::LaunchRecord;
+use crate::launcher::{LaunchRecord, QueryBindingStore};
 use crate::utils::matching::calculate_match_score;
 
 /// Calculate frecency score for a launch record.
@@ -13,11 +13,12 @@ pub fn calculate_frecency(record: &LaunchRecord) -> f64 {
 }
 
 /// Search applications with frecency scoring from launch history.
-/// Returns apps sorted by (match_score + frecency_bonus) descending.
+/// Returns apps sorted by (match_score + frecency_bonus + query_binding_boost) descending.
 pub fn search_applications_with_frecency(
     query: &str,
     apps: Vec<AppInfo>,
     history: &[LaunchRecord],
+    query_bindings: Option<&QueryBindingStore>,
 ) -> Vec<(AppInfo, f32)> {
     if query.trim().is_empty() {
         return Vec::new();
@@ -64,13 +65,18 @@ pub fn search_applications_with_frecency(
 
             let frecency = frecency_map.get(app.path.as_str()).copied().unwrap_or(0.0);
 
-            let final_score = if frecency > 0.0 {
+            let mut final_score = if frecency > 0.0 {
                 match_score + (frecency * 10.0).min(50.0) as f32
             } else if has_history {
                 match_score * 0.7
             } else {
                 match_score
             };
+
+            // Apply query-result binding boost (up to +30 pts)
+            if let Some(bindings) = query_bindings {
+                final_score += bindings.get_boost(query, &app.path);
+            }
 
             Some((app, final_score))
         })

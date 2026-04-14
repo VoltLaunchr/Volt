@@ -91,6 +91,20 @@ export function useResultActions({
           }
         }
 
+        // Record query→result binding for learning (fire-and-forget)
+        const currentQuery = useSearchStore.getState().searchQuery;
+        if (currentQuery.trim()) {
+          const resultId =
+            result.type === SearchResultType.Application
+              ? (result.data as { path: string }).path
+              : result.type === SearchResultType.File
+                ? (result.data as FileInfo).path
+                : result.id;
+          invoke('record_search_selection', { query: currentQuery, resultId }).catch((err) =>
+            logger.error('Failed to record search selection:', err)
+          );
+        }
+
         // Hide window after launching if closeOnLaunch is enabled and action allows it
         if (shouldHideWindow && closeOnLaunch) {
           await hideWindow();

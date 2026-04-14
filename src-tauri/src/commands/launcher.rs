@@ -8,7 +8,7 @@ use tauri::State;
 use tracing::{info, warn};
 
 use crate::core::error::{VoltError, VoltResult};
-use crate::launcher::{LaunchError, LaunchHistory, LaunchRecord, launch};
+use crate::launcher::{LaunchError, LaunchHistory, LaunchRecord, QueryBindingStore, launch};
 
 /// State wrapper for launch history
 pub struct LaunchHistoryState {
@@ -19,6 +19,23 @@ impl LaunchHistoryState {
     pub fn new(data_dir: PathBuf) -> Self {
         Self {
             history: Arc::new(LaunchHistory::new(data_dir)),
+        }
+    }
+}
+
+/// State wrapper for query-result bindings
+pub struct QueryBindingState {
+    pub store: std::sync::Mutex<QueryBindingStore>,
+    pub file_path: PathBuf,
+}
+
+impl QueryBindingState {
+    pub fn new(data_dir: PathBuf) -> Self {
+        let file_path = data_dir.join("query_bindings.json");
+        let store = QueryBindingStore::load(&file_path);
+        Self {
+            store: std::sync::Mutex::new(store),
+            file_path,
         }
     }
 }
@@ -208,4 +225,31 @@ pub async fn get_frecency_suggestions(
 
     records.truncate(limit);
     Ok(records)
+}
+
+/// Record a query→result binding when the user selects a search result.
+/// This enables the system to learn which results the user prefers for
+/// specific query prefixes (e.g. "ch" → Chrome).
+#[tauri::command]
+pub async fn record_search_selection(
+    query: String,
+    result_id: String,
+    binding_state: State<'_, QueryBindingState>,
+) -> VoltResult<()> {
+    let mut store = binding_state
+        .store
+        .lock()
+        .map_err(|e| VoltError::Unknown(e.to_string()))?;
+
+    store.record_binding(&query, &result_id);
+    store
+        .save(&binding_state.file_path)
+        .map_err(VoltError::Unknown)?;
+
+    info!(
+        "Recorded query binding: '{}' -> '{}'",
+        query, result_id
+    );
+
+    Ok(())
 }
