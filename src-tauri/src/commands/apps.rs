@@ -950,7 +950,8 @@ async fn scan_applications_linux() -> Result<Vec<AppInfo>, String> {
             for entry in entries.flatten() {
                 let path = entry.path();
                 if let Ok(metadata) = entry.metadata()
-                    && metadata.is_file() && is_executable(&path)
+                    && metadata.is_file()
+                    && is_executable(&path)
                     && let Some(name) = path.file_name()
                 {
                     let name_str = name.to_string_lossy().to_string();
