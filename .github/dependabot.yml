@@ -4,15 +4,14 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 10
     labels:
       - "dependencies"
+    commit-message:
+      prefix: "deps(npm):"
     groups:
-      dev-dependencies:
-        dependency-type: "development"
+      minor-and-patch:
         update-types: ["minor", "patch"]
-      tauri:
-        patterns: ["@tauri-apps/*"]
 
   - package-ecosystem: "cargo"
     directory: "/src-tauri"
@@ -21,12 +20,18 @@ updates:
     open-pull-requests-limit: 5
     labels:
       - "dependencies"
+    commit-message:
+      prefix: "deps(cargo):"
+    groups:
+      minor-and-patch:
+        update-types: ["minor", "patch"]
 
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
-      interval: "weekly"
-    open-pull-requests-limit: 3
+      interval: "monthly"
+    open-pull-requests-limit: 5
     labels:
       - "dependencies"
-      - "ci"
+    commit-message:
+      prefix: "ci:"

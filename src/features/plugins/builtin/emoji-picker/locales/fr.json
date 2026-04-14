@@ -1,21 +1,21 @@
 {
   "loading": "Chargement des emojis...",
   "loadingSubtitle": "Veuillez patienter pendant le chargement",
-  "noResults": "Aucun emoji trouve",
-  "noResultsSubtitle": "Essayez de chercher \"{{query}}\" avec d'autres mots-cles",
+  "noResults": "Aucun emoji trouvé",
+  "noResultsSubtitle": "Essayez de chercher \"{{query}}\" avec d'autres mots-clés",
   "view": {
     "placeholder": "Rechercher des Emojis...",
-    "noEmojis": "Aucun emoji trouve",
-    "tryDifferent": "Essayez avec d'autres mots-cles",
+    "noEmojis": "Aucun emoji trouvé",
+    "tryDifferent": "Essayez avec d'autres mots-clés",
     "categories": {
-      "all": "Toutes les categories",
-      "frequent": "Utilises frequemment",
+      "all": "Toutes les catégories",
+      "frequent": "Utilisés fréquemment",
       "smileys": "Visages et personnes",
       "people": "Personnes et corps",
       "animals": "Animaux et nature",
       "food": "Nourriture et boissons",
       "travel": "Voyages et lieux",
-      "activity": "Activites",
+      "activity": "Activités",
       "objects": "Objets",
       "symbols": "Symboles",
       "flags": "Drapeaux"

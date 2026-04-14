@@ -43,20 +43,27 @@ export class GamesPlugin implements Plugin {
   canHandle(context: PluginContext): boolean {
     const query = context.query.toLowerCase().trim();
 
-    // Trigger on "games" keyword or game search queries
-    if (query === 'games' || query.startsWith('games ')) {
+    const prefixes = ['game ', 'games ', 'jeu ', 'jeux ', 'play ', 'steam ', 'epic ', 'gog '];
+    const keywords = ['game', 'games', 'jeu', 'jeux'];
+
+    // Trigger on exact game-related keywords
+    if (keywords.includes(query)) {
       return true;
     }
 
-    // Also trigger on short queries (potential game names)
-    return query.length >= 2;
+    // Trigger on game-related prefixes
+    if (prefixes.some((prefix) => query.startsWith(prefix))) {
+      return true;
+    }
+
+    return false;
   }
 
   async match(context: PluginContext): Promise<PluginResult[]> {
     const query = context.query.toLowerCase().trim();
 
-    // Special case: "games" shows all games
-    if (query === 'games') {
+    // Special case: "game"/"games"/"jeux" shows all games
+    if (query === 'games' || query === 'game' || query === 'jeux' || query === 'jeu') {
       const games = await this.getAllGames();
 
       return games.slice(0, 10).map((game, index) => ({

@@ -36,10 +36,50 @@ pub struct FilePreview {
 }
 
 const TEXT_EXTENSIONS: &[&str] = &[
-    "txt", "md", "json", "ts", "tsx", "js", "jsx", "py", "rs", "css", "html", "xml", "yaml",
-    "yml", "toml", "ini", "cfg", "log", "csv", "sh", "bash", "zsh", "bat", "ps1", "c", "cpp",
-    "h", "hpp", "java", "kt", "go", "rb", "php", "sql", "graphql", "proto", "env", "gitignore",
-    "dockerfile", "makefile", "cmake", "gradle", "lock", "svg",
+    "txt",
+    "md",
+    "json",
+    "ts",
+    "tsx",
+    "js",
+    "jsx",
+    "py",
+    "rs",
+    "css",
+    "html",
+    "xml",
+    "yaml",
+    "yml",
+    "toml",
+    "ini",
+    "cfg",
+    "log",
+    "csv",
+    "sh",
+    "bash",
+    "zsh",
+    "bat",
+    "ps1",
+    "c",
+    "cpp",
+    "h",
+    "hpp",
+    "java",
+    "kt",
+    "go",
+    "rb",
+    "php",
+    "sql",
+    "graphql",
+    "proto",
+    "env",
+    "gitignore",
+    "dockerfile",
+    "makefile",
+    "cmake",
+    "gradle",
+    "lock",
+    "svg",
 ];
 
 const IMAGE_EXTENSIONS: &[&str] = &[
@@ -108,11 +148,7 @@ fn list_folder_children(path: &Path) -> Option<Vec<String>> {
                 return None;
             }
             let is_dir = e.file_type().map(|t| t.is_dir()).unwrap_or(false);
-            Some(if is_dir {
-                format!("{}/", name)
-            } else {
-                name
-            })
+            Some(if is_dir { format!("{}/", name) } else { name })
         })
         .collect();
 

@@ -6,6 +6,7 @@ import { PluginResult as PluginResultData } from '../../features/plugins/types';
 import { defaultSuggestions } from '../../shared/constants/suggestions';
 import { FileInfo, SearchResult, SearchResultType } from '../../shared/types/common.types';
 import { logger } from '../../shared/utils/logger';
+import { isPluginResultData } from '../../shared/utils/typeGuards';
 import { useSearchStore } from '../../stores/searchStore';
 import { useUiStore } from '../../stores/uiStore';
 import type { ActiveView } from '../../stores/uiStore';
@@ -52,7 +53,10 @@ export function useResultActions({
           // Track file access for recent files
           await invoke('track_file_access', { path: fileData.path, name: fileData.name });
         } else if (result.type === SearchResultType.SystemCommand) {
-          const pluginResult = result.data as unknown as PluginResultData;
+          const pluginResult = result.data as PluginResultData;
+          if (!isPluginResultData(pluginResult)) {
+            throw new Error('Invalid plugin result data');
+          }
           const action = pluginResult.data?.action;
 
           // Don't hide window for settings/account commands - we want to show the settings window
@@ -68,14 +72,20 @@ export function useResultActions({
           }
         } else if (result.type === SearchResultType.Game) {
           // Handle game results - launch via GamesPlugin
-          const pluginResult = result.data as unknown as PluginResultData;
+          const pluginResult = result.data as PluginResultData;
+          if (!isPluginResultData(pluginResult)) {
+            throw new Error('Invalid plugin result data');
+          }
           const plugin = pluginRegistry.getPlugin('games');
           if (plugin) {
             await plugin.execute(pluginResult);
           }
         } else {
           // Handle other plugin results (Calculator, WebSearch, Timer, etc.)
-          const pluginResult = result.data as unknown as PluginResultData;
+          const pluginResult = result.data as PluginResultData;
+          if (!isPluginResultData(pluginResult)) {
+            throw new Error('Invalid plugin result data');
+          }
           const pluginId = pluginResult.pluginId || pluginResult.type;
 
           // Don't hide window for Timer - we want to show the countdown
@@ -89,6 +99,20 @@ export function useResultActions({
           } else {
             logger.error('Plugin not found! ID:', pluginId);
           }
+        }
+
+        // Record query→result binding for learning (fire-and-forget)
+        const currentQuery = useSearchStore.getState().searchQuery;
+        if (currentQuery.trim()) {
+          const resultId =
+            result.type === SearchResultType.Application
+              ? (result.data as { path: string }).path
+              : result.type === SearchResultType.File
+                ? (result.data as FileInfo).path
+                : result.id;
+          invoke('record_search_selection', { query: currentQuery, resultId }).catch((err) =>
+            logger.error('Failed to record search selection:', err)
+          );
         }
 
         // Hide window after launching if closeOnLaunch is enabled and action allows it
@@ -154,7 +178,7 @@ export function useResultActions({
           setActiveView({ type: 'games' });
           break;
         default:
-          console.log('Unknown suggestion:', item.id);
+          logger.warn('Unknown suggestion:', item.id);
       }
     },
     [openSettingsWindow, setSearchQuery, setActiveView]

@@ -1,4 +1,5 @@
 use super::types::{FileCategory, FileInfo, IndexConfig};
+#[cfg(target_os = "windows")]
 use crate::utils::extract_icon;
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 use crate::utils::path::is_executable;
@@ -38,12 +39,12 @@ fn is_sensitive_directory(_path: &Path) -> bool {
 
 /// Get icon for a file based on its extension or type
 fn get_file_icon(path: &Path) -> Option<String> {
-    let path_str = path.to_string_lossy().to_string();
+    let _path_str = path.to_string_lossy().to_string();
 
     // For Windows, use the system icon extraction for all files
     #[cfg(target_os = "windows")]
     {
-        extract_icon(&path_str)
+        extract_icon(&_path_str)
     }
 
     // For other platforms, use emoji-based icons for common types

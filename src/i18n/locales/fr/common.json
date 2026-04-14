@@ -2,9 +2,9 @@
   "search": {
     "placeholder": "Rechercher des apps et commandes...",
     "placeholderLoading": "Chargement des applications...",
-    "noResults": "Aucun resultat",
-    "resultCount_one": "{{count}} resultat trouve",
-    "resultCount_other": "{{count}} resultats trouves",
+    "noResults": "Aucun résultat",
+    "resultCount_one": "{{count}} résultat trouvé",
+    "resultCount_other": "{{count}} résultats trouvés",
     "clearSearch": "Effacer la recherche",
     "label": "Rechercher"
   },
@@ -15,11 +15,11 @@
   },
   "errors": {
     "generic": "Une erreur est survenue",
-    "retry": "Reessayer",
+    "retry": "Réessayer",
     "dismiss": "Fermer"
   },
   "accessibility": {
-    "skipToSearch": "Aller a la recherche"
+    "skipToSearch": "Aller à la recherche"
   },
   "viewRouter": {
     "loading": "Chargement des applications...",
@@ -34,16 +34,16 @@
     "commands": "Commandes"
   },
   "suggestions": {
-    "whats-new": { "title": "Voir les nouveautes", "subtitle": "v0.0.2" },
-    "settings": { "title": "Parametres", "subtitle": "Parametres de l'application" },
+    "whats-new": { "title": "Voir les nouveautés", "subtitle": "v0.0.5" },
+    "settings": { "title": "Paramètres", "subtitle": "Paramètres de l'application" },
     "clipboard-history": { "title": "Historique du presse-papiers", "subtitle": "Voir le presse-papiers" },
     "search-files": { "title": "Rechercher des fichiers", "subtitle": "Recherche de fichiers" },
-    "search-emoji": { "title": "Rechercher des Emojis", "subtitle": "Selecteur d'emojis" },
-    "about": { "title": "A propos", "subtitle": "Informations Volt" },
-    "account": { "title": "Compte", "subtitle": "Parametres utilisateur" },
-    "system-monitor": { "title": "Moniteur systeme", "subtitle": "Voir les performances" },
+    "search-emoji": { "title": "Rechercher des Emojis", "subtitle": "Sélecteur d'emojis" },
+    "about": { "title": "À propos", "subtitle": "Informations Volt" },
+    "account": { "title": "Compte", "subtitle": "Paramètres utilisateur" },
+    "system-monitor": { "title": "Moniteur système", "subtitle": "Voir les performances" },
     "calculator": { "title": "Calculatrice", "subtitle": "Calcul rapide" },
-    "timer": { "title": "Minuteur", "subtitle": "Definir un minuteur" },
+    "timer": { "title": "Minuteur", "subtitle": "Définir un minuteur" },
     "web-search": { "title": "Recherche Web", "subtitle": "Rechercher en ligne" },
     "steam-games": { "title": "Jeux", "subtitle": "Lancer des jeux" }
   }

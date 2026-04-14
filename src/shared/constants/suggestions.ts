@@ -60,7 +60,7 @@ export const defaultSuggestions: SuggestionCategory[] = [
       {
         id: 'whats-new',
         title: "See what's new",
-        subtitle: 'v0.0.2',
+        subtitle: 'v0.0.5',
         icon: Newspaper,
         category: 'suggestion',
         shortcut: 'Changelog',

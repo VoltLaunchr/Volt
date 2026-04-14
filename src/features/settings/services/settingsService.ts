@@ -124,6 +124,30 @@ export const settingsService = {
       throw new Error(`Failed to set theme: ${error}`);
     }
   },
+
+  /**
+   * Export settings to a file
+   */
+  async exportSettings(path: string): Promise<string> {
+    try {
+      return await invoke<string>('export_settings', { path });
+    } catch (error) {
+      logger.error('Failed to export settings:', error);
+      throw new Error(`Failed to export settings: ${error}`);
+    }
+  },
+
+  /**
+   * Import settings from a file
+   */
+  async importSettings(path: string): Promise<Settings> {
+    try {
+      return await invoke<Settings>('import_settings', { path });
+    } catch (error) {
+      logger.error('Failed to import settings:', error);
+      throw new Error(`Failed to import settings: ${error}`);
+    }
+  },
 };
 
 /**

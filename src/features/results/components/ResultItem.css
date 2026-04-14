@@ -124,6 +124,11 @@
   color: var(--color-text-primary);
 }
 
+.result-highlight {
+  font-weight: var(--font-weight-bold);
+  color: var(--color-accent);
+}
+
 .result-subtitle {
   font-size: var(--font-size-sm);
   color: var(--color-text-secondary);

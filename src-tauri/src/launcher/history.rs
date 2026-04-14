@@ -6,7 +6,7 @@ use log;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 /// A single launch record
@@ -356,6 +356,155 @@ impl LaunchHistory {
 impl Default for LaunchHistory {
     fn default() -> Self {
         Self::in_memory()
+    }
+}
+
+// ============================================================================
+// Query-Result Binding Store
+// ============================================================================
+
+/// A single query→result binding that tracks how often a user selects
+/// a particular result for a given query prefix.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QueryBinding {
+    /// The query prefix (e.g. "ch", "chr")
+    pub query_prefix: String,
+    /// The result identifier (app path or plugin result id)
+    pub result_id: String,
+    /// Number of times this result was selected for this prefix
+    pub count: u32,
+    /// Timestamp (ms) of the last selection
+    pub last_used: i64,
+}
+
+/// Persisted store of query→result bindings.
+/// Enables "Alfred-style" learning: typing "ch" and picking Chrome
+/// causes Chrome to be boosted for future "ch" queries.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct QueryBindingStore {
+    bindings: HashMap<String, Vec<QueryBinding>>,
+}
+
+/// Maximum number of unique prefixes to keep (prevents unbounded growth)
+const MAX_BINDING_PREFIXES: usize = 1000;
+/// Maximum prefix length to record
+const MAX_PREFIX_LEN: usize = 8;
+
+impl QueryBindingStore {
+    /// Record a binding for every prefix of `query` (length 1..min(8, query.len())).
+    /// Increments count and updates last_used for existing bindings, or inserts new ones.
+    pub fn record_binding(&mut self, query: &str, result_id: &str) {
+        let query_lower = query.to_lowercase();
+        let query_lower = query_lower.trim();
+        if query_lower.is_empty() {
+            return;
+        }
+
+        let now = chrono::Utc::now().timestamp_millis();
+        let max_len = MAX_PREFIX_LEN.min(query_lower.len());
+
+        for end in 1..=max_len {
+            // Ensure we split on a char boundary
+            let prefix = match query_lower.get(..end) {
+                Some(p) => p,
+                None => continue,
+            };
+
+            let entries = self.bindings.entry(prefix.to_string()).or_default();
+
+            if let Some(existing) = entries.iter_mut().find(|b| b.result_id == result_id) {
+                existing.count += 1;
+                existing.last_used = now;
+            } else {
+                entries.push(QueryBinding {
+                    query_prefix: prefix.to_string(),
+                    result_id: result_id.to_string(),
+                    count: 1,
+                    last_used: now,
+                });
+            }
+        }
+
+        // Prune if we exceed the max number of unique prefixes
+        self.prune_if_needed();
+    }
+
+    /// Return a boost score for a given (query, result_id) pair.
+    /// Formula: min(count, 10) * 3.0 with recency decay (half-life 1 week).
+    /// Maximum boost: +30.
+    pub fn get_boost(&self, query: &str, result_id: &str) -> f32 {
+        let query_lower = query.to_lowercase();
+        let query_lower = query_lower.trim();
+        if query_lower.is_empty() {
+            return 0.0;
+        }
+
+        let entries = match self.bindings.get(query_lower) {
+            Some(e) => e,
+            None => return 0.0,
+        };
+
+        let binding = match entries.iter().find(|b| b.result_id == result_id) {
+            Some(b) => b,
+            None => return 0.0,
+        };
+
+        let now_ms = chrono::Utc::now().timestamp_millis();
+        let age_hours = ((now_ms - binding.last_used) as f64 / 3_600_000.0).max(0.0);
+        // Half-life of 1 week (168 hours), floor at 0.2 so old bindings don't vanish
+        let recency_weight = (-age_hours / 168.0).exp().max(0.2) as f32;
+
+        let count_factor = (binding.count.min(10) as f32) * 3.0;
+        count_factor * recency_weight
+    }
+
+    /// Save the store to a JSON file.
+    pub fn save(&self, path: &Path) -> Result<(), String> {
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        }
+        let json = serde_json::to_string_pretty(self).map_err(|e| e.to_string())?;
+        fs::write(path, json).map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
+    /// Load the store from a JSON file. Returns Default if the file doesn't exist.
+    pub fn load(path: &Path) -> Self {
+        if !path.exists() {
+            return Self::default();
+        }
+        let content = match fs::read_to_string(path) {
+            Ok(c) => c,
+            Err(_) => return Self::default(),
+        };
+        serde_json::from_str(&content).unwrap_or_default()
+    }
+
+    /// Prune oldest prefixes when exceeding the limit.
+    fn prune_if_needed(&mut self) {
+        if self.bindings.len() <= MAX_BINDING_PREFIXES {
+            return;
+        }
+
+        // Find the oldest last_used per prefix, then drop the oldest prefixes
+        let mut prefix_ages: Vec<(String, i64)> = self
+            .bindings
+            .iter()
+            .map(|(prefix, entries)| {
+                let max_last_used = entries.iter().map(|b| b.last_used).max().unwrap_or(0);
+                (prefix.clone(), max_last_used)
+            })
+            .collect();
+
+        // Sort oldest first
+        prefix_ages.sort_by_key(|(_, age)| *age);
+
+        // Remove oldest entries until we're under the limit
+        let to_remove = self.bindings.len() - MAX_BINDING_PREFIXES;
+        for (prefix, _) in prefix_ages.into_iter().take(to_remove) {
+            self.bindings.remove(&prefix);
+        }
     }
 }
 

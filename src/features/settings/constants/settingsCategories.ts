@@ -8,6 +8,8 @@ import {
   Search,
   Clipboard,
   Store,
+  Link as LinkIcon,
+  User,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -17,6 +19,8 @@ export type SettingsCategory =
   | 'advanced'
   | 'about'
   | 'extensions'
+  | 'integrations'
+  | 'account'
   | 'applications'
   | 'plugins'
   | 'file-search'
@@ -32,8 +36,10 @@ export interface CategoryItem {
 export const SETTINGS_CATEGORIES: CategoryItem[] = [
   // Main settings
   { id: 'general', label: 'General', icon: SettingsIcon },
+  { id: 'account', label: 'Account', icon: User },
   { id: 'shortcuts', label: 'Shortcuts', icon: Keyboard },
   { id: 'extensions', label: 'Extensions', icon: Store },
+  { id: 'integrations', label: 'Integrations', icon: LinkIcon },
   { id: 'advanced', label: 'Advanced', icon: Wrench },
   { id: 'about', label: 'About', icon: Info },
   // Built-in Features

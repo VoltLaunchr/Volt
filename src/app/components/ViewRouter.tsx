@@ -1,3 +1,4 @@
+import { useDeferredValue } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ChangelogView } from '../../features/changelog';
 import { ClipboardHistoryView } from '../../features/clipboard';
@@ -28,6 +29,8 @@ export function ViewRouter({ onSelectEmoji, onLaunchResult }: ViewRouterProps) {
   const activeView = useUiStore((s) => s.activeView);
   const searchQuery = useSearchStore((s) => s.searchQuery);
   const results = useSearchStore((s) => s.results);
+  const deferredResults = useDeferredValue(results);
+  const isResultsStale = deferredResults !== results;
   const selectedIndex = useSearchStore((s) => s.selectedIndex);
   const isLoading = useAppStore((s) => s.isLoading);
   const searchError = useSearchStore((s) => s.searchError);
@@ -140,7 +143,7 @@ export function ViewRouter({ onSelectEmoji, onLaunchResult }: ViewRouterProps) {
     );
   }
 
-  if (!searchQuery.trim() && results.length === 0) {
+  if (!searchQuery.trim() && deferredResults.length === 0) {
     return (
       <SuggestionsView
         suggestions={defaultSuggestions}
@@ -151,7 +154,7 @@ export function ViewRouter({ onSelectEmoji, onLaunchResult }: ViewRouterProps) {
     );
   }
 
-  if (isLoading && searchQuery.trim() && results.length === 0) {
+  if (isLoading && searchQuery.trim() && deferredResults.length === 0) {
     return (
       <div className="loading-container">
         <Spinner size="medium" message={t('viewRouter.loading')} />
@@ -160,11 +163,18 @@ export function ViewRouter({ onSelectEmoji, onLaunchResult }: ViewRouterProps) {
   }
 
   return (
-    <ResultsList
-      results={results}
-      selectedIndex={selectedIndex}
-      onSelect={(index: number) => useSearchStore.getState().setSelectedIndex(index)}
-      onLaunch={onLaunchResult}
-    />
+    <div
+      style={{
+        opacity: isResultsStale ? 0.7 : 1,
+        transition: 'opacity 100ms ease-out',
+      }}
+    >
+      <ResultsList
+        results={deferredResults}
+        selectedIndex={selectedIndex}
+        onSelect={(index: number) => useSearchStore.getState().setSelectedIndex(index)}
+        onLaunch={onLaunchResult}
+      />
+    </div>
   );
 }

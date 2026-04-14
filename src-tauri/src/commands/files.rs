@@ -3,7 +3,6 @@ use crate::indexer::watcher::WatcherHandle;
 use crate::indexer::{
     FileCategory, FileHistory, FileIndexDb, FileInfo, IndexConfig, IndexStats as DbIndexStats,
     IndexStatus, SearchEngine, SearchOptions, SearchResult as IndexSearchResult, scan_files,
-    search_files as search_indexed_files,
 };
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -54,7 +53,8 @@ impl From<IndexSearchResult> for FileSearchResult {
 
 /// Global file index state (in-memory cache + SQLite backend)
 pub struct FileIndexState {
-    pub files: Arc<Mutex<Vec<FileInfo>>>,
+    /// Inner Arc allows O(1) clone when reading the file list for search.
+    pub files: Arc<Mutex<Arc<Vec<FileInfo>>>>,
     pub status: Arc<Mutex<IndexStatus>>,
     /// SQLite database for persistent storage (None if DB could not be opened)
     pub db: Arc<Option<FileIndexDb>>,
@@ -86,7 +86,7 @@ impl FileHistoryState {
 impl Default for FileIndexState {
     fn default() -> Self {
         Self {
-            files: Arc::new(Mutex::new(Vec::new())),
+            files: Arc::new(Mutex::new(Arc::new(Vec::new()))),
             status: Arc::new(Mutex::new(IndexStatus {
                 is_indexing: false,
                 total_files: 0,
@@ -117,7 +117,7 @@ impl FileIndexState {
         };
 
         Self {
-            files: Arc::new(Mutex::new(Vec::new())),
+            files: Arc::new(Mutex::new(Arc::new(Vec::new()))),
             status: Arc::new(Mutex::new(IndexStatus {
                 is_indexing: false,
                 total_files: 0,
@@ -215,7 +215,7 @@ pub async fn start_indexing(
                         Ok(cached) => {
                             let file_count = cached.len();
                             if let Ok(mut files) = files_arc.lock() {
-                                *files = cached;
+                                *files = Arc::new(cached);
                             }
                             if let Ok(mut status) = status_arc.lock() {
                                 status.is_indexing = false;
@@ -270,7 +270,7 @@ pub async fn start_indexing(
 
                 // Update in-memory cache.
                 if let Ok(mut files) = files_arc.lock() {
-                    *files = scanned_files;
+                    *files = Arc::new(scanned_files);
                 }
 
                 // Update status
@@ -323,7 +323,8 @@ pub async fn get_index_status(state: State<'_, FileIndexState>) -> VoltResult<In
     Ok(status.clone())
 }
 
-/// Searches indexed files
+/// Searches indexed files, returning results with match scores.
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn search_files(
     state: State<'_, FileIndexState>,
@@ -335,14 +336,14 @@ pub async fn search_files(
     size_max: Option<u64>,
     modified_after: Option<i64>,
     modified_before: Option<i64>,
-) -> VoltResult<Vec<FileInfo>> {
-    // Clone the file list to release the mutex before searching
+) -> VoltResult<Vec<FileSearchResult>> {
+    // O(1) Arc clone to release the mutex before searching
     let files = {
         let guard = state
             .files
             .lock()
             .map_err(|e| VoltError::Unknown(e.to_string()))?;
-        guard.clone()
+        Arc::clone(&guard)
     };
 
     let has_operators = ext.is_some()
@@ -369,11 +370,23 @@ pub async fn search_files(
             ..Default::default()
         };
         let results = engine.search(&query, &files, &options);
-        Ok(results.into_iter().map(|r| r.file).collect())
+        Ok(results.into_iter().map(FileSearchResult::from).collect())
     } else {
-        // Fast path: use simple search (no operators)
-        let mut results = search_indexed_files(&query, &files);
+        // Use advanced search engine for scoring (instead of simple search)
+        use crate::indexer::search_engine::{SearchEngine, SearchOptions};
         let max_results = limit.unwrap_or(20);
+        let mut engine = SearchEngine::new();
+        let options = SearchOptions {
+            limit: Some(max_results),
+            recency_boost: Some(1.3),
+            frequency_boost: Some(1.2),
+            ..Default::default()
+        };
+        let mut results: Vec<FileSearchResult> = engine
+            .search(&query, &files, &options)
+            .into_iter()
+            .map(FileSearchResult::from)
+            .collect();
 
         // Supplement with Windows Search Index if our results are sparse
         #[cfg(target_os = "windows")]
@@ -384,10 +397,14 @@ pub async fn search_files(
             {
                 // Dedup by path
                 let existing_paths: std::collections::HashSet<String> =
-                    results.iter().map(|f| f.path.clone()).collect();
+                    results.iter().map(|f| f.file.path.clone()).collect();
                 for file in ws_results {
                     if !existing_paths.contains(&file.path) {
-                        results.push(file);
+                        results.push(FileSearchResult {
+                            score: 0,
+                            matched_indices: Vec::new(),
+                            file,
+                        });
                     }
                 }
             }
@@ -569,6 +586,7 @@ pub async fn get_default_index_folders() -> VoltResult<Vec<String>> {
 }
 
 /// Shared implementation for advanced file search (with or without highlighting indices)
+#[allow(clippy::too_many_arguments)]
 fn search_files_impl(
     state: &State<'_, FileIndexState>,
     query: &str,
@@ -584,7 +602,7 @@ fn search_files_impl(
             .files
             .lock()
             .map_err(|e| VoltError::Unknown(format!("Failed to acquire file index lock: {}", e)))?;
-        guard.clone()
+        Arc::clone(&guard)
     };
 
     let mut engine = SearchEngine::new();
@@ -620,7 +638,16 @@ pub async fn search_files_advanced(
     filename_only: Option<bool>,
     min_score: Option<u32>,
 ) -> VoltResult<Vec<FileSearchResult>> {
-    search_files_impl(&state, &query, limit, categories, include_hidden, filename_only, min_score, false)
+    search_files_impl(
+        &state,
+        &query,
+        limit,
+        categories,
+        include_hidden,
+        filename_only,
+        min_score,
+        false,
+    )
 }
 
 /// Advanced file search with highlighting support (returns matched character indices)
@@ -634,7 +661,16 @@ pub async fn search_files_with_highlighting(
     filename_only: Option<bool>,
     min_score: Option<u32>,
 ) -> VoltResult<Vec<FileSearchResult>> {
-    search_files_impl(&state, &query, limit, categories, include_hidden, filename_only, min_score, true)
+    search_files_impl(
+        &state,
+        &query,
+        limit,
+        categories,
+        include_hidden,
+        filename_only,
+        min_score,
+        true,
+    )
 }
 
 /// Get available file categories
@@ -663,7 +699,7 @@ pub async fn get_index_stats(state: State<'_, FileIndexState>) -> VoltResult<Ind
             .files
             .lock()
             .map_err(|e| VoltError::Unknown(e.to_string()))?;
-        guard.clone()
+        Arc::clone(&guard)
     };
 
     let mut stats = IndexStats {
@@ -737,7 +773,7 @@ pub async fn invalidate_index(
 
     // Clear in-memory cache.
     if let Ok(mut files) = state.files.lock() {
-        files.clear();
+        *files = Arc::new(Vec::new());
     }
 
     // Re-run indexing with the last-known config.
@@ -776,7 +812,7 @@ pub async fn invalidate_index(
                 }
 
                 if let Ok(mut files) = files_arc.lock() {
-                    *files = scanned_files;
+                    *files = Arc::new(scanned_files);
                 }
 
                 if let Ok(mut status) = status_arc.lock() {
@@ -884,7 +920,10 @@ pub async fn start_file_watcher(
             .map_err(|e| VoltError::Unknown(format!("Failed to open watcher DB: {}", e)))?,
     );
 
-    match start_watcher(folders.clone(), db_arc) {
+    // Pass the in-memory files Arc so the watcher can keep it in sync.
+    let in_memory_files = Some(index_state.files.clone());
+
+    match start_watcher(folders.clone(), db_arc, in_memory_files) {
         Ok(handle) => {
             info!("File watcher started for {} director(y/ies)", folders.len());
             if let Ok(mut h) = watcher_state.handle.lock() {

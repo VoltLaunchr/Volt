@@ -32,8 +32,17 @@ function getSectionKey(type: SearchResultType): string {
   }
 }
 
-/** Section display order */
-const SECTION_ORDER = ['applications', 'commands', 'games', 'results', 'files'];
+/** Get section order — prioritize sections that have the most results */
+function getSectionOrder(grouped: Map<string, unknown[]>): string[] {
+  const base = ['applications', 'commands', 'games', 'results', 'files'];
+  // If games section has more items than apps, put games first
+  const gameCount = (grouped.get('games') as unknown[] | undefined)?.length ?? 0;
+  const appCount = (grouped.get('applications') as unknown[] | undefined)?.length ?? 0;
+  if (gameCount > appCount) {
+    return ['games', 'applications', 'commands', 'results', 'files'];
+  }
+  return base;
+}
 
 /** Section labels */
 const SECTION_LABELS: Record<string, string> = {
@@ -76,8 +85,9 @@ export const ResultsList: React.FC<ResultsListProps> = ({
     // Only show section headers if there are multiple sections
     const sectionCount = grouped.size;
 
+    const sectionOrder = getSectionOrder(grouped);
     const ordered: ResultSection[] = [];
-    for (const key of SECTION_ORDER) {
+    for (const key of sectionOrder) {
       const items = grouped.get(key);
       if (items && items.length > 0) {
         ordered.push({
@@ -102,6 +112,7 @@ export const ResultsList: React.FC<ResultsListProps> = ({
           strokeWidth="1.5"
           strokeLinecap="round"
           strokeLinejoin="round"
+          aria-hidden="true"
         >
           <circle cx="11" cy="11" r="8" />
           <path d="m21 21-4.35-4.35" />
@@ -125,9 +136,14 @@ export const ResultsList: React.FC<ResultsListProps> = ({
       aria-activedescendant={selectedItemId}
     >
       {sections.map((section) => (
-        <div key={section.label || 'single'} className="results-section">
+        <div
+          key={section.label || 'single'}
+          className="results-section"
+          role="group"
+          aria-label={section.label || undefined}
+        >
           {section.label && (
-            <div className="results-section-header">{section.label}</div>
+            <div className="results-section-header" aria-hidden="true">{section.label}</div>
           )}
           {section.results.map(({ result, globalIndex }) => (
             <div
@@ -136,6 +152,7 @@ export const ResultsList: React.FC<ResultsListProps> = ({
               id={`result-item-${globalIndex}`}
               role="option"
               aria-selected={globalIndex === selectedIndex}
+              aria-label={`${result.title}${result.subtitle ? ` - ${result.subtitle}` : ''}`}
             >
               <ResultItem
                 result={result}

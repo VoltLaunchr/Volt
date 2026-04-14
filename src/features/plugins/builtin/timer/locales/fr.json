@@ -1,6 +1,6 @@
 {
-  "start": "Demarrer un minuteur de {{duration}}",
-  "clickToStart": "Cliquer pour demarrer",
+  "start": "Démarrer un minuteur de {{duration}}",
+  "clickToStart": "Cliquez pour démarrer",
   "pomodoroWork": "Pomodoro Travail (25 minutes)",
   "pomodoroWorkDesc": "Session de travail Pomodoro standard",
   "shortBreak": "Pause courte (5 minutes)",
@@ -8,11 +8,11 @@
   "longBreak": "Pause longue (15 minutes)",
   "longBreakDesc": "Pause longue Pomodoro",
   "oneMinute": "Minuteur 1 Minute",
-  "oneMinuteDesc": "Compte a rebours de 60 secondes",
+  "oneMinuteDesc": "Compte à rebours de 60 secondes",
   "fiveMinutes": "Minuteur 5 Minutes",
   "fiveMinutesDesc": "Minuteur de pause courte",
   "tenMinutes": "Minuteur 10 Minutes",
-  "tenMinutesDesc": "Minuteur de duree moyenne",
+  "tenMinutesDesc": "Minuteur de durée moyenne",
   "pomodoro25": "25 Minutes (Pomodoro)",
   "pomodoro25Desc": "Session de travail Pomodoro standard"
 }

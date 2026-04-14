@@ -1,9 +1,14 @@
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
-use tokio::sync::{RwLock, Semaphore};
+use tokio::sync::RwLock;
+#[cfg(target_os = "windows")]
+use tokio::sync::Semaphore;
+#[cfg(target_os = "windows")]
 use tokio::time::timeout;
-use tracing::{info, warn};
+use tracing::info;
+#[cfg(target_os = "windows")]
+use tracing::warn;
 
 use crate::core::error::{VoltError, VoltResult};
 use crate::launcher::{LaunchError, launch};
@@ -562,13 +567,29 @@ async fn scan_applications_windows() -> Result<Vec<AppInfo>, String> {
             .join("Programs")
             .to_string_lossy()
             .to_string();
+        // Taskbar pinned shortcuts (like Raycast's Search Scopes)
+        let taskbar_pins = profile_path
+            .join("AppData")
+            .join("Roaming")
+            .join("Microsoft")
+            .join("Internet Explorer")
+            .join("Quick Launch")
+            .join("User Pinned")
+            .join("TaskBar")
+            .to_string_lossy()
+            .to_string();
+        // User Desktop shortcuts
+        let user_desktop = profile_path.join("Desktop").to_string_lossy().to_string();
 
         vec![
             r"C:\ProgramData\Microsoft\Windows\Start Menu\Programs".to_string(),
             user_start_menu,
+            taskbar_pins,
+            user_desktop,
+            // Public Desktop shortcuts (shared for all users)
+            r"C:\Users\Public\Desktop".to_string(),
         ]
     } else {
-        // Fallback to default C:\ drive if USERPROFILE is not set
         let user_start_menu = format!(
             r"C:\Users\{}\AppData\Roaming\Microsoft\Windows\Start Menu\Programs",
             username
@@ -577,6 +598,12 @@ async fn scan_applications_windows() -> Result<Vec<AppInfo>, String> {
         vec![
             r"C:\ProgramData\Microsoft\Windows\Start Menu\Programs".to_string(),
             user_start_menu,
+            format!(
+                r"C:\Users\{}\AppData\Roaming\Microsoft\Internet Explorer\Quick Launch\User Pinned\TaskBar",
+                username
+            ),
+            format!(r"C:\Users\{}\Desktop", username),
+            r"C:\Users\Public\Desktop".to_string(),
         ]
     };
 
@@ -620,6 +647,14 @@ async fn scan_applications_windows() -> Result<Vec<AppInfo>, String> {
         Err(e) => warn!("AppsFolder scan failed: {}", e),
     }
 
+    // Filter junk apps from ALL sources (SDK samples, documentation, dev tools)
+    let before_filter = apps.len();
+    apps.retain(|app| !crate::utils::shell_apps::is_junk_app(&app.name));
+    let filtered = before_filter - apps.len();
+    if filtered > 0 {
+        info!("Filtered {} junk apps (SDK, docs, tools)", filtered);
+    }
+
     // Remove duplicates based on path
     apps.sort_by(|a, b| a.path.cmp(&b.path));
     apps.dedup_by(|a, b| a.path == b.path);
@@ -632,8 +667,8 @@ async fn scan_applications_windows() -> Result<Vec<AppInfo>, String> {
 /// Scan Windows registry Uninstall keys for installed applications
 #[cfg(target_os = "windows")]
 fn scan_registry_apps() -> Result<Vec<AppInfo>, String> {
-    use winreg::enums::*;
     use winreg::RegKey;
+    use winreg::enums::*;
 
     let mut apps = Vec::new();
     let hklm = RegKey::predef(HKEY_LOCAL_MACHINE);
@@ -683,8 +718,15 @@ fn scan_registry_apps() -> Result<Vec<AppInfo>, String> {
                 }
             } else if !display_icon.is_empty() {
                 // DisplayIcon often points to the executable
-                let icon_path = display_icon.split(',').next().unwrap_or("").trim().to_string();
-                if icon_path.to_lowercase().ends_with(".exe") && std::path::Path::new(&icon_path).exists() {
+                let icon_path = display_icon
+                    .split(',')
+                    .next()
+                    .unwrap_or("")
+                    .trim()
+                    .to_string();
+                if icon_path.to_lowercase().ends_with(".exe")
+                    && std::path::Path::new(&icon_path).exists()
+                {
                     icon_path
                 } else {
                     continue;
@@ -705,7 +747,11 @@ fn scan_registry_apps() -> Result<Vec<AppInfo>, String> {
                 name: display_name,
                 path,
                 icon: None,
-                description: if publisher.is_empty() { None } else { Some(publisher) },
+                description: if publisher.is_empty() {
+                    None
+                } else {
+                    Some(publisher)
+                },
                 keywords: None,
                 last_used: None,
                 usage_count: 0,
@@ -740,27 +786,27 @@ async fn scan_applications_macos() -> Result<Vec<AppInfo>, String> {
                 let path = entry.path();
 
                 // macOS apps are .app bundles (directories)
-                if path.extension().map(|e| e == "app").unwrap_or(false) {
-                    if let Some(app_name) = path.file_stem() {
-                        let name = app_name.to_string_lossy().to_string();
-                        let path_str = path.to_string_lossy().to_string();
+                if path.extension().map(|e| e == "app").unwrap_or(false)
+                    && let Some(app_name) = path.file_stem()
+                {
+                    let name = app_name.to_string_lossy().to_string();
+                    let path_str = path.to_string_lossy().to_string();
 
-                        // Try to get app icon from Info.plist
-                        let icon = extract_macos_app_icon(&path);
+                    // Try to get app icon from Info.plist
+                    let icon = extract_macos_app_icon(&path);
 
-                        let category = detect_app_category(&name, &path_str);
-                        apps.push(AppInfo {
-                            id: crate::utils::hash_id(&path_str),
-                            name,
-                            path: path_str,
-                            icon,
-                            description: None,
-                            keywords: None,
-                            last_used: None,
-                            usage_count: 0,
-                            category: Some(category),
-                        });
-                    }
+                    let category = detect_app_category(&name, &path_str);
+                    apps.push(AppInfo {
+                        id: crate::utils::hash_id(&path_str),
+                        name,
+                        path: path_str,
+                        icon,
+                        description: None,
+                        keywords: None,
+                        last_used: None,
+                        usage_count: 0,
+                        category: Some(category),
+                    });
                 }
             }
         }
@@ -776,11 +822,92 @@ async fn scan_applications_macos() -> Result<Vec<AppInfo>, String> {
 }
 
 #[cfg(target_os = "macos")]
-fn extract_macos_app_icon(_app_path: &std::path::Path) -> Option<String> {
-    // macOS icon extraction requires parsing Info.plist and reading .icns files.
-    // This is non-trivial and needs the `icns` crate or native `NSWorkspace` APIs.
-    // TODO: Implement using icns crate for proper icon extraction.
-    None
+fn extract_macos_app_icon(app_path: &std::path::Path) -> Option<String> {
+    use plist::Value;
+
+    // Try to find and parse Info.plist
+    let info_plist_path = app_path.join("Contents").join("Info.plist");
+
+    if !info_plist_path.exists() {
+        return None;
+    }
+
+    let plist_data = match std::fs::read(&info_plist_path) {
+        Ok(data) => data,
+        Err(_) => return None,
+    };
+
+    let plist_value: Value = match plist::from_reader(std::io::Cursor::new(plist_data)) {
+        Ok(v) => v,
+        Err(_) => return None,
+    };
+
+    // Extract CFBundleIconFile from plist
+    let icon_file_name = plist_value
+        .as_dictionary()?
+        .get("CFBundleIconFile")
+        .and_then(|v| v.as_string())?;
+
+    // Try without extension first (macOS adds .icns automatically)
+    let icon_filename_with_ext = if icon_file_name.ends_with(".icns") {
+        icon_file_name.to_string()
+    } else {
+        format!("{}.icns", icon_file_name)
+    };
+
+    let icon_path = app_path
+        .join("Contents")
+        .join("Resources")
+        .join(&icon_filename_with_ext);
+
+    if !icon_path.exists() {
+        return None;
+    }
+
+    // Read and convert .icns to PNG
+    match convert_icns_to_base64_png(&icon_path) {
+        Ok(base64_data) => Some(format!("data:image/png;base64,{}", base64_data)),
+        Err(_) => None,
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn convert_icns_to_base64_png(icns_path: &std::path::Path) -> Result<String, String> {
+    use icns::{IconFamily, IconType, PixelFormat};
+    use std::io::Cursor;
+
+    let icns_data = std::fs::read(icns_path).map_err(|e| e.to_string())?;
+
+    let icon_family = IconFamily::read(Cursor::new(icns_data)).map_err(|e| e.to_string())?;
+
+    // Extract the best available icon (512x512 preferred, then 256x256, then 128x128)
+    let image_data = icon_family
+        .get_icon_with_type(IconType::RGBA32_512x512)
+        .or_else(|_| icon_family.get_icon_with_type(IconType::RGBA32_256x256))
+        .or_else(|_| icon_family.get_icon_with_type(IconType::RGBA32_128x128))
+        .map_err(|_| "Could not extract icon from icns file".to_string())?;
+
+    let width = image_data.width();
+    let height = image_data.height();
+    let rgba_image = image_data.convert_to(PixelFormat::RGBA);
+    let rgba_data = rgba_image.data();
+
+    // Convert to PNG
+    let mut png_buffer = Vec::new();
+    {
+        let mut encoder = png::Encoder::new(&mut png_buffer, width, height);
+        encoder.set_color(png::ColorType::Rgba);
+        let mut writer = encoder
+            .write_header()
+            .map_err(|e| format!("PNG encoding error: {}", e))?;
+        writer
+            .write_image_data(rgba_data)
+            .map_err(|e| format!("PNG write error: {}", e))?;
+    }
+
+    // Convert to base64
+    use base64::{Engine as _, engine::general_purpose};
+    Ok(general_purpose::STANDARD.encode(&png_buffer))
 }
 
 // ============================================================================
@@ -808,10 +935,10 @@ async fn scan_applications_linux() -> Result<Vec<AppInfo>, String> {
                 let path = entry.path();
 
                 // Parse .desktop files
-                if path.extension().map(|e| e == "desktop").unwrap_or(false) {
-                    if let Some(app_info) = parse_desktop_file(&path) {
-                        apps.push(app_info);
-                    }
+                if path.extension().map(|e| e == "desktop").unwrap_or(false)
+                    && let Some(app_info) = parse_desktop_file(&path)
+                {
+                    apps.push(app_info);
                 }
             }
         }
@@ -825,29 +952,28 @@ async fn scan_applications_linux() -> Result<Vec<AppInfo>, String> {
         if let Ok(entries) = std::fs::read_dir(bin_path) {
             for entry in entries.flatten() {
                 let path = entry.path();
-                if let Ok(metadata) = entry.metadata() {
-                    // Check if it's an executable file
-                    if metadata.is_file() && is_executable(&path) {
-                        if let Some(name) = path.file_name() {
-                            let name_str = name.to_string_lossy().to_string();
-                            let path_str = path.to_string_lossy().to_string();
+                if let Ok(metadata) = entry.metadata()
+                    && metadata.is_file()
+                    && is_executable(&path)
+                    && let Some(name) = path.file_name()
+                {
+                    let name_str = name.to_string_lossy().to_string();
+                    let path_str = path.to_string_lossy().to_string();
 
-                            // Skip if already found via .desktop file
-                            if !apps.iter().any(|a| a.path == path_str) {
-                                let category = detect_app_category(&name_str, &path_str);
-                                apps.push(AppInfo {
-                                    id: crate::utils::hash_id(&path_str),
-                                    name: name_str,
-                                    path: path_str,
-                                    icon: None,
-                                    description: None,
-                                    keywords: None,
-                                    last_used: None,
-                                    usage_count: 0,
-                                    category: Some(category),
-                                });
-                            }
-                        }
+                    // Skip if already found via .desktop file
+                    if !apps.iter().any(|a| a.path == path_str) {
+                        let category = detect_app_category(&name_str, &path_str);
+                        apps.push(AppInfo {
+                            id: crate::utils::hash_id(&path_str),
+                            name: name_str,
+                            path: path_str,
+                            icon: None,
+                            description: None,
+                            keywords: None,
+                            last_used: None,
+                            usage_count: 0,
+                            category: Some(category),
+                        });
                     }
                 }
             }
@@ -974,9 +1100,15 @@ pub async fn search_applications_frecency(
     query: String,
     apps: Vec<AppInfo>,
     history_state: tauri::State<'_, crate::commands::launcher::LaunchHistoryState>,
+    binding_state: tauri::State<'_, crate::commands::launcher::QueryBindingState>,
 ) -> VoltResult<Vec<AppInfoWithScore>> {
     let history = history_state.history.get_all();
-    let results = crate::search::search_applications_with_frecency(&query, apps, &history);
+    let bindings = binding_state
+        .store
+        .lock()
+        .map_err(|e| crate::core::error::VoltError::Unknown(e.to_string()))?;
+    let results =
+        crate::search::search_applications_with_frecency(&query, apps, &history, Some(&bindings));
     Ok(results
         .into_iter()
         .map(|(app, score)| AppInfoWithScore { app, score })
@@ -1032,6 +1164,7 @@ pub async fn launch_application(path: String) -> VoltResult<()> {
 // ============================================================================
 
 /// Recursively scans a directory for applications up to a given depth
+#[allow(dead_code)]
 fn scan_directory_recursive(
     dir_path: &str,
     current_depth: usize,
@@ -1138,10 +1271,7 @@ fn resolve_lnk_shortcut(lnk_path: &std::path::Path) -> Option<(String, Option<St
                         .icon_location()
                         .as_ref()
                         .map(|s| s.to_string());
-                    return Some((
-                        resolved.to_string_lossy().to_string(),
-                        icon_location,
-                    ));
+                    return Some((resolved.to_string_lossy().to_string(), icon_location));
                 }
             }
 
@@ -1154,6 +1284,7 @@ fn resolve_lnk_shortcut(lnk_path: &std::path::Path) -> Option<(String, Option<St
     }
 }
 
+#[allow(dead_code)]
 fn scan_shortcuts(dir_path: &str) -> Result<Vec<AppInfo>, String> {
     let mut apps = Vec::new();
 

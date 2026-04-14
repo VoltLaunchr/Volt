@@ -18,7 +18,7 @@ pub fn enumerate_apps_folder() -> Result<Vec<AppInfo>, String> {
             "-NonInteractive",
             "-Command",
             r#"
-Get-AppxPackage -PackageTypeFilter Main | Where-Object { $_.IsFramework -eq $false -and $_.SignatureKind -eq 'Store' } | ForEach-Object {
+Get-AppxPackage -PackageTypeFilter Main | Where-Object { $_.IsFramework -eq $false -and ($_.SignatureKind -eq 'Store' -or $_.SignatureKind -eq 'Developer') } | ForEach-Object {
     $pkg = $_
     try {
         $apps = (Get-AppxPackageManifest $pkg).Package.Applications.Application
@@ -125,32 +125,35 @@ fn is_system_app(name: &str) -> bool {
         "Microsoft.Advertising",
         "Microsoft.WinAppRuntime",
         "Microsoft.WindowsAppSDK",
+        "Microsoft.Office.ActionsServer",
+        "Microsoft.OfficePushNotification",
+        "MicrosoftCorporationII.WinML",
     ];
     system_prefixes.iter().any(|p| name.starts_with(p))
 }
 
-/// Filter out junk app names (SDK samples, documentation, dev tools)
+/// Filter out obvious junk app names (SDK samples, documentation, internal tools)
+/// Keep it minimal — only filter things that are CLEARLY not user-facing apps.
 pub fn is_junk_app(name: &str) -> bool {
     let lower = name.to_lowercase();
+
     let junk_patterns = [
+        // SDK / dev samples
         "sample uwp",
         "sample desktop",
+        "sample app",
         "tools for uwp",
         "tools for desktop",
         "documentation for",
-        "sdk ",
-        "debug ",
-        "developer ",
+        // Installers / uninstallers
         "uninstall",
-        "setup",
-        "installer",
-        "updater",
-        "update helper",
-        "crash report",
-        "error report",
-        "compatibility",
-        "redistributable",
-        "runtime",
+        "désinstall",
+        // System internals (very specific)
+        "appvdllsurrogate",
+        "gameinputrawinputproxy",
+        "store purchase app",
+        "aimgr",
+        "aitoolkit.inference",
     ];
     junk_patterns.iter().any(|p| lower.contains(p))
 }

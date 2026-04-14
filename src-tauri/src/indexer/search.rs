@@ -4,6 +4,7 @@ use super::types::FileInfo;
 ///
 /// Note: For advanced fuzzy matching with better results, use the search_engine module.
 /// This function is kept for backwards compatibility.
+#[allow(dead_code)]
 pub fn search_files(query: &str, files: &[FileInfo]) -> Vec<FileInfo> {
     // Delegate to the advanced search engine
     super::search_engine::search_files_advanced(query, files, None)

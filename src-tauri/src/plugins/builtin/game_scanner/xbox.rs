@@ -4,6 +4,7 @@
 
 use super::types::{GameInfo, GamePlatform, GameScanner};
 use std::path::PathBuf;
+#[allow(unused_imports)]
 use tracing::{debug, warn};
 
 /// Xbox/Microsoft Store scanner
@@ -20,14 +21,59 @@ impl XboxScanner {
     /// `Microsoft.254428597CFE2_1.0.50.0_x64__8wekyb3d8bbwe`. The first
     /// underscore-separated segment is `Publisher.GameIdentifier`; we strip
     /// the publisher prefix where present. Exposed for unit testing.
+    #[allow(dead_code)]
     pub(crate) fn clean_package_name(package_name: &str) -> String {
         let head = package_name.split('_').next().unwrap_or(package_name);
         head.split('.').next_back().unwrap_or(head).to_string()
     }
 
     /// Format a stable game id from a package name (lowercased, dots → _).
+    #[allow(dead_code)]
     pub(crate) fn format_package_id(package_name: &str) -> String {
         format!("xbox_{}", package_name.replace('.', "_").to_lowercase())
+    }
+
+    /// Get PackageFamilyName from Get-AppxPackage PowerShell
+    #[cfg(target_os = "windows")]
+    fn get_package_family_names() -> Result<std::collections::HashMap<String, String>, String> {
+        use std::collections::HashMap;
+        use std::process::Command;
+
+        let output = Command::new("powershell")
+            .args([
+                "-NoProfile",
+                "-Command",
+                "Get-AppxPackage -PackageTypeFilter Bundle | Select-Object -ExpandProperty Name,PackageFamilyName | ConvertTo-Csv -NoTypeInformation",
+            ])
+            .output()
+            .map_err(|e| format!("PowerShell execution failed: {}", e))?;
+
+        let mut pfn_map = HashMap::new();
+
+        if !output.status.success() {
+            debug!("PowerShell Get-AppxPackage failed, skipping PackageFamilyName resolution");
+            return Ok(pfn_map);
+        }
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let mut lines = stdout.lines();
+        lines.next(); // Skip header
+
+        for line in lines {
+            let parts: Vec<&str> = line.split(',').map(|s| s.trim_matches('"')).collect();
+            if parts.len() >= 2 {
+                let name = parts[0].to_string();
+                let pfn = parts[1].to_string();
+                pfn_map.insert(name, pfn);
+            }
+        }
+
+        Ok(pfn_map)
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    fn get_package_family_names() -> Result<std::collections::HashMap<String, String>, String> {
+        Ok(std::collections::HashMap::new())
     }
 
     /// Scan XboxGames directory
@@ -39,6 +85,9 @@ impl XboxScanner {
             debug!("C:\\XboxGames does not exist, skipping directory scan");
             return Ok(games);
         }
+
+        // Try to get PackageFamilyNames for launch URI resolution
+        let pfn_map = Self::get_package_family_names().unwrap_or_default();
 
         let entries = match std::fs::read_dir(&xbox_dir) {
             Ok(e) => e,
@@ -70,15 +119,19 @@ impl XboxScanner {
 
             let mut game = GameInfo::new(game_id, name.clone(), GamePlatform::Xbox, path.clone());
 
-            // TODO(M2.2): The `shell:AppsFolder\<PFN>!<AppId>` launch URI
-            // requires the PackageFamilyName, not the XboxGames folder name.
-            // We can resolve it by invoking PowerShell's `Get-AppxPackage`
-            // or reading `MicrosoftGame.config` + registry package lookup.
-            // For now, games found only via the directory scan have no
-            // launch_uri; the registry scan below is the canonical source.
-            game.is_installed = true;
-            debug!(game = %name, "Xbox game directory found (no launch URI)");
+            // Resolve PackageFamilyName for launch URI. If found, construct the proper
+            // shell:AppsFolder URI; otherwise, try to match by installed package name patterns
+            if let Some(pfn) = pfn_map
+                .values()
+                .find(|pfn| pfn.to_lowercase().contains(&name.to_lowercase()))
+            {
+                game.launch_uri = Some(format!("shell:AppsFolder\\{}!App", pfn));
+                debug!(game = %name, pfn = %pfn, "Xbox game directory found with launch URI");
+            } else {
+                debug!(game = %name, "Xbox game directory found (awaiting PackageFamilyName resolution)");
+            }
 
+            game.is_installed = true;
             games.push(game);
         }
 
@@ -239,12 +292,12 @@ impl GameScanner for XboxScanner {
         let games = self.scan_games()?;
 
         if let Some(game) = games.iter().find(|g| g.id == game_id)
-            && let Some(uri) = &game.launch_uri
+            && let Some(_uri) = &game.launch_uri
         {
             #[cfg(target_os = "windows")]
             {
                 std::process::Command::new("cmd")
-                    .args(["/C", "start", "", uri])
+                    .args(["/C", "start", "", _uri])
                     .spawn()
                     .map_err(|e| format!("Failed to launch Xbox game: {}", e))?;
                 return Ok(());

@@ -1,0 +1,190 @@
+import React, { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
+import './AccessibilityTab.css'; // NEW FILE
+
+interface AccessibilitySettings {
+  screenReaderMode: boolean;
+  highContrastMode: boolean;
+  focusIndicators: boolean;
+  reduceMotion: boolean;
+  textScale: number; // 1.0 = 100%, 1.2 = 120%, etc.
+  showKeyboardGuide: boolean;
+}
+
+interface AccessibilityTabProps {
+  initialSettings?: AccessibilitySettings;
+  onSave?: (settings: AccessibilitySettings) => Promise<void>;
+}
+
+const DEFAULT_SETTINGS: AccessibilitySettings = {
+  screenReaderMode: false,
+  highContrastMode: false,
+  focusIndicators: true,
+  reduceMotion: false,
+  textScale: 1.0,
+  showKeyboardGuide: false,
+};
+
+export const AccessibilityTab: React.FC<AccessibilityTabProps> = ({
+  initialSettings = DEFAULT_SETTINGS,
+  onSave,
+}) => {
+  const { t } = useTranslation('settings');
+  const [settings, setSettings] = useState<AccessibilitySettings>(initialSettings);
+  const [isDirty, setIsDirty] = useState(false);
+
+  // Handle setting changes
+  const handleToggle = (key: keyof AccessibilitySettings) => {
+    setSettings((prev) => ({
+      ...prev,
+      [key]: !prev[key],
+    }));
+    setIsDirty(true);
+  };
+
+  const handleTextScaleChange = (scale: number) => {
+    setSettings((prev) => ({
+      ...prev,
+      textScale: scale,
+    }));
+    setIsDirty(true);
+  };
+
+  const handleSave = async () => {
+    if (onSave) {
+      try {
+        await onSave(settings);
+        setIsDirty(false);
+      } catch (error) {
+        console.error('Failed to save accessibility settings:', error);
+      }
+    }
+  };
+
+  const handleReset = () => {
+    setSettings(DEFAULT_SETTINGS);
+    setIsDirty(true);
+  };
+
+  return (
+    <div className="accessibility-tab">
+      <div className="accessibility-section">
+        <h3>🔊 Screen Reader Mode</h3>
+        <label className="accessibility-toggle">
+          <input
+            type="checkbox"
+            checked={settings.screenReaderMode}
+            onChange={() => handleToggle('screenReaderMode')}
+          />
+          <span>Enable screen reader optimization</span>
+        </label>
+        <p className="help-text">
+          ℹ️ Enables detailed announcements for users with visual impairments using NVDA, JAWS, or VoiceOver
+        </p>
+      </div>
+
+      <div className="accessibility-section">
+        <h3>🎨 High Contrast Mode</h3>
+        <label className="accessibility-toggle">
+          <input
+            type="checkbox"
+            checked={settings.highContrastMode}
+            onChange={() => handleToggle('highContrastMode')}
+          />
+          <span>Use high contrast colors</span>
+        </label>
+        <p className="help-text">
+          ℹ️ Increases text/background contrast for users with low vision (light: black on white, dark: white on black)
+        </p>
+      </div>
+
+      <div className="accessibility-section">
+        <h3>✨ Focus Indicators</h3>
+        <label className="accessibility-toggle">
+          <input
+            type="checkbox"
+            checked={settings.focusIndicators}
+            onChange={() => handleToggle('focusIndicators')}
+          />
+          <span>Always show focus outline</span>
+        </label>
+        <p className="help-text">
+          ℹ️ Shows a visible outline on keyboard focus (helpful for keyboard-only navigation)
+        </p>
+      </div>
+
+      <div className="accessibility-section">
+        <h3>⏹️ Reduce Motion</h3>
+        <label className="accessibility-toggle">
+          <input
+            type="checkbox"
+            checked={settings.reduceMotion}
+            onChange={() => handleToggle('reduceMotion')}
+          />
+          <span>Reduce animations and transitions</span>
+        </label>
+        <p className="help-text">
+          ℹ️ Disables smooth scrolling and fade animations (helpful for users with vestibular disorders)
+        </p>
+      </div>
+
+      <div className="accessibility-section">
+        <h3>🔤 Text Scaling</h3>
+        <div className="text-scale-selector">
+          {[100, 110, 120, 130, 150].map((percent) => (
+            <button
+              key={percent}
+              className={`scale-button ${settings.textScale === percent / 100 ? 'active' : ''}`}
+              onClick={() => handleTextScaleChange(percent / 100)}
+            >
+              {percent}%
+            </button>
+          ))}
+        </div>
+        <p className="preview-text" style={{ fontSize: `${settings.textScale * 100}%` }}>
+          Preview: This text is scaled to {Math.round(settings.textScale * 100)}%
+        </p>
+        <p className="help-text">
+          ℹ️ Increases font size across the entire application
+        </p>
+      </div>
+
+      <div className="accessibility-section">
+        <h3>⌨️ Keyboard Shortcuts Guide</h3>
+        <label className="accessibility-toggle">
+          <input
+            type="checkbox"
+            checked={settings.showKeyboardGuide}
+            onChange={() => handleToggle('showKeyboardGuide')}
+          />
+          <span>Show persistent keyboard shortcuts guide</span>
+        </label>
+        <p className="help-text">
+          ℹ️ Displays a persistent overlay with all available keyboard shortcuts
+        </p>
+      </div>
+
+      <div className="accessibility-actions">
+        <button
+          className="btn btn-secondary"
+          onClick={handleReset}
+        >
+          Reset to Defaults
+        </button>
+        <button
+          className="btn btn-primary"
+          onClick={handleSave}
+          disabled={!isDirty}
+        >
+          Save
+        </button>
+      </div>
+
+      {isDirty && (
+        <p className="unsaved-warning">
+          ⚠️ You have unsaved changes
+        </p>
+      )}
+    </div>
+  );
+};

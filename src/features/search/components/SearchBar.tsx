@@ -10,6 +10,7 @@ interface SearchBarProps {
   placeholder?: string;
   autoFocus?: boolean;
   resultCount?: number;
+  selectedIndex?: number;
 }
 
 export const SearchBar: React.FC<SearchBarProps> = ({
@@ -19,6 +20,7 @@ export const SearchBar: React.FC<SearchBarProps> = ({
   placeholder = 'Type to search...',
   autoFocus = true,
   resultCount,
+  selectedIndex,
 }) => {
   const { t } = useTranslation('common');
   const inputRef = useRef<HTMLInputElement>(null);
@@ -57,6 +59,11 @@ export const SearchBar: React.FC<SearchBarProps> = ({
         aria-label={t('search.label')}
         aria-autocomplete="list"
         aria-controls="results-listbox"
+        aria-activedescendant={
+          selectedIndex !== undefined && selectedIndex >= 0
+            ? `result-item-${selectedIndex}`
+            : undefined
+        }
       />
       {value && (
         <button className="clear-button" onClick={() => onChange('')} aria-label={t('search.clearSearch')}>

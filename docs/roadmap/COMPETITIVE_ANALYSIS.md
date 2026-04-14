@@ -6,7 +6,7 @@
 
 ## Comparatif des fonctionnalites
 
-| Fonctionnalite | Volt (v0.0.4) | Alfred (macOS) | Raycast (macOS) | PowerToys Run (Windows) | Ulauncher (Linux) |
+| Fonctionnalite | Volt (v0.0.5) | Alfred (macOS) | Raycast (macOS) | PowerToys Run (Windows) | Ulauncher (Linux) |
 |----------------|:---:|:---:|:---:|:---:|:---:|
 | **Cross-platform** | ✅ Win/Mac/Linux | ❌ macOS only | ❌ macOS only | ❌ Windows only | ❌ Linux only |
 | **Open source** | ✅ MIT | ❌ Proprietary | ❌ Proprietary | ✅ MIT | ✅ GPL |

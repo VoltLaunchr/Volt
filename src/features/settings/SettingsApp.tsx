@@ -24,6 +24,8 @@ import {
   ChevronRight,
   Copy,
   Check,
+  Download,
+  Upload,
 } from 'lucide-react';
 import { Button, HotkeyCapture, Spinner, Toggle } from '../../shared/components/ui';
 import { logger } from '../../shared/utils/logger';
@@ -33,10 +35,13 @@ import {
   Settings,
   Theme,
   WindowPosition,
+  ShowOnScreen,
   AppShortcut,
 } from './types/settings.types';
 import { SETTINGS_CATEGORIES, type SettingsCategory } from './constants/settingsCategories';
 import { ExtensionsStore } from '../extensions';
+import { IntegrationsPanel } from './components/IntegrationsPanel';
+import { AccountSection } from '../auth';
 import logo from '../../assets/icons/logo.svg';
 import './SettingsApp.css';
 
@@ -59,7 +64,11 @@ export function SettingsApp() {
   const [diagnosticsCopied, setDiagnosticsCopied] = useState(false);
   const [isScanningApps, setIsScanningApps] = useState(false);
   const [scanResult, setScanResult] = useState<{ count: number; error: string | null } | null>(null);
-  const appVersion = '0.0.2';
+  const [exportImportStatus, setExportImportStatus] = useState<{
+    type: 'success' | 'error';
+    message: string;
+  } | null>(null);
+  const appVersion = '0.0.5';
 
   // Indexing stats for the File Search panel
   const [indexStats, setIndexStats] = useState<{
@@ -92,10 +101,25 @@ export function SettingsApp() {
     }
   }, [activeCategory, fetchIndexStats]);
 
+  const loadSettings = useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const loadedSettings = await settingsService.loadSettings();
+      setSettings(loadedSettings);
+      setHasChanges(false);
+    } catch (err) {
+      setError(t('errors.loadFailed'));
+      logger.error('Failed to load settings:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [t]);
+
   // Load settings on mount
   useEffect(() => {
     loadSettings();
-  }, []);
+  }, [loadSettings]);
 
   // Apply theme on mount
   useEffect(() => {
@@ -115,21 +139,21 @@ export function SettingsApp() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  // Load app shortcuts when switching to shortcuts category
-  useEffect(() => {
-    if (activeCategory === 'shortcuts') {
-      loadAppShortcuts();
-    }
-  }, [activeCategory]);
-
-  const loadAppShortcuts = async () => {
+  const loadAppShortcuts = useCallback(async () => {
     try {
       const shortcuts = await invoke<AppShortcut[]>('get_app_shortcuts');
       setAppShortcuts(shortcuts);
     } catch (err) {
       logger.error('Failed to load app shortcuts:', err);
     }
-  };
+  }, []);
+
+  // Load app shortcuts when switching to shortcuts category
+  useEffect(() => {
+    if (activeCategory === 'shortcuts') {
+      loadAppShortcuts();
+    }
+  }, [activeCategory, loadAppShortcuts]);
 
   const syncAppShortcuts = async () => {
     try {
@@ -159,21 +183,6 @@ export function SettingsApp() {
       newExpanded.add(category);
     }
     setExpandedCategories(newExpanded);
-  };
-
-  const loadSettings = async () => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      const loadedSettings = await settingsService.loadSettings();
-      setSettings(loadedSettings);
-      setHasChanges(false);
-    } catch (err) {
-      setError(t('errors.loadFailed'));
-      logger.error('Failed to load settings:', err);
-    } finally {
-      setIsLoading(false);
-    }
   };
 
   const handleSave = async () => {
@@ -399,6 +408,39 @@ export function SettingsApp() {
             checked={settings.general.closeOnLaunch}
             onChange={(checked) => updateSettings('general', 'closeOnLaunch', checked)}
           />
+        </div>
+
+        <div className="settings-row">
+          <div className="settings-row-info">
+            <span className="settings-row-label">{t('general.featurePreview')}</span>
+            <span className="settings-row-desc">{t('general.featurePreviewDesc')}</span>
+          </div>
+          <Toggle
+            checked={settings.general.featurePreview}
+            onChange={(checked) => updateSettings('general', 'featurePreview', checked)}
+          />
+        </div>
+
+        <div className="settings-row">
+          <div className="settings-row-info">
+            <span className="settings-row-label">{t('general.searchSensitivity')}</span>
+            <span className="settings-row-desc">{t('general.searchSensitivityDesc')}</span>
+          </div>
+          <select
+            className="settings-select"
+            value={settings.general.searchSensitivity ?? 'medium'}
+            onChange={(e) =>
+              updateSettings(
+                'general',
+                'searchSensitivity',
+                e.target.value as 'low' | 'medium' | 'high'
+              )
+            }
+          >
+            <option value="low">{t('general.sensitivityLow')}</option>
+            <option value="medium">{t('general.sensitivityMedium')}</option>
+            <option value="high">{t('general.sensitivityHigh')}</option>
+          </select>
         </div>
 
         <div className="settings-row">
@@ -672,6 +714,30 @@ export function SettingsApp() {
 
         <div className="settings-row">
           <div className="settings-row-info">
+            <span className="settings-row-label">{t('advanced.showOnScreen')}</span>
+            <span className="settings-row-desc">{t('advanced.showOnScreenDesc')}</span>
+          </div>
+          <select
+            className="settings-dropdown"
+            value={settings.general.showOnScreen ?? 'cursor'}
+            onChange={async (e) => {
+              const value = e.target.value as ShowOnScreen;
+              updateSettings('general', 'showOnScreen', value);
+              try {
+                await invoke('update_show_on_screen', { value });
+              } catch (err) {
+                logger.error('Failed to update show_on_screen state:', err);
+              }
+            }}
+          >
+            <option value="cursor">{t('advanced.screenOptions.cursor')}</option>
+            <option value="focusedWindow">{t('advanced.screenOptions.focusedWindow')}</option>
+            <option value="primaryScreen">{t('advanced.screenOptions.primaryScreen')}</option>
+          </select>
+        </div>
+
+        <div className="settings-row">
+          <div className="settings-row-info">
             <span className="settings-row-label">{t('advanced.maxResults')}</span>
             <span className="settings-row-desc">{t('advanced.maxResultsDesc')}</span>
           </div>
@@ -897,6 +963,83 @@ export function SettingsApp() {
             <span>{diagnosticsCopied ? t('about.copied') : t('about.copyDiagnostics')}</span>
           </button>
         </div>
+
+        <div className="settings-section-divider" />
+
+        <div className="about-links">
+          <button
+            onClick={async () => {
+              try {
+                const { save } = await import('@tauri-apps/plugin-dialog');
+                const path = await save({
+                  filters: [{ name: 'JSON', extensions: ['json'] }],
+                  defaultPath: 'volt-settings.json',
+                });
+                if (!path) return;
+                await settingsService.exportSettings(path);
+                setExportImportStatus({
+                  type: 'success',
+                  message: t('about.exportSuccess'),
+                });
+                setTimeout(() => setExportImportStatus(null), 3000);
+              } catch (error) {
+                logger.error('Failed to export settings:', error);
+                setExportImportStatus({
+                  type: 'error',
+                  message: t('about.exportError'),
+                });
+                setTimeout(() => setExportImportStatus(null), 3000);
+              }
+            }}
+            className="about-link"
+          >
+            <Download size={20} className="about-link-icon" />
+            <span>{t('about.exportSettings')}</span>
+          </button>
+          <button
+            onClick={async () => {
+              try {
+                const { open } = await import('@tauri-apps/plugin-dialog');
+                const path = await open({
+                  filters: [{ name: 'JSON', extensions: ['json'] }],
+                  multiple: false,
+                });
+                if (!path) return;
+                const imported = await settingsService.importSettings(path as string);
+                setSettings(imported);
+                setExportImportStatus({
+                  type: 'success',
+                  message: t('about.importSuccess'),
+                });
+                setTimeout(() => setExportImportStatus(null), 3000);
+              } catch (error) {
+                logger.error('Failed to import settings:', error);
+                setExportImportStatus({
+                  type: 'error',
+                  message: t('about.importError'),
+                });
+                setTimeout(() => setExportImportStatus(null), 3000);
+              }
+            }}
+            className="about-link"
+          >
+            <Upload size={20} className="about-link-icon" />
+            <span>{t('about.importSettings')}</span>
+          </button>
+        </div>
+
+        {exportImportStatus && (
+          <div
+            className={`settings-status-message ${exportImportStatus.type === 'success' ? 'status-success' : 'status-error'}`}
+          >
+            {exportImportStatus.type === 'success' ? (
+              <Check size={16} />
+            ) : (
+              <AlertCircle size={16} />
+            )}
+            <span>{exportImportStatus.message}</span>
+          </div>
+        )}
 
         <div className="settings-section-divider" />
 
@@ -1278,6 +1421,19 @@ export function SettingsApp() {
         return renderShortcutsSection();
       case 'extensions':
         return <ExtensionsStore />;
+      case 'account':
+        return (
+          <div className="settings-panel">
+            <div className="settings-panel-header">
+              <h2 className="settings-panel-title">{t('account.title', 'Account')}</h2>
+            </div>
+            <div className="settings-panel-content">
+              <AccountSection />
+            </div>
+          </div>
+        );
+      case 'integrations':
+        return <IntegrationsPanel />;
       case 'advanced':
         return renderAdvancedSection();
       case 'about':

@@ -29,3 +29,78 @@
   white-space: nowrap;
   border-width: 0;
 }
+
+/* ============================================================================
+   ACCESSIBILITY SETTINGS (v1.0.1+)
+   User-controlled features via Settings > Accessibility
+   ============================================================================ */
+
+/* TEXT SCALING: 100% - 150% */
+:root {
+  --text-scale: 1; /* Set by App.tsx from settings */
+  font-size: calc(16px * var(--text-scale));
+}
+
+input,
+button,
+textarea,
+select {
+  font-size: inherit;
+  font-family: inherit;
+}
+
+/* HIGH CONTRAST MODE: Black/white, no transparency */
+html[data-high-contrast="true"] {
+  --color-text: #000000;
+  --color-bg: #ffffff;
+  --color-border: #000000;
+  color: var(--color-text);
+  background-color: var(--color-bg);
+}
+
+html[data-high-contrast="true"][data-theme="dark"] {
+  --color-text: #ffffff;
+  --color-bg: #000000;
+  --color-border: #ffffff;
+}
+
+/* Remove glassmorphism in high contrast */
+html[data-high-contrast="true"] .modal,
+html[data-high-contrast="true"] .search-bar,
+html[data-high-contrast="true"] .results-list {
+  background-color: var(--color-bg) !important;
+  backdrop-filter: none !important;
+  border: 2px solid var(--color-border);
+}
+
+/* FOCUS INDICATORS: Always visible outline */
+html[data-focus-indicators="true"] *:focus-visible {
+  outline: 4px solid #ffaa00;
+  outline-offset: 2px;
+}
+
+html[data-focus-indicators="true"][data-high-contrast="true"] *:focus-visible {
+  outline: 4px solid #0000ff;
+}
+
+html[data-focus-indicators="true"][data-high-contrast="true"][data-theme="dark"] *:focus-visible {
+  outline: 4px solid #ffff00;
+}
+
+/* REDUCE MOTION: Disable animations */
+html[data-reduce-motion="true"] * {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+}
+
+html[data-reduce-motion="true"] {
+  scroll-behavior: auto !important;
+}
+
+/* SCREEN READER MODE: Enhanced announcements visibility */
+html[data-screen-reader="true"] [role="status"],
+html[data-screen-reader="true"] [aria-live] {
+  font-size: 0.875rem;
+  line-height: 1.5;
+}

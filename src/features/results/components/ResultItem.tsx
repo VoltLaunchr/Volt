@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
+  AppWindow,
   Calculator,
   Clock,
   File,
@@ -12,6 +13,8 @@ import {
   HardDrive,
 } from 'lucide-react';
 import { SearchResult, SearchResultType } from '../../../shared/types/common.types';
+import { highlightMatch, HighlightSegment } from '../../../shared/utils/highlightMatch';
+import { useSearchStore } from '../../../stores/searchStore';
 import './ResultItem.css';
 
 // System Monitor data interface
@@ -43,13 +46,40 @@ interface ResultItemProps {
   onLaunch: () => void;
 }
 
+/** Render a title string with highlighted matching characters */
+function HighlightedText({
+  segments,
+}: {
+  segments: HighlightSegment[];
+}) {
+  return (
+    <>
+      {segments.map((seg, i) =>
+        seg.highlighted ? (
+          <span key={i} className="result-highlight">
+            {seg.text}
+          </span>
+        ) : (
+          <span key={i}>{seg.text}</span>
+        ),
+      )}
+    </>
+  );
+}
+
 export const ResultItem: React.FC<ResultItemProps> = ({
   result,
   isSelected,
-  index: _index,
   onSelect,
   onLaunch,
 }) => {
+  const searchQuery = useSearchStore((s) => s.searchQuery);
+
+  const titleSegments = useMemo(
+    () => highlightMatch(result.title, searchQuery),
+    [result.title, searchQuery],
+  );
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') {
       onLaunch();
@@ -105,7 +135,14 @@ export const ResultItem: React.FC<ResultItemProps> = ({
       <div className="result-content">
         <div className="result-title truncate">{result.title}</div>
         {result.subtitle && <div className="result-subtitle truncate">{result.subtitle}</div>}
-        <div className="system-monitor-progress">
+        <div
+          className="system-monitor-progress"
+          role="progressbar"
+          aria-valuenow={value}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-label={`${result.title}: ${value}%`}
+        >
           <div className="system-monitor-progress-bg">
             <div
               className="system-monitor-progress-fill"
@@ -126,9 +163,6 @@ export const ResultItem: React.FC<ResultItemProps> = ({
       onClick={onLaunch}
       onMouseEnter={onSelect}
       onKeyDown={handleKeyDown}
-      role="button"
-      tabIndex={0}
-      aria-label={`${result.title} - ${result.subtitle || ''}`}
     >
       <div className="result-icon">
         {result.type === SearchResultType.SystemMonitor ? (
@@ -140,10 +174,12 @@ export const ResultItem: React.FC<ResultItemProps> = ({
             {result.type === SearchResultType.File ? (
               <File size={24} strokeWidth={2} />
             ) : result.type === SearchResultType.Application ? (
+              <AppWindow size={24} strokeWidth={2} />
+            ) : result.type === SearchResultType.Game ? (
               <Gamepad2 size={24} strokeWidth={2} />
             ) : result.type === SearchResultType.Calculator ? (
               // Check if this is a timezone result
-              (result.data as Record<string, unknown>)?.queryType === 'timezone' ? (
+              (result.data as unknown as Record<string, unknown>)?.queryType === 'timezone' ? (
                 <Clock size={24} strokeWidth={2} className="plugin-icon timer" />
               ) : (
                 <Calculator size={24} strokeWidth={2} className="plugin-icon calculator" />
@@ -165,7 +201,9 @@ export const ResultItem: React.FC<ResultItemProps> = ({
         renderSystemMonitorContent()
       ) : (
         <div className="result-content">
-          <div className="result-title truncate">{result.title}</div>
+          <div className="result-title truncate">
+            <HighlightedText segments={titleSegments} />
+          </div>
           {result.subtitle && <div className="result-subtitle truncate">{result.subtitle}</div>}
         </div>
       )}

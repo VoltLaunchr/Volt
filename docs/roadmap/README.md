@@ -2,7 +2,7 @@
 
 > **Volt** est un lanceur d'applications keyboard-first, rapide et extensible, construit avec Tauri v2 + React + TypeScript.
 
-## Version actuelle : v0.0.4
+## Version actuelle : v0.0.5
 
 Volt est fonctionnel et utilisable au quotidien. Le core flow (ouvrir → chercher → lancer → fermer) est stable sur Windows, macOS et Linux. 9 plugins builtin frontend, 3 plugins backend Rust, un systeme de settings complet, l'auto-update, et un pipeline CI/CD multi-plateforme sont en place.
 

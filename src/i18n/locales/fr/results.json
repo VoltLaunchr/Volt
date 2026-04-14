@@ -4,22 +4,22 @@
     "launchAdmin": "Lancer en administrateur",
     "openFolder": "Ouvrir l'emplacement du fichier",
     "copyPath": "Copier le chemin",
-    "properties": "Proprietes",
+    "properties": "Propriétés",
     "removeHistory": "Supprimer de l'historique"
   },
   "properties": {
-    "title": "Proprietes",
+    "title": "Propriétés",
     "name": "Nom",
     "path": "Chemin",
     "id": "ID",
     "description": "Description",
-    "category": "Categorie",
-    "keywords": "Mots-cles",
+    "category": "Catégorie",
+    "keywords": "Mots-clés",
     "usageCount": "Nombre d'utilisations",
-    "lastUsed": "Derniere utilisation",
+    "lastUsed": "Dernière utilisation",
     "extension": "Extension",
     "size": "Taille",
-    "modified": "Modifie",
+    "modified": "Modifié",
     "subtitle": "Sous-titre",
     "type": "Type",
     "score": "Score",
@@ -31,9 +31,9 @@
     "file": "Fichier",
     "command": "Commande"
   },
-  "empty": "Aucun resultat",
+  "empty": "Aucun résultat",
   "loading": "Recherche en cours...",
   "shortcuts": {
-    "enter": "Entree"
+    "enter": "Entrée"
   }
 }

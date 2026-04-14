@@ -70,3 +70,9 @@ Thumbs.db
 *.sw?
 .mcp.json
 mcp.json
+.claude/worktrees/
+
+# Playwright
+test-results/
+playwright-report/
+blob-report/

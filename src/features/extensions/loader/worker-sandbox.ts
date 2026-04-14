@@ -1,3 +1,4 @@
+/* global Worker, MessageEvent, RequestInit, fetch, ErrorEvent, Blob, URL */
 /**
  * Worker Sandbox
  *

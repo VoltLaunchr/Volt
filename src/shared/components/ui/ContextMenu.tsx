@@ -52,6 +52,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ isOpen, position, acti
     <div
       ref={menuRef}
       className="context-menu"
+      role="menu"
       style={{
         left: `${position.x}px`,
         top: `${position.y}px`,
@@ -59,13 +60,14 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ isOpen, position, acti
     >
       {actions.map((action) => {
         if (action.separator) {
-          return <div key={action.id} className="context-menu-separator" />;
+          return <div key={action.id} className="context-menu-separator" role="separator" />;
         }
 
         return (
           <button
             key={action.id}
             className="context-menu-item"
+            role="menuitem"
             onClick={() => {
               if (!action.disabled) {
                 action.onClick();

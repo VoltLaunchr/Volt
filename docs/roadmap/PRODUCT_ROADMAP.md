@@ -4,45 +4,84 @@
 
 ---
 
-## Etat actuel du produit (v0.0.4)
+## Etat actuel du produit (v0.0.5)
 
 ### Ce qui est livre et fonctionnel
 
 **Core**
-- Recherche fuzzy multi-source (apps, fichiers, plugins) avec scoring intelligent
+- Recherche fuzzy multi-source (apps, fichiers, plugins) avec scoring intelligent (nucleo-matcher unifie)
 - Lancement d'applications cross-platform (Windows, macOS, Linux)
 - Debounce 150ms + protection contre les reponses perimees
 - Navigation 100% clavier (fleches, Enter, Esc, Tab, raccourcis Alt+1-9)
 - Menu contextuel (clic droit ou Ctrl+K) : lancer, ouvrir dossier, copier chemin, proprietes
+- Batch IPC : commande `search_all` unifiee (apps + fichiers + frecency en un seul appel)
+- Query-result binding : enregistrement des selections utilisateur pour apprentissage
 
-**Plugins builtin (9 frontend)**
+**Plugins builtin (11 frontend)**
 - Calculator : expressions math, conversions d'unites, dates, fuseaux horaires
 - Emoji Picker : recherche par nom, navigation par categorie, copie instantanee
 - Web Search : multi-moteurs (Google, DuckDuckGo, Bing) via prefixe `?`
 - Timer : durees flexibles, pomodoro, notifications desktop
 - System Monitor : CPU, RAM, disque en temps reel
 - System Commands : reload, settings, quit avec matching fuzzy
-- Game Scanner : detection Steam, Epic, GOG, EA, Ubisoft, Riot, Xbox
+- Game Scanner : detection Steam, Epic, GOG, EA, Ubisoft, Riot, Xbox (cache 5 min)
 - Steam : integration dediee
 - File Explorer : navigation de fichiers
+- Snippets : prefixe `;`, variables dynamiques, import/export
+- Clipboard : historique, pin, recherche
 
 **Plugins backend (3 Rust)**
 - Clipboard Manager : historique, pin, recherche, persistance
 - Game Scanner : scan multi-plateforme avec cache
 - System Monitor : metriques CPU/RAM/disque via sysinfo
 
+**Recherche avancee**
+- Frecency scoring : apps classees par (match_score + launch_count * recency_decay)
+- Resultats predictifs : query vide → top frecency apps (pinned first, puis frecency desc)
+- Operateurs power-user : `ext:pdf`, `in:~/Documents`, `size:>10mb`, `modified:<7d`
+- Resultats groupes par section (Applications, Commands, Games, Files) style Raycast
+- Constantes de scoring centralisees (`searchScoring.ts`)
+
+**Preview panel**
+- Panneau lateral 350px (toggle Ctrl+P) avec resize dynamique (800→1100px)
+- Apercu texte (2KB, monospace), images (asset protocol), dossiers (liste enfants)
+- Metadata : taille, date modification, chemin, nb lignes, extension
+
 **Parametres**
-- 8 categories de parametres (general, apparence, hotkeys, indexation, plugins, extensions, about)
+- 8 categories + panneau Integrations (general, apparence, hotkeys, indexation, plugins, extensions, integrations, about)
 - Hotkey globale configurable en live (defaut : Ctrl+Space)
 - 9 positions de fenetre predefinies + coordonnees custom
 - Themes : Dark, Light, Auto (suit le systeme)
 - Demarrage automatique avec le systeme (autostart)
 
+**Integrations (nouveau)**
+- Panneau Integrations dans Settings : GitHub, Notion
+- OAuth flow (browser → token → stockage chiffre Tauri)
+- Saisie manuelle de token, validation, stockage securise
+- Backend OAuth : generation URL, tracking d'etat (`commands/oauth.rs`)
+- Backend credentials : chiffrement/dechiffrement tokens (`commands/credentials.rs`)
+
+**Internationalisation (nouveau)**
+- Systeme i18n complet (i18next + react-i18next)
+- 2 langues : Anglais (en), Francais (fr)
+- 9 namespaces : common, settings, help, onboarding, results, clipboard, fileSearch, extensions, changelog
+- Localisation par plugin (calculator, websearch, systemcommands, systemmonitor, timer, steam, games, emoji-picker)
+- Detection automatique de la locale OS + fallback anglais
+
 **Indexation de fichiers**
+- SQLite persistant (WAL mode, transactions, indices) avec watcher incremental
 - Scan en arriere-plan avec filtres (extensions, exclusions, profondeur max)
 - Recherche fuzzy sur les fichiers indexes
 - Configuration des dossiers a indexer depuis les parametres
 - Evenements Tauri temps reel pour la progression d'indexation
+
+**Extensions**
+- Chargement dynamique TypeScript (Sucrase transpilation)
+- Web Worker sandbox avec timeout 500ms + crash recovery
+- Permission enforcement (clipboard, network, notifications)
+- Consent dialog au premier chargement
+- Marketplace UI dans Settings > Extensions > Store
+- Dev mode : link de dossiers locaux avec hot-reload
 
 **State management**
 - Zustand stores (searchStore, appStore, uiStore) — zero prop drilling
@@ -51,9 +90,10 @@
 **Accessibilite**
 - Skip link visible au focus
 - Contraste WCAG AA sur themes light + dark
-- aria-describedby sur les champs cles des parametres
-- Focus trap dans Modal
-- ARIA live region dans SearchBar
+- `aria-describedby` sur les champs cles des parametres
+- Focus trap dans Modal (Tab/Shift+Tab cycle)
+- ARIA live region dans SearchBar (annonce resultats)
+- ResultsList avec `role="listbox"` + `aria-activedescendant` + `aria-selected`
 
 **UX**
 - Systeme de toast (info, success, error) avec auto-dismiss configurable
@@ -61,10 +101,16 @@
 - Onboarding modal premier lancement (3 etapes : hotkey, indexation, plugins)
 - Help dialog (F1) avec raccourcis clavier
 
+**Qualite du code (nouveau)**
+- Type guards centralises (`typeGuards.ts` : 6 guards)
+- Safe invoke wrapper (`safeInvoke.ts` : invoke Tauri avec logging automatique)
+- Scoring unifie nucleo-matcher (fast path exact/starts-with + fuzzy normalise)
+- Constantes de scoring centralisees (searchScoring.ts)
+
 **Infrastructure**
 - Auto-updater fonctionnel (signature minisign, endpoint GitHub Releases)
 - CI/CD multi-plateforme : Windows (MSI/NSIS), macOS Intel+ARM (DMG), Linux (deb/AppImage/rpm)
-- 152 tests frontend + 113 tests Rust
+- 166 tests frontend + 143 tests Rust
 - Logging structure (tracing) avec rotation quotidienne, accessible depuis Settings
 - CSP securise
 
@@ -85,7 +131,7 @@
 |---------|--------|
 | Nettoyage dead code et stubs | ✅ M1.1 |
 | Script de synchronisation de version | ✅ M1.1 |
-| Suite de tests (130 frontend + 113 Rust) | ✅ M1.2 |
+| Suite de tests (166 frontend + 143 Rust) | ✅ M1.2 |
 | CSP securise dans tauri.conf.json | ✅ M1.3 |
 | Capabilities auditees | ✅ M1.3 |
 | Scaffolding CI pour code signing | ✅ M1.3 |
@@ -127,7 +173,7 @@
 - ✅ Focus trap dans Modal (Tab/Shift+Tab cycle)
 - ✅ ARIA live region dans SearchBar (annonce uniquement quand les resultats changent)
 - ✅ `aria-describedby` sur HotkeyCapture, folder picker, file extensions
-- ✅ ResultsList avec `role="listbox"` + `aria-selected`
+- ✅ ResultsList avec `role="listbox"` + `aria-selected` + `aria-activedescendant`
 
 ### WS2 — Store Zustand ✅
 
@@ -135,7 +181,7 @@
 - ✅ App.tsx : 0 useState
 - ✅ ViewRouter : 2 props (vs 13 avant) — zero prop drilling
 - ✅ Hooks (`useSearchPipeline`, `useResultActions`, `useGlobalHotkey`) lisent les stores directement
-- ✅ 152 tests frontend passent sans regression
+- ✅ 166 tests frontend passent sans regression
 
 ### WS3 — Indicateur d'indexation ✅
 
@@ -215,7 +261,7 @@
 
 ---
 
-## Phase 4 — v2.0 "Power Features" (en cours)
+## Phase 4 — v2.0 "Power Features" ✅ Complete (2026-04-14)
 
 **Valeur utilisateur :** Volt devient un hub de productivite, pas juste un lanceur.
 
@@ -225,8 +271,10 @@
 - ✅ **Resultats predictifs** : query vide → top frecency apps (pinned first, puis frecency desc)
 - ✅ **Operateurs power-user** : `ext:pdf`, `in:~/Documents`, `size:>10mb`, `size:<1gb`, `modified:<7d`, `modified:>30d`
 - ✅ **Query parser** : extraction automatique des operateurs, filtrage backend via SearchEngine
-- ✅ Commandes Tauri : `search_applications_frecency`, `get_frecency_suggestions`
-- ✅ 166 tests frontend + 123 tests Rust
+- ✅ Commandes Tauri : `search_all` (batch), `search_applications_frecency`, `get_frecency_suggestions`
+- ✅ Scoring unifie via nucleo-matcher (fast paths exact/starts-with + fuzzy normalise log)
+- ✅ Constantes centralisees dans `searchScoring.ts`
+- ✅ 166 tests frontend + 143 tests Rust
 
 ### Snippets & text expansion ✅ (2026-04-14)
 
@@ -243,12 +291,12 @@
 - ✅ Metadata : taille, date modification, chemin, nb lignes, extension
 - ✅ Backend `get_file_preview` avec detection auto du type (text/image/folder/app/binary)
 - ✅ Debounce 200ms + cache pour navigation clavier fluide
-- ✅ 135 tests Rust + 166 tests frontend
 
-### Clipboard manager avance
+### Clipboard manager avance ✅
 
-- Pin, recherche, redaction automatique des mots de passe detectes
-- Historique persistant avec limite configurable
+- ✅ 9 commandes backend : historique, pin, recherche, toggle, delete, clear, copy
+- ✅ Plugin frontend avec matching fuzzy
+- 🟡 Redaction automatique des mots de passe detectes (a faire)
 
 ### Integrations OS natives (Windows) ✅ (2026-04-14)
 
@@ -261,7 +309,41 @@
 - ✅ Resultats groupes par section (Applications, Commands, Games, Files) style Raycast
 - ✅ Badges de type sur chaque resultat
 - ✅ Chemins raccourcis (~\Documents au lieu de C:\Users\...)
-- ✅ Apps sans chemin dans le sous-titre
+
+### Integrations tierces ✅ (2026-04-14) — NOUVEAU
+
+- ✅ **Panneau Integrations** dans Settings : GitHub, Notion
+- ✅ **OAuth flow** : ouverture navigateur → token → stockage chiffre Tauri
+- ✅ **Saisie manuelle** de token avec validation
+- ✅ **Backend OAuth** : `commands/oauth.rs` (generation URL, tracking etat)
+- ✅ **Backend credentials** : `commands/credentials.rs` (chiffrement/dechiffrement)
+- ✅ **Frontend** : `credentialsService.ts` + `IntegrationsPanel.tsx`
+- 🟡 Deep links pour retour OAuth automatique (Phase 2)
+- 🟡 Token rotation automatique (Phase 2)
+- 🟡 Services supplementaires (Phase 2)
+
+### Internationalisation ✅ (2026-04-14) — NOUVEAU
+
+- ✅ **Systeme i18n** : i18next + react-i18next
+- ✅ **2 langues** : Anglais (en), Francais (fr)
+- ✅ **9 namespaces** : common, settings, help, onboarding, results, clipboard, fileSearch, extensions, changelog
+- ✅ **Plugins localises** : calculator, websearch, systemcommands, systemmonitor, timer, steam, games, emoji-picker
+- ✅ Detection automatique locale OS + fallback anglais
+- ✅ Traduction suggestions (titres, sous-titres, badges)
+
+### Performance (nouveau) ✅ (2026-04-14)
+
+- ✅ **Batch IPC** : commande `search_all` unifiee (1 appel au lieu de 3)
+- ✅ **O(1) file clone** : optimisation du clonage des resultats fichiers
+- ✅ **Sync watcher cache** : cache 5 min pour les jeux avec rescan manuel
+- ✅ **Scoring unifie nucleo-matcher** : fast paths + normalisation logarithmique
+- ✅ **Query-result binding** : `record_search_selection` pour apprentissage des preferences
+
+### Qualite du code (nouveau) ✅ (2026-04-14)
+
+- ✅ **Type guards** : `typeGuards.ts` (6 guards : isPluginResultData, isClipboardItem, isLaunchRecord, isSearchResult, isAppInfo, isFileInfo)
+- ✅ **Safe invoke** : `safeInvoke.ts` (wrapper Tauri invoke avec logging automatique, retourne T | null)
+- ✅ 3 TODOs en suspens resolus dans la codebase
 
 ### Shell commands inline
 
@@ -270,7 +352,7 @@
 
 ---
 
-## Phase 5 — v2.x "Ecosystem"
+## Phase 5 — v2.x "Ecosystem" (a venir)
 
 **Valeur utilisateur :** Personnalisation complete et integration profonde avec l'OS.
 
@@ -280,10 +362,22 @@
 - Editeur de theme UI dans Settings
 - Theme marketplace (suit l'extension marketplace)
 
+### Integrations tierces Phase 2
+
+- Deep links OAuth pour retour automatique
+- Token rotation automatique
+- Services supplementaires (Slack, Linear, etc.)
+
 ### Integrations OS natives (restant)
 
 - **Linux** : support Wayland propre (aujourd'hui X11 implicite)
 - **macOS** : option pour piggyback sur l'index Spotlight
+
+### Internationalisation Phase 2
+
+- Langues supplementaires (Espagnol, Allemand, etc.)
+- Contribution communautaire pour les traductions
+- Pluralisation avancee
 
 ### Protocoles custom
 
@@ -308,8 +402,10 @@ Idees non priorisees, a evaluer selon les retours utilisateurs :
 - Hot reload des plugins en mode dev
 - Documentation auto-generee des commandes Tauri
 - Support WASM pour plugins haute performance
-- Integration avec des services tiers (Notion, Slack, GitHub...)
 - Accessibilite avancee (lecteur d'ecran complet, mode haut contraste)
+- Shell commands inline (prefixe `>`)
+- Redaction automatique clipboard (detection mots de passe)
+- Apprentissage des preferences recherche (exploitation du query-result binding)
 
 ---
 
@@ -320,11 +416,11 @@ Idees non priorisees, a evaluer selon les retours utilisateurs :
 | Phase 1 | v1.0 | ~3 semaines | En cours (bloque certificats) |
 | Phase 2 | v1.x | ~3-4 semaines | ✅ Complete (2026-04-13) |
 | Phase 3 | v1.5 | ~5-8 semaines | ✅ Complete (2026-04-14) |
-| Phase 4 | v2.0 | ~6-8 semaines | Backlog |
+| Phase 4 | v2.0 | ~6-8 semaines | ✅ Complete (2026-04-14) |
 | Phase 5 | v2.x | Continu | Backlog |
 
-> Estimations basees sur un developpeur solo a temps partiel (~3h/jour). Les phases 1-3 representent ~3-4 mois. La phase 4 marque le passage a une v2.0 majeure.
+> Estimations basees sur un developpeur solo a temps partiel (~3h/jour). Les phases 1-4 sont completes. La Phase 1 reste bloquee uniquement par l'achat des certificats de code signing. La phase 5 marque le passage a l'ecosystem.
 
 ---
 
-_Document vivant — mettre a jour a chaque fin de phase. Les estimations sont des ordres de grandeur, pas des engagements._
+_Document vivant — mettre a jour a chaque fin de phase. Derniere revision : 2026-04-14._

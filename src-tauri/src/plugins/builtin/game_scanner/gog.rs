@@ -3,9 +3,12 @@
 //! Scans for games installed via GOG Galaxy by reading the registry
 //! and galaxy database.
 
+#[allow(unused_imports)]
 use super::types::{GameInfo, GamePlatform, GameScanner};
+#[allow(unused_imports)]
 use crate::utils::game_icon::find_game_icon;
 use std::path::PathBuf;
+#[allow(unused_imports)]
 use tracing::{debug, warn};
 
 /// GOG Galaxy scanner
@@ -78,6 +81,7 @@ impl GOGScanner {
     /// tested without hitting the Windows registry. Returns `None` if the
     /// required `game_name`/`path` values are missing (GOG registry entries
     /// with empty fields are stale / uninstalled).
+    #[allow(dead_code)]
     pub(crate) fn build_game_info(
         game_id: &str,
         game_name: &str,

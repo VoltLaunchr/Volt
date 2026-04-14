@@ -3,6 +3,9 @@ use tauri::{AppHandle, Manager, State};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 use tracing::{error, info, warn};
 
+use crate::ShowOnScreenState;
+use crate::window::center_on_target_monitor;
+
 // Store the currently registered hotkey
 pub struct HotkeyState {
     pub current: Mutex<Option<String>>,
@@ -46,6 +49,12 @@ pub fn setup_global_hotkey(app: &AppHandle) -> Result<(), Box<dyn std::error::Er
                 if window.is_visible().unwrap_or(false) {
                     let _ = window.hide();
                 } else {
+                    // Position on the correct monitor before showing
+                    if let Some(state) = handle_clone.try_state::<ShowOnScreenState>()
+                        && let Ok(val) = state.value.lock()
+                    {
+                        let _ = center_on_target_monitor(&window, &val);
+                    }
                     let _ = window.show();
                     let _ = window.set_focus();
                 }
@@ -115,6 +124,12 @@ pub fn set_global_hotkey(
                     if window.is_visible().unwrap_or(false) {
                         let _ = window.hide();
                     } else {
+                        // Position on the correct monitor before showing
+                        if let Some(state) = app_handle.try_state::<ShowOnScreenState>()
+                            && let Ok(val) = state.value.lock()
+                        {
+                            let _ = center_on_target_monitor(&window, &val);
+                        }
                         let _ = window.show();
                         let _ = window.set_focus();
                     }

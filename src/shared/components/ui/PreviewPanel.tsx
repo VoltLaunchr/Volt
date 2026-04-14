@@ -97,7 +97,7 @@ export function PreviewPanel({ result, isOpen }: PreviewPanelProps) {
   }
 
   return (
-    <div className="preview-panel">
+    <div className="preview-panel" role="region" aria-label="File preview">
       <div className="preview-panel-header">
         {result.icon && (
           <img className="preview-icon" src={result.icon} alt="" />

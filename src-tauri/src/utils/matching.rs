@@ -1,3 +1,6 @@
+use nucleo_matcher::pattern::{CaseMatching, Normalization, Pattern};
+use nucleo_matcher::{Config, Matcher, Utf32Str};
+
 /// Performs fuzzy matching - checks if all characters from pattern appear in text in order
 ///
 /// # Examples
@@ -23,30 +26,51 @@ pub fn fuzzy_match(text: &str, pattern: &str) -> bool {
     current_pattern_char.is_none()
 }
 
-/// Calculates a match score for search results
+/// Calculates a match score for search results using nucleo-matcher for fuzzy scoring.
 ///
 /// Returns a score from 0-100:
 /// - 100: Exact match
 /// - 90: Starts with query
-/// - 80: Contains query (earlier positions score higher)
-/// - 50: Fuzzy match (all chars present in order)
+/// - 50-89: nucleo fuzzy/substring score (word-boundary aware, position-sensitive)
 /// - 0: No match
 pub fn calculate_match_score(text: &str, query: &str) -> f32 {
+    if query.is_empty() {
+        // Empty query: exact match for empty text, contains-at-0 otherwise
+        return if text.is_empty() { 100.0 } else { 80.0 };
+    }
+
     let text_lower = text.to_lowercase();
     let query_lower = query.to_lowercase();
 
+    // Fast path: exact match
     if text_lower == query_lower {
-        100.0 // Exact match
-    } else if text_lower.starts_with(&query_lower) {
-        90.0 // Starts with query
-    } else if text_lower.contains(&query_lower) {
-        let position = text_lower.find(&query_lower).unwrap_or(usize::MAX);
-        // Contains query, earlier is better, but always score above fuzzy match
-        (80.0 - (position as f32 * 0.1)).max(55.0)
-    } else if fuzzy_match(&text_lower, &query_lower) {
-        50.0 // Fuzzy match
-    } else {
-        0.0 // No match
+        return 100.0;
+    }
+
+    // Fast path: starts with query
+    if text_lower.starts_with(&query_lower) {
+        return 90.0;
+    }
+
+    // Use nucleo for everything else (contains, fuzzy, word-boundary matches)
+    let pattern = Pattern::parse(&query_lower, CaseMatching::Smart, Normalization::Smart);
+    let mut matcher = Matcher::new(Config::DEFAULT);
+
+    let text_chars: Vec<char> = text.chars().collect();
+    let haystack = Utf32Str::Unicode(&text_chars);
+
+    match pattern.score(haystack, &mut matcher) {
+        Some(raw_score) => {
+            // Normalize nucleo scores to the 50-89 range.
+            if raw_score == 0 {
+                50.0
+            } else {
+                let log_score = (raw_score as f32).ln();
+                // Map ln range [0, 10] to [50, 89]
+                (50.0 + log_score * (39.0 / 10.0)).clamp(50.0, 89.0)
+            }
+        }
+        None => 0.0,
     }
 }
 
@@ -88,7 +112,8 @@ mod tests {
     fn test_calculate_match_score() {
         assert_eq!(calculate_match_score("test", "test"), 100.0);
         assert_eq!(calculate_match_score("testing", "test"), 90.0);
-        assert!(calculate_match_score("my test", "test") > 50.0);
+        assert!(calculate_match_score("my test", "test") >= 50.0);
+        assert!(calculate_match_score("my test", "test") <= 89.0);
         assert_eq!(calculate_match_score("vscode", "rust"), 0.0);
     }
 
@@ -100,17 +125,49 @@ mod tests {
 
     #[test]
     fn test_calculate_match_score_contains_position_decay() {
-        // earlier substring positions score higher
+        // earlier substring positions score higher (nucleo gives word-boundary bonuses)
         let early = calculate_match_score("xtest", "test");
         let later = calculate_match_score("xxxxxxxxxxxxxxxxxxxxxxxxxxtest", "test");
         assert!(early >= later);
-        assert!(early > 50.0);
+        assert!(early >= 50.0);
     }
 
     #[test]
     fn test_calculate_match_score_fuzzy_above_zero() {
-        // fuzzy match always 50, never 0 if all chars in order
-        assert_eq!(calculate_match_score("hello world", "hwd"), 50.0);
+        // fuzzy match should score in the 50-89 range
+        let score = calculate_match_score("hello world", "hwd");
+        assert!(score >= 50.0, "fuzzy score was {}, expected >= 50", score);
+        assert!(score <= 89.0, "fuzzy score was {}, expected <= 89", score);
+    }
+
+    #[test]
+    fn test_calculate_match_score_nucleo_word_boundary_bonus() {
+        // Both "Visual Studio Code" and "Very Slow Calculator" match "vsc" at word
+        // boundaries, so nucleo may score them similarly. We verify both get a fuzzy
+        // score in the expected range and that a true word-boundary match beats a
+        // non-boundary match.
+        let vscode_score = calculate_match_score("Visual Studio Code", "vsc");
+        let slow_calc_score = calculate_match_score("Very Slow Calculator", "vsc");
+        assert!(vscode_score > 0.0, "vsc should match Visual Studio Code");
+        assert!(
+            slow_calc_score > 0.0,
+            "vsc should match Very Slow Calculator"
+        );
+        // Both should be in the fuzzy range (50-89)
+        assert!(
+            (50.0..=89.0).contains(&vscode_score),
+            "Visual Studio Code score ({}) should be in fuzzy range",
+            vscode_score
+        );
+
+        // Word-boundary match should beat a non-boundary match
+        let no_boundary = calculate_match_score("avscript handler", "vsc");
+        assert!(
+            vscode_score > no_boundary,
+            "Word-boundary match ({}) should beat non-boundary match ({})",
+            vscode_score,
+            no_boundary
+        );
     }
 
     #[test]

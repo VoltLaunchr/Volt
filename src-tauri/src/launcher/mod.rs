@@ -8,6 +8,6 @@ pub mod process;
 pub mod types;
 
 // Re-export main types and functions
-pub use history::{LaunchHistory, LaunchRecord};
+pub use history::{LaunchHistory, LaunchRecord, QueryBindingStore};
 pub use process::{launch, launch_with_options};
 pub use types::{LaunchError, LaunchOptions, LaunchResult};

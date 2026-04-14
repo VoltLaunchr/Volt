@@ -59,7 +59,7 @@ impl SteamScanner {
 
         #[cfg(target_os = "macos")]
         {
-            let path = PathBuf::from(dirs::home_dir()?.join("Library/Application Support/Steam"));
+            let path = dirs::home_dir()?.join("Library/Application Support/Steam");
             if path.exists() {
                 return Some(path);
             }

@@ -2,9 +2,12 @@
 //!
 //! Scans for games installed via EA App (formerly Origin)
 
+#[allow(unused_imports)]
 use super::types::{GameInfo, GamePlatform, GameScanner};
+#[allow(unused_imports)]
 use crate::utils::game_icon::find_game_icon;
 use std::path::{Path, PathBuf};
+#[allow(unused_imports)]
 use tracing::{debug, warn};
 
 #[cfg(target_os = "windows")]
@@ -20,6 +23,7 @@ impl EAScanner {
 
     /// True if the uninstall entry's publisher string looks like an EA entry.
     /// Pure helper extracted for unit testing.
+    #[allow(dead_code)]
     pub(crate) fn is_ea_publisher(publisher: &str, key_name: &str) -> bool {
         let pub_lc = publisher.to_lowercase();
         pub_lc.contains("electronic arts")
@@ -29,6 +33,7 @@ impl EAScanner {
 
     /// True if an uninstall display-name represents the launcher / a
     /// non-game helper component (and should be skipped).
+    #[allow(dead_code)]
     pub(crate) fn is_non_game_display_name(name: &str) -> bool {
         let name_lc = name.to_lowercase();
         name_lc.contains("ea desktop")

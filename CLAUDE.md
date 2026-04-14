@@ -134,7 +134,7 @@ src/
 
 ## Window Config
 
-Always-on-top, transparent, 600x400px, no decorations, skips taskbar (see `tauri.conf.json`)
+Always-on-top, transparent, 800x550px, no decorations, skips taskbar (see `tauri.conf.json`)
 
 ## Key Dependencies
 

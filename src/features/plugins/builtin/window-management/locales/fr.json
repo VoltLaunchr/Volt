@@ -1,0 +1,15 @@
+{
+  "leftHalf": { "title": "Moitié gauche", "subtitle": "Accrocher la fenêtre à la moitié gauche de l'écran" },
+  "rightHalf": { "title": "Moitié droite", "subtitle": "Accrocher la fenêtre à la moitié droite de l'écran" },
+  "topHalf": { "title": "Moitié supérieure", "subtitle": "Accrocher la fenêtre à la moitié supérieure de l'écran" },
+  "bottomHalf": { "title": "Moitié inférieure", "subtitle": "Accrocher la fenêtre à la moitié inférieure de l'écran" },
+  "topLeft": { "title": "Quart supérieur gauche", "subtitle": "Accrocher la fenêtre au coin supérieur gauche" },
+  "topRight": { "title": "Quart supérieur droit", "subtitle": "Accrocher la fenêtre au coin supérieur droit" },
+  "bottomLeft": { "title": "Quart inférieur gauche", "subtitle": "Accrocher la fenêtre au coin inférieur gauche" },
+  "bottomRight": { "title": "Quart inférieur droit", "subtitle": "Accrocher la fenêtre au coin inférieur droit" },
+  "maximize": { "title": "Maximiser", "subtitle": "Maximiser la fenêtre" },
+  "minimize": { "title": "Minimiser", "subtitle": "Minimiser la fenêtre" },
+  "center": { "title": "Centrer", "subtitle": "Centrer la fenêtre à l'écran" },
+  "fullscreen": { "title": "Plein écran", "subtitle": "Basculer en mode plein écran" },
+  "restore": { "title": "Restaurer", "subtitle": "Restaurer la fenêtre à sa taille précédente" }
+}

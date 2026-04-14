@@ -15,7 +15,7 @@ const fakeApps: AppInfo[] = [
     path: 'C:/Programs/Firefox.exe',
     icon: undefined,
     usageCount: 0,
-  } as unknown as AppInfo,
+  },
 ];
 
 const fakeFiles: FileInfo[] = [
@@ -26,8 +26,7 @@ const fakeFiles: FileInfo[] = [
     extension: 'md',
     size: 100,
     modified: Date.now(),
-    category: 'document',
-  } as unknown as FileInfo,
+  },
 ];
 
 async function performSearch(query: string) {

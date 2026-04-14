@@ -444,7 +444,7 @@ mod tests {
 
     fn make_file(name: &str, path: &str) -> FileInfo {
         FileInfo {
-            id: crate::utils::hash_id(&path),
+            id: crate::utils::hash_id(path),
             name: name.to_string(),
             path: path.to_string(),
             extension: name.rsplit('.').next().unwrap_or("").to_string(),

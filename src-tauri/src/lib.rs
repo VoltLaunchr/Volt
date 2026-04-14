@@ -1,11 +1,11 @@
-mod commands;
+pub mod commands;
 mod core;
 mod hotkey;
 mod indexer;
 pub mod launcher;
 mod plugins;
-mod search;
-mod utils;
+pub mod search;
+pub mod utils;
 mod window;
 
 use commands::files::{FileHistoryState, FileIndexState, WatcherState};
@@ -16,7 +16,7 @@ use hotkey::HotkeyState;
 use plugins::api::VoltPluginAPI;
 use plugins::registry::PluginRegistry;
 use std::sync::Arc;
-use tauri::Manager;
+use tauri::{Emitter, Listener, Manager};
 use tracing::{error, info, warn};
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::{EnvFilter, Registry, fmt, layer::SubscriberExt, util::SubscriberInitExt};
@@ -26,6 +26,12 @@ use window::*;
 pub struct PluginState {
     pub registry: PluginRegistry,
     pub api: Arc<VoltPluginAPI>,
+}
+
+/// State for the "show on screen" multi-monitor setting.
+/// Read by the global hotkey handler to position the window on the correct monitor.
+pub struct ShowOnScreenState {
+    pub value: std::sync::Mutex<String>,
 }
 
 /// Holds the background worker guard for the rotating file log appender.
@@ -44,6 +50,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             Some(vec!["--hidden"]),
@@ -112,6 +119,11 @@ pub fn run() {
                 current: std::sync::Mutex::new(None),
             });
 
+            // Initialize show-on-screen state (default: cursor)
+            app.manage(ShowOnScreenState {
+                value: std::sync::Mutex::new("cursor".to_string()),
+            });
+
             // Setup global hotkey (will try default options first)
             hotkey::setup_global_hotkey(app.handle())?;
 
@@ -120,6 +132,14 @@ pub fn run() {
             tauri::async_runtime::spawn(async move {
                 match commands::settings::load_settings(app_handle.clone()).await {
                     Ok(settings) => {
+                        // Apply show_on_screen setting
+                        if let Some(state) = app_handle.try_state::<ShowOnScreenState>()
+                            && let Ok(mut val) = state.value.lock()
+                        {
+                            *val = settings.general.show_on_screen.clone();
+                            info!("Applied show_on_screen setting: {}", *val);
+                        }
+
                         // Apply hotkey from settings
                         if let Some(hotkey_state) = app_handle.try_state::<HotkeyState>() {
                             let toggle_hotkey = settings.hotkeys.toggle_window;
@@ -231,11 +251,17 @@ pub fn run() {
 
             app.manage(LaunchHistoryState::new(data_dir.clone()));
 
+            // Initialize query binding state for query→result learning
+            app.manage(commands::launcher::QueryBindingState::new(data_dir.clone()));
+
             // Initialize file history state
             app.manage(FileHistoryState::new(data_dir.clone()));
 
             // Initialize snippet state
             app.manage(SnippetState::new(data_dir.clone()));
+
+            // Initialize quicklink state
+            app.manage(QuicklinkState::new(data_dir.clone()));
 
             // Initialize plugin system
             let plugin_api = Arc::new(VoltPluginAPI::new(data_dir));
@@ -267,6 +293,56 @@ pub fn run() {
                 info!("{} backend plugins loaded", count);
             }
 
+            // Register deep link handler for volt:// URLs
+            let listener_handle = app.handle().clone();
+            let emitter_handle = app.handle().clone();
+            listener_handle.listen("deep-link://new-url", move |event: tauri::Event| {
+                // The event payload is a JSON array of URL strings
+                if let Ok(urls) = serde_json::from_str::<Vec<String>>(event.payload()) {
+                    for url_str in &urls {
+                        // Redact query params to avoid logging sensitive tokens
+                        let redacted_url = url_str.split('?').next().unwrap_or(url_str);
+                        info!("Deep link received: {}", redacted_url);
+                        if url_str.starts_with("volt://auth/callback") {
+                            match commands::auth::handle_auth_deep_link(url_str) {
+                                Ok(_session) => {
+                                    info!("Auth session saved from deep link");
+                                    if let Err(e) = emitter_handle.emit("auth:session-updated", ())
+                                    {
+                                        error!("Failed to emit auth:session-updated event: {}", e);
+                                    }
+                                }
+                                Err(e) => {
+                                    error!("Failed to handle auth deep link: {}", e);
+                                }
+                            }
+                        } else if url_str.starts_with("volt://oauth-callback") {
+                            match commands::oauth::handle_oauth_deep_link(url_str) {
+                                Ok(result) => {
+                                    info!("OAuth token saved for service: {}", result.service);
+                                    if let Err(e) =
+                                        emitter_handle.emit("oauth:callback-received", &result)
+                                    {
+                                        error!(
+                                            "Failed to emit oauth:callback-received event: {}",
+                                            e
+                                        );
+                                    }
+                                }
+                                Err(e) => {
+                                    error!("Failed to handle OAuth deep link: {}", e);
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    warn!(
+                        "Failed to parse deep link event payload: {}",
+                        event.payload()
+                    );
+                }
+            });
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -275,6 +351,8 @@ pub fn run() {
             hide_window,
             toggle_window,
             center_window,
+            position_on_target_monitor,
+            update_show_on_screen,
             // App commands
             scan_applications,
             search_applications,
@@ -297,6 +375,9 @@ pub fn run() {
             remove_from_history,
             get_history_count,
             get_frecency_suggestions,
+            record_search_selection,
+            // Batch search command
+            search_all,
             // File indexing commands
             start_indexing,
             get_index_status,
@@ -330,6 +411,8 @@ pub fn run() {
             save_app_shortcut,
             delete_app_shortcut,
             sync_app_shortcuts,
+            export_settings,
+            import_settings,
             // Hotkey commands
             hotkey::set_global_hotkey,
             hotkey::get_current_hotkey,
@@ -402,10 +485,32 @@ pub fn run() {
             toggle_dev_extension,
             get_dev_extensions_path,
             refresh_dev_extension,
+            // Credentials commands
+            save_credential,
+            load_credential,
+            has_credential,
+            delete_credential,
+            get_credential_info,
+            // Auth commands (Supabase)
+            auth_login,
+            auth_get_session,
+            auth_get_profile,
+            auth_refresh_token,
+            auth_logout,
+            // OAuth commands
+            get_github_oauth_url,
+            get_notion_oauth_url,
+            is_oauth_pending,
+            clear_oauth_pending,
             // Logging commands
             get_log_file_path,
             // Preview panel commands
             get_file_preview,
+            // Quicklink commands
+            get_quicklinks,
+            save_quicklink,
+            delete_quicklink,
+            open_quicklink,
             // Snippet commands
             get_snippets,
             create_snippet,
@@ -414,6 +519,10 @@ pub fn run() {
             expand_snippet,
             import_snippets,
             export_snippets,
+            // Streaming search
+            search_streaming,
+            // Window management commands
+            snap_window,
         ])
         .run(tauri::generate_context!())
         .unwrap_or_else(|e| {
