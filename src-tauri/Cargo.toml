@@ -44,7 +44,7 @@ tokio = { version = "1", features = ["full"] }
 sysinfo = "0.32"
 semver = "1.0"
 arboard = "3.4"
-rusqlite = { version = "0.32", features = ["bundled"] }
+rusqlite = { version = "0.39", features = ["bundled"] }
 notify = { version = "6.1", features = ["macos_fsevent"] }
 image = "0.25"
 base64 = "0.22"
