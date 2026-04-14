@@ -70,7 +70,6 @@ function HighlightedText({
 export const ResultItem: React.FC<ResultItemProps> = ({
   result,
   isSelected,
-  index: _index,
   onSelect,
   onLaunch,
 }) => {

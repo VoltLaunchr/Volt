@@ -288,7 +288,7 @@ export class QuicklinksPlugin implements Plugin {
     const icon = TYPE_ICONS[type];
 
     const quicklink: Quicklink = {
-      id: crypto.randomUUID(),
+      id: globalThis.crypto.randomUUID(),
       name: shortcut,
       shortcut: shortcut,
       target: target,

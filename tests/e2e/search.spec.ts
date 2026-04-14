@@ -91,11 +91,11 @@ test.describe('Search Flow', () => {
     // Custom mock that tracks search_streaming call count
     await page.addInitScript(({ settings }) => {
       (window as any).__SEARCH_CALL_COUNT__ = 0;
-      const CALLBACKS: Record<number, Function> = {};
+      const CALLBACKS: Record<number, (...args: unknown[]) => unknown> = {};
       let cbCounter = 0;
 
       (window as any).__TAURI_INTERNALS__ = {
-        invoke: async (cmd: string, args?: any) => {
+        invoke: async (cmd: string) => {
           if (typeof cmd === 'string' && cmd.startsWith('plugin:')) {
             if (cmd === 'plugin:event|listen') return cbCounter++;
             return null;
@@ -117,7 +117,7 @@ test.describe('Search Flow', () => {
           };
           return handlers[cmd] ?? null;
         },
-        transformCallback: (cb: Function) => { const id = cbCounter++; CALLBACKS[id] = cb; (window as any)['_' + id] = cb; return id; },
+        transformCallback: (cb: (...args: unknown[]) => unknown) => { const id = cbCounter++; CALLBACKS[id] = cb; (window as any)['_' + id] = cb; return id; },
         unregisterCallback: (id: number) => { delete CALLBACKS[id]; },
         metadata: { currentWindow: { label: 'main' }, currentWebview: { label: 'main' } },
         convertFileSrc: (p: string) => 'https://asset.localhost/' + encodeURIComponent(p),

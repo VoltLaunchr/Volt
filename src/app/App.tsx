@@ -139,7 +139,7 @@ function App() {
     };
     try {
       await settingsService.updateGeneralSettings(updated.general);
-    } catch (err) {
+    } catch {
       // Log onboarding completion failure
     }
     useAppStore.getState().setSettings(updated);
@@ -149,7 +149,7 @@ function App() {
     async (emoji: string) => {
       try {
         await navigator.clipboard.writeText(emoji);
-      } catch (err) {
+      } catch {
         // Clipboard write failure is non-critical
       }
       resetToSearchView();

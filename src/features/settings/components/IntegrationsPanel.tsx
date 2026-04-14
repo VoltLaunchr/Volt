@@ -148,7 +148,7 @@ export function IntegrationsPanel() {
   };
 
   const handleDeleteToken = async (serviceId: 'github' | 'notion') => {
-    if (!confirm(t('integrations.confirmDelete', { service: serviceId }))) return;
+    if (!window.confirm(t('integrations.confirmDelete', { service: serviceId }))) return;
     try {
       await credentialsService.deleteToken(serviceId);
       setCredentials((prev) => ({ ...prev, [serviceId]: false }));

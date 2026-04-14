@@ -79,7 +79,7 @@ export async function injectTauriMock(
   await page.addInitScript(
     ({ settings, apps }) => {
       (window as any).__TAURI_INVOKE_CALLS__ = [];
-      const CALLBACKS: Record<number, Function> = {};
+      const CALLBACKS: Record<number, (...args: unknown[]) => unknown> = {};
       let cbCounter = 0;
 
       (window as any).__TAURI_INTERNALS__ = {
@@ -164,7 +164,7 @@ export async function injectTauriMock(
           return null;
         },
 
-        transformCallback: (callback: Function, once?: boolean) => {
+        transformCallback: (callback: (...args: unknown[]) => unknown) => {
           const id = cbCounter++;
           CALLBACKS[id] = callback;
           (window as any)['_' + id] = callback;

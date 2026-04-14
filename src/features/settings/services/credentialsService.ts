@@ -91,7 +91,7 @@ class CredentialsService {
     try {
       if (service === 'github') {
         // Test GitHub API
-        const response = await fetch('https://api.github.com/user', {
+        const response = await globalThis.fetch('https://api.github.com/user', {
           headers: {
             Authorization: `token ${token}`,
             'Accept': 'application/vnd.github.v3+json',
@@ -103,7 +103,7 @@ class CredentialsService {
 
       if (service === 'notion') {
         // Test Notion API
-        const response = await fetch('https://api.notion.com/v1/search', {
+        const response = await globalThis.fetch('https://api.notion.com/v1/search', {
           method: 'POST',
           headers: {
             Authorization: `Bearer ${token}`,
