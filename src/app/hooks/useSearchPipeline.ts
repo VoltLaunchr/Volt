@@ -1,4 +1,4 @@
-import { invoke } from '@tauri-apps/api/core';
+import { invoke, Channel } from '@tauri-apps/api/core';
 import { useCallback, useEffect, useRef } from 'react';
 import { pluginRegistry } from '../../features/plugins/core';
 import { PluginResult as PluginResultData } from '../../features/plugins/types';
@@ -38,6 +38,12 @@ interface LaunchRecord {
   lastLaunched: number;
   pinned: boolean;
 }
+
+/** Streaming search batch events from the Rust backend (search_streaming command) */
+type SearchBatch =
+  | { event: 'apps'; data: { results: AppInfoWithScore[] } }
+  | { event: 'files'; data: { results: FileInfo[] } }
+  | { event: 'done' };
 
 // Plugin keywords map - when query starts with these, boost that plugin significantly
 const PLUGIN_KEYWORDS: Record<string, string[]> = {
@@ -155,104 +161,143 @@ export function useSearchPipeline({
       try {
         const searchId = ++latestSearchId.current;
 
-        // Search applications with frecency, files (with operators), and plugins in parallel
-        const [frecencyApps, searchedFiles, pluginResults] = await Promise.all([
-          appsReady
-            ? invoke<AppInfoWithScore[]>('search_applications_frecency', {
-                query: effectiveQuery,
-                apps: allApps,
-              }).catch(() => [] as AppInfoWithScore[])
-            : Promise.resolve([] as AppInfoWithScore[]),
-          invoke<FileInfo[]>('search_files', {
-            query: effectiveQuery,
-            limit: maxResults * 2,
-            ...(parsed.hasOperators
-              ? {
-                  ext: parsed.operators.ext,
-                  dir: parsed.operators.dir,
-                  sizeMin: parsed.operators.sizeMin,
-                  sizeMax: parsed.operators.sizeMax,
-                  modifiedAfter: parsed.operators.modifiedAfter,
-                  modifiedBefore: parsed.operators.modifiedBefore,
-                }
-              : {}),
-          }).catch(() => [] as FileInfo[]),
-          pluginRegistry.query({ query: effectiveQuery }).catch(() => [] as PluginResultData[]),
-        ]);
+        // Helper: convert app results to SearchResult[]
+        const convertApps = (apps: AppInfoWithScore[]): SearchResult[] =>
+          apps.map((appWithScore) => ({
+            id: appWithScore.id,
+            type: SearchResultType.Application,
+            title: appWithScore.name,
+            subtitle: appWithScore.description || undefined,
+            icon: appWithScore.icon,
+            score: SEARCH_PRIORITIES.APPLICATION + appWithScore.score,
+            data: appWithScore as AppInfo,
+          }));
+
+        // Helper: convert file results to SearchResult[]
+        const convertFiles = (files: FileInfo[]): SearchResult[] =>
+          files.map((file) => ({
+            id: file.id,
+            type: SearchResultType.File,
+            title: file.name,
+            subtitle: shortenPath(file.path),
+            icon: file.icon,
+            score: SEARCH_PRIORITIES.FILE,
+            data: file,
+          }));
+
+        // Helper: convert plugin results to SearchResult[]
+        const convertPlugins = (
+          pluginResults: PluginResultData[],
+          rawQuery: string,
+        ): SearchResult[] =>
+          pluginResults.map((result) => {
+            let searchResultType: SearchResultType;
+            switch (result.type) {
+              case 'calculator':
+                searchResultType = SearchResultType.Calculator;
+                break;
+              case 'websearch':
+                searchResultType = SearchResultType.WebSearch;
+                break;
+              case 'systemcommand':
+                searchResultType = SearchResultType.SystemCommand;
+                break;
+              case 'game':
+                searchResultType = SearchResultType.Game;
+                break;
+              case 'timer':
+                searchResultType = SearchResultType.Timer;
+                break;
+              default:
+                searchResultType = SearchResultType.Plugin;
+            }
+
+            const pluginId = result.pluginId || result.type;
+            const keywordBoost = getPluginKeywordBoost(rawQuery, pluginId);
+            const finalScore = keywordBoost > 0 ? keywordBoost + result.score : result.score;
+
+            return {
+              id: result.id,
+              type: searchResultType,
+              title: result.title,
+              subtitle: result.subtitle,
+              icon: result.icon,
+              badge: result.badge,
+              score: finalScore,
+              data: result,
+            };
+          });
+
+        // Helper: merge, sort, and limit accumulated results
+        const mergeResults = (...sources: SearchResult[][]): SearchResult[] =>
+          sources
+            .flat()
+            .sort((a, b) => b.score - a.score)
+            .slice(0, maxResults + 4);
+
+        // Accumulated partial results from streaming
+        let streamedApps: SearchResult[] = [];
+        let streamedFiles: SearchResult[] = [];
+        let streamedPlugins: SearchResult[] = [];
+
+        // Start plugin search in parallel (plugins run in-process, not via Tauri)
+        const pluginPromise = pluginRegistry
+          .query({ query: effectiveQuery })
+          .catch(() => [] as PluginResultData[]);
+
+        // Set up the streaming channel for backend search (apps + files)
+        const channel = new Channel<SearchBatch>();
+        channel.onmessage = (batch) => {
+          // Guard against stale search
+          if (searchId !== latestSearchId.current) return;
+
+          if (batch.event === 'apps') {
+            streamedApps = convertApps(batch.data.results);
+            // Show partial results immediately (apps arrived)
+            setResults(mergeResults(streamedApps, streamedFiles, streamedPlugins));
+          } else if (batch.event === 'files') {
+            streamedFiles = convertFiles(batch.data.results);
+            // Show partial results immediately (files arrived)
+            setResults(mergeResults(streamedApps, streamedFiles, streamedPlugins));
+          }
+          // 'done' event is handled when the invoke promise resolves
+        };
+
+        // Launch the streaming search command (sends apps/files via channel)
+        const streamingPromise = appsReady
+          ? invoke('search_streaming', {
+              query: effectiveQuery,
+              apps: allApps,
+              limit: maxResults * 2,
+              ...(parsed.hasOperators
+                ? {
+                    ext: parsed.operators.ext,
+                    dir: parsed.operators.dir,
+                    sizeMin: parsed.operators.sizeMin,
+                    sizeMax: parsed.operators.sizeMax,
+                    modifiedAfter: parsed.operators.modifiedAfter,
+                    modifiedBefore: parsed.operators.modifiedBefore,
+                  }
+                : {}),
+              onEvent: channel,
+            }).catch((err) => {
+              logger.warn('Streaming search failed, results may be partial:', String(err));
+            })
+          : Promise.resolve();
+
+        // Wait for both streaming backend and plugin search to complete
+        const [, pluginResults] = await Promise.all([streamingPromise, pluginPromise]);
 
         // Drop stale responses
         if (searchId !== latestSearchId.current) {
           return;
         }
 
-        // Convert apps with frecency scores — no path in subtitle (clean like Raycast)
-        const appResults: SearchResult[] = frecencyApps.map((appWithScore) => ({
-          id: appWithScore.id,
-          type: SearchResultType.Application,
-          title: appWithScore.name,
-          subtitle: appWithScore.description || undefined,
-          icon: appWithScore.icon,
-          score: SEARCH_PRIORITIES.APPLICATION + appWithScore.score,
-          data: appWithScore as AppInfo,
-        }));
+        // Merge plugin results into final set
+        streamedPlugins = convertPlugins(pluginResults, query);
 
-        // Convert files — shortened paths (~\Documents instead of C:\Users\...)
-        const fileResults: SearchResult[] = searchedFiles.map((file) => ({
-          id: file.id,
-          type: SearchResultType.File,
-          title: file.name,
-          subtitle: shortenPath(file.path),
-          icon: file.icon,
-          score: SEARCH_PRIORITIES.FILE,
-          data: file,
-        }));
-
-        // Convert plugin results to search results
-        const pluginSearchResults: SearchResult[] = pluginResults.map((result) => {
-          let searchResultType: SearchResultType;
-          switch (result.type) {
-            case 'calculator':
-              searchResultType = SearchResultType.Calculator;
-              break;
-            case 'websearch':
-              searchResultType = SearchResultType.WebSearch;
-              break;
-            case 'systemcommand':
-              searchResultType = SearchResultType.SystemCommand;
-              break;
-            case 'game':
-              searchResultType = SearchResultType.Game;
-              break;
-            case 'timer':
-              searchResultType = SearchResultType.Timer;
-              break;
-            default:
-              searchResultType = SearchResultType.Plugin;
-          }
-
-          // Calculate score with potential keyword boost
-          const pluginId = result.pluginId || result.type;
-          const keywordBoost = getPluginKeywordBoost(query, pluginId);
-          const finalScore = keywordBoost > 0 ? keywordBoost + result.score : result.score;
-
-          return {
-            id: result.id,
-            type: searchResultType,
-            title: result.title,
-            subtitle: result.subtitle,
-            icon: result.icon,
-            badge: result.badge,
-            score: finalScore,
-            data: result,
-          };
-        });
-
-        // Merge and sort by score, then limit
-        const allResults = [...appResults, ...fileResults, ...pluginSearchResults]
-          .sort((a, b) => b.score - a.score)
-          .slice(0, maxResults + 4);
-
-        setResults(allResults);
+        // Final merge with all sources
+        setResults(mergeResults(streamedApps, streamedFiles, streamedPlugins));
       } catch (err) {
         const errorMessage = err instanceof Error ? err.message : String(err);
         logger.error('Search failed:', errorMessage);
