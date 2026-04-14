@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
   Calculator,
   Clock,
@@ -12,6 +12,8 @@ import {
   HardDrive,
 } from 'lucide-react';
 import { SearchResult, SearchResultType } from '../../../shared/types/common.types';
+import { highlightMatch, HighlightSegment } from '../../../shared/utils/highlightMatch';
+import { useSearchStore } from '../../../stores/searchStore';
 import './ResultItem.css';
 
 // System Monitor data interface
@@ -43,6 +45,27 @@ interface ResultItemProps {
   onLaunch: () => void;
 }
 
+/** Render a title string with highlighted matching characters */
+function HighlightedText({
+  segments,
+}: {
+  segments: HighlightSegment[];
+}) {
+  return (
+    <>
+      {segments.map((seg, i) =>
+        seg.highlighted ? (
+          <span key={i} className="result-highlight">
+            {seg.text}
+          </span>
+        ) : (
+          <span key={i}>{seg.text}</span>
+        ),
+      )}
+    </>
+  );
+}
+
 export const ResultItem: React.FC<ResultItemProps> = ({
   result,
   isSelected,
@@ -50,6 +73,13 @@ export const ResultItem: React.FC<ResultItemProps> = ({
   onSelect,
   onLaunch,
 }) => {
+  const searchQuery = useSearchStore((s) => s.searchQuery);
+
+  const titleSegments = useMemo(
+    () => highlightMatch(result.title, searchQuery),
+    [result.title, searchQuery],
+  );
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') {
       onLaunch();
@@ -165,7 +195,9 @@ export const ResultItem: React.FC<ResultItemProps> = ({
         renderSystemMonitorContent()
       ) : (
         <div className="result-content">
-          <div className="result-title truncate">{result.title}</div>
+          <div className="result-title truncate">
+            <HighlightedText segments={titleSegments} />
+          </div>
           {result.subtitle && <div className="result-subtitle truncate">{result.subtitle}</div>}
         </div>
       )}
