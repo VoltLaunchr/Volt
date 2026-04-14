@@ -143,7 +143,7 @@ export const ResultItem: React.FC<ResultItemProps> = ({
               <Gamepad2 size={24} strokeWidth={2} />
             ) : result.type === SearchResultType.Calculator ? (
               // Check if this is a timezone result
-              result.data?.queryType === 'timezone' ? (
+              (result.data as Record<string, unknown>)?.queryType === 'timezone' ? (
                 <Clock size={24} strokeWidth={2} className="plugin-icon timer" />
               ) : (
                 <Calculator size={24} strokeWidth={2} className="plugin-icon calculator" />
