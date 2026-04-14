@@ -574,10 +574,7 @@ async fn scan_applications_windows() -> Result<Vec<AppInfo>, String> {
             .to_string_lossy()
             .to_string();
         // User Desktop shortcuts
-        let user_desktop = profile_path
-            .join("Desktop")
-            .to_string_lossy()
-            .to_string();
+        let user_desktop = profile_path.join("Desktop").to_string_lossy().to_string();
 
         vec![
             r"C:\ProgramData\Microsoft\Windows\Start Menu\Programs".to_string(),
@@ -596,7 +593,10 @@ async fn scan_applications_windows() -> Result<Vec<AppInfo>, String> {
         vec![
             r"C:\ProgramData\Microsoft\Windows\Start Menu\Programs".to_string(),
             user_start_menu,
-            format!(r"C:\Users\{}\AppData\Roaming\Microsoft\Internet Explorer\Quick Launch\User Pinned\TaskBar", username),
+            format!(
+                r"C:\Users\{}\AppData\Roaming\Microsoft\Internet Explorer\Quick Launch\User Pinned\TaskBar",
+                username
+            ),
             format!(r"C:\Users\{}\Desktop", username),
             r"C:\Users\Public\Desktop".to_string(),
         ]
@@ -662,8 +662,8 @@ async fn scan_applications_windows() -> Result<Vec<AppInfo>, String> {
 /// Scan Windows registry Uninstall keys for installed applications
 #[cfg(target_os = "windows")]
 fn scan_registry_apps() -> Result<Vec<AppInfo>, String> {
-    use winreg::enums::*;
     use winreg::RegKey;
+    use winreg::enums::*;
 
     let mut apps = Vec::new();
     let hklm = RegKey::predef(HKEY_LOCAL_MACHINE);
@@ -713,8 +713,15 @@ fn scan_registry_apps() -> Result<Vec<AppInfo>, String> {
                 }
             } else if !display_icon.is_empty() {
                 // DisplayIcon often points to the executable
-                let icon_path = display_icon.split(',').next().unwrap_or("").trim().to_string();
-                if icon_path.to_lowercase().ends_with(".exe") && std::path::Path::new(&icon_path).exists() {
+                let icon_path = display_icon
+                    .split(',')
+                    .next()
+                    .unwrap_or("")
+                    .trim()
+                    .to_string();
+                if icon_path.to_lowercase().ends_with(".exe")
+                    && std::path::Path::new(&icon_path).exists()
+                {
                     icon_path
                 } else {
                     continue;
@@ -735,7 +742,11 @@ fn scan_registry_apps() -> Result<Vec<AppInfo>, String> {
                 name: display_name,
                 path,
                 icon: None,
-                description: if publisher.is_empty() { None } else { Some(publisher) },
+                description: if publisher.is_empty() {
+                    None
+                } else {
+                    Some(publisher)
+                },
                 keywords: None,
                 last_used: None,
                 usage_count: 0,
@@ -1252,10 +1263,7 @@ fn resolve_lnk_shortcut(lnk_path: &std::path::Path) -> Option<(String, Option<St
                         .icon_location()
                         .as_ref()
                         .map(|s| s.to_string());
-                    return Some((
-                        resolved.to_string_lossy().to_string(),
-                        icon_location,
-                    ));
+                    return Some((resolved.to_string_lossy().to_string(), icon_location));
                 }
             }
 

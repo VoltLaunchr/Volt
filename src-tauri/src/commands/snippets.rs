@@ -70,10 +70,7 @@ fn resolve_variables(content: &str, clipboard: Option<&str>) -> String {
 
     result = result.replace("{date}", &now.format("%Y-%m-%d").to_string());
     result = result.replace("{time}", &now.format("%H:%M:%S").to_string());
-    result = result.replace(
-        "{datetime}",
-        &now.format("%Y-%m-%d %H:%M:%S").to_string(),
-    );
+    result = result.replace("{datetime}", &now.format("%Y-%m-%d %H:%M:%S").to_string());
     result = result.replace("{random}", &Uuid::new_v4().to_string());
 
     if let Some(clip) = clipboard {
@@ -212,10 +209,7 @@ pub async fn expand_snippet(
 
 /// Import snippets from JSON string
 #[tauri::command]
-pub async fn import_snippets(
-    state: State<'_, SnippetState>,
-    json: String,
-) -> VoltResult<usize> {
+pub async fn import_snippets(state: State<'_, SnippetState>, json: String) -> VoltResult<usize> {
     let imported: Vec<Snippet> =
         serde_json::from_str(&json).map_err(|e| VoltError::Unknown(e.to_string()))?;
 

@@ -111,8 +111,7 @@ pub fn migrate_from_json_if_needed() {
             }
         };
 
-        let map: serde_json::Map<String, serde_json::Value> = match serde_json::from_str(&content)
-        {
+        let map: serde_json::Map<String, serde_json::Value> = match serde_json::from_str(&content) {
             Ok(m) => m,
             Err(e) => {
                 warn!("Migration: failed to parse credentials.json: {}", e);

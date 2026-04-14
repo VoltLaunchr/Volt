@@ -141,18 +141,14 @@ pub async fn open_quicklink(_app: tauri::AppHandle, quicklink: Quicklink) -> Vol
                 std::process::Command::new("cmd")
                     .args(["/C", &quicklink.target])
                     .spawn()
-                    .map_err(|e| {
-                        VoltError::Launch(format!("Failed to execute command: {}", e))
-                    })?;
+                    .map_err(|e| VoltError::Launch(format!("Failed to execute command: {}", e)))?;
             }
             #[cfg(not(target_os = "windows"))]
             {
                 std::process::Command::new("sh")
                     .args(["-c", &quicklink.target])
                     .spawn()
-                    .map_err(|e| {
-                        VoltError::Launch(format!("Failed to execute command: {}", e))
-                    })?;
+                    .map_err(|e| VoltError::Launch(format!("Failed to execute command: {}", e)))?;
             }
         }
         _ => {

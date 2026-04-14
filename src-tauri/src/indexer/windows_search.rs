@@ -101,7 +101,11 @@ try {{
     }
 
     if !results.is_empty() {
-        info!("Windows Search: found {} results for '{}'", results.len(), query);
+        info!(
+            "Windows Search: found {} results for '{}'",
+            results.len(),
+            query
+        );
     }
 
     Ok(results)

@@ -250,10 +250,7 @@ pub async fn record_search_selection(
         .save(&file_path)
         .map_err(VoltError::Unknown)?;
 
-    info!(
-        "Recorded query binding: '{}' -> '{}'",
-        query, result_id
-    );
+    info!("Recorded query binding: '{}' -> '{}'", query, result_id);
 
     Ok(())
 }

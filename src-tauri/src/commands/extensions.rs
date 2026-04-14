@@ -960,9 +960,9 @@ pub async fn link_dev_extension(app: AppHandle, path: String) -> VoltResult<DevE
     }
 
     // Canonicalize path to prevent symlink traversal
-    let canonical_path = extension_dir.canonicalize().map_err(|e| {
-        VoltError::FileSystem(format!("Failed to resolve path: {}", e))
-    })?;
+    let canonical_path = extension_dir
+        .canonicalize()
+        .map_err(|e| VoltError::FileSystem(format!("Failed to resolve path: {}", e)))?;
 
     // Validate that the path is within the user's home directory
     if let Some(home) = dirs::home_dir() {

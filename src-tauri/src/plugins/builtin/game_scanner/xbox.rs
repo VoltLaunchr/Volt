@@ -33,8 +33,8 @@ impl XboxScanner {
     /// Get PackageFamilyName from Get-AppxPackage PowerShell
     #[cfg(target_os = "windows")]
     fn get_package_family_names() -> Result<std::collections::HashMap<String, String>, String> {
-        use std::process::Command;
         use std::collections::HashMap;
+        use std::process::Command;
 
         let output = Command::new("powershell")
             .args([

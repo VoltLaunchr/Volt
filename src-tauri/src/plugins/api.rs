@@ -361,7 +361,10 @@ impl VoltPluginAPI {
         }
 
         // Log successful aggregation (actual integration with main search system is handled by frontend plugin registry)
-        info!("Plugin search results queued for aggregation: {} results", results.len());
+        info!(
+            "Plugin search results queued for aggregation: {} results",
+            results.len()
+        );
 
         Ok(())
     }

@@ -3,8 +3,8 @@ use tauri::{AppHandle, Manager, State};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 use tracing::{error, info, warn};
 
-use crate::window::center_on_target_monitor;
 use crate::ShowOnScreenState;
+use crate::window::center_on_target_monitor;
 
 // Store the currently registered hotkey
 pub struct HotkeyState {

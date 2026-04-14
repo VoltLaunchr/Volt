@@ -6,7 +6,6 @@
  * - macOS   : macOS Keychain
  * - Linux   : D-Bus Secret Service (GNOME Keyring / KWallet)
  */
-
 use serde::{Deserialize, Serialize};
 use tracing::{debug, info};
 

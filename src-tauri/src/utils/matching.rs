@@ -1,5 +1,5 @@
-use nucleo_matcher::{Config, Matcher, Utf32Str};
 use nucleo_matcher::pattern::{CaseMatching, Normalization, Pattern};
+use nucleo_matcher::{Config, Matcher, Utf32Str};
 
 /// Performs fuzzy matching - checks if all characters from pattern appear in text in order
 ///
@@ -148,7 +148,10 @@ mod tests {
         let vscode_score = calculate_match_score("Visual Studio Code", "vsc");
         let slow_calc_score = calculate_match_score("Very Slow Calculator", "vsc");
         assert!(vscode_score > 0.0, "vsc should match Visual Studio Code");
-        assert!(slow_calc_score > 0.0, "vsc should match Very Slow Calculator");
+        assert!(
+            slow_calc_score > 0.0,
+            "vsc should match Very Slow Calculator"
+        );
         // nucleo gives word-boundary bonuses, so V-S-C at word starts should score higher
         assert!(
             vscode_score >= slow_calc_score,

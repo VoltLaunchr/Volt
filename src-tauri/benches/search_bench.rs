@@ -1,4 +1,4 @@
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
 use volt_lib::commands::apps::AppInfo;
 use volt_lib::launcher::{LaunchRecord, QueryBindingStore};
 use volt_lib::search::search_applications;
@@ -25,36 +25,78 @@ fn make_app(name: &str, path: &str) -> AppInfo {
 
 /// Realistic Windows-style app list used across benchmarks.
 const APP_NAMES: &[(&str, &str)] = &[
-    ("Visual Studio Code", r"C:\Program Files\Microsoft VS Code\Code.exe"),
-    ("Google Chrome", r"C:\Program Files\Google\Chrome\Application\chrome.exe"),
-    ("Mozilla Firefox", r"C:\Program Files\Mozilla Firefox\firefox.exe"),
-    ("Microsoft Edge", r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"),
+    (
+        "Visual Studio Code",
+        r"C:\Program Files\Microsoft VS Code\Code.exe",
+    ),
+    (
+        "Google Chrome",
+        r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+    ),
+    (
+        "Mozilla Firefox",
+        r"C:\Program Files\Mozilla Firefox\firefox.exe",
+    ),
+    (
+        "Microsoft Edge",
+        r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+    ),
     ("Slack", r"C:\Users\user\AppData\Local\slack\slack.exe"),
     ("Discord", r"C:\Users\user\AppData\Local\Discord\Update.exe"),
-    ("Spotify", r"C:\Users\user\AppData\Roaming\Spotify\Spotify.exe"),
+    (
+        "Spotify",
+        r"C:\Users\user\AppData\Roaming\Spotify\Spotify.exe",
+    ),
     ("Steam", r"C:\Program Files (x86)\Steam\steam.exe"),
     ("Notepad++", r"C:\Program Files\Notepad++\notepad++.exe"),
-    ("Windows Terminal", r"C:\Users\user\AppData\Local\Microsoft\WindowsApps\wt.exe"),
+    (
+        "Windows Terminal",
+        r"C:\Users\user\AppData\Local\Microsoft\WindowsApps\wt.exe",
+    ),
     ("File Explorer", r"C:\Windows\explorer.exe"),
     ("Calculator", r"C:\Windows\System32\calc.exe"),
     ("Paint", r"C:\Windows\System32\mspaint.exe"),
-    ("PowerShell", r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe"),
+    (
+        "PowerShell",
+        r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe",
+    ),
     ("Task Manager", r"C:\Windows\System32\Taskmgr.exe"),
-    ("OBS Studio", r"C:\Program Files\obs-studio\bin\64bit\obs64.exe"),
+    (
+        "OBS Studio",
+        r"C:\Program Files\obs-studio\bin\64bit\obs64.exe",
+    ),
     ("VLC Media Player", r"C:\Program Files\VideoLAN\VLC\vlc.exe"),
     ("7-Zip", r"C:\Program Files\7-Zip\7zFM.exe"),
     ("WinRAR", r"C:\Program Files\WinRAR\WinRAR.exe"),
-    ("Adobe Photoshop", r"C:\Program Files\Adobe\Adobe Photoshop 2024\Photoshop.exe"),
-    ("Blender", r"C:\Program Files\Blender Foundation\Blender 4.0\blender.exe"),
+    (
+        "Adobe Photoshop",
+        r"C:\Program Files\Adobe\Adobe Photoshop 2024\Photoshop.exe",
+    ),
+    (
+        "Blender",
+        r"C:\Program Files\Blender Foundation\Blender 4.0\blender.exe",
+    ),
     ("GIMP", r"C:\Program Files\GIMP 2\bin\gimp-2.10.exe"),
     ("Audacity", r"C:\Program Files\Audacity\audacity.exe"),
-    ("LibreOffice Writer", r"C:\Program Files\LibreOffice\program\swriter.exe"),
+    (
+        "LibreOffice Writer",
+        r"C:\Program Files\LibreOffice\program\swriter.exe",
+    ),
     ("Figma", r"C:\Users\user\AppData\Local\Figma\Figma.exe"),
-    ("Postman", r"C:\Users\user\AppData\Local\Postman\Postman.exe"),
-    ("Docker Desktop", r"C:\Program Files\Docker\Docker\Docker Desktop.exe"),
+    (
+        "Postman",
+        r"C:\Users\user\AppData\Local\Postman\Postman.exe",
+    ),
+    (
+        "Docker Desktop",
+        r"C:\Program Files\Docker\Docker\Docker Desktop.exe",
+    ),
     ("Git Bash", r"C:\Program Files\Git\git-bash.exe"),
     ("Node.js", r"C:\Program Files\nodejs\node.exe"),
-    ("Rust Analyzer", r"C:\Users\user\.cargo\bin\rust-analyzer.exe"),
+    (
+        "Rust Analyzer",
+        r"C:\Users\user\.cargo\bin\rust-analyzer.exe",
+    ),
 ];
 
 fn generate_apps(count: usize) -> Vec<AppInfo> {
@@ -187,13 +229,9 @@ fn bench_search_applications(c: &mut Criterion) {
         });
 
         // Narrow query matching few results
-        group.bench_with_input(
-            BenchmarkId::new("narrow_query", count),
-            &apps,
-            |b, apps| {
-                b.iter(|| search_applications(black_box("discord"), black_box(apps.clone())))
-            },
-        );
+        group.bench_with_input(BenchmarkId::new("narrow_query", count), &apps, |b, apps| {
+            b.iter(|| search_applications(black_box("discord"), black_box(apps.clone())))
+        });
 
         // No-match query (worst case: scans everything, returns nothing)
         group.bench_with_input(
@@ -232,20 +270,16 @@ fn bench_search_with_frecency(c: &mut Criterion) {
             },
         );
 
-        group.bench_with_input(
-            BenchmarkId::new("no_history", count),
-            &apps,
-            |b, apps| {
-                b.iter(|| {
-                    search_applications_with_frecency(
-                        black_box("chrome"),
-                        black_box(apps.clone()),
-                        black_box(&[]),
-                        black_box(None),
-                    )
-                })
-            },
-        );
+        group.bench_with_input(BenchmarkId::new("no_history", count), &apps, |b, apps| {
+            b.iter(|| {
+                search_applications_with_frecency(
+                    black_box("chrome"),
+                    black_box(apps.clone()),
+                    black_box(&[]),
+                    black_box(None),
+                )
+            })
+        });
     }
 
     group.finish();

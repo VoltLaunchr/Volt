@@ -8,8 +8,8 @@
 
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use tauri::ipc::Channel;
 use tauri::State;
+use tauri::ipc::Channel;
 
 use crate::commands::apps::{AppInfo, AppInfoWithScore};
 use crate::commands::files::FileIndexState;
@@ -168,17 +168,11 @@ pub async fn search_streaming(
     // Extract data from State<'_> before spawning (State is not Send)
     let history = history_state.history.clone();
     let bindings_snapshot = {
-        let bindings = binding_state
-            .store
-            .lock()
-            .map_err(|e| e.to_string())?;
+        let bindings = binding_state.store.lock().map_err(|e| e.to_string())?;
         bindings.clone()
     };
     let files_snapshot = {
-        let guard = file_state
-            .files
-            .lock()
-            .map_err(|e| e.to_string())?;
+        let guard = file_state.files.lock().map_err(|e| e.to_string())?;
         Arc::clone(&guard)
     };
 
@@ -227,7 +221,9 @@ pub async fn search_streaming(
     }
 
     // Signal completion
-    on_event.send(SearchBatch::Done).map_err(|e| e.to_string())?;
+    on_event
+        .send(SearchBatch::Done)
+        .map_err(|e| e.to_string())?;
     Ok(())
 }
 

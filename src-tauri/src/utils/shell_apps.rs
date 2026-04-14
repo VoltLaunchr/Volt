@@ -139,11 +139,15 @@ pub fn is_junk_app(name: &str) -> bool {
 
     let junk_patterns = [
         // SDK / dev samples
-        "sample uwp", "sample desktop", "sample app",
-        "tools for uwp", "tools for desktop",
+        "sample uwp",
+        "sample desktop",
+        "sample app",
+        "tools for uwp",
+        "tools for desktop",
         "documentation for",
         // Installers / uninstallers
-        "uninstall", "désinstall",
+        "uninstall",
+        "désinstall",
         // System internals (very specific)
         "appvdllsurrogate",
         "gameinputrawinputproxy",

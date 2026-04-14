@@ -176,8 +176,8 @@ pub async fn auth_refresh_token() -> Result<AuthSession, String> {
     ensure_configured()?;
     info!("Refreshing Supabase auth token");
 
-    let session = load_auth_session()?
-        .ok_or_else(|| "No auth session found to refresh".to_string())?;
+    let session =
+        load_auth_session()?.ok_or_else(|| "No auth session found to refresh".to_string())?;
 
     let url = format!("{}/auth/v1/token?grant_type=refresh_token", SUPABASE_URL);
 

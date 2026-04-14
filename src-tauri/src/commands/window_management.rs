@@ -9,9 +9,9 @@ mod windows_impl {
     use std::mem;
     use winapi::shared::windef::{HWND, RECT};
     use winapi::um::winuser::{
-        GetForegroundWindow, GetMonitorInfoW, GetWindowLongW, GetWindowRect, MonitorFromWindow,
-        SetWindowPos, ShowWindow, GWL_STYLE, MONITORINFO, MONITOR_DEFAULTTONEAREST,
-        SWP_NOACTIVATE, SWP_NOZORDER, SW_MAXIMIZE, SW_MINIMIZE, SW_RESTORE, WS_MAXIMIZE,
+        GWL_STYLE, GetForegroundWindow, GetMonitorInfoW, GetWindowLongW, GetWindowRect,
+        MONITOR_DEFAULTTONEAREST, MONITORINFO, MonitorFromWindow, SW_MAXIMIZE, SW_MINIMIZE,
+        SW_RESTORE, SWP_NOACTIVATE, SWP_NOZORDER, SetWindowPos, ShowWindow, WS_MAXIMIZE,
     };
 
     /// Returns the foreground window handle, or an error if none is found.
@@ -50,7 +50,16 @@ mod windows_impl {
                 ShowWindow(hwnd, SW_RESTORE);
             }
 
-            if SetWindowPos(hwnd, std::ptr::null_mut(), x, y, w, h, SWP_NOZORDER | SWP_NOACTIVATE) == 0 {
+            if SetWindowPos(
+                hwnd,
+                std::ptr::null_mut(),
+                x,
+                y,
+                w,
+                h,
+                SWP_NOZORDER | SWP_NOACTIVATE,
+            ) == 0
+            {
                 return Err("SetWindowPos failed".to_string());
             }
         }

@@ -1,14 +1,13 @@
+use once_cell::sync::Lazy;
 /**
  * OAuth Integration Commands
  *
  * Manages OAuth flows for integrations (GitHub, Notion)
  * Handles deep link callbacks from volta:// protocol
  */
-
 use serde::{Deserialize, Serialize};
-use tracing::{debug, info, warn};
 use std::sync::Mutex;
-use once_cell::sync::Lazy;
+use tracing::{debug, info, warn};
 
 static OAUTH_STATE: Lazy<Mutex<OAuthState>> = Lazy::new(|| Mutex::new(OAuthState::new()));
 
@@ -85,7 +84,10 @@ pub fn get_github_oauth_url() -> Result<String, String> {
 
     // Return OAuth endpoint URL with state parameter - frontend will open it
     info!("GitHub OAuth URL requested, request_id: {}", request_id);
-    Ok(format!("https://voltlaunchr.com/api/oauth/github?state={}", request_id))
+    Ok(format!(
+        "https://voltlaunchr.com/api/oauth/github?state={}",
+        request_id
+    ))
 }
 
 /// Start OAuth flow for Notion
@@ -114,7 +116,10 @@ pub fn get_notion_oauth_url() -> Result<String, String> {
 
     // Return OAuth endpoint URL with state parameter - frontend will open it
     info!("Notion OAuth URL requested, request_id: {}", request_id);
-    Ok(format!("https://voltlaunchr.com/api/oauth/notion?state={}", request_id))
+    Ok(format!(
+        "https://voltlaunchr.com/api/oauth/notion?state={}",
+        request_id
+    ))
 }
 
 /// Handle OAuth callback from deep link
@@ -145,11 +150,10 @@ pub fn handle_oauth_callback(
     {
         let mut oauth_state = lock_state()?;
 
-        let pending_request = oauth_state.pending_requests.remove(&state)
-            .ok_or_else(|| {
-                warn!("OAuth callback with unknown state: {}", state);
-                "Invalid or expired OAuth state parameter".to_string()
-            })?;
+        let pending_request = oauth_state.pending_requests.remove(&state).ok_or_else(|| {
+            warn!("OAuth callback with unknown state: {}", state);
+            "Invalid or expired OAuth state parameter".to_string()
+        })?;
 
         // Verify that the callback service matches the request service
         if pending_request.service != service {
@@ -206,7 +210,9 @@ pub fn clear_oauth_pending(service: String) -> Result<(), String> {
 
     let mut state = lock_state()?;
 
-    state.pending_requests.retain(|_id, req| req.service != service);
+    state
+        .pending_requests
+        .retain(|_id, req| req.service != service);
     Ok(())
 }
 

@@ -686,8 +686,7 @@ impl ClipboardManagerPlugin {
                                     // Convert to base64
                                     let base64_content =
                                         general_purpose::STANDARD.encode(&png_bytes);
-                                    let current_hash =
-                                        crate::utils::hash_id(&base64_content);
+                                    let current_hash = crate::utils::hash_id(&base64_content);
 
                                     let mut last_hash_guard = last_content_hash.lock().unwrap();
                                     let should_add =

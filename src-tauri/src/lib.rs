@@ -307,7 +307,8 @@ pub fn run() {
                             match commands::auth::handle_auth_deep_link(url_str) {
                                 Ok(_session) => {
                                     info!("Auth session saved from deep link");
-                                    if let Err(e) = emitter_handle.emit("auth:session-updated", ()) {
+                                    if let Err(e) = emitter_handle.emit("auth:session-updated", ())
+                                    {
                                         error!("Failed to emit auth:session-updated event: {}", e);
                                     }
                                 }
@@ -319,8 +320,13 @@ pub fn run() {
                             match commands::oauth::handle_oauth_deep_link(url_str) {
                                 Ok(result) => {
                                     info!("OAuth token saved for service: {}", result.service);
-                                    if let Err(e) = emitter_handle.emit("oauth:callback-received", &result) {
-                                        error!("Failed to emit oauth:callback-received event: {}", e);
+                                    if let Err(e) =
+                                        emitter_handle.emit("oauth:callback-received", &result)
+                                    {
+                                        error!(
+                                            "Failed to emit oauth:callback-received event: {}",
+                                            e
+                                        );
                                     }
                                 }
                                 Err(e) => {
@@ -330,7 +336,10 @@ pub fn run() {
                         }
                     }
                 } else {
-                    warn!("Failed to parse deep link event payload: {}", event.payload());
+                    warn!(
+                        "Failed to parse deep link event payload: {}",
+                        event.payload()
+                    );
                 }
             });
 

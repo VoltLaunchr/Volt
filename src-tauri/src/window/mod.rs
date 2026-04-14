@@ -82,9 +82,7 @@ pub async fn position_on_target_monitor(
     app: AppHandle,
     show_on_screen: String,
 ) -> Result<(), String> {
-    let window = app
-        .get_webview_window("main")
-        .ok_or("Window not found")?;
+    let window = app.get_webview_window("main").ok_or("Window not found")?;
 
     center_on_target_monitor(&window, &show_on_screen)
 }
@@ -109,8 +107,8 @@ pub fn update_show_on_screen(app: AppHandle, value: String) -> Result<(), String
 fn get_target_monitor_rect(show_on_screen: &str) -> Option<(i32, i32, i32, i32)> {
     use winapi::shared::windef::POINT;
     use winapi::um::winuser::{
-        GetCursorPos, GetForegroundWindow, MonitorFromPoint, MonitorFromWindow,
-        MONITOR_DEFAULTTONEAREST, MONITOR_DEFAULTTOPRIMARY,
+        GetCursorPos, GetForegroundWindow, MONITOR_DEFAULTTONEAREST, MONITOR_DEFAULTTOPRIMARY,
+        MonitorFromPoint, MonitorFromWindow,
     };
 
     unsafe {

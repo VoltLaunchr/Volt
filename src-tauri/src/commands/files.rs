@@ -636,7 +636,16 @@ pub async fn search_files_advanced(
     filename_only: Option<bool>,
     min_score: Option<u32>,
 ) -> VoltResult<Vec<FileSearchResult>> {
-    search_files_impl(&state, &query, limit, categories, include_hidden, filename_only, min_score, false)
+    search_files_impl(
+        &state,
+        &query,
+        limit,
+        categories,
+        include_hidden,
+        filename_only,
+        min_score,
+        false,
+    )
 }
 
 /// Advanced file search with highlighting support (returns matched character indices)
@@ -650,7 +659,16 @@ pub async fn search_files_with_highlighting(
     filename_only: Option<bool>,
     min_score: Option<u32>,
 ) -> VoltResult<Vec<FileSearchResult>> {
-    search_files_impl(&state, &query, limit, categories, include_hidden, filename_only, min_score, true)
+    search_files_impl(
+        &state,
+        &query,
+        limit,
+        categories,
+        include_hidden,
+        filename_only,
+        min_score,
+        true,
+    )
 }
 
 /// Get available file categories
