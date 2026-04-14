@@ -786,27 +786,27 @@ async fn scan_applications_macos() -> Result<Vec<AppInfo>, String> {
                 let path = entry.path();
 
                 // macOS apps are .app bundles (directories)
-                if path.extension().map(|e| e == "app").unwrap_or(false) {
-                    if let Some(app_name) = path.file_stem() {
-                        let name = app_name.to_string_lossy().to_string();
-                        let path_str = path.to_string_lossy().to_string();
+                if path.extension().map(|e| e == "app").unwrap_or(false)
+                    && let Some(app_name) = path.file_stem()
+                {
+                    let name = app_name.to_string_lossy().to_string();
+                    let path_str = path.to_string_lossy().to_string();
 
-                        // Try to get app icon from Info.plist
-                        let icon = extract_macos_app_icon(&path);
+                    // Try to get app icon from Info.plist
+                    let icon = extract_macos_app_icon(&path);
 
-                        let category = detect_app_category(&name, &path_str);
-                        apps.push(AppInfo {
-                            id: crate::utils::hash_id(&path_str),
-                            name,
-                            path: path_str,
-                            icon,
-                            description: None,
-                            keywords: None,
-                            last_used: None,
-                            usage_count: 0,
-                            category: Some(category),
-                        });
-                    }
+                    let category = detect_app_category(&name, &path_str);
+                    apps.push(AppInfo {
+                        id: crate::utils::hash_id(&path_str),
+                        name,
+                        path: path_str,
+                        icon,
+                        description: None,
+                        keywords: None,
+                        last_used: None,
+                        usage_count: 0,
+                        category: Some(category),
+                    });
                 }
             }
         }
@@ -906,7 +906,8 @@ fn convert_icns_to_base64_png(icns_path: &std::path::Path) -> Result<String, Str
     }
 
     // Convert to base64
-    Ok(base64::encode(&png_buffer))
+    use base64::{Engine as _, engine::general_purpose};
+    Ok(general_purpose::STANDARD.encode(&png_buffer))
 }
 
 // ============================================================================

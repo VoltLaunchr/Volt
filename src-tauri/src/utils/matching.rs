@@ -155,7 +155,7 @@ mod tests {
         );
         // Both should be in the fuzzy range (50-89)
         assert!(
-            vscode_score >= 50.0 && vscode_score <= 89.0,
+            (50.0..=89.0).contains(&vscode_score),
             "Visual Studio Code score ({}) should be in fuzzy range",
             vscode_score
         );
