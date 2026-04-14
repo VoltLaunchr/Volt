@@ -34,7 +34,30 @@ pub fn search_applications_with_frecency(
     let mut results: Vec<(AppInfo, f32)> = apps
         .into_iter()
         .filter_map(|app| {
-            let match_score = calculate_match_score(&app.name, query);
+            // Match against name first
+            let mut match_score = calculate_match_score(&app.name, query);
+
+            // If name doesn't match well, also try matching against path
+            // This catches "vscode" matching "...\VS Code\Code.exe"
+            if match_score < 50.0 {
+                let path_score = calculate_match_score(&app.path, query);
+                if path_score > match_score {
+                    match_score = path_score * 0.9; // slightly lower than name match
+                }
+            }
+
+            // Also try matching against keywords if available
+            if match_score < 50.0 {
+                if let Some(ref keywords) = app.keywords {
+                    for kw in keywords {
+                        let kw_score = calculate_match_score(kw, query);
+                        if kw_score > match_score {
+                            match_score = kw_score * 0.85;
+                        }
+                    }
+                }
+            }
+
             if match_score <= 0.0 {
                 return None;
             }
@@ -42,14 +65,10 @@ pub fn search_applications_with_frecency(
             let frecency = frecency_map.get(app.path.as_str()).copied().unwrap_or(0.0);
 
             let final_score = if frecency > 0.0 {
-                // Used app: match_score + frecency bonus (up to 50 pts)
                 match_score + (frecency * 10.0).min(50.0) as f32
             } else if has_history {
-                // Never-used app when we have history: penalize by 30%
-                // so used apps rank above never-used ones
                 match_score * 0.7
             } else {
-                // No history at all: pure match score
                 match_score
             };
 

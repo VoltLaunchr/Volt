@@ -145,6 +145,47 @@ export function useSearchPipeline({
       const parsed = parseQuery(query);
       const effectiveQuery = parsed.hasOperators ? parsed.searchQuery : query;
 
+      // Detect "show all" queries — user wants to browse a category, not search by name
+      const lowerQuery = query.trim().toLowerCase();
+      const isAppBrowseQuery = ['app', 'apps', 'application', 'applications', 'programmes'].includes(lowerQuery);
+      const isGameBrowseQuery = ['game', 'games', 'jeu', 'jeux'].includes(lowerQuery);
+
+      // If browsing apps, show ALL apps sorted by name (frecency will reorder used ones)
+      if (isAppBrowseQuery && appsReady) {
+        const searchId = ++latestSearchId.current;
+        const allAppResults: SearchResult[] = allApps
+          .slice(0, maxResults + 4)
+          .map((app, i) => ({
+            id: app.id,
+            type: SearchResultType.Application,
+            title: app.name,
+            subtitle: app.description || undefined,
+            icon: app.icon,
+            score: SEARCH_PRIORITIES.APPLICATION + 100 - i,
+            data: app,
+          }));
+
+        // Fetch frecency to reorder — used apps first
+        try {
+          const frecency = await invoke<LaunchRecord[]>('get_frecency_suggestions', { limit: 20 })
+            .catch(() => [] as LaunchRecord[]);
+          if (frecency.length > 0) {
+            const frecencyPaths = new Set(frecency.map((r) => r.path));
+            allAppResults.sort((a, b) => {
+              const aUsed = frecencyPaths.has((a.data as AppInfo).path) ? 1 : 0;
+              const bUsed = frecencyPaths.has((b.data as AppInfo).path) ? 1 : 0;
+              return bUsed - aUsed || b.score - a.score;
+            });
+          }
+        } catch { /* continue */ }
+
+        if (searchId === latestSearchId.current) {
+          setResults(allAppResults);
+        }
+        setShowSnowEffect(false);
+        return;
+      }
+
       // Check if query is about Christmas (for snow effect)
       const isChristmasQuery =
         /christmas|xmas|noel|25.*dec|dec.*25/i.test(query) ||
@@ -196,8 +237,24 @@ export function useSearchPipeline({
           data: appWithScore as AppInfo,
         }));
 
+        // Filter junk system files from file results
+        const filteredFiles = searchedFiles.filter((file) => {
+          const path = file.path.toLowerCase();
+          // Skip .exe files from system directories entirely
+          if (file.name.toLowerCase().endsWith('.exe')) {
+            const systemDirs = [
+              'program files', 'program files (x86)', 'windows',
+              'programdata', 'common files', 'clicktorun',
+              'installer', 'servicehub', 'windows kits',
+              'microsoft shared', 'nvidia corporation',
+            ];
+            if (systemDirs.some((d) => path.includes(d))) return false;
+          }
+          return true;
+        });
+
         // Convert files — shortened paths (~\Documents instead of C:\Users\...)
-        const fileResults: SearchResult[] = searchedFiles.map((file) => ({
+        const fileResults: SearchResult[] = filteredFiles.map((file) => ({
           id: file.id,
           type: SearchResultType.File,
           title: file.name,
@@ -247,8 +304,50 @@ export function useSearchPipeline({
           };
         });
 
+        // Always prepend top frecency apps (recently/frequently used)
+        let finalAppResults = appResults;
+        try {
+          const frecencySuggestions = await invoke<LaunchRecord[]>(
+            'get_frecency_suggestions',
+            { limit: 5 }
+          ).catch(() => [] as LaunchRecord[]);
+
+          if (frecencySuggestions.length > 0) {
+            const existingPaths = new Set(finalAppResults.map((r) => (r.data as AppInfo)?.path));
+            const supplementary: SearchResult[] = frecencySuggestions
+              .filter((r) => !existingPaths.has(r.path))
+              .map((record, i) => ({
+                id: `frecency-${record.path}`,
+                type: SearchResultType.Application,
+                title: record.name,
+                subtitle: 'Recently used',
+                icon: undefined,
+                score: SEARCH_PRIORITIES.APPLICATION + 40 - i, // high score, just below direct matches
+                data: {
+                  id: `frecency-${record.path}`,
+                  name: record.name,
+                  path: record.path,
+                  usageCount: record.launchCount,
+                } as AppInfo,
+              }));
+
+            finalAppResults = [...finalAppResults, ...supplementary];
+          }
+        } catch {
+          // silently continue
+        }
+
+        // Boost game results when query is game-related
+        if (isGameBrowseQuery) {
+          for (const r of pluginSearchResults) {
+            if (r.type === SearchResultType.Game) {
+              r.score += 500; // push games above everything
+            }
+          }
+        }
+
         // Merge and sort by score, then limit
-        const allResults = [...appResults, ...fileResults, ...pluginSearchResults]
+        const allResults = [...finalAppResults, ...fileResults, ...pluginSearchResults]
           .sort((a, b) => b.score - a.score)
           .slice(0, maxResults + 4);
 

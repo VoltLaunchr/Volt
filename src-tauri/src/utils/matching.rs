@@ -46,7 +46,17 @@ pub fn calculate_match_score(text: &str, query: &str) -> f32 {
     } else if fuzzy_match(&text_lower, &query_lower) {
         50.0 // Fuzzy match
     } else {
-        0.0 // No match
+        // Multi-word matching: check if ALL query words appear somewhere in the text
+        let query_words: Vec<&str> = query_lower.split_whitespace().collect();
+        if query_words.len() > 1 && query_words.iter().all(|w| text_lower.contains(*w)) {
+            65.0 // All words present
+        } else if query_words.len() > 1
+            && query_words.iter().filter(|w| text_lower.contains(*w)).count() >= query_words.len() - 1
+        {
+            40.0 // Most words present (one missing)
+        } else {
+            0.0 // No match
+        }
     }
 }
 

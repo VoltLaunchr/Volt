@@ -1,6 +1,7 @@
 pub mod apps;
 pub mod autostart;
 pub mod clipboard;
+pub mod credentials;
 pub mod extensions;
 pub mod files;
 pub mod games;
@@ -16,6 +17,7 @@ pub mod system_monitor;
 pub use apps::*;
 pub use autostart::*;
 pub use clipboard::*;
+pub use credentials::*;
 pub use extensions::*;
 pub use files::*;
 pub use games::*;

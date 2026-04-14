@@ -129,28 +129,22 @@ fn is_system_app(name: &str) -> bool {
     system_prefixes.iter().any(|p| name.starts_with(p))
 }
 
-/// Filter out junk app names (SDK samples, documentation, dev tools)
+/// Filter out obvious junk app names (SDK samples, documentation, internal tools)
+/// Keep it minimal — only filter things that are CLEARLY not user-facing apps.
 pub fn is_junk_app(name: &str) -> bool {
     let lower = name.to_lowercase();
+
     let junk_patterns = [
-        "sample uwp",
-        "sample desktop",
-        "tools for uwp",
-        "tools for desktop",
+        // SDK / dev samples
+        "sample uwp", "sample desktop", "sample app",
+        "tools for uwp", "tools for desktop",
         "documentation for",
-        "sdk ",
-        "debug ",
-        "developer ",
-        "uninstall",
-        "setup",
-        "installer",
-        "updater",
-        "update helper",
-        "crash report",
-        "error report",
-        "compatibility",
-        "redistributable",
-        "runtime",
+        // Installers / uninstallers
+        "uninstall", "désinstall",
+        // System internals (very specific)
+        "appvdllsurrogate",
+        "gameinputrawinputproxy",
+        "store purchase app",
     ];
     junk_patterns.iter().any(|p| lower.contains(p))
 }

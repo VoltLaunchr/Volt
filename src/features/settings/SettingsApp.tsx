@@ -37,6 +37,7 @@ import {
 } from './types/settings.types';
 import { SETTINGS_CATEGORIES, type SettingsCategory } from './constants/settingsCategories';
 import { ExtensionsStore } from '../extensions';
+import { IntegrationsPanel } from './components/IntegrationsPanel';
 import logo from '../../assets/icons/logo.svg';
 import './SettingsApp.css';
 
@@ -1278,6 +1279,8 @@ export function SettingsApp() {
         return renderShortcutsSection();
       case 'extensions':
         return <ExtensionsStore />;
+      case 'integrations':
+        return <IntegrationsPanel />;
       case 'advanced':
         return renderAdvancedSection();
       case 'about':

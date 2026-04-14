@@ -32,8 +32,17 @@ function getSectionKey(type: SearchResultType): string {
   }
 }
 
-/** Section display order */
-const SECTION_ORDER = ['applications', 'commands', 'games', 'results', 'files'];
+/** Get section order — prioritize sections that have the most results */
+function getSectionOrder(grouped: Map<string, unknown[]>): string[] {
+  const base = ['applications', 'commands', 'games', 'results', 'files'];
+  // If games section has more items than apps, put games first
+  const gameCount = (grouped.get('games') as unknown[] | undefined)?.length ?? 0;
+  const appCount = (grouped.get('applications') as unknown[] | undefined)?.length ?? 0;
+  if (gameCount > appCount) {
+    return ['games', 'applications', 'commands', 'results', 'files'];
+  }
+  return base;
+}
 
 /** Section labels */
 const SECTION_LABELS: Record<string, string> = {
@@ -76,8 +85,9 @@ export const ResultsList: React.FC<ResultsListProps> = ({
     // Only show section headers if there are multiple sections
     const sectionCount = grouped.size;
 
+    const sectionOrder = getSectionOrder(grouped);
     const ordered: ResultSection[] = [];
-    for (const key of SECTION_ORDER) {
+    for (const key of sectionOrder) {
       const items = grouped.get(key);
       if (items && items.length > 0) {
         ordered.push({

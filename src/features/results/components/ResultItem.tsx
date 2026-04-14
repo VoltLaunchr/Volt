@@ -1,5 +1,6 @@
 import React from 'react';
 import {
+  AppWindow,
   Calculator,
   Clock,
   File,
@@ -140,10 +141,12 @@ export const ResultItem: React.FC<ResultItemProps> = ({
             {result.type === SearchResultType.File ? (
               <File size={24} strokeWidth={2} />
             ) : result.type === SearchResultType.Application ? (
+              <AppWindow size={24} strokeWidth={2} />
+            ) : result.type === SearchResultType.Game ? (
               <Gamepad2 size={24} strokeWidth={2} />
             ) : result.type === SearchResultType.Calculator ? (
               // Check if this is a timezone result
-              (result.data as Record<string, unknown>)?.queryType === 'timezone' ? (
+              (result.data as unknown as Record<string, unknown>)?.queryType === 'timezone' ? (
                 <Clock size={24} strokeWidth={2} className="plugin-icon timer" />
               ) : (
                 <Calculator size={24} strokeWidth={2} className="plugin-icon calculator" />

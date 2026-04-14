@@ -40,6 +40,29 @@ export interface PluginSettings {
   clipboardMonitoring: boolean;
 }
 
+export interface Integration {
+  id: string;
+  name: string;
+  icon: string;
+  description: string;
+  website?: string;
+  configured: boolean;
+  enabled: boolean;
+}
+
+export interface IntegrationsSettings {
+  github?: {
+    token: string;
+    enabled: boolean;
+    lastUpdated?: string;
+  };
+  notion?: {
+    token: string;
+    enabled: boolean;
+    lastUpdated?: string;
+  };
+}
+
 export interface AppShortcut {
   id: string;
   name: string;
@@ -62,6 +85,7 @@ export interface Settings {
   indexing: IndexingSettings;
   plugins: PluginSettings;
   shortcuts: ShortcutsSettings;
+  integrations?: IntegrationsSettings;
 }
 
 export type Theme = 'light' | 'dark' | 'auto';
@@ -120,5 +144,15 @@ export const DEFAULT_SETTINGS: Settings = {
   },
   shortcuts: {
     appShortcuts: [],
+  },
+  integrations: {
+    github: {
+      token: '',
+      enabled: false,
+    },
+    notion: {
+      token: '',
+      enabled: false,
+    },
   },
 };
