@@ -1,10 +1,10 @@
 {
   "versions": [
     {
-      "version": "0.0.5",
-      "date": "2026-04-14",
-      "title": "Authentication, Quick Links & Window Management",
-      "description": "Volt v0.0.5 brings user authentication with OAuth support, two powerful new plugins, a hardened security layer, and a full end-to-end test suite — all wrapped in improved French translations.",
+      "version": "0.0.5.1",
+      "date": "2026-04-15",
+      "title": "Auth, Search Overhaul, Extensions Sandbox & Window Management",
+      "description": "Volt v0.0.5.1 is a major update with user authentication (OAuth), a completely revamped search engine with unified scoring and streaming results, a secure Web Worker sandbox for extensions, two new plugins, Zustand state management, and full French translations.",
       "sections": [
         {
           "type": "features",
@@ -15,14 +15,32 @@
             "Quick Links plugin — instant access to bookmarks and favorite URLs",
             "Window Management plugin — snap, resize and move windows from the launcher",
             "Integrations panel in Settings for connected services",
-            "Improved search pipeline with centralized scoring constants"
+            "Onboarding modal for first-time users",
+            "Toast notification system with indexing progress"
+          ]
+        },
+        {
+          "type": "performance",
+          "title": "Search & Performance",
+          "icon": "zap",
+          "items": [
+            "Unified scoring engine with nucleo fuzzy matcher for apps and files",
+            "Streaming search via Tauri Channels for incremental results",
+            "Batch IPC calls and O(1) file clone for faster responses",
+            "Match highlighting in search results",
+            "Web search fallback when no local results found",
+            "Adaptive debounce and deferred rendering for smoother UX",
+            "Query-result binding for learned search preferences"
           ]
         },
         {
           "type": "plugins",
-          "title": "Security & Stability",
-          "icon": "zap",
+          "title": "Security & Extensions",
+          "icon": "shield",
           "items": [
+            "Web Worker sandbox for extensions with permission enforcement",
+            "Permission consent dialog on first extension load",
+            "Network proxy for sandboxed extensions (permission-gated)",
             "Global ErrorBoundary to gracefully catch rendering crashes",
             "Safe invoke wrapper (safeInvoke) for resilient Tauri IPC calls",
             "Runtime type guards for stricter data validation",
@@ -32,11 +50,13 @@
         },
         {
           "type": "system",
-          "title": "Testing & CI/CD",
+          "title": "Architecture & CI/CD",
           "icon": "cpu",
           "items": [
+            "Migrated state management to Zustand stores (search, UI, app)",
             "End-to-end test suite: accessibility, keyboard navigation, search, smoke tests",
             "Automated release workflow with platform builds and signing",
+            "SignPath code signing integration for Windows",
             "Changelog generation workflow (git-cliff)",
             "Dependabot configuration for dependency updates"
           ]
@@ -46,14 +66,14 @@
           "title": "Internationalization",
           "icon": "settings",
           "items": [
+            "Full internationalization system with English and French",
             "Comprehensive French translations for all plugins and settings",
-            "Improved locale files for calculator, emoji picker, games, timer, and more",
             "Localized Quick Links and Window Management plugins (EN + FR)"
           ]
         }
       ],
       "footer": {
-        "gettingStarted": "Press Ctrl+Space to open Volt anytime. Try the new Quick Links plugin or snap windows with the Window Management commands.",
+        "gettingStarted": "Press Ctrl+Space to open Volt anytime. Try the new Quick Links plugin, snap windows with Window Management, or connect your GitHub account in Settings.",
         "feedback": "Have feedback or found a bug? Visit our GitHub repository to report issues or request features.",
         "links": {
           "github": "https://github.com/VoltLaunchr/Volt",
