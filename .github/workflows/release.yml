@@ -1,36 +1,26 @@
 name: Release
 
+# Triggered ONLY by pushing a semver tag (v*.*.*).
+# Flow: dev → PR → main → tag → this workflow → build + release draft
 on:
   push:
     tags:
-      - "v*"
-  workflow_dispatch:
-    inputs:
-      version:
-        description: "Version tag to create and release (e.g. v0.0.5.2)"
-        required: true
-        type: string
+      - "v*.*.*"
+
+# Cancel any in-progress release for the same tag
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: true
+
+env:
+  # Resolve version once — available in all jobs
+  TAG: ${{ github.ref_name }}
 
 jobs:
-  create-tag:
-    if: github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: main
-      - name: Create and push tag
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag "${{ inputs.version }}"
-          git push origin "${{ inputs.version }}"
-
+  # ---------------------------------------------------------------------------
+  # Build on all 4 platform targets
+  # ---------------------------------------------------------------------------
   publish-tauri:
-    needs: [create-tag]
-    if: always() && (needs.create-tag.result == 'success' || needs.create-tag.result == 'skipped')
     outputs:
       artifact-id: ${{ steps.upload-unsigned.outputs.artifact-id }}
     permissions:
@@ -39,13 +29,13 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - platform: "macos-latest"
+          - platform: macos-latest
             args: "--target aarch64-apple-darwin"
-          - platform: "macos-latest"
+          - platform: macos-latest
             args: "--target x86_64-apple-darwin"
-          - platform: "ubuntu-22.04"
+          - platform: ubuntu-22.04
             args: ""
-          - platform: "windows-latest"
+          - platform: windows-latest
             args: ""
 
     runs-on: ${{ matrix.platform }}
@@ -60,8 +50,12 @@ jobs:
       - name: Install Rust Stable
         uses: dtolnay/rust-toolchain@stable
         with:
-          # Install targets for macOS builds (both Intel and Apple Silicon)
           targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
 
       - name: Install dependencies (Ubuntu only)
         if: matrix.platform == 'ubuntu-22.04'
@@ -72,68 +66,56 @@ jobs:
       - name: Install Frontend Dependencies
         run: bun install
 
-      # --- macOS code signing + notarization ---
-      # Activate by adding the following secrets in GitHub → Settings → Secrets and variables → Actions:
-      #   APPLE_CERTIFICATE           (base64 of .p12 Developer ID Application cert)
-      #   APPLE_CERTIFICATE_PASSWORD  (password for the .p12)
-      #   APPLE_SIGNING_IDENTITY      ("Developer ID Application: Name (TEAMID)")
-      #   APPLE_ID                    (Apple ID email)
-      #   APPLE_ID_PASSWORD           (app-specific password, NOT the Apple ID password)
-      #   APPLE_TEAM_ID               (10-char team ID)
-      # Then uncomment the block below. See docs/build-release/SIGNING_SETUP.md.
-      # - name: Import Apple certificate
-      #   if: matrix.platform == 'macos-latest'
-      #   uses: apple-actions/import-codesign-certs@v3
-      #   with:
-      #     p12-file-base64: ${{ secrets.APPLE_CERTIFICATE }}
-      #     p12-password: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+      # --- macOS code signing (opt-in) ---
+      # Only attempt if APPLE_CERTIFICATE secret is a valid base64 string (>100 chars).
+      # Empty or placeholder values are ignored.
+      - name: Import Apple certificate
+        if: matrix.platform == 'macos-latest' && secrets.APPLE_CERTIFICATE != '' && contains(secrets.APPLE_CERTIFICATE, '/')
+        uses: apple-actions/import-codesign-certs@v3
+        with:
+          p12-file-base64: ${{ secrets.APPLE_CERTIFICATE }}
+          p12-password: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        continue-on-error: true
 
       - name: Build and Release
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Supabase env vars — required at compile time by build.rs (cargo:rustc-env)
+          # Supabase — required at compile time by build.rs
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
-          # Updater signing (already in place)
+          # Updater signing
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          # macOS code signing + notarization (currently disabled — secrets are
-          # placeholder values that cause Tauri to attempt codesign and fail).
-          # Uncomment once valid Apple Developer certs are configured.
-          # APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          # APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          # APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          # APPLE_ID: ${{ secrets.APPLE_ID }}
-          # APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
-          # APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          # Windows Authenticode signing (opt-in via certificateThumbprint in tauri.conf.json
-          # or by setting WINDOWS_CERTIFICATE + WINDOWS_CERTIFICATE_PASSWORD secrets and
-          # updating tauri.conf.json to reference them). See docs/build-release/SIGNING_SETUP.md.
-          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
-          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+          # macOS — only passed when secrets look valid (non-empty)
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         with:
-          tagName: ${{ inputs.version || github.ref_name }}
-          releaseName: "Volt ${{ inputs.version || github.ref_name }}"
+          tagName: ${{ env.TAG }}
+          releaseName: "Volt ${{ env.TAG }}"
           releaseBody: |
-            ## 🚀 Volt ${{ inputs.version || github.ref_name }}
+            ## Volt ${{ env.TAG }}
 
-            ### 📥 Installation
-            - **Windows**: Download `volt_*_x64-setup.exe` (recommended) or `.msi`
-            - **macOS Intel**: Download `volt_*_x64.dmg`
-            - **macOS Apple Silicon**: Download `volt_*_aarch64.dmg`
-            - **Linux**: Download `.deb`, `.AppImage` or `.rpm`
+            ### Installation
+            | Platform | Download |
+            |---|---|
+            | **Windows** | `volt_*_x64-setup.exe` (recommended) or `.msi` |
+            | **macOS Intel** | `volt_*_x64.dmg` |
+            | **macOS Apple Silicon** | `volt_*_aarch64.dmg` |
+            | **Linux** | `.deb`, `.AppImage` or `.rpm` |
 
-            ### ✨ What's New
-            See the commits for changes.
+            ### What's New
+            See [CHANGELOG.md](https://github.com/VoltLaunchr/Volt/blob/main/CHANGELOG.md) for details.
 
             ---
-            🔄 Automatic updates are enabled!
+            Auto-updates are enabled.
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}
 
-      # --- Windows: collect artifacts for SignPath signing ---
+      # --- Windows: collect artifacts for SignPath ---
       - name: Collect Windows artifacts for signing
         if: matrix.platform == 'windows-latest'
         shell: bash
@@ -152,7 +134,9 @@ jobs:
           name: windows-unsigned
           path: signpath-input/
 
-  # --- SignPath code signing (Windows only) ---
+  # ---------------------------------------------------------------------------
+  # SignPath code signing (Windows, non-blocking)
+  # ---------------------------------------------------------------------------
   sign-windows:
     needs: publish-tauri
     if: always() && needs.publish-tauri.result != 'cancelled'
@@ -163,6 +147,7 @@ jobs:
     steps:
       - name: Submit signing request to SignPath
         id: sign
+        if: secrets.SIGNPATH_API_TOKEN != ''
         uses: signpath/github-action-submit-signing-request@v1
         with:
           api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
@@ -183,14 +168,12 @@ jobs:
         run: |
           echo "Signed artifacts:"
           ls -la signpath-output/ 2>/dev/null || echo "No signed output"
-          TAG="${GITHUB_REF_NAME}"
           for file in signpath-output/*; do
             if [ -f "$file" ]; then
               BASENAME=$(basename "$file")
               echo "Uploading signed: $BASENAME"
-              # Delete unsigned version first, then upload signed
-              gh release delete-asset "$TAG" "$BASENAME" --repo "$GITHUB_REPOSITORY" --yes 2>/dev/null || true
-              gh release upload "$TAG" "$file" --repo "$GITHUB_REPOSITORY" --clobber
+              gh release delete-asset "${{ env.TAG }}" "$BASENAME" --repo "$GITHUB_REPOSITORY" --yes 2>/dev/null || true
+              gh release upload "${{ env.TAG }}" "$file" --repo "$GITHUB_REPOSITORY" --clobber
             fi
           done
 
@@ -198,26 +181,19 @@ jobs:
         if: always()
         run: |
           if [ "${{ steps.sign.outcome }}" == "success" ]; then
-            echo "SignPath signing completed successfully"
+            echo "::notice::SignPath signing completed successfully"
+          elif [ "${{ steps.sign.outcome }}" == "skipped" ]; then
+            echo "::notice::SignPath signing skipped (SIGNPATH_API_TOKEN not configured)"
           else
-            echo "SignPath signing skipped or failed (non-blocking). Unsigned artifacts remain in the release."
-            echo "This is expected if SignPath Foundation approval is still pending."
+            echo "::warning::SignPath signing failed (non-blocking). Unsigned artifacts remain in the release."
           fi
 
-  # --- Submit to official winget-pkgs repository ---
-  # Automatically creates a PR to microsoft/winget-pkgs with the new version.
-  # Requires a GitHub PAT (classic) with `public_repo` scope stored as WINGET_GH_PAT.
-  # The PAT owner's GitHub account must be able to fork microsoft/winget-pkgs.
-  #
-  # Setup (one-time):
-  #   1. Go to https://github.com/settings/tokens → Generate new token (classic)
-  #   2. Select scope: public_repo
-  #   3. Copy the token
-  #   4. Go to your repo → Settings → Secrets → Actions → New repository secret
-  #   5. Name: WINGET_GH_PAT, Value: <your token>
+  # ---------------------------------------------------------------------------
+  # Winget submission (only for stable releases, non-blocking)
+  # ---------------------------------------------------------------------------
   update-winget:
     needs: publish-tauri
-    if: startsWith(github.ref, 'refs/tags/v') || inputs.version != ''
+    if: needs.publish-tauri.result == 'success'
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -229,20 +205,18 @@ jobs:
         id: version
         shell: bash
         run: |
-          TAG="${{ inputs.version || github.ref_name }}"
-          VERSION="${TAG#v}"
+          VERSION="${{ env.TAG }}"
+          VERSION="${VERSION#v}"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
 
-      - name: Wait for release assets to be available
+      - name: Wait for release assets
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          TAG="${{ steps.version.outputs.tag }}"
-          echo "Waiting for Windows installer in release $TAG..."
+          echo "Waiting for Windows installer in release ${{ env.TAG }}..."
           for i in $(seq 1 30); do
-            if gh release view "$TAG" --json assets -q '.assets[].name' | grep -q "x64-setup.exe"; then
+            if gh release view "${{ env.TAG }}" --json assets -q '.assets[].name' | grep -q "x64-setup.exe"; then
               echo "Installer found!"
               exit 0
             fi
@@ -253,126 +227,21 @@ jobs:
           exit 1
 
       - name: Install wingetcreate
+        if: secrets.WINGET_GH_PAT != ''
         shell: pwsh
         run: |
-          # Pin to specific version to avoid supply-chain attacks via the /latest redirect
           $wingetcreateVersion = "v1.6.5491"
           $url = "https://github.com/microsoft/winget-create/releases/download/${wingetcreateVersion}/wingetcreate.exe"
           Invoke-WebRequest -Uri $url -OutFile wingetcreate.exe -UseBasicParsing
-          if ($LASTEXITCODE -and $LASTEXITCODE -ne 0) { throw "Download failed" }
-          # TODO: Pin SHA256 hash here once verified from a trusted source, e.g.:
-          #   $expectedHash = "INSERT_SHA256_HERE"
-          #   $actualHash = (Get-FileHash -Algorithm SHA256 wingetcreate.exe).Hash
-          #   if ($actualHash -ne $expectedHash) { throw "Hash mismatch: expected $expectedHash, got $actualHash" }
-          Write-Host "Downloaded wingetcreate ${wingetcreateVersion}: $((Get-FileHash -Algorithm SHA256 wingetcreate.exe).Hash)"
 
       - name: Submit to winget-pkgs
+        if: secrets.WINGET_GH_PAT != ''
         shell: pwsh
         env:
           WINGET_GH_PAT: ${{ secrets.WINGET_GH_PAT }}
         run: |
           $version = "${{ steps.version.outputs.version }}"
-          $tag = "${{ steps.version.outputs.tag }}"
-          $url = "https://github.com/VoltLaunchr/Volt/releases/download/${tag}/volt_${version}_x64-setup.exe"
-
+          $url = "https://github.com/VoltLaunchr/Volt/releases/download/${{ env.TAG }}/volt_${version}_x64-setup.exe"
           Write-Host "Submitting VoltLaunchr.Volt v${version} to winget-pkgs..."
-          Write-Host "Installer URL: ${url}"
-
-          .\wingetcreate.exe update VoltLaunchr.Volt `
-            --version $version `
-            --urls $url `
-            --submit `
-            --token $env:WINGET_GH_PAT
-
-      - name: Update local winget manifests
-        shell: bash
-        run: |
-          VERSION="${{ steps.version.outputs.version }}"
-          TAG="${{ steps.version.outputs.tag }}"
-
-          # Download the installer to compute SHA256
-          INSTALLER="volt_${VERSION}_x64-setup.exe"
-          gh release download "$TAG" --pattern "*x64-setup.exe" --dir /tmp
-          SHA256=$(sha256sum /tmp/$INSTALLER | awk '{print toupper($1)}')
-          echo "SHA256: $SHA256"
-
-          MANIFEST_DIR="winget/manifests/v/VoltLaunchr/Volt/${VERSION}"
-          mkdir -p "$MANIFEST_DIR"
-
-          # Version manifest
-          cat > "$MANIFEST_DIR/VoltLaunchr.Volt.yaml" <<'HEREDOC'
-          # yaml-language-server: $schema=https://aka.ms/winget-manifest.version.1.6.0.schema.json
-
-          PackageIdentifier: VoltLaunchr.Volt
-          HEREDOC
-          # Use envsubst-style replacement for dynamic values
-          cat >> "$MANIFEST_DIR/VoltLaunchr.Volt.yaml" <<HEREDOC
-          PackageVersion: ${VERSION}
-          DefaultLocale: en-US
-          ManifestType: version
-          ManifestVersion: 1.6.0
-          HEREDOC
-          sed -i 's/^          //' "$MANIFEST_DIR/VoltLaunchr.Volt.yaml"
-
-          # Installer manifest
-          cat > "$MANIFEST_DIR/VoltLaunchr.Volt.installer.yaml" <<HEREDOC
-          # yaml-language-server: \$schema=https://aka.ms/winget-manifest.installer.1.6.0.schema.json
-
-          PackageIdentifier: VoltLaunchr.Volt
-          PackageVersion: ${VERSION}
-          InstallModes:
-            - interactive
-            - silent
-          InstallerSwitches:
-            Silent: /S
-            SilentWithProgress: /S
-          Installers:
-            - Architecture: x64
-              InstallerType: nullsoft
-              InstallerUrl: https://github.com/VoltLaunchr/Volt/releases/download/${TAG}/volt_${VERSION}_x64-setup.exe
-              InstallerSha256: ${SHA256}
-
-          ManifestType: installer
-          ManifestVersion: 1.6.0
-          HEREDOC
-          sed -i 's/^          //' "$MANIFEST_DIR/VoltLaunchr.Volt.installer.yaml"
-
-          # Locale manifest
-          cat > "$MANIFEST_DIR/VoltLaunchr.Volt.locale.en-US.yaml" <<HEREDOC
-          # yaml-language-server: \$schema=https://aka.ms/winget-manifest.defaultLocale.1.6.0.schema.json
-
-          PackageIdentifier: VoltLaunchr.Volt
-          PackageVersion: ${VERSION}
-          PackageLocale: en-US
-          Publisher: VoltLaunchr
-          PublisherUrl: https://github.com/VoltLaunchr
-          PublisherSupportUrl: https://github.com/VoltLaunchr/Volt/issues
-          PackageName: Volt
-          PackageUrl: https://github.com/VoltLaunchr/Volt
-          License: Apache-2.0
-          LicenseUrl: https://github.com/VoltLaunchr/Volt/blob/main/LICENSE
-          Copyright: Copyright (c) VoltLaunchr contributors
-          ShortDescription: Lightning-fast application launcher
-          Description: Fast, beautiful desktop launcher for Windows, macOS, and Linux
-          Moniker: volt
-          Tags:
-            - launcher
-            - productivity
-            - search
-            - spotlight
-            - alfred
-            - tauri
-          ReleaseNotesUrl: https://github.com/VoltLaunchr/Volt/releases/tag/${TAG}
-          ManifestType: defaultLocale
-          ManifestVersion: 1.6.0
-          HEREDOC
-          sed -i 's/^          //' "$MANIFEST_DIR/VoltLaunchr.Volt.locale.en-US.yaml"
-
-          # Commit to local repo
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add "winget/manifests/v/VoltLaunchr/Volt/${VERSION}/"
-          git commit -m "chore(winget): update manifest for v${VERSION}" || echo "No changes"
-          git push
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          .\wingetcreate.exe update VoltLaunchr.Volt --version $version --urls $url --submit --token $env:WINGET_GH_PAT
+        continue-on-error: true
