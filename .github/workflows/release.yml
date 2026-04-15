@@ -129,7 +129,7 @@ jobs:
       - name: Upload unsigned artifacts for SignPath
         if: matrix.platform == 'windows-latest'
         id: upload-unsigned
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: windows-unsigned
           path: signpath-input/
