@@ -5,9 +5,32 @@ on:
     tags:
       - "v*"
   workflow_dispatch:
+    inputs:
+      version:
+        description: "Version tag to create and release (e.g. v0.0.5)"
+        required: true
+        type: string
 
 jobs:
+  create-tag:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Create and push tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag "${{ inputs.version }}"
+          git push origin "${{ inputs.version }}"
+
   publish-tauri:
+    needs: [create-tag]
+    if: always() && (needs.create-tag.result == 'success' || needs.create-tag.result == 'skipped')
     outputs:
       artifact-id: ${{ steps.upload-unsigned.outputs.artifact-id }}
     permissions:
@@ -88,10 +111,10 @@ jobs:
           WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
           WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: "Volt ${{ github.ref_name }}"
+          tagName: ${{ inputs.version || github.ref_name }}
+          releaseName: "Volt ${{ inputs.version || github.ref_name }}"
           releaseBody: |
-            ## 🚀 Volt ${{ github.ref_name }}
+            ## 🚀 Volt ${{ inputs.version || github.ref_name }}
 
             ### 📥 Installation
             - **Windows**: Download `volt_*_x64-setup.exe` (recommended) or `.msi`
@@ -192,7 +215,7 @@ jobs:
   #   5. Name: WINGET_GH_PAT, Value: <your token>
   update-winget:
     needs: publish-tauri
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v') || inputs.version != ''
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -204,9 +227,10 @@ jobs:
         id: version
         shell: bash
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
+          TAG="${{ inputs.version || github.ref_name }}"
+          VERSION="${TAG#v}"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
 
       - name: Wait for release assets to be available
         shell: bash
