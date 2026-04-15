@@ -34,7 +34,7 @@
     "commands": "Commands"
   },
   "suggestions": {
-    "whats-new": { "title": "See what's new", "subtitle": "v0.0.5.1" },
+    "whats-new": { "title": "See what's new", "subtitle": "v0.0.5.2" },
     "settings": { "title": "Settings", "subtitle": "Application Settings" },
     "clipboard-history": { "title": "Clipboard History", "subtitle": "View Clipboard" },
     "search-files": { "title": "Search Files", "subtitle": "File Search" },

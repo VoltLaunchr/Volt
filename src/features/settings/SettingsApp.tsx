@@ -68,7 +68,7 @@ export function SettingsApp() {
     type: 'success' | 'error';
     message: string;
   } | null>(null);
-  const appVersion = '0.0.5.1';
+  const appVersion = '0.0.5.2';
 
   // Indexing stats for the File Search panel
   const [indexStats, setIndexStats] = useState<{

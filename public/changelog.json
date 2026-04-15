@@ -1,7 +1,7 @@
 {
   "versions": [
     {
-      "version": "0.0.5.1",
+      "version": "0.0.5.2",
       "date": "2026-04-15",
       "title": "Auth, Search Overhaul, Extensions Sandbox & Window Management",
       "description": "Volt v0.0.5.1 is a major update with user authentication (OAuth), a completely revamped search engine with unified scoring and streaming results, a secure Web Worker sandbox for extensions, two new plugins, Zustand state management, and full French translations.",
