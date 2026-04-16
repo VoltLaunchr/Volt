@@ -13,6 +13,7 @@ use notify::{
 };
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tracing::{debug, error, info, warn};
@@ -26,22 +27,33 @@ const DEBOUNCE_MS: u64 = 100;
 
 /// Owned handle returned to the caller.  Drop to stop watching.
 pub struct WatcherHandle {
-    /// The underlying notify watcher – keeping it alive keeps the watch active.
-    _watcher: RecommendedWatcher,
-    /// Shared flag; set to `false` to signal the worker thread to exit.
-    active: Arc<Mutex<bool>>,
+    /// The underlying notify watcher. Wrapped in `Option<Mutex<_>>` so that
+    /// `stop()` can *explicitly* drop it, which closes the notify channel and
+    /// wakes the background thread immediately instead of waiting up to
+    /// `DEBOUNCE_MS` for the next poll.
+    watcher: Mutex<Option<RecommendedWatcher>>,
+    /// Shared atomic flag; set to `false` to signal the worker thread to exit.
+    /// Uses `AtomicBool` so the thread can observe the shutdown without
+    /// locking a Mutex on every iteration.
+    active: Arc<AtomicBool>,
 }
 
 impl WatcherHandle {
-    /// Stop the watcher.  The background thread will exit on the next poll.
+    /// Stop the watcher. The background thread exits immediately because the
+    /// notify sender is dropped (closing the event channel) and the `active`
+    /// flag is flipped to `false`. Safe to call multiple times.
     pub fn stop(&self) {
-        if let Ok(mut flag) = self.active.lock() {
-            *flag = false;
+        // Mark inactive first so the thread skips any further flushes even if
+        // it was mid-iteration when we drop the channel sender.
+        self.active.store(false, Ordering::Release);
+        // Drop the notify watcher (closes the event channel).
+        if let Ok(mut guard) = self.watcher.lock() {
+            guard.take();
         }
     }
 
     pub fn is_active(&self) -> bool {
-        self.active.lock().map(|f| *f).unwrap_or(false)
+        self.active.load(Ordering::Acquire)
     }
 }
 
@@ -66,7 +78,7 @@ pub fn start_watcher(
         return Err("No directories to watch".to_string());
     }
 
-    let active = Arc::new(Mutex::new(true));
+    let active = Arc::new(AtomicBool::new(true));
     let active_clone = active.clone();
 
     // Channel for raw notify events.
@@ -97,13 +109,13 @@ pub fn start_watcher(
         let mut last_flush = Instant::now();
 
         loop {
-            // Check if we should exit.
-            if !active_clone.lock().map(|f| *f).unwrap_or(false) {
-                info!("File watcher thread exiting");
+            // Fast check before blocking on recv.
+            if !active_clone.load(Ordering::Acquire) {
+                info!("File watcher thread exiting (active flag cleared)");
                 break;
             }
 
-            // Drain available events (non-blocking after the first).
+            // Drain available events; timeout lets us re-check the flag.
             let deadline = Duration::from_millis(DEBOUNCE_MS);
             match rx.recv_timeout(deadline) {
                 Ok(Ok(event)) => {
@@ -113,12 +125,21 @@ pub fn start_watcher(
                 }
                 Ok(Err(e)) => warn!("Watcher error: {}", e),
                 Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-                    // Time to flush pending events.
+                    // Fall through to flush.
                 }
                 Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                    // stop() dropped the notify watcher → channel closed.
                     info!("Watcher channel closed, exiting");
                     break;
                 }
+            }
+
+            // Re-check the shutdown flag before flushing. Closes the race
+            // window where flush_events could otherwise run against a DB
+            // that invalidate_index has just cleared.
+            if !active_clone.load(Ordering::Acquire) {
+                info!("File watcher thread exiting (shutdown during poll)");
+                break;
             }
 
             // Flush if debounce window elapsed.
@@ -129,14 +150,16 @@ pub fn start_watcher(
             }
         }
 
-        // Final flush.
-        if !pending.is_empty() {
-            flush_events(&db_thread, files_thread.as_ref(), &pending);
-        }
+        // No final flush on shutdown: if we're exiting because invalidate_index
+        // cleared the DB, flushing stale pending events would resurrect rows.
+        debug!(
+            "Watcher exiting with {} pending events (intentionally dropped)",
+            pending.len()
+        );
     });
 
     Ok(WatcherHandle {
-        _watcher: watcher,
+        watcher: Mutex::new(Some(watcher)),
         active,
     })
 }

@@ -168,7 +168,10 @@ export function useAppLifecycle(): UseAppLifecycleResult {
 
   // Listen for extension changes from settings window
   useEffect(() => {
-    const unlisten = listen<{ action: 'load' | 'unload' | 'reload'; extensionId: string }>(
+    let unlistenFn: (() => void) | undefined;
+    let cancelled = false;
+
+    listen<{ action: 'load' | 'unload' | 'reload'; extensionId: string }>(
       'extension-changed',
       async (event) => {
         const { action, extensionId } = event.payload;
@@ -190,10 +193,19 @@ export function useAppLifecycle(): UseAppLifecycleResult {
           logger.error(`Failed to ${action} extension ${extensionId}:`, err);
         }
       }
-    );
+    ).then((fn) => {
+      // If the component already unmounted while the Promise was pending,
+      // tear down the listener immediately instead of leaking it.
+      if (cancelled) {
+        fn();
+      } else {
+        unlistenFn = fn;
+      }
+    });
 
     return () => {
-      unlisten.then((fn) => fn());
+      cancelled = true;
+      unlistenFn?.();
     };
   }, []);
 

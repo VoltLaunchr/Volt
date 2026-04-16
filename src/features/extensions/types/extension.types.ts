@@ -56,7 +56,8 @@ export type ExtensionPermission =
   | 'filesystem'
   | 'network'
   | 'shell'
-  | 'notifications';
+  | 'notifications'
+  | 'openUrl';
 
 export interface ExtensionInfo {
   manifest: ExtensionManifest;

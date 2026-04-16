@@ -156,45 +156,118 @@ fn launch_windows(
         return launch_elevated_windows(path, options);
     }
 
-    let mut command = match file_type {
+    // Most file types go through ShellExecuteW with the "open" verb. This
+    // avoids cmd.exe re-parsing the path (which would turn characters like
+    // `&`, `|`, `>` in filenames into shell operators — see issue #37).
+    // Scripts fall back to explicit interpreters with escaped arguments.
+    match file_type {
         LaunchableFileType::Executable | LaunchableFileType::Shortcut => {
-            // Use cmd /C start for better Windows integration
-            let mut cmd = Command::new("cmd");
-            cmd.arg("/C").arg("start");
-
-            // Add /B flag to not open new window if hidden
-            if options.hidden {
-                cmd.arg("/B");
-            }
-
-            // Empty title string (required for start command)
-            cmd.arg("");
-            cmd.arg(path);
-            cmd
+            shell_execute_open(path, options)
         }
         LaunchableFileType::Script => {
-            // Detect script type
             let path_lower = path.to_lowercase();
             if path_lower.ends_with(".ps1") {
-                let mut cmd = Command::new("powershell");
-                cmd.args(["-File", path]);
-                cmd
+                // PowerShell isn't associated with .ps1 by default (opens in
+                // Notepad). Invoke powershell.exe directly, but pass the path
+                // without shell re-interpretation.
+                let mut command = Command::new("powershell");
+                command.args(["-NoProfile", "-File", path]);
+                run_command(command, options, path, start_time)
             } else {
-                // .bat or .cmd
-                let mut cmd = Command::new("cmd");
-                cmd.args(["/C", path]);
-                cmd
+                // .bat / .cmd — ShellExecuteW resolves the association and
+                // passes the filename as a single argument, no cmd re-parse.
+                shell_execute_open(path, options)
             }
         }
-        _ => {
-            // Default: use shell execute via cmd start
-            let mut cmd = Command::new("cmd");
-            cmd.args(["/C", "start", "", path]);
-            cmd
-        }
-    };
+        _ => shell_execute_open(path, options),
+    }
+}
 
-    // Apply options
+/// Launch a path via ShellExecuteW with the "open" verb. Safer than
+/// `cmd /C start` because the path is not re-parsed by the shell.
+#[cfg(target_os = "windows")]
+fn shell_execute_open(
+    path: &str,
+    options: &LaunchOptions,
+) -> Result<LaunchResult, LaunchError> {
+    use std::ffi::OsStr;
+    use std::os::windows::ffi::OsStrExt;
+    use std::ptr;
+    use winapi::um::shellapi::ShellExecuteW;
+
+    let operation: Vec<u16> = OsStr::new("open")
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+    let file: Vec<u16> = OsStr::new(path)
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+
+    let params_str = options
+        .args
+        .as_ref()
+        .map(|args| {
+            args.iter()
+                .map(|arg| escape_windows_arg(arg))
+                .collect::<Vec<_>>()
+                .join(" ")
+        })
+        .unwrap_or_default();
+    let params: Vec<u16> = params_str
+        .encode_utf16()
+        .chain(std::iter::once(0))
+        .collect();
+
+    let dir: Vec<u16> = options
+        .working_dir
+        .as_deref()
+        .unwrap_or("")
+        .encode_utf16()
+        .chain(std::iter::once(0))
+        .collect();
+
+    let show_cmd = if options.hidden { 0 } else { 1 }; // SW_HIDE / SW_SHOWNORMAL
+
+    unsafe {
+        let result = ShellExecuteW(
+            ptr::null_mut(),
+            operation.as_ptr(),
+            file.as_ptr(),
+            if params_str.is_empty() {
+                ptr::null()
+            } else {
+                params.as_ptr()
+            },
+            if options.working_dir.is_some() {
+                dir.as_ptr()
+            } else {
+                ptr::null()
+            },
+            show_cmd,
+        );
+
+        if (result as usize) <= 32 {
+            return Err(LaunchError::SpawnFailed {
+                path: path.to_string(),
+                message: format!("ShellExecuteW failed with code: {}", result as usize),
+            });
+        }
+    }
+
+    Ok(LaunchResult::new(path))
+}
+
+/// Run a prepared `Command` applying launch options (cwd, args, env, wait).
+/// Used for script interpreters where the program is fixed and args are
+/// controlled by the caller (never re-parsed by a shell).
+#[cfg(target_os = "windows")]
+fn run_command(
+    mut command: Command,
+    options: &LaunchOptions,
+    path: &str,
+    start_time: Instant,
+) -> Result<LaunchResult, LaunchError> {
     if let Some(ref cwd) = options.working_dir {
         command.current_dir(cwd);
     }
@@ -209,7 +282,6 @@ fn launch_windows(
         }
     }
 
-    // Spawn or run
     if options.wait {
         let output = command.output().map_err(|e| LaunchError::SpawnFailed {
             path: path.to_string(),

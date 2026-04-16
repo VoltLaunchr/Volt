@@ -5,7 +5,7 @@
  * The user can grant all requested permissions or deny (skip loading the extension).
  */
 
-import { Shield, Clipboard, HardDrive, Globe, Terminal, Bell } from 'lucide-react';
+import { Shield, Clipboard, HardDrive, Globe, Terminal, Bell, ExternalLink } from 'lucide-react';
 import { Modal } from '../../../shared/components/ui';
 import type { ExtensionPermission } from '../types/extension.types';
 import './PermissionDialog.css';
@@ -38,6 +38,11 @@ const PERMISSION_INFO: Record<
     label: 'Notifications',
     description: 'Show desktop notifications',
     icon: <Bell size={18} />,
+  },
+  openUrl: {
+    label: 'Open URLs',
+    description: 'Open links in your default browser',
+    icon: <ExternalLink size={18} />,
   },
 };
 
