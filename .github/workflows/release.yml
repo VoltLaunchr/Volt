@@ -94,11 +94,11 @@ jobs:
           # Updater signing
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          # macOS — only passed when secrets look valid (non-empty)
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # macOS code signing — use ad-hoc signing ("-") when no Apple certificate is configured
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_CERTIFICATE != '' && secrets.APPLE_SIGNING_IDENTITY || '-' }}
+          APPLE_ID: ${{ secrets.APPLE_CERTIFICATE != '' && secrets.APPLE_ID || '' }}
+          APPLE_ID_PASSWORD: ${{ secrets.APPLE_CERTIFICATE != '' && secrets.APPLE_ID_PASSWORD || '' }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_CERTIFICATE != '' && secrets.APPLE_TEAM_ID || '' }}
         with:
           tagName: ${{ env.TAG }}
           releaseName: "Volt ${{ env.TAG }}"
