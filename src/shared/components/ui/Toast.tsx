@@ -1,18 +1,21 @@
 import { useEffect } from 'react';
 import { create } from 'zustand';
-import { CheckCircle, AlertCircle, Info, X } from 'lucide-react';
+import { CheckCircle, AlertCircle, Info, X, Download } from 'lucide-react';
 import './Toast.css';
+
+export type ToastType = 'info' | 'success' | 'error' | 'update';
 
 export interface ToastItem {
   id: string;
   message: string;
-  type: 'info' | 'success' | 'error';
+  type: ToastType;
   duration: number;
+  action?: () => void;
 }
 
 interface ToastStore {
   toasts: ToastItem[];
-  addToast: (message: string, type?: 'info' | 'success' | 'error', duration?: number) => void;
+  addToast: (message: string, type?: ToastType, duration?: number, action?: () => void) => void;
   removeToast: (id: string) => void;
 }
 
@@ -21,10 +24,10 @@ let toastCounter = 0;
 export const useToastStore = create<ToastStore>()((set) => ({
   toasts: [],
 
-  addToast: (message, type = 'info', duration = 5000) => {
+  addToast: (message, type = 'info', duration = 5000, action?) => {
     const id = `toast-${++toastCounter}`;
     set((state) => {
-      const newToasts = [...state.toasts, { id, message, type, duration }];
+      const newToasts = [...state.toasts, { id, message, type, duration, action }];
       // Keep max 3 toasts
       return { toasts: newToasts.slice(-3) };
     });
@@ -48,6 +51,8 @@ function ToastIcon({ type }: { type: ToastItem['type'] }) {
       return <CheckCircle size={16} />;
     case 'error':
       return <AlertCircle size={16} />;
+    case 'update':
+      return <Download size={16} />;
     default:
       return <Info size={16} />;
   }
@@ -65,7 +70,15 @@ function ToastEntry({ toast }: { toast: ToastItem }) {
   return (
     <div className={`toast toast-${toast.type}`} role="status">
       <ToastIcon type={toast.type} />
-      <span className="toast-message">{toast.message}</span>
+      <span
+        className={`toast-message${toast.action ? ' toast-message-clickable' : ''}`}
+        onClick={toast.action}
+        role={toast.action ? 'button' : undefined}
+        tabIndex={toast.action ? 0 : undefined}
+        onKeyDown={toast.action ? (e) => { if (e.key === 'Enter' || e.key === ' ') toast.action?.(); } : undefined}
+      >
+        {toast.message}
+      </span>
       <button
         className="toast-close"
         onClick={() => removeToast(toast.id)}
