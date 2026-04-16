@@ -1,11 +1,16 @@
 name: Release
 
-# Triggered ONLY by pushing a semver tag (v*.*.*).
+# Triggered by pushing a semver tag (v*.*.*) or manual dispatch.
 # Flow: dev → PR → main → tag → this workflow → build + release draft
 on:
   push:
     tags:
       - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Tag to release (e.g. v0.0.6)"
+        required: true
 
 # Cancel any in-progress release for the same tag
 concurrency:
@@ -14,7 +19,7 @@ concurrency:
 
 env:
   # Resolve version once — available in all jobs
-  TAG: ${{ github.ref_name }}
+  TAG: ${{ inputs.version || github.ref_name }}
 
 jobs:
   # ---------------------------------------------------------------------------
