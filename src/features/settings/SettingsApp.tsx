@@ -24,12 +24,15 @@ import {
   ChevronRight,
   Copy,
   Check,
+  CheckCircle,
   Download,
   Upload,
+  RefreshCw,
 } from 'lucide-react';
 import { Button, HotkeyCapture, Spinner, Toggle } from '../../shared/components/ui';
 import { logger } from '../../shared/utils/logger';
 import { applyTheme, settingsService } from './services/settingsService';
+import { checkForUpdate, downloadAndInstall, type UpdateInfo } from './services/updateService';
 import {
   DEFAULT_SETTINGS,
   Settings,
@@ -68,6 +71,12 @@ export function SettingsApp() {
     type: 'success' | 'error';
     message: string;
   } | null>(null);
+  const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
+  const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
+  const [isUpdating, setIsUpdating] = useState(false);
+  const [updateProgress, setUpdateProgress] = useState(0);
+  const [updateChecked, setUpdateChecked] = useState(false);
+  const [updateError, setUpdateError] = useState<string | null>(null);
   const appVersion = '0.0.5.2';
 
   // Indexing stats for the File Search panel
@@ -869,6 +878,37 @@ export function SettingsApp() {
     }
   };
 
+  const handleCheckForUpdate = async () => {
+    setIsCheckingUpdate(true);
+    setUpdateError(null);
+    setUpdateInfo(null);
+    try {
+      const update = await checkForUpdate();
+      setUpdateInfo(update);
+      setUpdateChecked(true);
+    } catch (error) {
+      logger.error('Failed to check for updates:', error);
+      setUpdateError(error instanceof Error ? error.message : 'Failed to check for updates');
+    } finally {
+      setIsCheckingUpdate(false);
+    }
+  };
+
+  const handleDownloadAndInstall = async () => {
+    setIsUpdating(true);
+    setUpdateProgress(0);
+    setUpdateError(null);
+    try {
+      await downloadAndInstall((progress) => {
+        setUpdateProgress(progress.percentage);
+      });
+    } catch (error) {
+      logger.error('Failed to download/install update:', error);
+      setUpdateError(error instanceof Error ? error.message : 'Failed to install update');
+      setIsUpdating(false);
+    }
+  };
+
   // Render About section
   const renderAboutSection = () => (
     <div className="settings-panel">
@@ -962,6 +1002,76 @@ export function SettingsApp() {
             )}
             <span>{diagnosticsCopied ? t('about.copied') : t('about.copyDiagnostics')}</span>
           </button>
+        </div>
+
+        <div className="settings-section-divider" />
+
+        <div className="update-section">
+          <h4 className="settings-section-title">{t('about.updates')}</h4>
+          <div className="update-status">
+            {!updateChecked && !isCheckingUpdate && (
+              <Button onClick={handleCheckForUpdate} disabled={isCheckingUpdate}>
+                <RefreshCw size={16} />
+                {t('about.checkForUpdates')}
+              </Button>
+            )}
+            {isCheckingUpdate && (
+              <div className="update-status-row">
+                <Spinner size="small" />
+                <span>{t('about.checking')}</span>
+              </div>
+            )}
+            {updateChecked && !updateInfo && !isCheckingUpdate && (
+              <div className="update-status-row">
+                <CheckCircle size={16} className="update-check-icon" />
+                <span>{t('about.upToDate')}</span>
+                <Button onClick={handleCheckForUpdate} className="update-recheck">
+                  <RefreshCw size={14} />
+                </Button>
+              </div>
+            )}
+            {updateInfo && !isUpdating && (
+              <div className="update-available">
+                <div className="update-status-row">
+                  <span>{t('about.updateAvailable')}</span>
+                  <span className="update-badge">v{updateInfo.version}</span>
+                </div>
+                {updateInfo.body && (
+                  <div className="update-changelog-wrapper">
+                    <span className="update-changelog-label">{t('about.whatsNew')}</span>
+                    <div className="update-changelog">{updateInfo.body}</div>
+                  </div>
+                )}
+                <Button onClick={handleDownloadAndInstall}>
+                  <Download size={16} />
+                  {t('about.downloadAndInstall')}
+                </Button>
+              </div>
+            )}
+            {isUpdating && (
+              <div className="update-downloading">
+                <div className="update-status-row">
+                  <Spinner size="small" />
+                  <span>
+                    {updateProgress < 100 ? t('about.downloading') : t('about.installing')}
+                  </span>
+                </div>
+                <div className="update-progress">
+                  <div
+                    className="update-progress-bar"
+                    style={{ width: `${updateProgress}%` }}
+                  />
+                </div>
+                <span className="update-progress-text">{updateProgress}%</span>
+              </div>
+            )}
+            {updateError && (
+              <div className="update-status-row update-error">
+                <AlertCircle size={16} />
+                <span>{updateError}</span>
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="settings-section-divider" />

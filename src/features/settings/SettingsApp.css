@@ -1462,3 +1462,113 @@
 [data-theme='light'] .shortcuts-table-body::-webkit-scrollbar-thumb:hover {
   background: rgba(0, 0, 0, 0.2);
 }
+
+/* ============================================
+   UPDATE SECTION
+   ============================================ */
+
+.update-section {
+  padding: var(--spacing-sm) 0;
+}
+
+.update-section .settings-section-title {
+  margin-bottom: var(--spacing-sm);
+}
+
+.update-status {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.update-status-row {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  font-size: 13px;
+  color: var(--color-text-primary);
+}
+
+.update-check-icon {
+  color: var(--color-success);
+}
+
+.update-recheck {
+  padding: 4px;
+  min-width: unset;
+  margin-left: auto;
+}
+
+.update-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 999px;
+  background: var(--color-success);
+  color: #fff;
+}
+
+.update-available {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.update-changelog-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.update-changelog-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+}
+
+.update-changelog {
+  max-height: 150px;
+  overflow-y: auto;
+  padding: var(--spacing-sm);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--color-text-secondary);
+  white-space: pre-wrap;
+}
+
+.update-downloading {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.update-progress {
+  width: 100%;
+  height: 6px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.update-progress-bar {
+  height: 100%;
+  background: linear-gradient(90deg, var(--color-accent), var(--color-success));
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+.update-progress-text {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  text-align: right;
+}
+
+.update-error {
+  color: var(--color-error, #ef4444);
+}

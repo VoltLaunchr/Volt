@@ -36,6 +36,10 @@
   border-left: 3px solid var(--color-error);
 }
 
+.toast-update {
+  border-left: 3px solid var(--color-accent);
+}
+
 .toast-info svg {
   color: var(--color-accent);
 }
@@ -48,9 +52,24 @@
   color: var(--color-error);
 }
 
+.toast-update svg {
+  color: var(--color-accent);
+}
+
 .toast-message {
   flex: 1;
   line-height: var(--line-height-normal);
+}
+
+.toast-message-clickable {
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-color: transparent;
+  transition: text-decoration-color var(--transition-fast);
+}
+
+.toast-message-clickable:hover {
+  text-decoration-color: currentColor;
 }
 
 .toast-close {

@@ -89,7 +89,7 @@ export async function downloadAndInstall(onProgress?: UpdateCallback): Promise<v
 
 /**
  * Check for updates silently on startup
- * Shows notification if update available
+ * @returns Update info if available, null otherwise
  */
 export async function checkUpdateOnStartup(): Promise<UpdateInfo | null> {
   try {
@@ -97,25 +97,6 @@ export async function checkUpdateOnStartup(): Promise<UpdateInfo | null> {
 
     if (update) {
       console.log(`Update available: v${update.version}`);
-
-      // Show system notification (best-effort)
-      if ('Notification' in window) {
-        if (Notification.permission === 'default') {
-          try {
-            await Notification.requestPermission();
-          } catch {
-            // ignore
-          }
-        }
-
-        if (Notification.permission === 'granted') {
-          new Notification('Volt Update Available', {
-            body: `Version ${update.version} is available.`,
-            icon: '/icon.png',
-            tag: 'volt-update',
-          });
-        }
-      }
     }
 
     return update;

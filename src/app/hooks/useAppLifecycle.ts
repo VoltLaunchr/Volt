@@ -140,7 +140,20 @@ export function useAppLifecycle(): UseAppLifecycleResult {
   useEffect(() => {
     if (updateCheckDone.current) return;
     updateCheckDone.current = true;
-    void updateService.checkUpdateOnStartup();
+    void updateService.checkUpdateOnStartup().then((update) => {
+      if (update) {
+        const { addToast } = useToastStore.getState();
+        addToast(
+          `Update available: v${update.version} — Open Settings to update`,
+          'update',
+          0,
+          () => {
+            // Emit custom event so Settings can pick up the update info
+            window.dispatchEvent(new CustomEvent('volt:open-settings-update', { detail: update }));
+          }
+        );
+      }
+    });
   }, []);
 
   // Setup listener for system theme changes (for auto mode)
