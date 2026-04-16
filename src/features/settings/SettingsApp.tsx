@@ -77,7 +77,7 @@ export function SettingsApp() {
   const [updateProgress, setUpdateProgress] = useState(0);
   const [updateChecked, setUpdateChecked] = useState(false);
   const [updateError, setUpdateError] = useState<string | null>(null);
-  const appVersion = '0.0.5.2';
+  const appVersion = '0.0.6';
 
   // Indexing stats for the File Search panel
   const [indexStats, setIndexStats] = useState<{
