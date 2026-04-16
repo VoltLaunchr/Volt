@@ -1,11 +1,16 @@
 name: Release
 
-# Triggered ONLY by pushing a semver tag (v*.*.*).
+# Triggered by pushing a semver tag (v*.*.*) or manual dispatch.
 # Flow: dev → PR → main → tag → this workflow → build + release draft
 on:
   push:
     tags:
       - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Tag to release (e.g. v0.0.6)"
+        required: true
 
 # Cancel any in-progress release for the same tag
 concurrency:
@@ -14,7 +19,7 @@ concurrency:
 
 env:
   # Resolve version once — available in all jobs
-  TAG: ${{ github.ref_name }}
+  TAG: ${{ inputs.version || github.ref_name }}
 
 jobs:
   # ---------------------------------------------------------------------------
@@ -70,8 +75,10 @@ jobs:
       # Only attempt if APPLE_CERTIFICATE secret is a valid base64 string (>100 chars).
       # Empty or placeholder values are ignored.
       - name: Import Apple certificate
-        if: matrix.platform == 'macos-latest' && secrets.APPLE_CERTIFICATE != '' && contains(secrets.APPLE_CERTIFICATE, '/')
+        if: matrix.platform == 'macos-latest' && env.APPLE_CERT != ''
         uses: apple-actions/import-codesign-certs@v3
+        env:
+          APPLE_CERT: ${{ secrets.APPLE_CERTIFICATE }}
         with:
           p12-file-base64: ${{ secrets.APPLE_CERTIFICATE }}
           p12-password: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
@@ -147,8 +154,10 @@ jobs:
     steps:
       - name: Submit signing request to SignPath
         id: sign
-        if: secrets.SIGNPATH_API_TOKEN != ''
+        if: env.SIGNPATH_TOKEN != ''
         uses: signpath/github-action-submit-signing-request@v1
+        env:
+          SIGNPATH_TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
         with:
           api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
           organization-id: ${{ secrets.SIGNPATH_ORGANIZATION_ID }}
@@ -227,7 +236,9 @@ jobs:
           exit 1
 
       - name: Install wingetcreate
-        if: secrets.WINGET_GH_PAT != ''
+        if: env.HAS_WINGET_PAT != ''
+        env:
+          HAS_WINGET_PAT: ${{ secrets.WINGET_GH_PAT }}
         shell: pwsh
         run: |
           $wingetcreateVersion = "v1.6.5491"
@@ -235,9 +246,10 @@ jobs:
           Invoke-WebRequest -Uri $url -OutFile wingetcreate.exe -UseBasicParsing
 
       - name: Submit to winget-pkgs
-        if: secrets.WINGET_GH_PAT != ''
+        if: env.HAS_WINGET_PAT != ''
         shell: pwsh
         env:
+          HAS_WINGET_PAT: ${{ secrets.WINGET_GH_PAT }}
           WINGET_GH_PAT: ${{ secrets.WINGET_GH_PAT }}
         run: |
           $version = "${{ steps.version.outputs.version }}"
