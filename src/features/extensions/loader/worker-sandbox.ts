@@ -270,6 +270,12 @@ export class WorkerPlugin implements Plugin {
           await copyToClipboard(action.text);
           break;
         case 'openUrl':
+          if (!this.hasPermission('openUrl')) {
+            console.warn(
+              `[WorkerPlugin:${this.id}] Blocked openUrl — permission not granted`
+            );
+            break;
+          }
           await openUrl(action.url);
           break;
         case 'fetch': {

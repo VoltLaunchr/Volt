@@ -5,12 +5,94 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crate::core::error::{VoltError, VoltResult};
 
 const MAX_TEXT_PREVIEW_BYTES: usize = 2048;
 const MAX_FOLDER_CHILDREN: usize = 20;
+
+/// Path segments that indicate sensitive directories we never want to preview.
+/// Matched case-insensitively against canonicalised path components.
+const SENSITIVE_DIR_NAMES: &[&str] = &[
+    ".ssh",
+    ".aws",
+    ".gnupg",
+    ".netrc",
+    ".npmrc",
+    ".docker",
+    ".kube",
+    ".azure",
+];
+
+/// Absolute path prefixes that are never allowed for previewing.
+#[cfg(target_os = "windows")]
+const FORBIDDEN_PREFIXES: &[&str] = &[
+    "c:\\windows",
+    "c:\\programdata\\microsoft\\crypto",
+    "c:\\programdata\\microsoft\\windows\\start menu", // harmless but noisy
+];
+
+#[cfg(not(target_os = "windows"))]
+const FORBIDDEN_PREFIXES: &[&str] = &[
+    "/etc/",
+    "/etc",
+    "/root",
+    "/root/",
+    "/proc/",
+    "/proc",
+    "/sys/",
+    "/sys",
+    "/boot/",
+    "/boot",
+    "/var/lib/docker",
+    "/var/log",
+];
+
+/// Reject paths that point to obviously sensitive locations (system dirs,
+/// dotfiles holding credentials, etc.).
+fn is_sensitive_path(canonical: &Path) -> bool {
+    // Check each path component for sensitive directory names.
+    for component in canonical.components() {
+        let part = component.as_os_str().to_string_lossy().to_lowercase();
+        if SENSITIVE_DIR_NAMES.contains(&part.as_str()) {
+            return true;
+        }
+    }
+
+    // Check absolute prefixes.
+    let path_str = canonical.to_string_lossy().to_lowercase();
+    for prefix in FORBIDDEN_PREFIXES {
+        if path_str.starts_with(prefix) {
+            return true;
+        }
+    }
+
+    false
+}
+
+/// Canonicalise the user-provided path and ensure it is safe to preview.
+/// Returns the canonical form on success.
+fn validate_preview_path(raw: &str) -> VoltResult<PathBuf> {
+    let p = Path::new(raw);
+    if !p.exists() {
+        return Err(VoltError::NotFound(format!("Path not found: {}", raw)));
+    }
+
+    // Resolve symlinks / `..` so traversal attacks can't escape our checks.
+    let canonical = p
+        .canonicalize()
+        .map_err(|e| VoltError::FileSystem(format!("Cannot resolve path '{}': {}", raw, e)))?;
+
+    if is_sensitive_path(&canonical) {
+        return Err(VoltError::FileSystem(format!(
+            "Preview of '{}' is not allowed (sensitive location)",
+            raw
+        )));
+    }
+
+    Ok(canonical)
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -172,11 +254,9 @@ fn format_size(size: u64) -> String {
 /// Get a preview of a file or folder
 #[tauri::command]
 pub async fn get_file_preview(path: String) -> VoltResult<FilePreview> {
-    let p = Path::new(&path);
-
-    if !p.exists() {
-        return Err(VoltError::NotFound(format!("Path not found: {}", path)));
-    }
+    // Reject sensitive paths (credentials, system dirs) and resolve symlinks.
+    let canonical = validate_preview_path(&path)?;
+    let p = canonical.as_path();
 
     let meta = fs::metadata(p).map_err(|e| VoltError::FileSystem(e.to_string()))?;
     let size = meta.len();

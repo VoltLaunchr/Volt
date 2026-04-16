@@ -12,6 +12,14 @@ use uuid::Uuid;
 
 use crate::core::error::{VoltError, VoltResult};
 
+/// Characters that allow shell command chaining / redirection / substitution.
+/// Rejected in command-type quicklinks to prevent shell injection even though
+/// we no longer pass the target through `cmd /C` or `sh -c`.
+const SHELL_METACHARS: &[char] = &['|', '&', ';', '>', '<', '`', '$', '\n', '\r', '(', ')'];
+
+/// Allowed URL schemes for `url`-type quicklinks.
+const ALLOWED_URL_SCHEMES: &[&str] = &["http", "https", "mailto"];
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Quicklink {
@@ -118,12 +126,21 @@ pub async fn delete_quicklink(state: State<'_, QuicklinkState>, id: String) -> V
 pub async fn open_quicklink(_app: tauri::AppHandle, quicklink: Quicklink) -> VoltResult<()> {
     match quicklink.link_type.as_str() {
         "url" => {
-            // Open URL in default browser via opener plugin
+            // Validate scheme to prevent file://, javascript:, vbscript:, ms-cxh:// etc.
+            let parsed = url::Url::parse(&quicklink.target).map_err(|e| {
+                VoltError::Launch(format!("Invalid URL '{}': {}", quicklink.target, e))
+            })?;
+            if !ALLOWED_URL_SCHEMES.contains(&parsed.scheme()) {
+                return Err(VoltError::Launch(format!(
+                    "URL scheme '{}' not allowed (only {} are permitted)",
+                    parsed.scheme(),
+                    ALLOWED_URL_SCHEMES.join(", ")
+                )));
+            }
             tauri_plugin_opener::open_url(&quicklink.target, None::<&str>)
                 .map_err(|e| VoltError::Launch(format!("Failed to open URL: {}", e)))?;
         }
         "folder" => {
-            // Open folder in file explorer
             let path = std::path::Path::new(&quicklink.target);
             if !path.exists() {
                 return Err(VoltError::NotFound(format!(
@@ -131,25 +148,35 @@ pub async fn open_quicklink(_app: tauri::AppHandle, quicklink: Quicklink) -> Vol
                     quicklink.target
                 )));
             }
+            if !path.is_dir() {
+                return Err(VoltError::Launch(format!(
+                    "Path is not a folder: {}",
+                    quicklink.target
+                )));
+            }
             tauri_plugin_opener::open_path(&quicklink.target, None::<&str>)
                 .map_err(|e| VoltError::Launch(format!("Failed to open folder: {}", e)))?;
         }
         "command" => {
-            // Execute shell command
-            #[cfg(target_os = "windows")]
-            {
-                std::process::Command::new("cmd")
-                    .args(["/C", &quicklink.target])
-                    .spawn()
-                    .map_err(|e| VoltError::Launch(format!("Failed to execute command: {}", e)))?;
+            // Execute command *without* passing through a shell (no `cmd /C`, no `sh -c`).
+            // This eliminates shell metacharacter interpretation. As defense in depth we
+            // also reject tokens containing shell-control characters.
+            if quicklink.target.chars().any(|c| SHELL_METACHARS.contains(&c)) {
+                return Err(VoltError::Launch(
+                    "Command contains forbidden shell metacharacters (|, &, ;, >, <, `, $, newline, parentheses)".into(),
+                ));
             }
-            #[cfg(not(target_os = "windows"))]
-            {
-                std::process::Command::new("sh")
-                    .args(["-c", &quicklink.target])
-                    .spawn()
-                    .map_err(|e| VoltError::Launch(format!("Failed to execute command: {}", e)))?;
-            }
+
+            let mut tokens = quicklink.target.split_whitespace();
+            let program = tokens.next().ok_or_else(|| {
+                VoltError::Launch("Command quicklink target is empty".into())
+            })?;
+            let args: Vec<&str> = tokens.collect();
+
+            std::process::Command::new(program)
+                .args(&args)
+                .spawn()
+                .map_err(|e| VoltError::Launch(format!("Failed to execute command: {}", e)))?;
         }
         _ => {
             return Err(VoltError::Unknown(format!(

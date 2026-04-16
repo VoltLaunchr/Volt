@@ -294,6 +294,19 @@ pub fn run() {
             }
 
             // Register deep link handler for volt:// URLs
+            // On Windows/Linux in dev mode, the OS scheme registration normally done
+            // by the installer doesn't happen — we must register it at runtime so
+            // the browser knows which app to launch for volt:// URLs.
+            #[cfg(any(target_os = "linux", all(debug_assertions, target_os = "windows")))]
+            {
+                use tauri_plugin_deep_link::DeepLinkExt;
+                if let Err(e) = app.deep_link().register_all() {
+                    warn!("Failed to register deep link schemes: {}", e);
+                } else {
+                    info!("Deep link schemes registered for dev mode");
+                }
+            }
+
             let listener_handle = app.handle().clone();
             let emitter_handle = app.handle().clone();
             listener_handle.listen("deep-link://new-url", move |event: tauri::Event| {

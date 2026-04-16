@@ -192,9 +192,13 @@ jobs:
           if [ "${{ steps.sign.outcome }}" == "success" ]; then
             echo "::notice::SignPath signing completed successfully"
           elif [ "${{ steps.sign.outcome }}" == "skipped" ]; then
-            echo "::notice::SignPath signing skipped (SIGNPATH_API_TOKEN not configured)"
+            echo "::notice::SignPath signing skipped (SIGNPATH_API_TOKEN not configured for this environment)"
           else
-            echo "::warning::SignPath signing failed (non-blocking). Unsigned artifacts remain in the release."
+            # Signing was attempted but failed. Fail the workflow so unsigned
+            # binaries do not silently ship as if they were signed. Maintainers
+            # should either remove the unsigned release assets or re-run signing.
+            echo "::error::SignPath signing FAILED. Unsigned artifacts still exist on the release — remove them or re-run the sign-windows job before announcing the release."
+            exit 1
           fi
 
   # ---------------------------------------------------------------------------

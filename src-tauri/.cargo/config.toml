@@ -1,0 +1,16 @@
+[build]
+# Limit parallel rustc instances to avoid OOM / STATUS_STACK_BUFFER_OVERRUN on Windows
+# when compiling heavy Tauri deps (windows-sys, tauri-plugin-*, image, etc.)
+jobs = 4
+
+[profile.dev]
+# Reduce per-crate memory pressure by using more codegen units (less work per unit)
+codegen-units = 256
+# Avoid debug info bloat that inflates rustc memory usage
+debug = 1
+incremental = true
+
+[profile.dev.package."*"]
+# Optimize dependencies even in debug to speed up compilation and reduce binary size
+opt-level = 0
+debug = 0

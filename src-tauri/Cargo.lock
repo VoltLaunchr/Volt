@@ -6792,7 +6792,7 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "volt"
-version = "0.0.6"
+version = "0.0.8"
 dependencies = [
  "arboard",
  "async-trait",
@@ -6801,6 +6801,7 @@ dependencies = [
  "criterion",
  "dirs 5.0.1",
  "dotenvy",
+ "flate2 1.1.9",
  "icns",
  "image",
  "keyring",
@@ -6818,6 +6819,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sysinfo",
+ "tar",
  "tauri",
  "tauri-build",
  "tauri-plugin-autostart",

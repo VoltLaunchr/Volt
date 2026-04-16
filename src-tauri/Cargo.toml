@@ -1,6 +1,6 @@
 [package]
 name = "volt"
-version = "0.0.7"
+version = "0.0.8"
 description = "Lightning-fast keyboard-driven launcher for Windows, macOS, and Linux"
 authors = ["VoltLaunchr Contributors"]
 license = "Apache-2.0"
@@ -56,6 +56,8 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tracing-appender = "0.2"
 reqwest = { version = "0.12", features = ["json"] }
 zip = "2.2"
+tar = "0.4"
+flate2 = "1.0"
 url = "2.5"
 uuid = { version = "1", features = ["v4"] }
 keyring = { version = "3", features = ["sync-secret-service", "crypto-rust"] }
@@ -73,6 +75,7 @@ plist = "1.7"
 tauri-plugin-positioner = "2"
 
 [features]
+default = ["devtools"]
 devtools = ["tauri/devtools"]
 
 [dev-dependencies]

@@ -255,8 +255,14 @@ pub async fn start_indexing(
         }
 
         // --- Full scan ---
-        match scan_files(&config) {
-            Ok(scanned_files) => {
+        // `scan_files` is a synchronous, deeply recursive filesystem walk that
+        // can take tens of seconds on large drives. Running it directly inside
+        // the async task would block a Tokio worker thread and starve IPC /
+        // hotkey / UI events. Offload to the blocking thread pool.
+        let scan_result = tokio::task::spawn_blocking(move || scan_files(&config)).await;
+
+        match scan_result {
+            Ok(Ok(scanned_files)) => {
                 let file_count = scanned_files.len();
 
                 // Persist to SQLite.
@@ -292,8 +298,23 @@ pub async fn start_indexing(
                     },
                 );
             }
-            Err(e) => {
+            Ok(Err(e)) => {
                 error!("Indexing failed: {}", e);
+                let _ = app_handle.emit(
+                    "indexing-progress",
+                    IndexingProgress {
+                        phase: "error".to_string(),
+                        indexed_files: 0,
+                        total_files: 0,
+                        is_complete: true,
+                    },
+                );
+                if let Ok(mut status) = status_arc.lock() {
+                    status.is_indexing = false;
+                }
+            }
+            Err(join_err) => {
+                error!("Indexing task panicked or was cancelled: {}", join_err);
                 let _ = app_handle.emit(
                     "indexing-progress",
                     IndexingProgress {
@@ -799,8 +820,11 @@ pub async fn invalidate_index(
     let db_arc = state.db.clone();
 
     tauri::async_runtime::spawn(async move {
-        match scan_files(&config) {
-            Ok(scanned_files) => {
+        // Offload the blocking filesystem walk to the dedicated thread pool.
+        let scan_result = tokio::task::spawn_blocking(move || scan_files(&config)).await;
+
+        match scan_result {
+            Ok(Ok(scanned_files)) => {
                 let file_count = scanned_files.len();
 
                 if let Some(db) = db_arc.as_ref() {
@@ -824,8 +848,14 @@ pub async fn invalidate_index(
 
                 info!("Index rebuilt: {} files", file_count);
             }
-            Err(e) => {
+            Ok(Err(e)) => {
                 error!("Index rebuild failed: {}", e);
+                if let Ok(mut status) = status_arc.lock() {
+                    status.is_indexing = false;
+                }
+            }
+            Err(join_err) => {
+                error!("Index rebuild task panicked or was cancelled: {}", join_err);
                 if let Ok(mut status) = status_arc.lock() {
                     status.is_indexing = false;
                 }

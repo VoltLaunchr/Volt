@@ -9,9 +9,49 @@
 use crate::core::error::{VoltError, VoltResult};
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Manager};
 use tracing::{debug, info, warn};
+
+/// Reject paths that escape `root` (via `..` or symlink resolution).
+/// Returns the canonical path on success.
+fn ensure_contained(path: &Path, root: &Path) -> VoltResult<PathBuf> {
+    let canonical = path.canonicalize().map_err(|e| {
+        VoltError::FileSystem(format!(
+            "Failed to canonicalise '{}': {}",
+            path.display(),
+            e
+        ))
+    })?;
+    let canonical_root = root.canonicalize().map_err(|e| {
+        VoltError::FileSystem(format!(
+            "Failed to canonicalise root '{}': {}",
+            root.display(),
+            e
+        ))
+    })?;
+    if !canonical.starts_with(&canonical_root) {
+        return Err(VoltError::InvalidConfig(format!(
+            "Path '{}' escapes containment root '{}'",
+            canonical.display(),
+            canonical_root.display()
+        )));
+    }
+    Ok(canonical)
+}
+
+/// Directory names under `$HOME` that hold credentials / infrastructure secrets
+/// and must never be accepted as dev-extension roots.
+const DEV_EXTENSION_FORBIDDEN_DIRS: &[&str] = &[
+    ".ssh",
+    ".aws",
+    ".config",
+    ".gnupg",
+    ".docker",
+    ".kube",
+    ".azure",
+    ".netrc",
+];
 
 /// Extension author information
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -171,6 +211,160 @@ fn validate_download_url(url: &str) -> VoltResult<()> {
         ));
     }
 
+    Ok(())
+}
+
+/// Extract a ZIP archive into `dest_dir`. Uses `enclosed_name()` to block
+/// path-traversal entries (e.g. `../evil.js`).
+fn extract_zip(bytes: &[u8], dest_dir: &PathBuf) -> VoltResult<()> {
+    let cursor = std::io::Cursor::new(bytes);
+    let mut archive = zip::ZipArchive::new(cursor)
+        .map_err(|e| VoltError::FileSystem(format!("Failed to read zip archive: {}", e)))?;
+
+    debug!("ZIP archive contains {} entries", archive.len());
+
+    for i in 0..archive.len() {
+        let mut file = archive
+            .by_index(i)
+            .map_err(|e| VoltError::FileSystem(format!("Failed to read archive entry: {}", e)))?;
+
+        let file_path = match file.enclosed_name() {
+            Some(path) => path.to_owned(),
+            None => {
+                warn!("Skipping invalid path in archive: {:?}", file.name());
+                continue;
+            }
+        };
+
+        // Reject symlink entries — they could point outside dest_dir after extraction.
+        // `zip` crate exposes symlinks via `Mode::from_bits` on the unix mode; the
+        // simplest defense is to refuse any entry that isn't a regular file or dir.
+        if file.is_symlink() {
+            warn!("Skipping symlink entry in zip: {:?}", file_path);
+            continue;
+        }
+
+        let outpath = dest_dir.join(&file_path);
+
+        if file.is_dir() {
+            fs::create_dir_all(&outpath)
+                .map_err(|e| VoltError::FileSystem(format!("Failed to create directory: {}", e)))?;
+            // Defense-in-depth: verify the directory we just created is still
+            // inside dest_dir (catches any residual traversal via weird zip paths).
+            if ensure_contained(&outpath, dest_dir).is_err() {
+                warn!(
+                    "Created directory escaped dest_dir, will be ignored: {:?}",
+                    outpath
+                );
+            }
+        } else {
+            if let Some(parent) = outpath.parent() {
+                if !parent.exists() {
+                    fs::create_dir_all(parent).map_err(|e| {
+                        VoltError::FileSystem(format!(
+                            "Failed to create parent directory: {}",
+                            e
+                        ))
+                    })?;
+                }
+                // Now that the parent exists, canonicalise and verify it is
+                // still within dest_dir before writing.
+                if ensure_contained(parent, dest_dir).is_err() {
+                    warn!(
+                        "Skipping file whose parent escapes dest_dir: {:?}",
+                        outpath
+                    );
+                    continue;
+                }
+            }
+            let mut outfile = fs::File::create(&outpath).map_err(|e| {
+                VoltError::FileSystem(format!(
+                    "Failed to create file {}: {}",
+                    outpath.display(),
+                    e
+                ))
+            })?;
+            std::io::copy(&mut file, &mut outfile)
+                .map_err(|e| VoltError::FileSystem(format!("Failed to extract file: {}", e)))?;
+        }
+    }
+    Ok(())
+}
+
+/// Extract a gzipped tar archive into `dest_dir`. Reject any entry whose
+/// resolved path escapes `dest_dir` (path traversal guard).
+fn extract_tar_gz(bytes: &[u8], dest_dir: &PathBuf) -> VoltResult<()> {
+    let gz = flate2::read::GzDecoder::new(std::io::Cursor::new(bytes));
+    let mut archive = tar::Archive::new(gz);
+
+    // `set_overwrite(true)` so re-installs replace existing files cleanly.
+    archive.set_overwrite(true);
+    // We resolve paths ourselves to stay safe on symlink entries.
+    archive.set_preserve_permissions(false);
+
+    for entry in archive
+        .entries()
+        .map_err(|e| VoltError::FileSystem(format!("Failed to read tar archive: {}", e)))?
+    {
+        let mut entry = entry
+            .map_err(|e| VoltError::FileSystem(format!("Failed to read tar entry: {}", e)))?;
+
+        let entry_path = entry
+            .path()
+            .map_err(|e| VoltError::FileSystem(format!("Invalid tar entry path: {}", e)))?
+            .into_owned();
+
+        // Reject absolute paths and parent-directory components.
+        if entry_path.is_absolute()
+            || entry_path
+                .components()
+                .any(|c| matches!(c, std::path::Component::ParentDir))
+        {
+            warn!("Skipping unsafe tar entry: {:?}", entry_path);
+            continue;
+        }
+
+        let outpath = dest_dir.join(&entry_path);
+        entry
+            .unpack(&outpath)
+            .map_err(|e| VoltError::FileSystem(format!("Failed to unpack tar entry: {}", e)))?;
+    }
+
+    Ok(())
+}
+
+/// If the extension dir contains exactly one subdirectory (and nothing else),
+/// move that subdirectory's contents up one level. Some tarballs wrap
+/// everything in a top-level directory (e.g. `plugin-name/manifest.json`).
+fn flatten_single_root_dir(extension_dir: &PathBuf) -> VoltResult<()> {
+    let entries: Vec<_> = fs::read_dir(extension_dir)
+        .map_err(|e| VoltError::FileSystem(format!("Failed to read extension dir: {}", e)))?
+        .flatten()
+        .collect();
+
+    if entries.len() != 1 || !entries[0].path().is_dir() {
+        return Ok(());
+    }
+
+    let inner = entries[0].path();
+    debug!("Flattening single root dir: {:?}", inner);
+
+    for entry in fs::read_dir(&inner)
+        .map_err(|e| VoltError::FileSystem(format!("Failed to read inner dir: {}", e)))?
+        .flatten()
+    {
+        let src = entry.path();
+        let dst = extension_dir.join(entry.file_name());
+        fs::rename(&src, &dst).map_err(|e| {
+            VoltError::FileSystem(format!(
+                "Failed to promote {} to extension root: {}",
+                src.display(),
+                e
+            ))
+        })?;
+    }
+
+    let _ = fs::remove_dir(&inner);
     Ok(())
 }
 
@@ -352,71 +546,26 @@ pub async fn install_extension(
 
     debug!("Downloaded {} bytes", bytes.len());
 
-    // Save the extension bundle (zip file)
-    let bundle_path = extension_dir.join("extension.zip");
-    fs::write(&bundle_path, &bytes)
-        .map_err(|e| VoltError::FileSystem(format!("Failed to save extension bundle: {}", e)))?;
+    // Detect archive format from the URL. We treat anything ending in .tar.gz
+    // or .tgz as a gzipped tar, otherwise fall back to ZIP (the original format).
+    let url_lower = download_url.to_lowercase();
+    let is_tar_gz = url_lower.ends_with(".tar.gz") || url_lower.ends_with(".tgz");
 
-    // Extract the zip file
-    debug!("Opening bundle: {:?}", bundle_path);
-    let file = fs::File::open(&bundle_path)
-        .map_err(|e| VoltError::FileSystem(format!("Failed to open bundle: {}", e)))?;
-    let mut archive = zip::ZipArchive::new(file)
-        .map_err(|e| VoltError::FileSystem(format!("Failed to read zip archive: {}", e)))?;
-
-    debug!("Archive contains {} entries", archive.len());
-
-    for i in 0..archive.len() {
-        let mut file = archive
-            .by_index(i)
-            .map_err(|e| VoltError::FileSystem(format!("Failed to read archive entry: {}", e)))?;
-
-        let raw_name = file.name().to_string();
-        debug!(
-            "Entry {}: raw_name={:?}, is_dir={}",
-            i,
-            raw_name,
-            file.is_dir()
-        );
-
-        // Use enclosed_name() for safe path extraction on all platforms
-        let file_path = match file.enclosed_name() {
-            Some(path) => path.to_owned(),
-            None => {
-                warn!("Skipping invalid path in archive: {:?}", file.name());
-                continue;
-            }
-        };
-
-        let outpath = extension_dir.join(&file_path);
-        debug!("Extracting to: {:?}", outpath);
-
-        if file.is_dir() {
-            fs::create_dir_all(&outpath)
-                .map_err(|e| VoltError::FileSystem(format!("Failed to create directory: {}", e)))?;
-        } else {
-            if let Some(parent) = outpath.parent().filter(|p| !p.exists()) {
-                fs::create_dir_all(parent).map_err(|e| {
-                    VoltError::FileSystem(format!("Failed to create parent directory: {}", e))
-                })?;
-            }
-            let mut outfile = fs::File::create(&outpath).map_err(|e| {
-                VoltError::FileSystem(format!(
-                    "Failed to create file {}: {}",
-                    outpath.display(),
-                    e
-                ))
-            })?;
-            std::io::copy(&mut file, &mut outfile)
-                .map_err(|e| VoltError::FileSystem(format!("Failed to extract file: {}", e)))?;
-            debug!("Extracted: {:?}", file_path);
-        }
+    if is_tar_gz {
+        extract_tar_gz(&bytes, &extension_dir)?;
+    } else {
+        extract_zip(&bytes, &extension_dir)?;
     }
 
     debug!("Extraction complete, checking for manifest...");
 
-    // Remove the zip file after extraction
-    let _ = fs::remove_file(&bundle_path);
+    // Some publishers wrap everything in a single top-level directory
+    // (e.g. a tarball that extracts to `github/manifest.json`). If the manifest
+    // isn't at the root but is exactly one level deep, promote that folder's
+    // contents to the extension root.
+    if !extension_dir.join("manifest.json").exists() {
+        flatten_single_root_dir(&extension_dir)?;
+    }
 
     // Read the manifest
     let manifest_path = extension_dir.join("manifest.json");
@@ -660,6 +809,15 @@ pub async fn read_extension_source(
         )));
     }
 
+    // Containment check: manifest.main may contain `..` or point at a symlink.
+    // Reject any entry point that resolves outside the extension's own directory.
+    ensure_contained(&source_path, &extension_dir).map_err(|_| {
+        VoltError::InvalidConfig(format!(
+            "Extension entry point '{}' escapes extension directory",
+            entry_point
+        ))
+    })?;
+
     let source_code = fs::read_to_string(&source_path)
         .map_err(|e| VoltError::FileSystem(format!("Failed to read extension source: {}", e)))?;
 
@@ -858,6 +1016,23 @@ async fn read_dev_extension_source(path: &str) -> VoltResult<ExtensionSource> {
         )));
     }
 
+    // Re-validate sensitive-directory policy every time we read. The dev
+    // extension list is persisted to disk and could be tampered with; verifying
+    // at read time prevents a previously-linked path from surfacing creds.
+    let canonical = extension_dir.canonicalize().map_err(|e| {
+        VoltError::FileSystem(format!("Failed to resolve dev extension path: {}", e))
+    })?;
+    for component in canonical.components() {
+        let name = component.as_os_str().to_string_lossy().to_lowercase();
+        if DEV_EXTENSION_FORBIDDEN_DIRS.contains(&name.as_str()) {
+            return Err(VoltError::InvalidConfig(format!(
+                "Dev extension path contains sensitive directory '{}'",
+                name
+            )));
+        }
+    }
+    let extension_dir = canonical;
+
     // Read the manifest
     let manifest_path = extension_dir.join("manifest.json");
     if !manifest_path.exists() {
@@ -970,6 +1145,19 @@ pub async fn link_dev_extension(app: AppHandle, path: String) -> VoltResult<DevE
         return Err(VoltError::InvalidConfig(
             "Dev extensions must be within the user's home directory".to_string(),
         ));
+    }
+
+    // Reject sensitive directories (credentials, SSH keys, cloud provider
+    // configs). A dev extension's whole tree is read and shipped to the
+    // extension loader, so refusing these at link time is critical.
+    for component in canonical_path.components() {
+        let name = component.as_os_str().to_string_lossy().to_lowercase();
+        if DEV_EXTENSION_FORBIDDEN_DIRS.contains(&name.as_str()) {
+            return Err(VoltError::InvalidConfig(format!(
+                "Path contains sensitive directory '{}'. Dev extensions cannot be linked from credential/config directories.",
+                name
+            )));
+        }
     }
 
     let extension_dir = canonical_path;
