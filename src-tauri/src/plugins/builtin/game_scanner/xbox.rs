@@ -192,9 +192,7 @@ impl XboxScanner {
 
                         // Xbox games launch via shell:AppsFolder, which
                         // requires the PackageFamilyName (not the full name).
-                        if let Some(pfn) =
-                            Self::package_family_name_from_full_name(&package_name)
-                        {
+                        if let Some(pfn) = Self::package_family_name_from_full_name(&package_name) {
                             game.launch_uri = Some(format!("shell:AppsFolder\\{}!App", pfn));
                         }
                         game.is_installed = install_path.exists();

@@ -138,7 +138,9 @@ impl AmazonScanner {
                 if !key_name.starts_with("AmazonGames/") {
                     continue;
                 }
-                let Ok(app_key) = uninstall.open_subkey(&key_name) else { continue };
+                let Ok(app_key) = uninstall.open_subkey(&key_name) else {
+                    continue;
+                };
 
                 let name: String = app_key.get_value("DisplayName").unwrap_or_default();
                 let path: String = app_key.get_value("InstallLocation").unwrap_or_default();

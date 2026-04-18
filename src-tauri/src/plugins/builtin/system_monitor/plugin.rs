@@ -5,8 +5,8 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::Instant;
 use sysinfo::{
-    Components, CpuRefreshKind, DiskKind, Disks, MemoryRefreshKind, Networks, Pid,
-    ProcessRefreshKind, ProcessesToUpdate, RefreshKind, System, MINIMUM_CPU_UPDATE_INTERVAL,
+    Components, CpuRefreshKind, DiskKind, Disks, MINIMUM_CPU_UPDATE_INTERVAL, MemoryRefreshKind,
+    Networks, Pid, ProcessRefreshKind, ProcessesToUpdate, RefreshKind, System,
 };
 
 /// System monitoring plugin
@@ -410,54 +410,53 @@ impl SystemMonitorPlugin {
                 .lock()
                 .map_err(|e| format!("lock poisoned: {}", e))?;
 
-            let (rates, aggregate): (Vec<NetworkInterfaceInfo>, (u64, u64)) =
-                match last.as_ref() {
-                    Some(prev) => {
-                        let elapsed = now.saturating_duration_since(prev.at).as_secs_f64().max(0.001);
-                        let mut interfaces: Vec<NetworkInterfaceInfo> = current_totals
-                            .iter()
-                            .map(|(name, &(rx, tx))| {
-                                let (prev_rx, prev_tx) = prev
-                                    .totals
-                                    .get(name)
-                                    .copied()
-                                    .unwrap_or((rx, tx));
-                                let rx_rate = ((rx.saturating_sub(prev_rx)) as f64 / elapsed) as u64;
-                                let tx_rate = ((tx.saturating_sub(prev_tx)) as f64 / elapsed) as u64;
-                                NetworkInterfaceInfo {
-                                    name: name.clone(),
-                                    received_bytes_per_sec: rx_rate,
-                                    transmitted_bytes_per_sec: tx_rate,
-                                    total_received_bytes: rx,
-                                    total_transmitted_bytes: tx,
-                                }
-                            })
-                            .collect();
-                        interfaces.sort_by(|a, b| a.name.cmp(&b.name));
-                        let agg = interfaces.iter().fold((0u64, 0u64), |acc, i| {
-                            (
-                                acc.0.saturating_add(i.received_bytes_per_sec),
-                                acc.1.saturating_add(i.transmitted_bytes_per_sec),
-                            )
-                        });
-                        (interfaces, agg)
-                    }
-                    None => {
-                        // First sample: rates are 0 until we have a baseline.
-                        let mut interfaces: Vec<NetworkInterfaceInfo> = current_totals
-                            .iter()
-                            .map(|(name, &(rx, tx))| NetworkInterfaceInfo {
+            let (rates, aggregate): (Vec<NetworkInterfaceInfo>, (u64, u64)) = match last.as_ref() {
+                Some(prev) => {
+                    let elapsed = now
+                        .saturating_duration_since(prev.at)
+                        .as_secs_f64()
+                        .max(0.001);
+                    let mut interfaces: Vec<NetworkInterfaceInfo> = current_totals
+                        .iter()
+                        .map(|(name, &(rx, tx))| {
+                            let (prev_rx, prev_tx) =
+                                prev.totals.get(name).copied().unwrap_or((rx, tx));
+                            let rx_rate = ((rx.saturating_sub(prev_rx)) as f64 / elapsed) as u64;
+                            let tx_rate = ((tx.saturating_sub(prev_tx)) as f64 / elapsed) as u64;
+                            NetworkInterfaceInfo {
                                 name: name.clone(),
-                                received_bytes_per_sec: 0,
-                                transmitted_bytes_per_sec: 0,
+                                received_bytes_per_sec: rx_rate,
+                                transmitted_bytes_per_sec: tx_rate,
                                 total_received_bytes: rx,
                                 total_transmitted_bytes: tx,
-                            })
-                            .collect();
-                        interfaces.sort_by(|a, b| a.name.cmp(&b.name));
-                        (interfaces, (0u64, 0u64))
-                    }
-                };
+                            }
+                        })
+                        .collect();
+                    interfaces.sort_by(|a, b| a.name.cmp(&b.name));
+                    let agg = interfaces.iter().fold((0u64, 0u64), |acc, i| {
+                        (
+                            acc.0.saturating_add(i.received_bytes_per_sec),
+                            acc.1.saturating_add(i.transmitted_bytes_per_sec),
+                        )
+                    });
+                    (interfaces, agg)
+                }
+                None => {
+                    // First sample: rates are 0 until we have a baseline.
+                    let mut interfaces: Vec<NetworkInterfaceInfo> = current_totals
+                        .iter()
+                        .map(|(name, &(rx, tx))| NetworkInterfaceInfo {
+                            name: name.clone(),
+                            received_bytes_per_sec: 0,
+                            transmitted_bytes_per_sec: 0,
+                            total_received_bytes: rx,
+                            total_transmitted_bytes: tx,
+                        })
+                        .collect();
+                    interfaces.sort_by(|a, b| a.name.cmp(&b.name));
+                    (interfaces, (0u64, 0u64))
+                }
+            };
 
             *last = Some(NetworkSample {
                 at: now,
@@ -616,11 +615,7 @@ fn bytes_to_gb(bytes: u64) -> f32 {
 
 /// sysinfo 0.32 returns f32 for temperatures; NaN signals unavailable.
 fn finite(v: f32) -> Option<f32> {
-    if v.is_finite() {
-        Some(v)
-    } else {
-        None
-    }
+    if v.is_finite() { Some(v) } else { None }
 }
 
 #[async_trait]

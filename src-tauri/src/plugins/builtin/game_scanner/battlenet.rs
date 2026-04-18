@@ -29,14 +29,23 @@ impl BattleNetScanner {
     /// the one maintained by Playnite's BattleNetLibrary.
     ///
     /// Exposed as a pure helper for unit testing.
-    pub(crate) fn resolve_product_code(display_name: &str, install_folder: &str) -> Option<&'static str> {
+    pub(crate) fn resolve_product_code(
+        display_name: &str,
+        install_folder: &str,
+    ) -> Option<&'static str> {
         // Drop punctuation that inconsistently appears between titles and
         // subtitles ("Diablo II: Resurrected" vs "Diablo II Resurrected"),
         // then collapse whitespace so substring matching is robust.
         let raw = format!("{} {}", display_name, install_folder).to_lowercase();
         let needle: String = raw
             .chars()
-            .map(|c| if c == ':' || c == '-' || c == '.' { ' ' } else { c })
+            .map(|c| {
+                if c == ':' || c == '-' || c == '.' {
+                    ' '
+                } else {
+                    c
+                }
+            })
             .collect();
         let needle = needle.split_whitespace().collect::<Vec<_>>().join(" ");
 
@@ -125,7 +134,9 @@ impl BattleNetScanner {
         };
 
         for key_name in uninstall.enum_keys().flatten() {
-            let Ok(app_key) = uninstall.open_subkey(&key_name) else { continue };
+            let Ok(app_key) = uninstall.open_subkey(&key_name) else {
+                continue;
+            };
 
             let publisher: String = app_key.get_value("Publisher").unwrap_or_default();
             let pub_lc = publisher.to_lowercase();
@@ -154,12 +165,13 @@ impl BattleNetScanner {
                 continue;
             }
 
-            let Some(product_code) =
-                Self::resolve_product_code(&name, PathBuf::from(&path)
+            let Some(product_code) = Self::resolve_product_code(
+                &name,
+                PathBuf::from(&path)
                     .file_name()
                     .and_then(|n| n.to_str())
-                    .unwrap_or(""))
-            else {
+                    .unwrap_or(""),
+            ) else {
                 debug!(name = %name, "Skipping unrecognised Blizzard product");
                 continue;
             };
@@ -279,6 +291,9 @@ mod tests {
 
     #[test]
     fn resolve_unknown_returns_none() {
-        assert_eq!(BattleNetScanner::resolve_product_code("Random Indie Game", ""), None);
+        assert_eq!(
+            BattleNetScanner::resolve_product_code("Random Indie Game", ""),
+            None
+        );
     }
 }

@@ -14,14 +14,7 @@ const MAX_FOLDER_CHILDREN: usize = 20;
 
 /// Path segments that indicate sensitive directories we never want to preview.
 /// Matched case-insensitively against canonicalised path components.
-const SENSITIVE_DIR_NAMES: &[&str] = &[
-    ".ssh",
-    ".aws",
-    ".gnupg",
-    ".docker",
-    ".kube",
-    ".azure",
-];
+const SENSITIVE_DIR_NAMES: &[&str] = &[".ssh", ".aws", ".gnupg", ".docker", ".kube", ".azure"];
 
 /// File names (case-insensitive) that should never surface text content,
 /// regardless of extension or containing directory. Covers keypairs,

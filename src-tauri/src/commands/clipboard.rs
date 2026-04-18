@@ -79,7 +79,10 @@ pub async fn search_clipboard_history(
 
 /// Check clipboard for changes and update history
 #[tauri::command]
-pub async fn check_clipboard(clipboard_state: State<'_, ClipboardManagerState>, plugin_state: State<'_, PluginState>) -> VoltResult<()> {
+pub async fn check_clipboard(
+    clipboard_state: State<'_, ClipboardManagerState>,
+    plugin_state: State<'_, PluginState>,
+) -> VoltResult<()> {
     let manager = get_or_init_clipboard_manager(&clipboard_state, &plugin_state).await?;
     manager.check_clipboard().map_err(VoltError::Plugin)
 }
@@ -89,7 +92,11 @@ pub async fn check_clipboard(clipboard_state: State<'_, ClipboardManagerState>, 
 /// # Arguments
 /// * `id` - ID of the clipboard item
 #[tauri::command]
-pub async fn toggle_clipboard_pin(clipboard_state: State<'_, ClipboardManagerState>, plugin_state: State<'_, PluginState>, id: i64) -> VoltResult<()> {
+pub async fn toggle_clipboard_pin(
+    clipboard_state: State<'_, ClipboardManagerState>,
+    plugin_state: State<'_, PluginState>,
+    id: i64,
+) -> VoltResult<()> {
     let manager = get_or_init_clipboard_manager(&clipboard_state, &plugin_state).await?;
     manager.toggle_pin(id).map_err(VoltError::Plugin)
 }
@@ -153,21 +160,30 @@ pub async fn copy_to_clipboard(
 
 /// Start automatic clipboard monitoring
 #[tauri::command]
-pub async fn start_clipboard_monitoring(clipboard_state: State<'_, ClipboardManagerState>, plugin_state: State<'_, PluginState>) -> VoltResult<()> {
+pub async fn start_clipboard_monitoring(
+    clipboard_state: State<'_, ClipboardManagerState>,
+    plugin_state: State<'_, PluginState>,
+) -> VoltResult<()> {
     let manager = get_or_init_clipboard_manager(&clipboard_state, &plugin_state).await?;
     manager.start_monitoring().map_err(VoltError::Plugin)
 }
 
 /// Stop automatic clipboard monitoring
 #[tauri::command]
-pub async fn stop_clipboard_monitoring(clipboard_state: State<'_, ClipboardManagerState>, plugin_state: State<'_, PluginState>) -> VoltResult<()> {
+pub async fn stop_clipboard_monitoring(
+    clipboard_state: State<'_, ClipboardManagerState>,
+    plugin_state: State<'_, PluginState>,
+) -> VoltResult<()> {
     let manager = get_or_init_clipboard_manager(&clipboard_state, &plugin_state).await?;
     manager.stop_monitoring().map_err(VoltError::Plugin)
 }
 
 /// Check if clipboard monitoring is active
 #[tauri::command]
-pub async fn is_clipboard_monitoring(clipboard_state: State<'_, ClipboardManagerState>, plugin_state: State<'_, PluginState>) -> VoltResult<bool> {
+pub async fn is_clipboard_monitoring(
+    clipboard_state: State<'_, ClipboardManagerState>,
+    plugin_state: State<'_, PluginState>,
+) -> VoltResult<bool> {
     let manager = get_or_init_clipboard_manager(&clipboard_state, &plugin_state).await?;
     Ok(manager.is_monitoring())
 }

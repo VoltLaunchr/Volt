@@ -238,14 +238,13 @@ pub async fn open_quicklink(_app: tauri::AppHandle, quicklink: Quicklink) -> Vol
         "command" => {
             // Re-validate at execution time (the quicklink file could have been
             // edited manually, or saved before validation was added).
-            validate_command_target(&quicklink.target).map_err(|e| {
-                VoltError::Launch(format!("Command validation failed: {}", e))
-            })?;
+            validate_command_target(&quicklink.target)
+                .map_err(|e| VoltError::Launch(format!("Command validation failed: {}", e)))?;
 
             let mut tokens = quicklink.target.split_whitespace();
-            let program = tokens.next().ok_or_else(|| {
-                VoltError::Launch("Command quicklink target is empty".into())
-            })?;
+            let program = tokens
+                .next()
+                .ok_or_else(|| VoltError::Launch("Command quicklink target is empty".into()))?;
             let args: Vec<&str> = tokens.collect();
 
             std::process::Command::new(program)

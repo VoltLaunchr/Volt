@@ -18,7 +18,7 @@
 //!   `tokio::task::spawn_blocking` so the async executor thread is never
 //!   parked on a synchronous `fs::write` (finding #8).
 
-use crate::commands::shell::{redact_command, ShellExecutionState};
+use crate::commands::shell::{ShellExecutionState, redact_command};
 use crate::core::error::VoltError;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -103,10 +103,7 @@ fn truncate_for_log(s: &str, max_len: usize) -> String {
 /// Serialise the current map and fire-and-forget-persist it on a blocking
 /// thread. The caller must release any Mutex guard before calling to avoid
 /// holding a lock across async state.
-fn spawn_persist(
-    data_dir: Arc<PathBuf>,
-    snapshot: HashMap<String, ShellHistoryRecord>,
-) {
+fn spawn_persist(data_dir: Arc<PathBuf>, snapshot: HashMap<String, ShellHistoryRecord>) {
     tokio::task::spawn_blocking(move || {
         let path = data_dir.join("shell_history.json");
         if let Some(parent) = path.parent()

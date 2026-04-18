@@ -6,14 +6,14 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
-use tauri::ipc::Channel;
 use tauri::AppHandle;
+use tauri::ipc::Channel;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Child;
 use tokio::task::{AbortHandle, JoinHandle};
 use tracing::{info, warn};
 
-use crate::commands::settings::{load_settings, ShellSettings};
+use crate::commands::settings::{ShellSettings, load_settings};
 use crate::commands::shell_history::{self, ShellHistoryState};
 
 /// Maximum output size per stream (stdout/stderr) in bytes.
@@ -396,9 +396,9 @@ pub async fn execute_shell_command(
                     if let Some(c) = guard.as_mut() {
                         let _ = c.kill().await;
                     }
-                    return Err::<std::process::ExitStatus, std::io::Error>(
-                        std::io::Error::other("killed"),
-                    );
+                    return Err::<std::process::ExitStatus, std::io::Error>(std::io::Error::other(
+                        "killed",
+                    ));
                 }
                 let mut guard = child_for_task.lock().await;
                 if let Some(c) = guard.as_mut() {
@@ -472,11 +472,7 @@ pub async fn execute_shell_command(
     // Apply an outer timeout. If it fires we kill the child directly via the
     // shared handle, because the task's inner kill-flag poll may already be
     // dropped at this point.
-    let result = tokio::time::timeout(
-        std::time::Duration::from_millis(timeout_ms),
-        task,
-    )
-    .await;
+    let result = tokio::time::timeout(std::time::Duration::from_millis(timeout_ms), task).await;
 
     // Always remove from running map.
     {
@@ -650,9 +646,8 @@ pub async fn execute_shell_command_streaming(
         let start = std::time::Instant::now();
         let kill_flag = kill_flag_task;
 
-        let wait_result = tokio::time::timeout(
-            std::time::Duration::from_millis(timeout_ms),
-            async {
+        let wait_result =
+            tokio::time::timeout(std::time::Duration::from_millis(timeout_ms), async {
                 loop {
                     tokio::time::sleep(std::time::Duration::from_millis(50)).await;
                     if kill_flag.load(Ordering::Relaxed) {
@@ -673,9 +668,8 @@ pub async fn execute_shell_command_streaming(
                         return None;
                     }
                 }
-            },
-        )
-        .await;
+            })
+            .await;
 
         let elapsed = start.elapsed().as_millis() as u64;
 

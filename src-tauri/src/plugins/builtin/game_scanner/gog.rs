@@ -256,9 +256,10 @@ impl GameScanner for GOGScanner {
         #[cfg(not(target_os = "windows"))]
         {
             // macOS/Linux: fall back to launching the executable if known.
-            let exe = game.executable.as_ref().ok_or(
-                "No executable available for this GOG game on this platform",
-            )?;
+            let exe = game
+                .executable
+                .as_ref()
+                .ok_or("No executable available for this GOG game on this platform")?;
             std::process::Command::new(exe)
                 .spawn()
                 .map_err(|e| format!("Failed to launch GOG game: {}", e))?;

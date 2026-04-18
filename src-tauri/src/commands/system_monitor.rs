@@ -1,9 +1,9 @@
 /// System Monitor plugin commands
 use crate::core::error::{VoltError, VoltResult};
+use crate::plugins::builtin::SystemMonitorPlugin;
 use crate::plugins::builtin::system_monitor::{
     ComponentInfo, CpuCoreInfo, DiskInfo, NetworkInfo, ProcessInfo,
 };
-use crate::plugins::builtin::SystemMonitorPlugin;
 use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
 use tauri::State;
@@ -192,10 +192,7 @@ fn bytes_to_gb(bytes: u64) -> f32 {
 /// kernel/scheduler). Returns `VoltError::NotFound` when the process no longer
 /// exists at the time the kill signal is sent.
 #[tauri::command]
-pub fn kill_process_by_pid(
-    pid: u32,
-    monitor_state: State<SystemMonitorState>,
-) -> VoltResult<()> {
+pub fn kill_process_by_pid(pid: u32, monitor_state: State<SystemMonitorState>) -> VoltResult<()> {
     if pid == 0 {
         return Err(VoltError::InvalidConfig(
             "Refusing to kill pid 0".to_string(),
@@ -234,11 +231,7 @@ pub fn open_task_manager() -> VoltResult<()> {
 
     #[cfg(target_os = "linux")]
     {
-        const CANDIDATES: &[&str] = &[
-            "gnome-system-monitor",
-            "ksysguard",
-            "plasma-systemmonitor",
-        ];
+        const CANDIDATES: &[&str] = &["gnome-system-monitor", "ksysguard", "plasma-systemmonitor"];
         for cmd in CANDIDATES {
             if std::process::Command::new(cmd).spawn().is_ok() {
                 return Ok(());

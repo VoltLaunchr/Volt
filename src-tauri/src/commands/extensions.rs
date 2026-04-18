@@ -45,14 +45,7 @@ fn ensure_contained(path: &Path, root: &Path) -> VoltResult<PathBuf> {
 /// Directory names under `$HOME` that hold credentials / infrastructure secrets
 /// and must never be accepted as dev-extension roots.
 const DEV_EXTENSION_FORBIDDEN_DIRS: &[&str] = &[
-    ".ssh",
-    ".aws",
-    ".config",
-    ".gnupg",
-    ".docker",
-    ".kube",
-    ".azure",
-    ".netrc",
+    ".ssh", ".aws", ".config", ".gnupg", ".docker", ".kube", ".azure", ".netrc",
 ];
 
 /// Directory names that are legitimate on disk but dangerous to accept as
@@ -60,13 +53,7 @@ const DEV_EXTENSION_FORBIDDEN_DIRS: &[&str] = &[
 /// rather than reject so developers using non-standard layouts aren't
 /// locked out, but the warning lands in both the user-visible return value
 /// and the log.
-const DEV_EXTENSION_SUSPICIOUS_DIRS: &[&str] = &[
-    "downloads",
-    "desktop",
-    "temp",
-    "tmp",
-    "tempo",
-];
+const DEV_EXTENSION_SUSPICIOUS_DIRS: &[&str] = &["downloads", "desktop", "temp", "tmp", "tempo"];
 
 /// Extension author information
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -276,19 +263,13 @@ fn extract_zip(bytes: &[u8], dest_dir: &Path) -> VoltResult<()> {
             if let Some(parent) = outpath.parent() {
                 if !parent.exists() {
                     fs::create_dir_all(parent).map_err(|e| {
-                        VoltError::FileSystem(format!(
-                            "Failed to create parent directory: {}",
-                            e
-                        ))
+                        VoltError::FileSystem(format!("Failed to create parent directory: {}", e))
                     })?;
                 }
                 // Now that the parent exists, canonicalise and verify it is
                 // still within dest_dir before writing.
                 if ensure_contained(parent, dest_dir).is_err() {
-                    warn!(
-                        "Skipping file whose parent escapes dest_dir: {:?}",
-                        outpath
-                    );
+                    warn!("Skipping file whose parent escapes dest_dir: {:?}", outpath);
                     continue;
                 }
             }
@@ -321,8 +302,8 @@ fn extract_tar_gz(bytes: &[u8], dest_dir: &Path) -> VoltResult<()> {
         .entries()
         .map_err(|e| VoltError::FileSystem(format!("Failed to read tar archive: {}", e)))?
     {
-        let mut entry = entry
-            .map_err(|e| VoltError::FileSystem(format!("Failed to read tar entry: {}", e)))?;
+        let mut entry =
+            entry.map_err(|e| VoltError::FileSystem(format!("Failed to read tar entry: {}", e)))?;
 
         let entry_path = entry
             .path()
@@ -890,10 +871,7 @@ fn read_source_files_recursive(
             && let Ok(canonical_base) = base_dir.canonicalize()
             && !canonical.starts_with(&canonical_base)
         {
-            warn!(
-                "Skipping path that escapes extension root: {:?}",
-                path
-            );
+            warn!("Skipping path that escapes extension root: {:?}", path);
             continue;
         }
 

@@ -186,10 +186,7 @@ fn launch_windows(
 /// Launch a path via ShellExecuteW with the "open" verb. Safer than
 /// `cmd /C start` because the path is not re-parsed by the shell.
 #[cfg(target_os = "windows")]
-fn shell_execute_open(
-    path: &str,
-    options: &LaunchOptions,
-) -> Result<LaunchResult, LaunchError> {
+fn shell_execute_open(path: &str, options: &LaunchOptions) -> Result<LaunchResult, LaunchError> {
     use std::ffi::OsStr;
     use std::os::windows::ffi::OsStrExt;
     use std::ptr;

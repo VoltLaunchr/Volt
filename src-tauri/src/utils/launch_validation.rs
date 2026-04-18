@@ -48,16 +48,9 @@ pub fn validate_launch_path(path: &str) -> Result<(), String> {
     if let Some(file_name) = p.file_name().and_then(|n| n.to_str()) {
         let name_lower = file_name.to_lowercase();
         // `cmd.exe ` → `cmd.exe`; `cmd.exe:Zone.Identifier` → `cmd.exe`
-        let name_normalized = name_lower
-            .split(':')
-            .next()
-            .unwrap_or(&name_lower)
-            .trim();
+        let name_normalized = name_lower.split(':').next().unwrap_or(&name_lower).trim();
         if BLOCKED_EXECUTABLES.contains(&name_normalized) {
-            warn!(
-                "Blocked direct launch of dangerous executable: {}",
-                path
-            );
+            warn!("Blocked direct launch of dangerous executable: {}", path);
             return Err(format!(
                 "Direct execution of '{}' is not allowed for security reasons. \
                  If you need this program, launch it through a shortcut.",
@@ -97,10 +90,7 @@ fn validate_windows_path(path: &str, p: &Path) -> Result<(), String> {
     // Must be a file, not a directory (macOS .app bundles are dirs, but this
     // is the Windows branch)
     if p.is_dir() {
-        return Err(format!(
-            "Path is a directory, not an executable: {}",
-            path
-        ));
+        return Err(format!("Path is a directory, not an executable: {}", path));
     }
 
     // Must have a recognised application extension
@@ -117,10 +107,7 @@ fn validate_windows_path(path: &str, p: &Path) -> Result<(), String> {
             }
         }
         None => {
-            return Err(format!(
-                "Application path has no file extension: {}",
-                path
-            ));
+            return Err(format!("Application path has no file extension: {}", path));
         }
     }
 

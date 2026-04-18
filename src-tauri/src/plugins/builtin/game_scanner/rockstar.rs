@@ -43,10 +43,7 @@ impl RockstarScanner {
     /// helper exposed for tests.
     #[allow(dead_code)]
     pub(crate) fn build_game_id(folder_name: &str) -> String {
-        format!(
-            "rockstar_{}",
-            folder_name.replace(' ', "_").to_lowercase()
-        )
+        format!("rockstar_{}", folder_name.replace(' ', "_").to_lowercase())
     }
 
     /// Scan Windows registry for Rockstar titles. Each installed game
@@ -66,7 +63,9 @@ impl RockstarScanner {
         ];
 
         for key_path in rockstar_keys {
-            let Ok(root) = hklm.open_subkey(key_path) else { continue };
+            let Ok(root) = hklm.open_subkey(key_path) else {
+                continue;
+            };
             for game_name in root.enum_keys().flatten() {
                 // Skip launcher meta-entries.
                 let name_lc = game_name.to_lowercase();
@@ -74,10 +73,11 @@ impl RockstarScanner {
                     continue;
                 }
 
-                let Ok(game_key) = root.open_subkey(&game_name) else { continue };
-                let install_folder: String = game_key
-                    .get_value("InstallFolder")
-                    .unwrap_or_default();
+                let Ok(game_key) = root.open_subkey(&game_name) else {
+                    continue;
+                };
+                let install_folder: String =
+                    game_key.get_value("InstallFolder").unwrap_or_default();
                 if install_folder.is_empty() {
                     continue;
                 }

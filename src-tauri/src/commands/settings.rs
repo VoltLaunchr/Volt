@@ -431,10 +431,7 @@ pub struct SettingsExport {
 /// - Canonicalizes the parent directory (must exist)
 /// - Blocks writes into system directories
 /// - Optionally enforces a required file extension
-fn validate_settings_path(
-    path: &str,
-    required_extension: Option<&str>,
-) -> VoltResult<PathBuf> {
+fn validate_settings_path(path: &str, required_extension: Option<&str>) -> VoltResult<PathBuf> {
     let path_buf = PathBuf::from(path);
 
     // Block path traversal
@@ -473,10 +470,7 @@ fn validate_settings_path(
     })?;
 
     // Block system directories
-    let canonical_str = canonical_parent
-        .to_str()
-        .unwrap_or_default()
-        .to_lowercase();
+    let canonical_str = canonical_parent.to_str().unwrap_or_default().to_lowercase();
 
     #[cfg(target_os = "windows")]
     {
