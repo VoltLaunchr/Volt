@@ -5,8 +5,9 @@
  * The user can grant all requested permissions or deny (skip loading the extension).
  */
 
-import { Shield, Clipboard, HardDrive, Globe, Terminal, Bell, ExternalLink } from 'lucide-react';
+import { Shield, Clipboard, Globe, Bell, ExternalLink } from 'lucide-react';
 import { Modal } from '../../../shared/components/ui';
+import { logger } from '../../../shared/utils/logger';
 import type { ExtensionPermission } from '../types/extension.types';
 import './PermissionDialog.css';
 
@@ -19,20 +20,10 @@ const PERMISSION_INFO: Record<
     description: 'Read and write to the system clipboard',
     icon: <Clipboard size={18} />,
   },
-  filesystem: {
-    label: 'File System',
-    description: 'Read files on your computer',
-    icon: <HardDrive size={18} />,
-  },
   network: {
     label: 'Network',
     description: 'Make HTTP requests to external services',
     icon: <Globe size={18} />,
-  },
-  shell: {
-    label: 'Shell',
-    description: 'Execute system commands',
-    icon: <Terminal size={18} />,
   },
   notifications: {
     label: 'Notifications',
@@ -74,7 +65,18 @@ export function PermissionDialog({
         <ul className="permission-list">
           {permissions.map((perm) => {
             const info = PERMISSION_INFO[perm];
-            if (!info) return null;
+            if (!info) {
+              // Upstream (ExtensionLoader.sanitizePermissions) guarantees every
+              // entry is a known ExtensionPermission, so this branch is
+              // effectively unreachable. If it ever fires, a new permission was
+              // added to the type without a matching PERMISSION_INFO entry —
+              // surface that loudly instead of silently hiding it from users.
+              logger.error(
+                '[PermissionDialog] Missing PERMISSION_INFO entry for permission:',
+                perm
+              );
+              return null;
+            }
             return (
               <li key={perm} className="permission-item">
                 <span className="permission-icon">{info.icon}</span>

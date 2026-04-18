@@ -13,6 +13,7 @@ export enum PluginResultType {
   Emoji = 'emoji',
   Info = 'info',
   Password = 'password',
+  ShellCommand = 'shellcommand',
 }
 
 export interface PluginResult {

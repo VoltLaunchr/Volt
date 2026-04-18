@@ -1,0 +1,730 @@
+/**
+ * Focus Timer (Pomodoro) view — Apple-inspired.
+ * Two-column: timer on the left, task list on the right.
+ * Mode color is exposed via --mode-color on `.timer-view`.
+ */
+
+.timer-view {
+  --mode-color: #ff3b30;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--color-background);
+  color: var(--color-text-primary);
+  font-family: var(--font-family);
+  animation: tv-fade-in 220ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes tv-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ── Header ─────────────────────────────────────────────────────────── */
+
+.tv-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-bottom: 0.5px solid var(--color-border);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--mode-color) 6%, var(--color-surface)) 0%,
+    var(--color-surface) 100%
+  );
+  transition: background var(--transition-normal);
+}
+
+.tv-back {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  border: 0.5px solid var(--color-border);
+  background: var(--color-surface-hover);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition:
+    background var(--transition-fast),
+    color var(--transition-fast),
+    border-color var(--transition-fast);
+}
+
+.tv-back:hover {
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  border-color: color-mix(in srgb, var(--mode-color) 40%, var(--color-border));
+}
+
+.tv-header-title {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.tv-header-emoji {
+  font-size: 16px;
+  line-height: 1;
+  filter: saturate(1.1);
+}
+
+.tv-header-name {
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.2px;
+  color: var(--color-text-primary);
+}
+
+.tv-session-pill {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.2px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  color: var(--color-text-secondary);
+  background: var(--color-surface-hover);
+  border: 0.5px solid var(--color-border);
+}
+
+/* ── Body: two-column layout ────────────────────────────────────────── */
+
+.tv-body {
+  flex: 1;
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(260px, 0.9fr);
+  min-height: 0;
+}
+
+/* ── LEFT: Timer column ─────────────────────────────────────────────── */
+
+.tv-timer-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding: 18px 24px 16px;
+  border-right: 0.5px solid var(--color-border);
+  overflow: visible;
+}
+
+/* Mode tabs — segmented pill */
+
+.tv-tabs {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 10px;
+  background: var(--color-surface);
+  border: 0.5px solid var(--color-border);
+}
+
+.tv-tab {
+  position: relative;
+  padding: 5px 14px;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: -0.1px;
+  border: none;
+  background: transparent;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  border-radius: 7px;
+  transition:
+    background var(--transition-fast),
+    color var(--transition-fast),
+    box-shadow var(--transition-fast);
+}
+
+.tv-tab:hover {
+  color: var(--color-text-primary);
+}
+
+.tv-tab.is-active {
+  background: var(--color-background);
+  color: var(--color-text-primary);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+  border: 0.5px solid var(--color-border);
+}
+
+/* Custom duration input */
+
+.tv-custom-row {
+  display: flex;
+  gap: 6px;
+  width: min(320px, 100%);
+  animation: tv-fade-in 180ms ease-out;
+}
+
+.tv-custom-input {
+  flex: 1;
+  min-width: 0;
+  height: 32px;
+  padding: 0 12px;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  border-radius: 8px;
+  border: 0.5px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  outline: none;
+  transition:
+    border-color var(--transition-fast),
+    box-shadow var(--transition-fast);
+}
+
+.tv-custom-input::placeholder {
+  color: var(--color-text-tertiary);
+}
+
+.tv-custom-input:focus {
+  border-color: var(--mode-color);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--mode-color) 18%, transparent);
+}
+
+.tv-custom-input.is-invalid {
+  border-color: var(--color-error);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-error) 18%, transparent);
+}
+
+.tv-custom-set {
+  height: 32px;
+  padding: 0 14px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.1px;
+  border-radius: 8px;
+  border: none;
+  background: var(--mode-color);
+  color: #fff;
+  cursor: pointer;
+  transition:
+    opacity var(--transition-fast),
+    transform var(--transition-fast);
+}
+
+.tv-custom-set:hover:not(:disabled) {
+  opacity: 0.9;
+}
+
+.tv-custom-set:active:not(:disabled) {
+  transform: scale(0.96);
+}
+
+.tv-custom-set:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.tv-custom-error {
+  font-size: 11.5px;
+  color: var(--color-error);
+  letter-spacing: -0.1px;
+  margin-top: -6px;
+  animation: tv-fade-in 160ms ease-out;
+}
+
+/* Custom mode — keep layout rhythm even without session dots */
+.tv-dots-placeholder {
+  height: 10px;
+}
+
+/* Ring */
+
+.tv-ring-wrap {
+  position: relative;
+  width: 240px;
+  height: 240px;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+
+.tv-ring {
+  position: absolute;
+  inset: -10px;
+  transform: rotate(-90deg);
+  overflow: visible;
+}
+
+.tv-ring-track {
+  fill: none;
+  stroke-width: 8;
+  stroke: color-mix(in srgb, var(--color-border) 80%, transparent);
+}
+
+.tv-ring-progress {
+  fill: none;
+  stroke-width: 10;
+  stroke-linecap: round;
+  stroke: var(--mode-color);
+  filter: drop-shadow(0 0 6px color-mix(in srgb, var(--mode-color) 45%, transparent));
+  transition:
+    stroke-dashoffset 1s linear,
+    stroke var(--transition-normal);
+}
+
+.tv-ring-progress.is-paused {
+  opacity: 0.55;
+}
+
+.tv-ring-center {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+
+.tv-time {
+  font-size: 58px;
+  font-weight: 200;
+  letter-spacing: -3.5px;
+  line-height: 1;
+  color: var(--color-text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.tv-time-label {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+}
+
+/* Session dots */
+
+.tv-dots {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.tv-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  border: 1.5px solid var(--color-border);
+  background: transparent;
+  transition: all var(--transition-normal);
+}
+
+.tv-dot.is-filled {
+  background: var(--mode-color);
+  border-color: var(--mode-color);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--mode-color) 15%, transparent);
+}
+
+/* Controls */
+
+.tv-controls {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  margin-top: auto;
+  padding-top: 4px;
+}
+
+.tv-ctrl {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 0.5px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition:
+    transform var(--transition-fast),
+    background var(--transition-fast),
+    color var(--transition-fast),
+    border-color var(--transition-fast);
+}
+
+.tv-ctrl:hover {
+  color: var(--color-text-primary);
+  background: var(--color-surface-hover);
+  border-color: color-mix(in srgb, var(--mode-color) 40%, var(--color-border));
+}
+
+.tv-ctrl:active {
+  transform: scale(0.94);
+}
+
+.tv-play {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  border: none;
+  background: var(--mode-color);
+  color: #fff;
+  cursor: pointer;
+  padding-left: 3px; /* optical centering for the play triangle */
+  box-shadow:
+    0 4px 14px color-mix(in srgb, var(--mode-color) 45%, transparent),
+    0 1px 2px rgba(0, 0, 0, 0.15);
+  transition:
+    transform var(--transition-fast),
+    box-shadow var(--transition-fast),
+    background var(--transition-normal);
+}
+
+.tv-play:hover {
+  box-shadow:
+    0 6px 18px color-mix(in srgb, var(--mode-color) 55%, transparent),
+    0 1px 2px rgba(0, 0, 0, 0.15);
+}
+
+.tv-play:active {
+  transform: scale(0.94);
+}
+
+.tv-play:focus-visible,
+.tv-ctrl:focus-visible,
+.tv-back:focus-visible,
+.tv-tab:focus-visible,
+.tv-add-btn:focus-visible,
+.tv-task-check:focus-visible,
+.tv-task-remove:focus-visible {
+  outline: 2px solid var(--mode-color);
+  outline-offset: 3px;
+}
+
+/* ── RIGHT: Tasks column ────────────────────────────────────────────── */
+
+.tv-tasks-col {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 18px 20px 16px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.tv-tasks-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.tv-tasks-title {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.tv-tasks-eyebrow {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: var(--color-text-secondary);
+}
+
+.tv-tasks-count {
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+.tv-add-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 4px 10px;
+  border-radius: 7px;
+  border: 0.5px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition:
+    background var(--transition-fast),
+    color var(--transition-fast),
+    border-color var(--transition-fast);
+}
+
+.tv-add-btn:hover {
+  color: var(--color-text-primary);
+  background: var(--color-surface-hover);
+  border-color: color-mix(in srgb, var(--mode-color) 50%, var(--color-border));
+}
+
+.tv-task-input-row {
+  display: flex;
+  gap: 6px;
+  animation: tv-fade-in 160ms ease-out;
+}
+
+.tv-task-input {
+  flex: 1;
+  min-width: 0;
+  height: 32px;
+  padding: 0 10px;
+  font-size: 13px;
+  border-radius: 8px;
+  border: 0.5px solid var(--color-border);
+  background: var(--color-background);
+  color: var(--color-text-primary);
+  outline: none;
+  transition: border-color var(--transition-fast);
+}
+
+.tv-task-input::placeholder {
+  color: var(--color-text-tertiary);
+}
+
+.tv-task-input:focus {
+  border-color: var(--mode-color);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--mode-color) 18%, transparent);
+}
+
+.tv-task-save {
+  height: 32px;
+  padding: 0 12px;
+  font-size: 12px;
+  font-weight: 500;
+  border-radius: 8px;
+  border: none;
+  background: var(--mode-color);
+  color: #fff;
+  cursor: pointer;
+  transition: opacity var(--transition-fast);
+}
+
+.tv-task-save:hover {
+  opacity: 0.88;
+}
+
+/* Task list */
+
+.tv-task-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+  padding-right: 2px;
+}
+
+.tv-task-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.tv-task-list::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 3px;
+}
+
+.tv-task-list::-webkit-scrollbar-thumb:hover {
+  background: var(--color-text-tertiary);
+}
+
+.tv-task {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--color-surface);
+  border: 0.5px solid var(--color-border);
+  transition:
+    background var(--transition-fast),
+    border-color var(--transition-fast);
+}
+
+.tv-task:hover {
+  background: var(--color-surface-hover);
+  border-color: color-mix(in srgb, var(--mode-color) 25%, var(--color-border));
+}
+
+.tv-task:hover .tv-task-remove {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.tv-task-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1.5px solid var(--color-border);
+  background: transparent;
+  color: transparent;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition:
+    background var(--transition-fast),
+    border-color var(--transition-fast),
+    color var(--transition-fast);
+}
+
+.tv-task-check:hover {
+  border-color: var(--mode-color);
+}
+
+.tv-task.is-done .tv-task-check {
+  background: #34c759;
+  border-color: #34c759;
+  color: #fff;
+}
+
+.tv-task-label {
+  flex: 1;
+  font-size: 13px;
+  color: var(--color-text-primary);
+  letter-spacing: -0.1px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition:
+    color var(--transition-fast),
+    text-decoration-color var(--transition-fast);
+}
+
+.tv-task.is-done .tv-task-label {
+  color: var(--color-text-tertiary);
+  text-decoration: line-through;
+  text-decoration-color: var(--color-text-tertiary);
+}
+
+.tv-task-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  opacity: 0;
+  transform: scale(0.9);
+  transition:
+    opacity var(--transition-fast),
+    transform var(--transition-fast),
+    background var(--transition-fast),
+    color var(--transition-fast);
+}
+
+.tv-task-remove:hover {
+  color: #fff;
+  background: var(--color-error);
+}
+
+/* Empty state */
+
+.tv-tasks-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 20px 12px;
+  text-align: center;
+  color: var(--color-text-tertiary);
+  border: 1px dashed var(--color-border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--color-surface) 50%, transparent);
+}
+
+.tv-tasks-empty-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+}
+
+.tv-tasks-empty-hint {
+  font-size: 11.5px;
+  line-height: 1.4;
+  max-width: 26ch;
+}
+
+.tv-clear-done {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: auto;
+  padding: 5px 8px;
+  font-size: 11px;
+  font-weight: 500;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  transition: color var(--transition-fast);
+}
+
+.tv-clear-done:hover {
+  color: var(--color-error);
+}
+
+/* ── Responsive fallback ─────────────────────────────────────────────── */
+
+@media (max-width: 680px) {
+  .tv-body {
+    grid-template-columns: 1fr;
+  }
+
+  .tv-timer-col {
+    border-right: none;
+    border-bottom: 0.5px solid var(--color-border);
+  }
+
+  .tv-ring-wrap {
+    width: 200px;
+    height: 200px;
+  }
+
+  .tv-time {
+    font-size: 48px;
+    letter-spacing: -2.5px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .timer-view,
+  .tv-task-input-row,
+  .tv-ring-progress,
+  .tv-dot,
+  .tv-play,
+  .tv-ctrl,
+  .tv-back,
+  .tv-tab,
+  .tv-task,
+  .tv-task-remove {
+    animation: none;
+    transition: none;
+  }
+}

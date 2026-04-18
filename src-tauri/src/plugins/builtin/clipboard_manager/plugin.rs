@@ -27,7 +27,7 @@ pub struct ClipboardManagerPlugin {
     enabled: bool,
     api: Option<Arc<VoltPluginAPI>>,
     config: ClipboardConfig,
-    db_path: Arc<Mutex<Option<PathBuf>>>,
+    conn: Arc<Mutex<Option<Connection>>>,
     clipboard: Arc<Mutex<Option<Clipboard>>>,
     last_content_hash: Arc<Mutex<Option<String>>>,
     monitoring: Arc<AtomicBool>,
@@ -98,7 +98,7 @@ impl ClipboardManagerPlugin {
             enabled: true,
             api: None,
             config: ClipboardConfig::default(),
-            db_path: Arc::new(Mutex::new(None)),
+            conn: Arc::new(Mutex::new(None)),
             clipboard: Arc::new(Mutex::new(None)),
             last_content_hash: Arc::new(Mutex::new(None)),
             monitoring: Arc::new(AtomicBool::new(false)),
@@ -165,182 +165,31 @@ impl ClipboardManagerPlugin {
         Ok(())
     }
 
-    /// Check if content looks like sensitive data
-    fn is_sensitive_content(&self, text: &str) -> bool {
-        if !self.config.filter_sensitive {
-            return false;
-        }
-
-        let text_lower = text.to_lowercase();
-
-        // Common password patterns
-        if text_lower.contains("password")
-            || text_lower.contains("passwd")
-            || text_lower.contains("secret")
-        {
-            return true;
-        }
-
-        // Credit card pattern (basic check)
-        let digits_only: String = text.chars().filter(|c| c.is_ascii_digit()).collect();
-        if digits_only.len() >= 13 && digits_only.len() <= 19 {
-            return true;
-        }
-
-        false
-    }
-
-    /// Generate preview text (first 100 chars)
-    fn generate_preview(&self, content: &str, content_type: &ClipboardType) -> String {
-        match content_type {
-            ClipboardType::Text => {
-                let preview = content
-                    .lines()
-                    .next()
-                    .unwrap_or("")
-                    .chars()
-                    .take(100)
-                    .collect::<String>();
-
-                if content.len() > 100 {
-                    format!("{}...", preview)
-                } else {
-                    preview
-                }
-            }
-            ClipboardType::Image => {
-                // Generate a timestamp-based name like Raycast does
-                let now = chrono::Local::now();
-                format!("Image ({})", now.format("%d/%m/%Y %H:%M:%S"))
-            }
-            ClipboardType::Files => "[Files]".to_string(),
-        }
-    }
-
     /// Calculate hash for content deduplication
     fn calculate_hash(&self, content: &str) -> String {
         crate::utils::hash_id(content)
     }
 
-    /// Calculate metadata for content
-    fn calculate_metadata(&self, content_type: &ClipboardType, content: &str) -> ContentMetadata {
-        match content_type {
-            ClipboardType::Text => {
-                let char_count = content.chars().count() as u32;
-                let word_count = content.split_whitespace().count() as u32;
-                (
-                    Some(word_count),
-                    Some(char_count),
-                    None,
-                    None,
-                    Some(content.len() as u64),
-                )
-            }
-            ClipboardType::Image => {
-                // Try to decode base64 and get image dimensions
-                if let Ok(image_data) = general_purpose::STANDARD.decode(content)
-                    && let Ok(img) = image::load_from_memory(&image_data)
-                {
-                    let (width, height) = (img.width(), img.height());
-                    return (
-                        None,
-                        None,
-                        Some(width),
-                        Some(height),
-                        Some(image_data.len() as u64),
-                    );
-                }
-                (None, None, None, None, Some(content.len() as u64))
-            }
-            ClipboardType::Files => (None, None, None, None, Some(content.len() as u64)),
-        }
-    }
-
     /// Add item to clipboard history
     fn add_to_history(&self, content_type: ClipboardType, content: String) -> Result<(), String> {
-        let db_path = self.db_path.lock().unwrap();
-        let db_path = db_path.as_ref().ok_or("Database not initialized")?;
+        let conn_guard = self.conn.lock().unwrap();
+        let conn = conn_guard.as_ref().ok_or("Database not initialized")?;
 
-        let conn =
-            Connection::open(db_path).map_err(|e| format!("Failed to open database: {}", e))?;
-
-        let preview = self.generate_preview(&content, &content_type);
         let content_hash = self.calculate_hash(&content);
-        let timestamp = Utc::now().timestamp();
-
-        let (word_count, char_count, image_width, image_height, file_size) =
-            self.calculate_metadata(&content_type, &content);
-
-        // Try to insert, ignore if duplicate hash exists
-        let _result = conn.execute(
-            "INSERT OR IGNORE INTO clipboard_history
-             (content_type, content, preview, timestamp, pinned, content_hash,
-              source, word_count, char_count, image_width, image_height, file_size)
-             VALUES (?1, ?2, ?3, ?4, 0, ?5, NULL, ?6, ?7, ?8, ?9, ?10)",
-            params![
-                match content_type {
-                    ClipboardType::Text => "text",
-                    ClipboardType::Image => "image",
-                    ClipboardType::Files => "files",
-                },
-                content,
-                preview,
-                timestamp,
-                content_hash,
-                word_count,
-                char_count,
-                image_width,
-                image_height,
-                file_size.map(|s| s as i64),
-            ],
-        );
-
-        // Clean up old items if we've exceeded max_items
-        self.cleanup_old_items(&conn)?;
-
-        Ok(())
-    }
-
-    /// Cleanup old items based on config
-    fn cleanup_old_items(&self, conn: &Connection) -> Result<(), String> {
-        // Remove items beyond max_items (keep pinned items)
-        conn.execute(
-            "DELETE FROM clipboard_history
-             WHERE id NOT IN (
-                SELECT id FROM clipboard_history
-                WHERE pinned = 1
-                UNION
-                SELECT id FROM (
-                    SELECT id FROM clipboard_history
-                    ORDER BY timestamp DESC
-                    LIMIT ?1
-                )
-             )",
-            params![self.config.max_items],
+        Self::insert_and_cleanup(
+            conn,
+            content_type,
+            &content,
+            &content_hash,
+            self.config.max_items,
+            self.config.max_days,
         )
-        .map_err(|e| format!("Failed to cleanup items: {}", e))?;
-
-        // Remove items older than max_days (keep pinned items)
-        if self.config.max_days > 0 {
-            let cutoff_timestamp = Utc::now().timestamp() - (self.config.max_days as i64 * 86400);
-            conn.execute(
-                "DELETE FROM clipboard_history
-                 WHERE timestamp < ?1 AND pinned = 0",
-                params![cutoff_timestamp],
-            )
-            .map_err(|e| format!("Failed to cleanup old items: {}", e))?;
-        }
-
-        Ok(())
     }
 
     /// Get clipboard history
     pub fn get_history(&self, limit: Option<usize>) -> Result<Vec<ClipboardItem>, String> {
-        let db_path = self.db_path.lock().unwrap();
-        let db_path = db_path.as_ref().ok_or("Database not initialized")?;
-
-        let conn =
-            Connection::open(db_path).map_err(|e| format!("Failed to open database: {}", e))?;
+        let conn_guard = self.conn.lock().unwrap();
+        let conn = conn_guard.as_ref().ok_or("Database not initialized")?;
 
         let limit = limit.unwrap_or(50);
         let mut stmt = conn
@@ -396,21 +245,19 @@ impl ClipboardManagerPlugin {
         query: &str,
         limit: Option<usize>,
     ) -> Result<Vec<ClipboardItem>, String> {
-        let db_path = self.db_path.lock().unwrap();
-        let db_path = db_path.as_ref().ok_or("Database not initialized")?;
-
-        let conn =
-            Connection::open(db_path).map_err(|e| format!("Failed to open database: {}", e))?;
+        let conn_guard = self.conn.lock().unwrap();
+        let conn = conn_guard.as_ref().ok_or("Database not initialized")?;
 
         let limit = limit.unwrap_or(50);
-        let search_pattern = format!("%{}%", query);
+        let escaped = query.replace('%', "\\%").replace('_', "\\_");
+        let search_pattern = format!("%{}%", escaped);
 
         let mut stmt = conn
             .prepare(
                 "SELECT id, content_type, content, preview, timestamp, pinned, content_hash,
                         source, word_count, char_count, image_width, image_height, file_size
                  FROM clipboard_history
-                 WHERE content LIKE ?1 OR preview LIKE ?1
+                 WHERE content LIKE ?1 ESCAPE '\\' OR preview LIKE ?1 ESCAPE '\\'
                  ORDER BY pinned DESC, timestamp DESC
                  LIMIT ?2",
             )
@@ -455,11 +302,8 @@ impl ClipboardManagerPlugin {
 
     /// Pin/unpin clipboard item
     pub fn toggle_pin(&self, id: i64) -> Result<(), String> {
-        let db_path = self.db_path.lock().unwrap();
-        let db_path = db_path.as_ref().ok_or("Database not initialized")?;
-
-        let conn =
-            Connection::open(db_path).map_err(|e| format!("Failed to open database: {}", e))?;
+        let conn_guard = self.conn.lock().unwrap();
+        let conn = conn_guard.as_ref().ok_or("Database not initialized")?;
 
         conn.execute(
             "UPDATE clipboard_history SET pinned = NOT pinned WHERE id = ?1",
@@ -472,11 +316,8 @@ impl ClipboardManagerPlugin {
 
     /// Delete clipboard item
     pub fn delete_item(&self, id: i64) -> Result<(), String> {
-        let db_path = self.db_path.lock().unwrap();
-        let db_path = db_path.as_ref().ok_or("Database not initialized")?;
-
-        let conn =
-            Connection::open(db_path).map_err(|e| format!("Failed to open database: {}", e))?;
+        let conn_guard = self.conn.lock().unwrap();
+        let conn = conn_guard.as_ref().ok_or("Database not initialized")?;
 
         conn.execute("DELETE FROM clipboard_history WHERE id = ?1", params![id])
             .map_err(|e| format!("Failed to delete item: {}", e))?;
@@ -486,11 +327,8 @@ impl ClipboardManagerPlugin {
 
     /// Clear all clipboard history (except pinned items)
     pub fn clear_history(&self, include_pinned: bool) -> Result<(), String> {
-        let db_path = self.db_path.lock().unwrap();
-        let db_path = db_path.as_ref().ok_or("Database not initialized")?;
-
-        let conn =
-            Connection::open(db_path).map_err(|e| format!("Failed to open database: {}", e))?;
+        let conn_guard = self.conn.lock().unwrap();
+        let conn = conn_guard.as_ref().ok_or("Database not initialized")?;
 
         if include_pinned {
             conn.execute("DELETE FROM clipboard_history", [])
@@ -584,7 +422,7 @@ impl ClipboardManagerPlugin {
             }
 
             // Skip if sensitive
-            if self.is_sensitive_content(&text) {
+            if self.config.filter_sensitive && Self::is_sensitive_text(&text) {
                 return Ok(());
             }
 
@@ -634,7 +472,7 @@ impl ClipboardManagerPlugin {
         }
 
         // Clone Arc references for the async task
-        let db_path = self.db_path.clone();
+        let conn = self.conn.clone();
         let clipboard = self.clipboard.clone();
         let last_content_hash = self.last_content_hash.clone();
         let monitoring = self.monitoring.clone();
@@ -646,6 +484,8 @@ impl ClipboardManagerPlugin {
 
         // Clone additional config values for image monitoring
         let max_image_size = self.config.max_image_size;
+        let max_items = self.config.max_items;
+        let max_days = self.config.max_days;
 
         // Spawn background monitoring task
         tokio::spawn(async move {
@@ -703,10 +543,12 @@ impl ClipboardManagerPlugin {
 
                                         // Add to database
                                         if let Err(e) = Self::add_to_db_static(
-                                            &db_path,
+                                            &conn,
                                             ClipboardType::Image,
                                             base64_content,
                                             current_hash,
+                                            max_items,
+                                            max_days,
                                         ) && let Some(api) = &api
                                         {
                                             api.log(
@@ -756,10 +598,12 @@ impl ClipboardManagerPlugin {
 
                             // Add to database
                             if let Err(e) = Self::add_to_db_static(
-                                &db_path,
+                                &conn,
                                 ClipboardType::Text,
                                 text,
                                 current_hash,
+                                max_items,
+                                max_days,
                             ) && let Some(api) = &api
                             {
                                 api.log(
@@ -821,7 +665,7 @@ impl ClipboardManagerPlugin {
     fn calculate_metadata_static(content_type: &ClipboardType, content: &str) -> ContentMetadata {
         match content_type {
             ClipboardType::Text => {
-                let char_count = content.len() as u32;
+                let char_count = content.chars().count() as u32;
                 let word_count = content.split_whitespace().count() as u32;
                 (
                     Some(word_count),
@@ -852,49 +696,66 @@ impl ClipboardManagerPlugin {
 
     /// Static helper to add item to database (for use in async context)
     fn add_to_db_static(
-        db_path: &Arc<Mutex<Option<PathBuf>>>,
+        conn: &Arc<Mutex<Option<Connection>>>,
         content_type: ClipboardType,
         content: String,
         content_hash: String,
+        max_items: usize,
+        max_days: u32,
     ) -> Result<(), String> {
-        let db_path_guard = db_path.lock().unwrap();
-        let db_path = db_path_guard.as_ref().ok_or("Database not initialized")?;
+        let conn_guard = conn.lock().unwrap();
+        let conn = conn_guard.as_ref().ok_or("Database not initialized")?;
 
-        let conn =
-            Connection::open(db_path).map_err(|e| format!("Failed to open database: {}", e))?;
+        Self::insert_and_cleanup(
+            conn,
+            content_type,
+            &content,
+            &content_hash,
+            max_items,
+            max_days,
+        )
+    }
 
-        let preview = Self::generate_preview_static(&content, &content_type);
+    /// Insert an item and run retention cleanup. Caller supplies the connection
+    /// so pooling can be added later without changing the call sites.
+    fn insert_and_cleanup(
+        conn: &Connection,
+        content_type: ClipboardType,
+        content: &str,
+        content_hash: &str,
+        max_items: usize,
+        max_days: u32,
+    ) -> Result<(), String> {
+        let preview = Self::generate_preview_static(content, &content_type);
         let timestamp = Utc::now().timestamp();
 
         let (word_count, char_count, image_width, image_height, file_size) =
-            Self::calculate_metadata_static(&content_type, &content);
+            Self::calculate_metadata_static(&content_type, content);
 
-        let _result = conn
-            .execute(
-                "INSERT OR IGNORE INTO clipboard_history
+        conn.execute(
+            "INSERT OR IGNORE INTO clipboard_history
              (content_type, content, preview, timestamp, pinned, content_hash,
               source, word_count, char_count, image_width, image_height, file_size)
              VALUES (?1, ?2, ?3, ?4, 0, ?5, NULL, ?6, ?7, ?8, ?9, ?10)",
-                params![
-                    match content_type {
-                        ClipboardType::Text => "text",
-                        ClipboardType::Image => "image",
-                        ClipboardType::Files => "files",
-                    },
-                    content,
-                    preview,
-                    timestamp,
-                    content_hash,
-                    word_count,
-                    char_count,
-                    image_width,
-                    image_height,
-                    file_size.map(|s| s as i64),
-                ],
-            )
-            .map_err(|e| format!("Failed to insert: {}", e))?;
+            params![
+                match content_type {
+                    ClipboardType::Text => "text",
+                    ClipboardType::Image => "image",
+                    ClipboardType::Files => "files",
+                },
+                content,
+                preview,
+                timestamp,
+                content_hash,
+                word_count,
+                char_count,
+                image_width,
+                image_height,
+                file_size.map(|s| s as i64),
+            ],
+        )
+        .map_err(|e| format!("Failed to insert: {}", e))?;
 
-        // Cleanup old items
         conn.execute(
             "DELETE FROM clipboard_history
              WHERE id NOT IN (
@@ -904,12 +765,22 @@ impl ClipboardManagerPlugin {
                 SELECT id FROM (
                     SELECT id FROM clipboard_history
                     ORDER BY timestamp DESC
-                    LIMIT 1000
+                    LIMIT ?1
                 )
              )",
-            [],
+            params![max_items],
         )
         .map_err(|e| format!("Failed to cleanup: {}", e))?;
+
+        if max_days > 0 {
+            let cutoff_timestamp = Utc::now().timestamp() - (max_days as i64 * 86400);
+            conn.execute(
+                "DELETE FROM clipboard_history
+                 WHERE timestamp < ?1 AND pinned = 0",
+                params![cutoff_timestamp],
+            )
+            .map_err(|e| format!("Failed to cleanup old items: {}", e))?;
+        }
 
         Ok(())
     }
@@ -918,22 +789,17 @@ impl ClipboardManagerPlugin {
     fn generate_preview_static(content: &str, content_type: &ClipboardType) -> String {
         match content_type {
             ClipboardType::Text => {
-                let preview = content
-                    .lines()
-                    .next()
-                    .unwrap_or("")
-                    .chars()
-                    .take(100)
-                    .collect::<String>();
-
-                if content.len() > 100 {
+                let first_line = content.lines().next().unwrap_or("");
+                let mut chars = first_line.chars();
+                let preview: String = chars.by_ref().take(100).collect();
+                let has_more = chars.next().is_some() || content.lines().nth(1).is_some();
+                if has_more {
                     format!("{}...", preview)
                 } else {
                     preview
                 }
             }
             ClipboardType::Image => {
-                // Generate a timestamp-based name like Raycast does
                 let now = chrono::Local::now();
                 format!("Image ({})", now.format("%d/%m/%Y %H:%M:%S"))
             }
@@ -1026,10 +892,14 @@ impl Plugin for ClipboardManagerPlugin {
                 let data_dir = api.get_plugin_data_dir(self.id())?;
                 let _ = api.get_plugin_cache_dir(self.id())?;
 
-                // Initialize database
+                // Initialize database (short-lived connection for schema + migrations)
                 let db_path = data_dir.join("clipboard.db");
                 self.init_database(&db_path)?;
-                *self.db_path.lock().unwrap() = Some(db_path);
+
+                // Open the long-lived reused connection
+                let conn = Connection::open(&db_path)
+                    .map_err(|e| format!("Failed to open database: {}", e))?;
+                *self.conn.lock().unwrap() = Some(conn);
 
                 // Initialize clipboard
                 let clipboard = Clipboard::new()

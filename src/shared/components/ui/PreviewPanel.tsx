@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { invoke, convertFileSrc } from '@tauri-apps/api/core';
-import { SearchResult } from '../../types/common.types';
+import { SearchResult, SearchResultType } from '../../types/common.types';
+import type { ShellOutputData } from '../../../features/plugins/builtin/shell';
 import './PreviewPanel.css';
 
 interface FilePreview {
@@ -37,8 +38,11 @@ export function PreviewPanel({ result, isOpen }: PreviewPanelProps) {
   const lastPathRef = useRef<string>('');
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
+  // No `preview` in deps — we read the "already fetched" state from the ref.
+  // Keeping `preview` as a dep recreated fetchPreview on every successful
+  // fetch, which retriggered the effect and rescheduled the debounce timer.
   const fetchPreview = useCallback(async (path: string) => {
-    if (path === lastPathRef.current && preview) return;
+    if (path === lastPathRef.current) return;
     lastPathRef.current = path;
     setLoading(true);
     try {
@@ -49,7 +53,7 @@ export function PreviewPanel({ result, isOpen }: PreviewPanelProps) {
     } finally {
       setLoading(false);
     }
-  }, [preview]);
+  }, []);
 
   useEffect(() => {
     if (!isOpen || !result) {
@@ -76,6 +80,33 @@ export function PreviewPanel({ result, isOpen }: PreviewPanelProps) {
     return (
       <div className="preview-panel">
         <div className="preview-empty">Select a result to preview</div>
+      </div>
+    );
+  }
+
+  if (result.type === SearchResultType.ShellCommand) {
+    const shellData = result.data as unknown as ShellOutputData | undefined;
+    return (
+      <div className="preview-panel" role="region" aria-label="Shell command preview">
+        <div className="preview-panel-header">
+          <span className="preview-title">{'> ' + (shellData?.command || '')}</span>
+          {shellData?.executionTimeMs !== undefined && (
+            <span className="preview-meta-value">{shellData.executionTimeMs}ms</span>
+          )}
+        </div>
+        <div className="preview-panel-content">
+          {shellData?.status === 'done' ? (
+            <pre className="preview-text">
+              {shellData.stdout || shellData.stderr || 'No output'}
+            </pre>
+          ) : shellData?.status === 'running' ? (
+            <pre className="preview-text">{(shellData.stdout || '') + '\n...'}</pre>
+          ) : shellData?.status === 'error' ? (
+            <pre className="preview-text">{shellData.errorMessage || 'Unknown error'}</pre>
+          ) : (
+            <div className="preview-empty">Press Enter to run command</div>
+          )}
+        </div>
       </div>
     );
   }

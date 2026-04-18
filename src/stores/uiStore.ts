@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { SearchResult } from '../shared/types/common.types';
+import type { ExtensionPermission } from '../features/extensions/types/extension.types';
 
 export type ActiveView =
   | { type: 'search' }
@@ -8,12 +9,19 @@ export type ActiveView =
   | { type: 'files' }
   | { type: 'calculator' }
   | { type: 'games' }
-  | { type: 'changelog' };
+  | { type: 'changelog' }
+  | { type: 'timer' };
 
 export interface ContextMenuState {
   isOpen: boolean;
   position: { x: number; y: number };
   result: SearchResult | null;
+}
+
+export interface PermissionRequest {
+  extensionName: string;
+  permissions: ExtensionPermission[];
+  resolve: (granted: ExtensionPermission[]) => void;
 }
 
 interface UiState {
@@ -23,6 +31,7 @@ interface UiState {
   propertiesResult: SearchResult | null;
   isHelpOpen: boolean;
   isPreviewOpen: boolean;
+  permissionRequest: PermissionRequest | null;
 }
 
 interface UiActions {
@@ -33,6 +42,7 @@ interface UiActions {
   closeProperties: () => void;
   toggleHelp: () => void;
   togglePreview: () => void;
+  setPermissionRequest: (request: PermissionRequest | null) => void;
 }
 
 export const useUiStore = create<UiState & UiActions>()((set) => ({
@@ -42,6 +52,7 @@ export const useUiStore = create<UiState & UiActions>()((set) => ({
   propertiesResult: null,
   isHelpOpen: false,
   isPreviewOpen: false,
+  permissionRequest: null,
 
   setActiveView: (view) => set({ activeView: view }),
   openContextMenu: (position, result) =>
@@ -52,4 +63,5 @@ export const useUiStore = create<UiState & UiActions>()((set) => ({
   closeProperties: () => set({ isPropertiesOpen: false }),
   toggleHelp: () => set((state) => ({ isHelpOpen: !state.isHelpOpen })),
   togglePreview: () => set((state) => ({ isPreviewOpen: !state.isPreviewOpen })),
+  setPermissionRequest: (request) => set({ permissionRequest: request }),
 }));

@@ -13,6 +13,8 @@ use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Manager};
 use tracing::{debug, info, warn};
 
+use crate::utils::extension_state_sig;
+
 /// Reject paths that escape `root` (via `..` or symlink resolution).
 /// Returns the canonical path on success.
 fn ensure_contained(path: &Path, root: &Path) -> VoltResult<PathBuf> {
@@ -51,6 +53,19 @@ const DEV_EXTENSION_FORBIDDEN_DIRS: &[&str] = &[
     ".kube",
     ".azure",
     ".netrc",
+];
+
+/// Directory names that are legitimate on disk but dangerous to accept as
+/// dev-extension roots — they are typical attacker drop locations. We warn
+/// rather than reject so developers using non-standard layouts aren't
+/// locked out, but the warning lands in both the user-visible return value
+/// and the log.
+const DEV_EXTENSION_SUSPICIOUS_DIRS: &[&str] = &[
+    "downloads",
+    "desktop",
+    "temp",
+    "tmp",
+    "tempo",
 ];
 
 /// Extension author information
@@ -216,7 +231,7 @@ fn validate_download_url(url: &str) -> VoltResult<()> {
 
 /// Extract a ZIP archive into `dest_dir`. Uses `enclosed_name()` to block
 /// path-traversal entries (e.g. `../evil.js`).
-fn extract_zip(bytes: &[u8], dest_dir: &PathBuf) -> VoltResult<()> {
+fn extract_zip(bytes: &[u8], dest_dir: &Path) -> VoltResult<()> {
     let cursor = std::io::Cursor::new(bytes);
     let mut archive = zip::ZipArchive::new(cursor)
         .map_err(|e| VoltError::FileSystem(format!("Failed to read zip archive: {}", e)))?;
@@ -293,7 +308,7 @@ fn extract_zip(bytes: &[u8], dest_dir: &PathBuf) -> VoltResult<()> {
 
 /// Extract a gzipped tar archive into `dest_dir`. Reject any entry whose
 /// resolved path escapes `dest_dir` (path traversal guard).
-fn extract_tar_gz(bytes: &[u8], dest_dir: &PathBuf) -> VoltResult<()> {
+fn extract_tar_gz(bytes: &[u8], dest_dir: &Path) -> VoltResult<()> {
     let gz = flate2::read::GzDecoder::new(std::io::Cursor::new(bytes));
     let mut archive = tar::Archive::new(gz);
 
@@ -313,6 +328,13 @@ fn extract_tar_gz(bytes: &[u8], dest_dir: &PathBuf) -> VoltResult<()> {
             .path()
             .map_err(|e| VoltError::FileSystem(format!("Invalid tar entry path: {}", e)))?
             .into_owned();
+
+        // Reject symlinks and hardlinks — they could point outside dest_dir.
+        let entry_type = entry.header().entry_type();
+        if entry_type == tar::EntryType::Symlink || entry_type == tar::EntryType::Link {
+            warn!("Skipping symlink/hardlink tar entry: {:?}", entry_path);
+            continue;
+        }
 
         // Reject absolute paths and parent-directory components.
         if entry_path.is_absolute()
@@ -392,22 +414,26 @@ fn get_installed_state_path(app: &AppHandle) -> VoltResult<PathBuf> {
     Ok(extensions_dir.join("installed.json"))
 }
 
-/// Load installed extensions state from disk
+/// Load installed extensions state from disk.
+///
+/// Also verifies the detached HMAC signature (`installed.json.sig`). A
+/// missing or mismatching signature is logged but never causes load failure
+/// — see `extension_state_sig` for the rationale.
 fn load_installed_state(app: &AppHandle) -> VoltResult<InstalledExtensionsState> {
     let state_path = get_installed_state_path(app)?;
 
-    if !state_path.exists() {
-        return Ok(InstalledExtensionsState::default());
-    }
-
-    let content = fs::read_to_string(&state_path)
+    let content = extension_state_sig::read_state_with_verification(&state_path, "installed")
         .map_err(|e| VoltError::FileSystem(format!("Failed to read installed state: {}", e)))?;
+
+    let Some(content) = content else {
+        return Ok(InstalledExtensionsState::default());
+    };
 
     serde_json::from_str(&content)
         .map_err(|e| VoltError::Serialization(format!("Failed to parse installed state: {}", e)))
 }
 
-/// Save installed extensions state to disk
+/// Save installed extensions state to disk, along with the HMAC signature.
 fn save_installed_state(app: &AppHandle, state: &InstalledExtensionsState) -> VoltResult<()> {
     let state_path = get_installed_state_path(app)?;
 
@@ -415,7 +441,7 @@ fn save_installed_state(app: &AppHandle, state: &InstalledExtensionsState) -> Vo
         VoltError::Serialization(format!("Failed to serialize installed state: {}", e))
     })?;
 
-    fs::write(&state_path, content)
+    extension_state_sig::write_state_with_signature(&state_path, &content)
         .map_err(|e| VoltError::FileSystem(format!("Failed to write installed state: {}", e)))?;
 
     Ok(())
@@ -584,6 +610,13 @@ pub async fn install_extension(
         .map_err(|e| VoltError::FileSystem(format!("Failed to read manifest: {}", e)))?;
     let manifest: ExtensionManifest = serde_json::from_str(&manifest_content)
         .map_err(|e| VoltError::Serialization(format!("Failed to parse manifest: {}", e)))?;
+
+    if manifest.id != extension_id {
+        return Err(VoltError::InvalidConfig(format!(
+            "Manifest id '{}' does not match requested extension id '{}'",
+            manifest.id, extension_id
+        )));
+    }
 
     // Create installed extension record
     let installed = InstalledExtension {
@@ -851,6 +884,19 @@ fn read_source_files_recursive(
     for entry in entries.flatten() {
         let path = entry.path();
 
+        // Containment check: canonicalize and verify the path is within base_dir.
+        // This prevents symlinks from escaping the extension root.
+        if let Ok(canonical) = path.canonicalize()
+            && let Ok(canonical_base) = base_dir.canonicalize()
+            && !canonical.starts_with(&canonical_base)
+        {
+            warn!(
+                "Skipping path that escapes extension root: {:?}",
+                path
+            );
+            continue;
+        }
+
         if path.is_dir() {
             // Skip node_modules, .git, etc.
             let dir_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
@@ -908,9 +954,28 @@ pub async fn get_enabled_extensions_sources(app: AppHandle) -> VoltResult<Vec<Ex
     }
 
     // Load dev extensions
+    //
+    // Defense-in-depth: even though `link_dev_extension` rejects id collisions
+    // with installed extensions, the dev-extensions state file lives on disk in
+    // the user's app data directory and could be tampered with outside our
+    // IPC. Skip any dev entry whose id matches an installed (non-dev) extension
+    // so a tampered file cannot cause the dev code to inherit the installed
+    // extension's `granted_permissions` via the id-keyed frontend lookup.
+    let installed_ids: std::collections::HashSet<String> = state
+        .extensions
+        .iter()
+        .map(|e| e.manifest.id.clone())
+        .collect();
     match get_dev_extensions(app.clone()).await {
         Ok(dev_exts) => {
             for dev_ext in dev_exts.iter().filter(|e| e.enabled) {
+                if installed_ids.contains(&dev_ext.manifest.id) {
+                    warn!(
+                        "Skipping dev extension '{}': id collides with an installed extension",
+                        dev_ext.manifest.id
+                    );
+                    continue;
+                }
                 match read_dev_extension_source(&dev_ext.path).await {
                     Ok(source) => sources.push(source),
                     Err(e) => {
@@ -977,29 +1042,33 @@ fn get_dev_state_path(app: &AppHandle) -> VoltResult<PathBuf> {
     Ok(dev_dir.join("dev-extensions.json"))
 }
 
-/// Load dev extensions state from disk
+/// Load dev extensions state from disk.
+///
+/// Also verifies the detached HMAC signature (`dev-extensions.json.sig`).
+/// A missing or mismatching signature is logged but never causes load
+/// failure — see `extension_state_sig` for the rationale.
 fn load_dev_state(app: &AppHandle) -> VoltResult<DevExtensionsState> {
     let state_path = get_dev_state_path(app)?;
 
-    if !state_path.exists() {
-        return Ok(DevExtensionsState::default());
-    }
-
-    let content = fs::read_to_string(&state_path)
+    let content = extension_state_sig::read_state_with_verification(&state_path, "dev-extensions")
         .map_err(|e| VoltError::FileSystem(format!("Failed to read dev state: {}", e)))?;
+
+    let Some(content) = content else {
+        return Ok(DevExtensionsState::default());
+    };
 
     serde_json::from_str(&content)
         .map_err(|e| VoltError::Serialization(format!("Failed to parse dev state: {}", e)))
 }
 
-/// Save dev extensions state to disk
+/// Save dev extensions state to disk, along with the HMAC signature.
 fn save_dev_state(app: &AppHandle, state: &DevExtensionsState) -> VoltResult<()> {
     let state_path = get_dev_state_path(app)?;
 
     let content = serde_json::to_string_pretty(state)
         .map_err(|e| VoltError::Serialization(format!("Failed to serialize dev state: {}", e)))?;
 
-    fs::write(&state_path, content)
+    extension_state_sig::write_state_with_signature(&state_path, &content)
         .map_err(|e| VoltError::FileSystem(format!("Failed to write dev state: {}", e)))?;
 
     Ok(())
@@ -1160,7 +1229,22 @@ pub async fn link_dev_extension(app: AppHandle, path: String) -> VoltResult<DevE
         }
     }
 
-    let extension_dir = canonical_path;
+    // Warn — but do not reject — when the dev-extension root lives inside a
+    // classic attacker drop location (Downloads, Desktop, Temp). The log
+    // line gives a forensic trail; a future UI layer can surface it as a
+    // confirmation prompt without changing the backend contract.
+    for component in canonical_path.components() {
+        let name = component.as_os_str().to_string_lossy().to_lowercase();
+        if DEV_EXTENSION_SUSPICIOUS_DIRS.contains(&name.as_str()) {
+            warn!(
+                "Linking dev extension from suspicious location '{}' — verify you trust the source",
+                canonical_path.display()
+            );
+            break;
+        }
+    }
+
+    let extension_dir = canonical_path.clone();
 
     // Check for manifest.json
     let manifest_path = extension_dir.join("manifest.json");
@@ -1179,10 +1263,39 @@ pub async fn link_dev_extension(app: AppHandle, path: String) -> VoltResult<DevE
 
     info!("Linking dev extension: {} ({})", manifest.name, manifest.id);
 
-    // Create dev extension record
+    // Security: block id collision with an already-installed (non-dev) extension.
+    //
+    // Without this check, a local folder whose manifest declares an existing
+    // installed extension's id would cause the frontend's permission lookup
+    // (keyed on manifest.id against `get_installed_extensions`) to return the
+    // installed extension's `granted_permissions` for the dev code — an
+    // unauthorized permission escalation / identity spoof.
+    //
+    // Replacing a previous dev extension with the same id is still allowed;
+    // that's the intended dev workflow (re-link the same folder).
+    let installed_state = load_installed_state(&app)?;
+    if installed_state
+        .extensions
+        .iter()
+        .any(|e| e.manifest.id == manifest.id)
+    {
+        return Err(VoltError::InvalidConfig(format!(
+            "Cannot link dev extension '{}': an installed extension with the same id already exists. Uninstall it first.",
+            manifest.id
+        )));
+    }
+
+    // Create dev extension record.
+    //
+    // We persist the CANONICAL path, not the raw user-supplied `path`.
+    // Rationale: every read-time check (sensitive-directory scan,
+    // containment verification) is applied to the canonical form. If we
+    // stored the raw input and the target later became a symlink or was
+    // renamed, the pre-flight validation done at link time would no longer
+    // reflect what `read_dev_extension_source` actually resolves.
     let dev_ext = DevExtension {
         manifest,
-        path: path.clone(),
+        path: canonical_path.to_string_lossy().into_owned(),
         linked_at: chrono::Utc::now().to_rfc3339(),
         enabled: true,
         is_dev: true,
@@ -1277,4 +1390,20 @@ pub async fn refresh_dev_extension(
 
     // Re-link to refresh
     link_dev_extension(app, ext.path.clone()).await
+}
+
+/// Return whether the extension-state HMAC key was forcibly rotated during
+/// this process run (i.e. the keyring entry was malformed at startup, which
+/// can only happen from external tampering or data corruption). The
+/// frontend should surface a banner while this is true and call
+/// `acknowledge_extension_tamper_alert` when the user dismisses it.
+#[tauri::command]
+pub async fn get_extension_tamper_alert() -> bool {
+    crate::utils::extension_state_sig::has_tamper_detected()
+}
+
+/// Acknowledge the tamper alert so the UI banner is dismissed.
+#[tauri::command]
+pub async fn acknowledge_extension_tamper_alert() {
+    crate::utils::extension_state_sig::acknowledge_tamper_detected();
 }

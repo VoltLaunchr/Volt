@@ -1,21 +1,49 @@
-import React, { useMemo } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AppWindow,
   Calculator,
   Clock,
+  Copy,
+  Equal,
   File,
   FolderOpen,
   Gamepad2,
+  Loader2,
   Search,
   Settings,
+  Terminal,
   Cpu,
   MemoryStick,
   HardDrive,
 } from 'lucide-react';
 import { SearchResult, SearchResultType } from '../../../shared/types/common.types';
+import type { ShellOutputData } from '../../plugins/builtin/shell';
+import { stripAnsi } from '../../plugins/builtin/shell';
+import { AnsiText } from '../../plugins/builtin/shell/ansiParser';
 import { highlightMatch, HighlightSegment } from '../../../shared/utils/highlightMatch';
 import { useSearchStore } from '../../../stores/searchStore';
 import './ResultItem.css';
+
+// Calculator data interface - nested inside PluginResult.data
+interface CalculatorInnerData {
+  queryType: 'math' | 'unit' | 'date' | 'timezone';
+  expression?: string;
+  formatted?: string;
+  result?: number;
+}
+
+/** Extract calculator-specific data from the SearchResult data (which is the full PluginResult) */
+const getCalculatorData = (data: unknown): CalculatorInnerData | null => {
+  if (typeof data !== 'object' || data === null) return null;
+  const obj = data as Record<string, unknown>;
+  // data is a PluginResult; calculator fields are in obj.data
+  const inner = obj.data as Record<string, unknown> | undefined;
+  if (!inner || typeof inner !== 'object') return null;
+  if ('queryType' in inner && typeof inner.queryType === 'string') {
+    return inner as unknown as CalculatorInnerData;
+  }
+  return null;
+};
 
 // System Monitor data interface
 interface SystemMonitorData {
@@ -157,15 +185,165 @@ export const ResultItem: React.FC<ResultItemProps> = ({
     );
   };
 
+  // Shell command output state — updated via DOM events from the plugin
+  const isShellCommand = result.type === SearchResultType.ShellCommand;
+  const initialData = isShellCommand ? (result.data as unknown as ShellOutputData) : null;
+  const [shellData, setShellData] = useState<ShellOutputData | null>(initialData);
+
+  useEffect(() => {
+    if (!isShellCommand) return;
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail as { command: string; data: ShellOutputData };
+      if (detail.command === (result.data as unknown as ShellOutputData)?.command) {
+        setShellData({ ...detail.data });
+      }
+    };
+    window.addEventListener('volt:shell-output', handler);
+    return () => window.removeEventListener('volt:shell-output', handler);
+  }, [isShellCommand, result.data]);
+
+  const handleCopyOutput = useCallback((text: string) => {
+    navigator.clipboard.writeText(text).catch(() => {});
+  }, []);
+
+  const calcData = result.type === SearchResultType.Calculator
+    ? getCalculatorData(result.data)
+    : null;
+
+  const renderCalculatorContent = () => {
+    if (!calcData || !calcData.expression || !calcData.formatted) {
+      return (
+        <div className="result-content">
+          <div className="result-title truncate">{result.title}</div>
+          {result.subtitle && <div className="result-subtitle truncate">{result.subtitle}</div>}
+        </div>
+      );
+    }
+
+    return (
+      <div className="result-content calculator-card-content">
+        <div className="calculator-card">
+          <div className="calculator-card-expression">
+            <span className="calculator-card-value">{calcData.expression}</span>
+            <span className="calculator-card-label">Expression</span>
+          </div>
+          <div className="calculator-card-separator">
+            <Equal size={16} strokeWidth={2.5} />
+          </div>
+          <div className="calculator-card-result">
+            <span className="calculator-card-value">{calcData.formatted}</span>
+            <span className="calculator-card-label">Result</span>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const renderShellContent = () => {
+    const data = shellData || initialData;
+    if (!data) return null;
+
+    if (data.status === 'pending') {
+      return (
+        <div className="result-content">
+          <div className="result-title shell-command-title">
+            {data.command ? `> ${data.command}` : 'Shell Command Mode'}
+          </div>
+          <div className="result-subtitle truncate">
+            {data.command ? 'Press Enter to run' : 'Type a command after > (e.g. >git status)'}
+          </div>
+        </div>
+      );
+    }
+
+    if (data.status === 'running') {
+      const partialStdout = data.stdout?.trim();
+      const partialStderr = data.stderr?.trim();
+      const hasPartialOutput = partialStdout || partialStderr;
+      return (
+        <div className="result-content">
+          <div className="result-title shell-command-title">{`> ${data.command}`}</div>
+          <div className="shell-output-block shell-loading">
+            <Loader2 size={14} className="shell-spinner" />
+            <span>Running... (Ctrl+C to cancel)</span>
+          </div>
+          {hasPartialOutput && (
+            <pre className="shell-output-block">
+              {partialStdout && <AnsiText text={partialStdout} />}
+              {partialStderr && <span className="shell-stderr"><AnsiText text={partialStderr} /></span>}
+            </pre>
+          )}
+        </div>
+      );
+    }
+
+    if (data.status === 'error') {
+      return (
+        <div className="result-content">
+          <div className="result-title shell-command-title">{`> ${data.command}`}</div>
+          <div className="shell-output-block shell-error">
+            {data.errorMessage || 'Command failed'}
+          </div>
+        </div>
+      );
+    }
+
+    // status === 'done'
+    const output = data.stdout || '';
+    const stderr = data.stderr || '';
+    const hasOutput = output.trim() || stderr.trim();
+
+    return (
+      <div className="result-content">
+        <div className="shell-output-header">
+          <span className="result-title shell-command-title">{`> ${data.command}`}</span>
+          <span className="shell-meta">
+            {data.timedOut && <span className="shell-timeout">timed out</span>}
+            {data.exitCode !== undefined && data.exitCode !== 0 && (
+              <span className="shell-exit-code">exit {data.exitCode}</span>
+            )}
+            {data.executionTimeMs !== undefined && (
+              <span className="shell-timing">{data.executionTimeMs}ms</span>
+            )}
+            {hasOutput && (
+              <button
+                className="shell-copy-btn"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleCopyOutput(stripAnsi(output || stderr));
+                }}
+                title="Copy output"
+              >
+                <Copy size={12} />
+              </button>
+            )}
+          </span>
+        </div>
+        {hasOutput ? (
+          <pre className="shell-output-block">
+            {output.trim() && <AnsiText text={output.trim()} />}
+            {stderr.trim() && <span className="shell-stderr"><AnsiText text={stderr.trim()} /></span>}
+          </pre>
+        ) : (
+          <div className="shell-output-block shell-empty">No output</div>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div
-      className={`result-item ${isSelected ? 'selected' : ''}`}
+      className={`result-item ${isSelected ? 'selected' : ''}${isShellCommand && shellData?.status && shellData.status !== 'pending' ? ' shell-expanded' : ''}${calcData ? ' calculator-expanded' : ''}`}
       onClick={onLaunch}
       onMouseEnter={onSelect}
       onKeyDown={handleKeyDown}
     >
       <div className="result-icon">
-        {result.type === SearchResultType.SystemMonitor ? (
+        {result.type === SearchResultType.ShellCommand ? (
+          <div className="icon-placeholder">
+            <Terminal size={24} strokeWidth={2} className="plugin-icon shell" />
+          </div>
+        ) : result.type === SearchResultType.SystemMonitor ? (
           renderSystemMonitorIcon()
         ) : result.icon ? (
           <img src={result.icon} alt="" className="icon-image" />
@@ -179,7 +357,7 @@ export const ResultItem: React.FC<ResultItemProps> = ({
               <Gamepad2 size={24} strokeWidth={2} />
             ) : result.type === SearchResultType.Calculator ? (
               // Check if this is a timezone result
-              (result.data as unknown as Record<string, unknown>)?.queryType === 'timezone' ? (
+              calcData?.queryType === 'timezone' ? (
                 <Clock size={24} strokeWidth={2} className="plugin-icon timer" />
               ) : (
                 <Calculator size={24} strokeWidth={2} className="plugin-icon calculator" />
@@ -197,8 +375,12 @@ export const ResultItem: React.FC<ResultItemProps> = ({
         )}
       </div>
 
-      {result.type === SearchResultType.SystemMonitor ? (
+      {result.type === SearchResultType.ShellCommand ? (
+        renderShellContent()
+      ) : result.type === SearchResultType.SystemMonitor ? (
         renderSystemMonitorContent()
+      ) : calcData ? (
+        renderCalculatorContent()
       ) : (
         <div className="result-content">
           <div className="result-title truncate">

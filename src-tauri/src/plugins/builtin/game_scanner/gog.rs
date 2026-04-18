@@ -104,7 +104,10 @@ impl GOGScanner {
             game.executable = Some(install_path.join(exe));
         }
 
-        // GOG Galaxy launch URI
+        // `goggalaxy://openGameView/` only opens the game tile in Galaxy — it
+        // does NOT start the game. Actual launch goes through GalaxyClient.exe
+        // with `/command=runGame`; see `launch_game`. We still set a URI here
+        // for display/debugging purposes.
         game.launch_uri = Some(format!("goggalaxy://openGameView/{}", game_id));
         game.is_installed = install_path.exists();
 
@@ -222,28 +225,41 @@ impl GameScanner for GOGScanner {
         // Extract GOG product ID from game_id (format: "gog_12345")
         let product_id = game_id.strip_prefix("gog_").ok_or("Invalid GOG game ID")?;
 
-        let uri = format!("goggalaxy://openGameView/{}", product_id);
+        // Resolve the installed game so we can pass /path= to GalaxyClient.
+        let games = self.scan_games()?;
+        let game = games
+            .iter()
+            .find(|g| g.id == game_id)
+            .ok_or("GOG game not found")?;
 
         #[cfg(target_os = "windows")]
         {
-            std::process::Command::new("cmd")
-                .args(["/C", "start", "", &uri])
+            // GalaxyClient.exe with `/command=runGame` is the only way to get
+            // Galaxy features (achievements, playtime, cloud saves). The
+            // `goggalaxy://` URL scheme opens the Galaxy game view but does
+            // not actually start the game.
+            let galaxy_client = self
+                .gog_path
+                .as_ref()
+                .map(|p| p.join("GalaxyClient.exe"))
+                .filter(|p| p.exists())
+                .ok_or("GOG Galaxy client not found")?;
+
+            std::process::Command::new(galaxy_client)
+                .arg("/command=runGame")
+                .arg(format!("/gameId={}", product_id))
+                .arg(format!("/path={}", game.install_path.display()))
                 .spawn()
                 .map_err(|e| format!("Failed to launch GOG game: {}", e))?;
         }
 
-        #[cfg(target_os = "macos")]
+        #[cfg(not(target_os = "windows"))]
         {
-            std::process::Command::new("open")
-                .arg(&uri)
-                .spawn()
-                .map_err(|e| format!("Failed to launch GOG game: {}", e))?;
-        }
-
-        #[cfg(target_os = "linux")]
-        {
-            std::process::Command::new("xdg-open")
-                .arg(&uri)
+            // macOS/Linux: fall back to launching the executable if known.
+            let exe = game.executable.as_ref().ok_or(
+                "No executable available for this GOG game on this platform",
+            )?;
+            std::process::Command::new(exe)
                 .spawn()
                 .map_err(|e| format!("Failed to launch GOG game: {}", e))?;
         }

@@ -33,6 +33,25 @@ impl XboxScanner {
         format!("xbox_{}", package_name.replace('.', "_").to_lowercase())
     }
 
+    /// Derive the PackageFamilyName from a PackageFullName.
+    ///
+    /// `shell:AppsFolder\<PFN>!App` only resolves when given a *family* name
+    /// (`Name_PublisherId`) — feeding it the full name
+    /// (`Name_Version_Arch_Resource_PublisherId`) silently fails and the game
+    /// never launches. Windows' own API (`PackageFamilyNameFromFullName`)
+    /// strips the three middle segments; this mirrors that transformation in
+    /// pure Rust so we don't need an extra Win32 dependency.
+    ///
+    /// Returns `None` if `full_name` doesn't have the expected 5 underscore-
+    /// separated segments.
+    pub(crate) fn package_family_name_from_full_name(full_name: &str) -> Option<String> {
+        let parts: Vec<&str> = full_name.split('_').collect();
+        if parts.len() != 5 {
+            return None;
+        }
+        Some(format!("{}_{}", parts[0], parts[4]))
+    }
+
     /// Get PackageFamilyName from Get-AppxPackage PowerShell
     #[cfg(target_os = "windows")]
     fn get_package_family_names() -> Result<std::collections::HashMap<String, String>, String> {
@@ -171,10 +190,13 @@ impl XboxScanner {
                             install_path.clone(),
                         );
 
-                        // Xbox games launch via shell:AppsFolder. This uses
-                        // the package full name which is not guaranteed to
-                        // equal the PackageFamilyName — follow-up in M2.2.
-                        game.launch_uri = Some(format!("shell:AppsFolder\\{}!App", package_name));
+                        // Xbox games launch via shell:AppsFolder, which
+                        // requires the PackageFamilyName (not the full name).
+                        if let Some(pfn) =
+                            Self::package_family_name_from_full_name(&package_name)
+                        {
+                            game.launch_uri = Some(format!("shell:AppsFolder\\{}!App", pfn));
+                        }
                         game.is_installed = install_path.exists();
 
                         debug!(game = %game.name, id = %game.id, "Xbox gaming services game found");
@@ -343,5 +365,28 @@ mod tests {
             XboxScanner::format_package_id("Microsoft.Forza5_1_x_p"),
             "xbox_microsoft_forza5_1_x_p"
         );
+    }
+
+    #[test]
+    fn test_package_family_name_strips_version_arch_resource() {
+        // Canonical PackageFullName layout: name_version_arch_resource_publisher
+        assert_eq!(
+            XboxScanner::package_family_name_from_full_name(
+                "Microsoft.254428597CFE2_1.0.50.0_x64__8wekyb3d8bbwe"
+            ),
+            Some("Microsoft.254428597CFE2_8wekyb3d8bbwe".to_string())
+        );
+    }
+
+    #[test]
+    fn test_package_family_name_rejects_malformed_input() {
+        // Already a family name (no version/arch) — 2 segments, reject.
+        assert_eq!(
+            XboxScanner::package_family_name_from_full_name(
+                "Microsoft.254428597CFE2_8wekyb3d8bbwe"
+            ),
+            None
+        );
+        assert_eq!(XboxScanner::package_family_name_from_full_name(""), None);
     }
 }

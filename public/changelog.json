@@ -1,6 +1,43 @@
 {
   "versions": [
     {
+      "version": "0.0.8",
+      "date": "2026-04-16",
+      "title": "Auth Deep-Link, Extension Hardening & Watcher Stability",
+      "description": "Volt 0.0.8 secures the OAuth sign-in flow with deep-link handoff, hardens the extension sandbox, fixes the file-indexer watcher, and ships a fleet of enterprise-grade release tooling upgrades.",
+      "sections": [
+        {
+          "type": "features",
+          "title": "New Features",
+          "icon": "sparkles",
+          "items": [
+            "Deep-link OAuth handoff (volt://) for a safer, friction-free sign-in",
+            "Extension sandbox hardening with stricter permission checks",
+            "More reliable file indexer (watcher reconnect fix)"
+          ]
+        },
+        {
+          "type": "performance",
+          "title": "Quality & Stability",
+          "icon": "shield",
+          "items": [
+            "Refreshed CI pipeline (cross-platform builds, ad-hoc macOS signing fallback)",
+            "Updated Tauri npm packages aligned with Rust crate versions",
+            "Version sync tooling covers every hard-coded version reference"
+          ]
+        }
+      ],
+      "footer": {
+        "gettingStarted": "Press Ctrl+Space to open Volt anytime. Deep-link sign-in is now available — connect your account from Settings for a seamless experience.",
+        "feedback": "Have feedback or found a bug? Visit our GitHub repository to report issues or request features.",
+        "links": {
+          "github": "https://github.com/VoltLaunchr/Volt",
+          "releases": "https://github.com/VoltLaunchr/Volt/releases",
+          "docs": "https://voltlaunchr.com/docs"
+        }
+      }
+    },
+    {
       "version": "0.0.5.2",
       "date": "2026-04-15",
       "title": "Auth, Search Overhaul, Extensions Sandbox & Window Management",

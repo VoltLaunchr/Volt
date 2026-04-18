@@ -46,7 +46,10 @@ pub async fn launch_app(
     path: String,
     history_state: State<'_, LaunchHistoryState>,
 ) -> VoltResult<()> {
-    // Attempt to launch directly; let the launcher module handle missing-file errors
+    // Validate the path before launching to block dangerous executables and
+    // ensure only legitimate application paths are executed.
+    crate::utils::launch_validation::validate_launch_path(&path).map_err(VoltError::Launch)?;
+
     match launch(&path) {
         Ok(result) => {
             // Extract app name from path for history
@@ -213,15 +216,15 @@ pub async fn get_frecency_suggestions(
     let limit = limit.unwrap_or(8);
     let mut records = history_state.history.get_all();
 
-    // Sort by frecency score descending
+    // Compound-key sort: pinned first, then by frecency. Keeps intent
+    // explicit and doesn't rely on sort stability across two passes.
     records.sort_by(|a, b| {
-        let fa = crate::search::calculate_frecency(a);
-        let fb = crate::search::calculate_frecency(b);
-        fb.partial_cmp(&fa).unwrap_or(std::cmp::Ordering::Equal)
+        b.pinned.cmp(&a.pinned).then_with(|| {
+            let fa = crate::search::calculate_frecency(a);
+            let fb = crate::search::calculate_frecency(b);
+            fb.partial_cmp(&fa).unwrap_or(std::cmp::Ordering::Equal)
+        })
     });
-
-    // Pinned items always first
-    records.sort_by(|a, b| b.pinned.cmp(&a.pinned));
 
     records.truncate(limit);
     Ok(records)
@@ -252,5 +255,21 @@ pub async fn record_search_selection(
 
     info!("Recorded query binding: '{}' -> '{}'", query, result_id);
 
+    Ok(())
+}
+
+/// Open a file or folder in the system's default handler (Explorer on Windows,
+/// Finder on macOS, xdg-open on Linux).
+///
+/// Used by the Games view's "Open Folder" button and any UI affordance that
+/// needs to reveal a path on disk.
+#[tauri::command]
+pub async fn open_path(path: String) -> VoltResult<()> {
+    let p = std::path::Path::new(&path);
+    if !p.exists() {
+        return Err(VoltError::NotFound(format!("Path not found: {}", path)));
+    }
+    tauri_plugin_opener::open_path(&path, None::<&str>)
+        .map_err(|e| VoltError::Launch(format!("Failed to open path: {}", e)))?;
     Ok(())
 }

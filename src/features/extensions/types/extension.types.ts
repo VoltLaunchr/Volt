@@ -51,13 +51,33 @@ export type ExtensionCategory =
   | 'games'
   | 'other';
 
-export type ExtensionPermission =
-  | 'clipboard'
-  | 'filesystem'
-  | 'network'
-  | 'shell'
-  | 'notifications'
-  | 'openUrl';
+/**
+ * Canonical list of extension permissions.
+ *
+ * This is the single source of truth for both the TS type and the runtime
+ * validator used by the loader and the consent dialog. To add a new permission,
+ * add it here and provide a matching entry in `PERMISSION_INFO` in
+ * `components/PermissionDialog.tsx`.
+ */
+export const EXTENSION_PERMISSIONS = [
+  'clipboard',
+  'network',
+  'notifications',
+  'openUrl',
+] as const;
+
+export type ExtensionPermission = (typeof EXTENSION_PERMISSIONS)[number];
+
+/**
+ * Runtime guard: true iff `value` is a known `ExtensionPermission`.
+ * Narrows the type for downstream consumers (no `as` needed).
+ */
+export function isExtensionPermission(value: unknown): value is ExtensionPermission {
+  return (
+    typeof value === 'string' &&
+    (EXTENSION_PERMISSIONS as readonly string[]).includes(value)
+  );
+}
 
 export interface ExtensionInfo {
   manifest: ExtensionManifest;
@@ -80,7 +100,14 @@ export interface InstalledExtension {
 }
 
 /**
- * Dev extension - linked from local folder for development
+ * Dev extension - linked from local folder for development.
+ *
+ * Dev extensions always re-prompt on reload; granted perms are not persisted.
+ * Use the full install flow for persistent grants.
+ *
+ * FOLLOW-UP: to persist grants across dev reloads, add `granted_permissions: Vec<String>`
+ * to Rust `DevExtension` struct + expose via a `get_dev_extensions_with_grants` IPC
+ * + update `getGrantedPermissions` to merge both sources.
  */
 export interface DevExtension {
   manifest: ExtensionManifest;
@@ -89,8 +116,6 @@ export interface DevExtension {
   enabled: boolean;
   /** Always true for dev extensions */
   isDev: boolean;
-  /** Permissions granted by the user */
-  grantedPermissions?: ExtensionPermission[];
 }
 
 export interface ExtensionRegistry {

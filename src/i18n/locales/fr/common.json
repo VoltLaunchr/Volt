@@ -34,17 +34,68 @@
     "commands": "Commandes"
   },
   "suggestions": {
-    "whats-new": { "title": "Voir les nouveautés", "subtitle": "v0.0.5.2" },
-    "settings": { "title": "Paramètres", "subtitle": "Paramètres de l'application" },
-    "clipboard-history": { "title": "Historique du presse-papiers", "subtitle": "Voir le presse-papiers" },
-    "search-files": { "title": "Rechercher des fichiers", "subtitle": "Recherche de fichiers" },
-    "search-emoji": { "title": "Rechercher des Emojis", "subtitle": "Sélecteur d'emojis" },
-    "about": { "title": "À propos", "subtitle": "Informations Volt" },
-    "account": { "title": "Compte", "subtitle": "Paramètres utilisateur" },
-    "system-monitor": { "title": "Moniteur système", "subtitle": "Voir les performances" },
-    "calculator": { "title": "Calculatrice", "subtitle": "Calcul rapide" },
-    "timer": { "title": "Minuteur", "subtitle": "Définir un minuteur" },
-    "web-search": { "title": "Recherche Web", "subtitle": "Rechercher en ligne" },
-    "steam-games": { "title": "Jeux", "subtitle": "Lancer des jeux" }
+    "whats-new": {
+      "title": "Voir les nouveautés",
+      "subtitle": "v0.0.8"
+    },
+    "settings": {
+      "title": "Paramètres",
+      "subtitle": "Paramètres de l'application"
+    },
+    "clipboard-history": {
+      "title": "Historique du presse-papiers",
+      "subtitle": "Voir le presse-papiers"
+    },
+    "search-files": {
+      "title": "Rechercher des fichiers",
+      "subtitle": "Recherche de fichiers"
+    },
+    "search-emoji": {
+      "title": "Rechercher des Emojis",
+      "subtitle": "Sélecteur d'emojis"
+    },
+    "about": {
+      "title": "À propos",
+      "subtitle": "Informations Volt"
+    },
+    "account": {
+      "title": "Compte",
+      "subtitle": "Paramètres utilisateur"
+    },
+    "system-monitor": {
+      "title": "Moniteur système",
+      "subtitle": "Voir les performances"
+    },
+    "calculator": {
+      "title": "Calculatrice",
+      "subtitle": "Calcul rapide"
+    },
+    "timer": {
+      "title": "Minuteur",
+      "subtitle": "Définir un minuteur"
+    },
+    "web-search": {
+      "title": "Recherche Web",
+      "subtitle": "Rechercher en ligne"
+    },
+    "steam-games": {
+      "title": "Jeux",
+      "subtitle": "Lancer des jeux"
+    }
+  },
+  "shell": {
+    "mode": "Mode Commande Shell",
+    "pressEnterToRun": "Appuyez sur Entrée pour exécuter",
+    "running": "Exécution...",
+    "ctrlCCancel": "Ctrl+C pour annuler",
+    "noOutput": "Aucune sortie",
+    "commandFailed": "Commande échouée",
+    "timedOut": "Délai expiré",
+    "rerunLast": "Relancer la dernière commande",
+    "noHistory": "Pas encore d'historique",
+    "copyOutput": "Copier la sortie",
+    "exitCode": "code {{code}}",
+    "ranTimes": "Exécuté {{count}}x",
+    "pinned": "Épinglé"
   }
 }

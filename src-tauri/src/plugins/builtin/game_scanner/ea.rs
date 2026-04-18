@@ -10,6 +10,49 @@ use std::path::{Path, PathBuf};
 #[allow(unused_imports)]
 use tracing::{debug, warn};
 
+/// Build the modern EA App launch URI from one or more offer IDs.
+///
+/// Since the EA App replaced Origin, games must be launched via the
+/// `origin2://game/launch/` protocol with every `<contentID>` from the
+/// installer manifest joined as a comma-separated `offerIds` parameter.
+/// Passing only a subset (or using `link2ea://launchgame/`, which is the
+/// Steam-side protocol) produces EA App's "A required parameter is missing"
+/// dialog when the user's entitlement matches a different edition/region
+/// than the single ID passed.
+///
+/// Returns `None` if `content_ids` is empty.
+fn ea_launch_uri(content_ids: &[String]) -> Option<String> {
+    if content_ids.is_empty() {
+        return None;
+    }
+    Some(format!(
+        "origin2://game/launch/?offerIds={}",
+        content_ids.join(",")
+    ))
+}
+
+/// Read every non-empty `<contentID>` value from the EA installer manifest
+/// at `<install_path>/__Installer/installerdata.xml`.
+pub(crate) fn read_content_ids_from_manifest(install_path: &Path) -> Vec<String> {
+    let manifest_path = install_path.join("__Installer").join("installerdata.xml");
+    std::fs::read_to_string(&manifest_path)
+        .map(|c| extract_content_ids_from_manifest_str(&c))
+        .unwrap_or_default()
+}
+
+/// Pure helper extracted for unit testing.
+pub(crate) fn extract_content_ids_from_manifest_str(xml: &str) -> Vec<String> {
+    // Manifests contain a self-closing `<contentID />` inside `<launcher>` as
+    // well as populated tags inside `<contentIDs>`. Match only tags with a
+    // non-whitespace body; preserve source order.
+    let Ok(re) = regex::Regex::new(r"<contentID>\s*([^<\s][^<]*?)\s*</contentID>") else {
+        return Vec::new();
+    };
+    re.captures_iter(xml)
+        .filter_map(|c| c.get(1).map(|m| m.as_str().to_string()))
+        .collect()
+}
+
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
 
@@ -104,21 +147,21 @@ impl EAScanner {
                                 install_path.clone(),
                             );
 
-                            // Try to determine the EA content ID for launch
-                            // Use origin2:// protocol which works with the modern EA App
-                            if let Ok(content_id) = app_key.get_value::<String, _>("ContentID") {
-                                game.launch_uri =
-                                    Some(format!("origin2://game/launch?offerIds={}", content_id));
-                            } else if let Ok(product_id) =
-                                app_key.get_value::<String, _>("ProductID")
-                            {
-                                game.launch_uri =
-                                    Some(format!("origin2://game/launch?offerIds={}", product_id));
-                            } else {
-                                // Fallback: use link2ea:// protocol as alternative
-                                game.launch_uri =
-                                    Some(format!("link2ea://launchgame/{}", key_name));
+                            // Resolve the EA content IDs for launch. The installer manifest is
+                            // the authoritative source: it lists every edition/region offer ID
+                            // for the title, and EA App requires the full comma-separated set
+                            // (not just one) to match the user's entitlement. Without it, EA
+                            // App responds with "A required parameter is missing".
+                            let mut content_ids = read_content_ids_from_manifest(&install_path);
+                            if content_ids.is_empty() {
+                                if let Ok(id) = app_key.get_value::<String, _>("ContentID") {
+                                    content_ids.push(id);
+                                } else if let Ok(id) = app_key.get_value::<String, _>("ProductID") {
+                                    content_ids.push(id);
+                                }
                             }
+
+                            game.launch_uri = ea_launch_uri(&content_ids);
 
                             game.is_installed = install_path.exists();
                             game.executable = Self::find_executable(&install_path);
@@ -185,6 +228,11 @@ impl EAScanner {
 
                         game.executable = Self::find_executable(&path);
                         game.is_installed = true;
+
+                        // Use installer manifest content IDs when available so that directory-
+                        // scanned games can still be launched via EA App.
+                        let ids = read_content_ids_from_manifest(&path);
+                        game.launch_uri = ea_launch_uri(&ids);
 
                         // Find icon: search in game directory, then extract from exe
                         game.icon_path = find_game_icon(&path, game.executable.as_ref());
@@ -402,5 +450,76 @@ mod tests {
     fn test_is_non_game_display_name_keeps_games() {
         assert!(!EAScanner::is_non_game_display_name("Battlefield V"));
         assert!(!EAScanner::is_non_game_display_name("Apex Legends"));
+    }
+
+    #[test]
+    fn test_extract_content_ids_skips_self_closing_tag() {
+        // Mirrors the real skate. manifest layout: populated tag inside
+        // <contentIDs>, self-closing tag inside <launcher>.
+        let xml = r#"
+            <DiPManifest version="4.0">
+              <contentIDs>
+                <contentID>1184493</contentID>
+              </contentIDs>
+              <runtime>
+                <launcher uid="1-1">
+                  <contentID />
+                </launcher>
+              </runtime>
+            </DiPManifest>
+        "#;
+        assert_eq!(
+            extract_content_ids_from_manifest_str(xml),
+            vec!["1184493".to_string()]
+        );
+    }
+
+    #[test]
+    fn test_extract_content_ids_returns_all_ids_in_order() {
+        // Titles like Dead Space ship multiple offer IDs in the manifest —
+        // EA App needs the full set to match the user's entitlement.
+        let xml = r#"
+            <contentIDs>
+              <contentID>1002975</contentID>
+              <contentID>1003943</contentID>
+              <contentID>deadspace_eu1</contentID>
+            </contentIDs>
+        "#;
+        assert_eq!(
+            extract_content_ids_from_manifest_str(xml),
+            vec![
+                "1002975".to_string(),
+                "1003943".to_string(),
+                "deadspace_eu1".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_extract_content_ids_empty_when_missing() {
+        let xml = r#"<DiPManifest version="4.0"><contentIDs></contentIDs></DiPManifest>"#;
+        assert!(extract_content_ids_from_manifest_str(xml).is_empty());
+    }
+
+    #[test]
+    fn test_ea_launch_uri_uses_origin2_protocol() {
+        assert_eq!(
+            ea_launch_uri(&["1184493".to_string()]).unwrap(),
+            "origin2://game/launch/?offerIds=1184493"
+        );
+    }
+
+    #[test]
+    fn test_ea_launch_uri_joins_multiple_ids() {
+        let ids = vec!["1002975".to_string(), "1003943".to_string()];
+        assert_eq!(
+            ea_launch_uri(&ids).unwrap(),
+            "origin2://game/launch/?offerIds=1002975,1003943"
+        );
+    }
+
+    #[test]
+    fn test_ea_launch_uri_none_when_empty() {
+        assert_eq!(ea_launch_uri(&[]), None);
     }
 }

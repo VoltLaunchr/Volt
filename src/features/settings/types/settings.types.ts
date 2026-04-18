@@ -15,6 +15,7 @@ export interface GeneralSettings {
   featurePreview: boolean;
   searchSensitivity: SearchSensitivity;
   showOnScreen: ShowOnScreen;
+  autoCheckForUpdates: boolean;
 }
 
 export interface CustomPosition {
@@ -84,6 +85,14 @@ export interface ShortcutsSettings {
   appShortcuts: AppShortcut[];
 }
 
+export interface ShellSettings {
+  enabled: boolean;
+  defaultShell: string | null;
+  workingDir: string | null;
+  timeoutMs: number;
+  historySize: number;
+}
+
 export interface Settings {
   general: GeneralSettings;
   appearance: AppearanceSettings;
@@ -92,6 +101,7 @@ export interface Settings {
   plugins: PluginSettings;
   shortcuts: ShortcutsSettings;
   integrations?: IntegrationsSettings;
+  shell: ShellSettings;
 }
 
 export type Theme = 'light' | 'dark' | 'auto';
@@ -122,6 +132,7 @@ export const DEFAULT_SETTINGS: Settings = {
     featurePreview: false,
     searchSensitivity: 'medium',
     showOnScreen: 'cursor',
+    autoCheckForUpdates: true,
   },
   appearance: {
     theme: 'dark',
@@ -155,6 +166,13 @@ export const DEFAULT_SETTINGS: Settings = {
   },
   shortcuts: {
     appShortcuts: [],
+  },
+  shell: {
+    enabled: true,
+    defaultShell: null,
+    workingDir: null,
+    timeoutMs: 30000,
+    historySize: 500,
   },
   integrations: {
     github: {

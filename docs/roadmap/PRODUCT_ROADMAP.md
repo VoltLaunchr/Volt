@@ -4,7 +4,7 @@
 
 ---
 
-## Etat actuel du produit (v0.0.5)
+## Etat actuel du produit (v0.0.8)
 
 ### Ce qui est livre et fonctionnel
 
@@ -17,23 +17,25 @@
 - Batch IPC : commande `search_all` unifiee (apps + fichiers + frecency en un seul appel)
 - Query-result binding : enregistrement des selections utilisateur pour apprentissage
 
-**Plugins builtin (11 frontend)**
+**Plugins builtin (13 frontend)**
 - Calculator : expressions math, conversions d'unites, dates, fuseaux horaires
 - Emoji Picker : recherche par nom, navigation par categorie, copie instantanee
 - Web Search : multi-moteurs (Google, DuckDuckGo, Bing) via prefixe `?`
-- Timer : durees flexibles, pomodoro, notifications desktop
-- System Monitor : CPU, RAM, disque en temps reel
+- Focus Timer : Pomodoro complet (focus/break/custom), auto-cycle, gestion taches, notifications desktop + audio
+- System Monitor : CPU par coeur, RAM, disques (SSD/HDD), reseau par interface, top processes, temperatures, sparklines 60s, export CSV
 - System Commands : reload, settings, quit avec matching fuzzy
-- Game Scanner : detection Steam, Epic, GOG, EA, Ubisoft, Riot, Xbox (cache 5 min)
+- Game Scanner : detection 10 plateformes (Steam, Epic, GOG, EA, Ubisoft, Riot, Xbox, Amazon, Battle.net, Rockstar), scan parallele, deduplication
 - Steam : integration dediee
-- File Explorer : navigation de fichiers
+- Quicklinks : raccourcis URL/dossier/commande avec validation securisee, commandes `ql:add`/`ql:list`/`ql:remove`
+- Shell Commands : prefixe `>`, streaming temps reel, ANSI colors, historique frecency, `!!`/`!prefix`, blocklist securite
+- Window Management : snap windows dans 6 zones predefinies
 - Snippets : prefixe `;`, variables dynamiques, import/export
 - Clipboard : historique, pin, recherche
 
 **Plugins backend (3 Rust)**
 - Clipboard Manager : historique, pin, recherche, persistance
-- Game Scanner : scan multi-plateforme avec cache
-- System Monitor : metriques CPU/RAM/disque via sysinfo
+- Game Scanner : scan 10 plateformes parallele avec cache 5 min, deduplication, filtrage 60+ non-jeux
+- System Monitor v2 : metriques detaillees (per-core CPU, per-disk, reseau, top processes, temperatures, uptime), cache 5s avec ticker background
 
 **Recherche avancee**
 - Frecency scoring : apps classees par (match_score + launch_count * recency_decay)
@@ -75,13 +77,19 @@
 - Configuration des dossiers a indexer depuis les parametres
 - Evenements Tauri temps reel pour la progression d'indexation
 
-**Extensions**
+**Extensions (securite renforcee)**
 - Chargement dynamique TypeScript (Sucrase transpilation)
 - Web Worker sandbox avec timeout 500ms + crash recovery
 - Permission enforcement (clipboard, network, notifications)
 - Consent dialog au premier chargement
 - Marketplace UI dans Settings > Extensions > Store
 - Dev mode : link de dossiers locaux avec hot-reload
+- **HMAC-SHA256 state signatures** : tampering detection sur `installed.json`/`dev-extensions.json`, cle OS keyring
+- **Worker sandbox renforce** : eval/Function/WebSocket/XMLHttpRequest/importScripts desactives, constructors bloques
+- **SSRF prevention** : blocage IP privees, credentials omit, headers Cookie/Auth strippes, body cap 10MB
+- **Launch validation** : LOLBIN denylist, normalisation NTFS, validation extensions executables
+- **Manifest validation** : permissions fictives droppees, dev paths restreints (.ssh, .aws, .config bloques)
+- **Tamper alerts** : UI surfacing des mismatches de signature avec acknowledge
 
 **State management**
 - Zustand stores (searchStore, appStore, uiStore) — zero prop drilling
@@ -345,10 +353,86 @@
 - ✅ **Safe invoke** : `safeInvoke.ts` (wrapper Tauri invoke avec logging automatique, retourne T | null)
 - ✅ 3 TODOs en suspens resolus dans la codebase
 
-### Shell commands inline
+### Shell commands inline ✅ (2026-04-17)
 
-- Prefixe `>` pour executer une commande shell (`>git status`)
-- Resultat affiche inline dans Volt
+- ✅ Prefixe `>` pour executer une commande shell
+- ✅ Streaming output temps reel via Tauri Channels
+- ✅ Kill propre des processus sur cancel/timeout (plus de process zombie)
+- ✅ Ctrl+C pour annuler une commande en cours
+- ✅ Historique de commandes avec frecency scoring (500 entries max)
+- ✅ Auto-suggestions basees sur l'historique quand `>` tape
+- ✅ `!!` pour relancer la derniere commande, `!prefix` pour chercher dans l'historique
+- ✅ Preview panel pour l'output complet (Ctrl+P)
+- ✅ Menu contextuel : Run, Copy Command, Copy Output, Re-run, Pin
+- ✅ Rendu des couleurs ANSI en CSS (bold, dim, italic, underline, 16 couleurs + bright)
+- ✅ Panneau Shell dans Settings (shell par defaut, timeout, working dir, history size, enable/disable)
+- ✅ i18n (en/fr)
+- ✅ Securite : blocklist 14 patterns destructeurs, redaction secrets, execution tokens, output cap 50KB
+
+### Extension hardening ✅ (2026-04-18)
+
+- ✅ **State signatures HMAC-SHA256** : tampering detection sur fichiers etat extensions, cle OS keyring
+- ✅ **Worker sandbox renforce** : eval/Function/WebSocket/XMLHttpRequest/importScripts desactives
+- ✅ **SSRF prevention** : blocage IP privees, credentials omit, headers sensibles strippes, body cap 10MB
+- ✅ **Launch validation** : LOLBIN denylist (cmd.exe, powershell.exe...), normalisation NTFS
+- ✅ **Manifest validation** : permissions fictives droppees, dev paths restreints
+- ✅ **Tamper alerts UI** : detection mismatch signature avec acknowledge
+
+### System Monitor v2 ✅ (2026-04-18)
+
+- ✅ Per-core CPU usage + frequences
+- ✅ Per-disk details (mount, filesystem, SSD/HDD, espace)
+- ✅ Reseau par interface (RX/TX bytes/s) + totaux agreges
+- ✅ Top 5 processus CPU + top 5 RAM avec kill (`kill_process_by_pid`)
+- ✅ Temperatures (CPU, GPU, capteurs) avec seuils critiques
+- ✅ Uptime systeme
+- ✅ Frontend : modal detail avec sparklines 60s, indicateurs couleur, export CSV
+- ✅ Polling intelligent : 1Hz modal ouvert, 60s arriere-plan
+
+### Game Scanner etendu — 10 plateformes ✅ (2026-04-18)
+
+- ✅ +Amazon Games : lecture metadata.json, lancement `amazon-games://play/<id>`
+- ✅ +Battle.net : mapping 80+ product codes Blizzard, lancement `battlenet://<code>`
+- ✅ +Rockstar Games : scan registre HKLM, Launcher.exe
+- ✅ Scan parallele (`std::thread::scope`), deduplication case-insensitive, filtrage 60+ non-jeux
+
+### Focus Timer (Pomodoro) ✅ (2026-04-18)
+
+- ✅ Modes : focus 25min, short break 5min, long break 15min, custom
+- ✅ Parsing duree flexible : `5m`, `1h30m`, `90`, `1:30`
+- ✅ Interface : anneau de progression, tracking sessions, gestion taches
+- ✅ Auto-cycle focus → break → focus
+- ✅ Notifications desktop + audio, persistence across hide/show
+
+### Quicklinks ✅ (2026-04-18)
+
+- ✅ Types : URL (http/https/mailto), dossier (path check), commande (chemin absolu + blocage metacaracteres)
+- ✅ Commandes : `ql:add`, `ql:list`, `ql:remove`
+- ✅ Cache intelligent, recherche fuzzy, icones par type
+
+### Deep links & Auth ✅ (2026-04-18)
+
+- ✅ `volt://auth/callback` + `volt://oauth-callback` pour OAuth automatique
+- ✅ Single instance (tauri-plugin-single-instance)
+- ✅ Enregistrement runtime schemes dev mode
+- ✅ Redaction query params dans logs
+
+### CI/Release automation ✅ (2026-04-18)
+
+- ✅ auto-tag.yml : tag auto sur merge release PR, validation semver
+- ✅ pr-title.yml : enforcement Conventional Commits
+- ✅ generate-changelog.mjs : generation depuis commits, security commits collapses
+- ✅ commitlint.config.mjs : types standardises → sections changelog
+- ✅ commit-msg hook local
+
+### UI & Settings ✅ (2026-04-18)
+
+- ✅ ResultItem enrichi : progress bars, calculator card, shell output, badges type
+- ✅ Update manager : check/download/install avec progress
+- ✅ Index stats dans Settings
+- ✅ App shortcuts management
+- ✅ Export diagnostics
+- ✅ Tests i18n parity en/fr
 
 ---
 
@@ -364,7 +448,7 @@
 
 ### Integrations tierces Phase 2
 
-- Deep links OAuth pour retour automatique
+- ~~Deep links OAuth pour retour automatique~~ ✅ fait
 - Token rotation automatique
 - Services supplementaires (Slack, Linear, etc.)
 
@@ -403,7 +487,6 @@ Idees non priorisees, a evaluer selon les retours utilisateurs :
 - Documentation auto-generee des commandes Tauri
 - Support WASM pour plugins haute performance
 - Accessibilite avancee (lecteur d'ecran complet, mode haut contraste)
-- Shell commands inline (prefixe `>`)
 - Redaction automatique clipboard (detection mots de passe)
 - Apprentissage des preferences recherche (exploitation du query-result binding)
 
@@ -416,11 +499,11 @@ Idees non priorisees, a evaluer selon les retours utilisateurs :
 | Phase 1 | v1.0 | ~3 semaines | En cours (bloque certificats) |
 | Phase 2 | v1.x | ~3-4 semaines | ✅ Complete (2026-04-13) |
 | Phase 3 | v1.5 | ~5-8 semaines | ✅ Complete (2026-04-14) |
-| Phase 4 | v2.0 | ~6-8 semaines | ✅ Complete (2026-04-14) |
+| Phase 4 | v2.0 | ~6-8 semaines | ✅ Complete (2026-04-18) |
 | Phase 5 | v2.x | Continu | Backlog |
 
 > Estimations basees sur un developpeur solo a temps partiel (~3h/jour). Les phases 1-4 sont completes. La Phase 1 reste bloquee uniquement par l'achat des certificats de code signing. La phase 5 marque le passage a l'ecosystem.
 
 ---
 
-_Document vivant — mettre a jour a chaque fin de phase. Derniere revision : 2026-04-14._
+_Document vivant — mettre a jour a chaque fin de phase. Derniere revision : 2026-04-18._

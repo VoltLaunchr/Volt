@@ -14,6 +14,9 @@ pub enum GamePlatform {
     EA,
     Xbox,
     Riot,
+    Battlenet,
+    Amazon,
+    Rockstar,
     Other,
 }
 
@@ -28,6 +31,9 @@ impl GamePlatform {
             GamePlatform::EA => "EA App",
             GamePlatform::Xbox => "Xbox",
             GamePlatform::Riot => "Riot Games",
+            GamePlatform::Battlenet => "Battle.net",
+            GamePlatform::Amazon => "Amazon Games",
+            GamePlatform::Rockstar => "Rockstar Games",
             GamePlatform::Other => "Other",
         }
     }
@@ -36,12 +42,15 @@ impl GamePlatform {
     pub fn icon(&self) -> &'static str {
         match self {
             GamePlatform::Steam => "🎮",
-            GamePlatform::Epic => "🎯",
-            GamePlatform::Gog => "🌌",
-            GamePlatform::Ubisoft => "🎪",
-            GamePlatform::EA => "⚽",
-            GamePlatform::Xbox => "🎲",
-            GamePlatform::Riot => "⚔️",
+            GamePlatform::Epic => "🟡",
+            GamePlatform::Gog => "🟣",
+            GamePlatform::Ubisoft => "🔷",
+            GamePlatform::EA => "🔵",
+            GamePlatform::Xbox => "🟢",
+            GamePlatform::Riot => "🔴",
+            GamePlatform::Battlenet => "❄️",
+            GamePlatform::Amazon => "📦",
+            GamePlatform::Rockstar => "⭐",
             GamePlatform::Other => "🎮",
         }
     }

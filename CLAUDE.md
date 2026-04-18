@@ -22,31 +22,45 @@ Volt is a keyboard-driven application launcher (Tauri v2 + React + TypeScript). 
 ```
 core/          # Foundation (types, traits, constants, errors)
 plugins/       # Plugin system with builtin plugins
-  builtin/     # clipboard_manager, game_scanner, system_monitor
+  builtin/     # clipboard_manager, game_scanner (10 platforms), system_monitor (v2)
   api.rs       # VoltPluginAPI (path validation, state)
   registry.rs  # Thread-safe PluginRegistry (Arc<RwLock<HashMap>>)
-utils/         # Reusable (icon extraction, fuzzy matching, path utils, shell_apps.rs for Win Shell AppsFolder)
+utils/         # Reusable utilities
+  icon.rs              # Icon extraction (Windows/macOS/Linux)
+  matching.rs          # Fuzzy matching helpers
+  path.rs              # Path utilities
+  extension_state_sig.rs # HMAC-SHA256 state signatures for extension tampering detection
+  launch_validation.rs # LOLBIN denylist, NTFS normalization, executable validation
+  shell_apps.rs        # Win Shell AppsFolder enumeration (Windows only)
 search/        # Search algorithms with scoring
 window/        # Window management commands
 commands/      # Tauri command handlers
   apps.rs      # App scanning (Windows/macOS/Linux)
-  settings.rs  # Settings management
+  settings.rs  # Settings management (incl. shell settings, export/import)
   files.rs     # File indexing
   launcher.rs  # Launch history & pins
   clipboard.rs # Clipboard history
-  extensions.rs# Extension management
+  extensions.rs# Extension management (14 cmds + security hardening + tamper alerts)
   games.rs     # Game scanning
   steam.rs     # Steam integration
-  system_monitor.rs # CPU/RAM/disk metrics
+  system_monitor.rs # CPU/RAM/disk metrics + v2 (per-core, network, temps, processes)
   preview.rs   # File preview for preview panel
   snippets.rs  # Snippet CRUD + variable expansion
   plugins.rs   # Plugin commands
+  quicklinks.rs# Quicklinks CRUD with URL/folder/command validation
+  shell.rs     # Shell command execution (streaming, blocklist, redaction, tokens)
+  shell_history.rs # Shell history with frecency scoring (500 entries)
+  auth.rs      # Supabase auth + deep link handling
+  oauth.rs     # OAuth flow (GitHub, Notion) + deep link callbacks
+  credentials.rs # Encrypted credential storage (OS keyring)
+  keyring_store.rs # OS keyring abstraction
   hotkey.rs    # Hotkey commands
   autostart.rs # Autostart management
   logging.rs   # Log management
+  window_management.rs # Window snap commands
 hotkey/        # Global hotkey management
 indexer/       # File indexing system (scanner, watcher, search_engine, SQLite, windows_search.rs)
-launcher/      # Cross-platform app launching (history, process)
+launcher/      # Cross-platform app launching (history, process, launch_validation)
 ```
 
 ### Frontend Structure
@@ -63,7 +77,7 @@ src/
     extensions/                  # Extension store (api, loader, services, types)
     files/                       # File search components
     plugins/                     # Plugin system
-      builtin/                   # calculator, emoji-picker, timer, websearch, steam, systemcommands, systemmonitor, snippets
+      builtin/                   # calculator, emoji-picker, timer, websearch, steam, systemcommands, systemmonitor, snippets, quicklinks, shell, window-management, games
       core/registry.ts           # Plugin registry singleton (500ms timeout)
       types/                     # Plugin, PluginResult, PluginContext interfaces
     settings/                    # Settings management
@@ -91,6 +105,8 @@ src/
 **Feature shortcuts**:
 - Preview panel: `Ctrl+P` toggle, window resizes 800->1100px
 - Snippets: `;` prefix in search bar triggers snippet plugin
+- Shell commands: `>` prefix executes shell commands with streaming output
+- Quicklinks: `ql:` prefix for quicklink management commands
 
 ## Important Implementation Details
 
@@ -123,6 +139,12 @@ src/
 - Web Worker sandbox: extensions with `keywords`/`prefix` in manifest run in dedicated Worker
 - Permission enforcement: consent dialog on first load, `grantedPermissions` persisted
 - Network proxy: Worker fetch requests proxied via postMessage if network permission granted
+- **Security hardening**:
+  - HMAC-SHA256 state signatures on `installed.json`/`dev-extensions.json` (key in OS keyring)
+  - Worker sandbox: eval/Function/WebSocket/XMLHttpRequest/importScripts disabled
+  - SSRF prevention: private IP blocking, credentials omit, Cookie/Auth headers stripped, 10MB body cap
+  - Launch validation: LOLBIN denylist, NTFS normalization, executable extension validation
+  - Tamper detection: `.sig` files, UI alerts on mismatch, `get_extension_tamper_alert` command
 
 ### Hotkey
 - Default: `Ctrl+Space` (configurable in Settings)
@@ -139,7 +161,7 @@ Always-on-top, transparent, 800x550px, no decorations, skips taskbar (see `tauri
 ## Key Dependencies
 
 ### Backend (Rust)
-- **Tauri v2** + plugins: global-shortcut, shell, fs, dialog, updater, positioner, autostart, opener, process
+- **Tauri v2** + plugins: global-shortcut, shell, fs, dialog, updater, positioner, autostart, opener, process, single-instance, deep-link
 - **tokio** (full) — async runtime
 - **rusqlite** (bundled) — SQLite for file indexing
 - **notify** v6 — filesystem watcher

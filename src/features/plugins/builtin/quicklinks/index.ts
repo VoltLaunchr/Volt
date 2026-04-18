@@ -50,7 +50,8 @@ export class QuicklinksPlugin implements Plugin {
     try {
       this.cachedQuicklinks = await invoke<Quicklink[]>('get_quicklinks');
       this.cacheLoaded = true;
-    } catch {
+    } catch (err) {
+      logger.warn('Quicklinks: failed to refresh cache', err);
       this.cachedQuicklinks = [];
       this.cacheLoaded = true;
     }
@@ -253,6 +254,10 @@ export class QuicklinksPlugin implements Plugin {
    * - Starts with http/https → url
    * - Looks like a path → folder
    * - Otherwise → command
+   *
+   * Validates:
+   * - URL targets must be well-formed
+   * - Duplicate shortcuts are rejected
    */
   private async handleAdd(args: string): Promise<PluginResult[]> {
     if (!args.trim()) {
@@ -286,6 +291,38 @@ export class QuicklinksPlugin implements Plugin {
     const target = parts.slice(1).join(' ');
     const type = this.detectType(target);
     const icon = TYPE_ICONS[type];
+
+    // Validate URL targets
+    if (type === 'url' && !this.isValidUrl(target)) {
+      return [
+        {
+          id: 'quicklink-add-invalid-url',
+          type: PluginResultType.Info,
+          title: '⚠️ Invalid URL',
+          subtitle: `"${target}" is not a valid URL. Include http:// or https://`,
+          score: 90,
+          data: { action: 'create-hint' },
+        },
+      ];
+    }
+
+    // Check for duplicate shortcut
+    if (!this.cacheLoaded) await this.refreshCache();
+    const existing = this.cachedQuicklinks.find(
+      (ql) => ql.shortcut.toLowerCase() === shortcut.toLowerCase(),
+    );
+    if (existing) {
+      return [
+        {
+          id: 'quicklink-add-duplicate',
+          type: PluginResultType.Info,
+          title: `⚠️ Shortcut "${shortcut}" already exists`,
+          subtitle: `Currently points to: ${existing.target}. Use ql:remove ${shortcut} first.`,
+          score: 90,
+          data: { action: 'create-hint' },
+        },
+      ];
+    }
 
     const quicklink: Quicklink = {
       id: globalThis.crypto.randomUUID(),
@@ -410,7 +447,8 @@ export class QuicklinksPlugin implements Plugin {
         id: `quicklink-remove-${ql.id}`,
         type: PluginResultType.Info,
         title: `🗑️ Remove "${ql.shortcut}" (${icon} ${ql.target})`,
-        subtitle: 'Press Enter to remove',
+        subtitle: `Press Enter to confirm deletion of "${ql.shortcut}"`,
+        badge: 'Delete',
         score: 90,
         data: {
           quicklink: ql,
@@ -418,6 +456,19 @@ export class QuicklinksPlugin implements Plugin {
         },
       };
     });
+  }
+
+  /**
+   * Validate that a URL target is well-formed.
+   * Exported indirectly via tests.
+   */
+  private isValidUrl(target: string): boolean {
+    try {
+      const url = new URL(target.startsWith('www.') ? `https://${target}` : target);
+      return url.protocol === 'http:' || url.protocol === 'https:';
+    } catch {
+      return false;
+    }
   }
 
   /**

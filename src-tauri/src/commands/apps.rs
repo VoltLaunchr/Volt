@@ -1127,11 +1127,9 @@ pub struct AppInfoWithScore {
 /// Launches an application by its path
 #[tauri::command]
 pub async fn launch_application(path: String) -> VoltResult<()> {
-    // Note: We don't do strict path.exists() validation here because:
-    // - Windows .lnk shortcuts are valid launch targets but point to the shortcut file
-    // - Linux .desktop Exec strings may contain arguments ("firefox %u")
-    // - macOS .app bundles are directories, not files
-    // - The launch() function will handle validation and return appropriate errors
+    // Validate the path before launching to block dangerous executables and
+    // ensure only legitimate application paths are executed.
+    crate::utils::launch_validation::validate_launch_path(&path).map_err(VoltError::Launch)?;
 
     // Use the launcher module for cross-platform launch
     match launch(&path) {

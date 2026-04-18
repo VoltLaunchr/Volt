@@ -7,6 +7,7 @@ import {
   CalculatorView,
   EmojiPickerView,
   GameView,
+  TimerView,
 } from '../../features/plugins/builtin';
 import { ResultsList } from '../../features/results/components/ResultsList';
 import { SuggestionsView } from '../../features/suggestions';
@@ -95,7 +96,7 @@ export function ViewRouter({ onSelectEmoji, onLaunchResult }: ViewRouterProps) {
         setActiveView({ type: 'calculator' });
         break;
       case 'timer':
-        setQuery('timer ');
+        setActiveView({ type: 'timer' });
         break;
       case 'web-search':
         setQuery('? ');
@@ -127,6 +128,8 @@ export function ViewRouter({ onSelectEmoji, onLaunchResult }: ViewRouterProps) {
       return <FileSearchView onClose={resetToSearchView} />;
     case 'games':
       return <GameView onClose={resetToSearchView} />;
+    case 'timer':
+      return <TimerView onClose={resetToSearchView} />;
   }
 
   if (error) {

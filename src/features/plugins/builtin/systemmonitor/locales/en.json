@@ -10,5 +10,20 @@
     "moderate": "Moderate usage",
     "normal": "Normal"
   },
-  "clipboardTitle": "System Performance"
+  "clipboardTitle": "System Performance",
+  "detailTitle": "System Monitor",
+  "perCoreTitle": "CPU cores",
+  "perDiskTitle": "Disks",
+  "networkTitle": "Network",
+  "topCpuTitle": "Top processes by CPU",
+  "topMemoryTitle": "Top processes by memory",
+  "uptime": "Uptime: {{value}}",
+  "temperaturesTitle": "Temperatures",
+  "rxLabel": "↓ {{value}}/s",
+  "txLabel": "↑ {{value}}/s",
+  "killProcess": "Kill process",
+  "openTaskManager": "Open Task Manager",
+  "exportCsv": "Export CSV",
+  "alertHighCpu": "CPU above {{threshold}}% for {{seconds}}s",
+  "noTempSensors": "No temperature sensors available"
 }

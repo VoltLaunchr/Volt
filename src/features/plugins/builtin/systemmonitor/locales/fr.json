@@ -10,5 +10,20 @@
     "moderate": "Utilisation modérée",
     "normal": "Normal"
   },
-  "clipboardTitle": "Performance Système"
+  "clipboardTitle": "Performance Système",
+  "detailTitle": "Moniteur système",
+  "perCoreTitle": "Cœurs CPU",
+  "perDiskTitle": "Disques",
+  "networkTitle": "Réseau",
+  "topCpuTitle": "Processus par CPU",
+  "topMemoryTitle": "Processus par mémoire",
+  "uptime": "Temps d'activité : {{value}}",
+  "temperaturesTitle": "Températures",
+  "rxLabel": "↓ {{value}}/s",
+  "txLabel": "↑ {{value}}/s",
+  "killProcess": "Tuer le processus",
+  "openTaskManager": "Ouvrir le gestionnaire des tâches",
+  "exportCsv": "Exporter CSV",
+  "alertHighCpu": "CPU au-dessus de {{threshold}}% pendant {{seconds}}s",
+  "noTempSensors": "Aucun capteur de température disponible"
 }

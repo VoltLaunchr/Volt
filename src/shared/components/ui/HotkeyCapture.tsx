@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import './HotkeyCapture.css';
 
 export interface HotkeyCaptureProps {
@@ -20,6 +20,10 @@ export function HotkeyCapture({
 }: HotkeyCaptureProps) {
   const [isRecording, setIsRecording] = useState(false);
   const [pressedKeys, setPressedKeys] = useState<Set<string>>(new Set());
+  // Mirror of pressedKeys so handleKeyUp can read current keys without
+  // running side effects inside a setState updater (which StrictMode /
+  // concurrent rendering may invoke twice).
+  const pressedKeysRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     if (!isRecording) return;
@@ -81,47 +85,42 @@ export function HotkeyCapture({
       e.preventDefault();
       e.stopPropagation();
 
-      setPressedKeys((prev) => {
-        const keys = new Set(prev);
+      const keys = new Set(pressedKeysRef.current);
 
-        // Add modifiers
-        if (e.ctrlKey) keys.add('Ctrl');
-        if (e.altKey) keys.add('Alt');
-        if (e.shiftKey) keys.add('Shift');
-        if (e.metaKey) keys.add('Super');
+      // Add modifiers
+      if (e.ctrlKey) keys.add('Ctrl');
+      if (e.altKey) keys.add('Alt');
+      if (e.shiftKey) keys.add('Shift');
+      if (e.metaKey) keys.add('Super');
 
-        // Add main key (not a modifier)
-        const key = e.key.toLowerCase();
-        if (!['control', 'alt', 'shift', 'meta'].includes(key)) {
-          // Normalize special keys
-          const normalizedKey = normalizeKey(key);
-          keys.add(normalizedKey);
-        }
+      // Add main key (not a modifier)
+      const key = e.key.toLowerCase();
+      if (!['control', 'alt', 'shift', 'meta'].includes(key)) {
+        const normalizedKey = normalizeKey(key);
+        keys.add(normalizedKey);
+      }
 
-        return keys;
-      });
+      pressedKeysRef.current = keys;
+      setPressedKeys(keys);
     };
 
     const handleKeyUp = (e: KeyboardEvent) => {
       e.preventDefault();
       e.stopPropagation();
 
-      setPressedKeys((prev) => {
-        if (prev.size > 0) {
-          // Build hotkey string
-          const hotkey = buildHotkeyString(prev);
+      const keys = pressedKeysRef.current;
+      if (keys.size === 0) return;
 
-          if (validateHotkey(hotkey)) {
-            onChange(hotkey);
-            setIsRecording(false);
-            return new Set();
-          } else {
-            onError?.('Invalid hotkey combination. Please use at least one modifier key.');
-            return new Set();
-          }
-        }
-        return prev;
-      });
+      const hotkey = buildHotkeyString(keys);
+      pressedKeysRef.current = new Set();
+      setPressedKeys(new Set());
+
+      if (validateHotkey(hotkey)) {
+        onChange(hotkey);
+        setIsRecording(false);
+      } else {
+        onError?.('Invalid hotkey combination. Please use at least one modifier key.');
+      }
     };
 
     document.addEventListener('keydown', handleKeyDown);
@@ -136,11 +135,13 @@ export function HotkeyCapture({
   const handleStartRecording = () => {
     if (disabled) return;
     setIsRecording(true);
+    pressedKeysRef.current = new Set();
     setPressedKeys(new Set());
   };
 
   const handleCancelRecording = () => {
     setIsRecording(false);
+    pressedKeysRef.current = new Set();
     setPressedKeys(new Set());
   };
 

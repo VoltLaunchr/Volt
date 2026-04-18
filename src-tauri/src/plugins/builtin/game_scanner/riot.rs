@@ -150,45 +150,46 @@ impl GameScanner for RiotScanner {
 
     fn launch_game(&self, game_id: &str) -> Result<(), String> {
         let games = self.scan_games()?;
+        let _game = games
+            .iter()
+            .find(|g| g.id == game_id)
+            .ok_or("Riot game not found")?;
 
-        if let Some(game) = games.iter().find(|g| g.id == game_id) {
-            // For Riot games, we MUST use the launch_uri to properly authenticate
-            // Launching the exe directly bypasses Riot Client and may cause issues
-            if let Some(uri) = &game.launch_uri {
-                #[cfg(target_os = "windows")]
-                {
-                    std::process::Command::new("cmd")
-                        .args(["/C", "start", "", uri])
-                        .spawn()
-                        .map_err(|e| format!("Failed to launch Riot game: {}", e))?;
-                    return Ok(());
-                }
+        // `riotclient://launch-product/` isn't an officially registered URL
+        // scheme. Riot's supported integration path is passing
+        // `--launch-product` and `--launch-patchline` directly to
+        // RiotClientServices.exe (see Riot Client FAQ / community docs).
+        let product = game_id
+            .strip_prefix("riot_")
+            .ok_or("Invalid Riot game ID")?;
 
-                #[cfg(target_os = "macos")]
-                {
-                    std::process::Command::new("open")
-                        .arg(uri)
-                        .spawn()
-                        .map_err(|e| format!("Failed to launch Riot game: {}", e))?;
-                    return Ok(());
-                }
+        #[cfg(target_os = "windows")]
+        {
+            let riot_services = self
+                .riot_path
+                .as_ref()
+                .map(|p| p.join("Riot Client").join("RiotClientServices.exe"))
+                .filter(|p| p.exists())
+                .ok_or("RiotClientServices.exe not found")?;
 
-                #[cfg(target_os = "linux")]
-                {
-                    std::process::Command::new("xdg-open")
-                        .arg(uri)
-                        .spawn()
-                        .map_err(|e| format!("Failed to launch Riot game: {}", e))?;
-                    return Ok(());
-                }
-            }
-
-            // If no launch_uri is available, return an error instead of launching exe directly
-            return Err("Cannot launch Riot game: no valid launch URI found. \
-                Please ensure the Riot Client is properly installed."
-                .to_string());
+            std::process::Command::new(riot_services)
+                .arg(format!("--launch-product={}", product))
+                .arg("--launch-patchline=live")
+                .spawn()
+                .map_err(|e| format!("Failed to launch Riot game: {}", e))?;
+            Ok(())
         }
 
-        Err("Riot game not found".to_string())
+        #[cfg(not(target_os = "windows"))]
+        {
+            let exe = _game
+                .executable
+                .as_ref()
+                .ok_or("No executable available for this Riot game on this platform")?;
+            std::process::Command::new(exe)
+                .spawn()
+                .map_err(|e| format!("Failed to launch Riot game: {}", e))?;
+            Ok(())
+        }
     }
 }

@@ -23,9 +23,62 @@ env:
 
 jobs:
   # ---------------------------------------------------------------------------
+  # Compose release notes once (Linux-only, git-cliff is Docker-based). The
+  # result is consumed by every matrix job via needs.*.outputs.body.
+  # ---------------------------------------------------------------------------
+  prepare-notes:
+    runs-on: ubuntu-latest
+    outputs:
+      body: ${{ steps.body.outputs.body }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate release notes (git-cliff)
+        uses: orhun/git-cliff-action@v4
+        with:
+          config: cliff.toml
+          args: --latest --strip header
+        env:
+          OUTPUT: RELEASE_NOTES.md
+          GITHUB_REPO: ${{ github.repository }}
+
+      - name: Compose release body
+        id: body
+        shell: bash
+        run: |
+          {
+            echo "body<<RELEASE_BODY_EOF"
+            echo "## Volt ${{ env.TAG }}"
+            echo ""
+            if [ -s RELEASE_NOTES.md ]; then
+              cat RELEASE_NOTES.md
+              echo ""
+            fi
+            cat <<'FOOTER'
+          ---
+
+          ### Installation
+          | Platform | Download |
+          |---|---|
+          | **Windows** | `volt_*_x64-setup.exe` (recommended) or `.msi` |
+          | **macOS Intel** | `volt_*_x64.dmg` |
+          | **macOS Apple Silicon** | `volt_*_aarch64.dmg` |
+          | **Linux** | `.deb`, `.AppImage` or `.rpm` |
+
+          Full changelog: [CHANGELOG.md](https://github.com/VoltLaunchr/Volt/blob/main/CHANGELOG.md)
+
+          Auto-updates are enabled for existing installs.
+          FOOTER
+            echo "RELEASE_BODY_EOF"
+          } >> "$GITHUB_OUTPUT"
+
+  # ---------------------------------------------------------------------------
   # Build on all 4 platform targets
   # ---------------------------------------------------------------------------
   publish-tauri:
+    needs: prepare-notes
     outputs:
       artifact-id: ${{ steps.upload-unsigned.outputs.artifact-id }}
     permissions:
@@ -71,6 +124,12 @@ jobs:
       - name: Install Frontend Dependencies
         run: bun install
 
+      - name: Frontend Tests (Vitest)
+        run: bun run test
+
+      - name: Rust Tests
+        run: cd src-tauri && cargo test --workspace --lib
+
       # --- macOS code signing (opt-in) ---
       # Only attempt if APPLE_CERTIFICATE secret is a valid base64 string (>100 chars).
       # Empty or placeholder values are ignored.
@@ -102,22 +161,7 @@ jobs:
         with:
           tagName: ${{ env.TAG }}
           releaseName: "Volt ${{ env.TAG }}"
-          releaseBody: |
-            ## Volt ${{ env.TAG }}
-
-            ### Installation
-            | Platform | Download |
-            |---|---|
-            | **Windows** | `volt_*_x64-setup.exe` (recommended) or `.msi` |
-            | **macOS Intel** | `volt_*_x64.dmg` |
-            | **macOS Apple Silicon** | `volt_*_aarch64.dmg` |
-            | **Linux** | `.deb`, `.AppImage` or `.rpm` |
-
-            ### What's New
-            See [CHANGELOG.md](https://github.com/VoltLaunchr/Volt/blob/main/CHANGELOG.md) for details.
-
-            ---
-            Auto-updates are enabled.
+          releaseBody: ${{ needs.prepare-notes.outputs.body }}
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}

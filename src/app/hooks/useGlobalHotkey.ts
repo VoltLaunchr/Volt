@@ -6,6 +6,7 @@ import { defaultSuggestions } from '../../shared/constants/suggestions';
 import { KEYS } from '../../shared/constants/keys';
 import { AppInfo, FileInfo, SearchResult, SearchResultType } from '../../shared/types/common.types';
 import { logger } from '../../shared/utils/logger';
+import { pluginRegistry } from '../../features/plugins/core';
 import { useSearchStore } from '../../stores/searchStore';
 
 // Helper to extract directory path (cross-platform)
@@ -169,6 +170,27 @@ export function useGlobalHotkey({
         e.preventDefault();
         onShowProperties(selectedResult);
         return;
+      }
+
+      // --- Ctrl+C: Cancel running shell command (priority over copy) ---
+      if (
+        e.key === 'c' &&
+        (e.ctrlKey || e.metaKey) &&
+        !e.shiftKey &&
+        selectedResult?.type === SearchResultType.ShellCommand
+      ) {
+        const shellData = selectedResult.data as unknown as {
+          status?: string;
+          command?: string;
+        };
+        if (shellData?.status === 'running' && shellData?.command) {
+          e.preventDefault();
+          const plugin = pluginRegistry.getPlugin('shellcommand');
+          if (plugin && 'cancel' in plugin) {
+            (plugin as { cancel: (cmd: string) => void }).cancel(shellData.command);
+          }
+          return;
+        }
       }
 
       // --- Ctrl+C: Copy result path ---

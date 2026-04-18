@@ -1,6 +1,6 @@
 # Volt — Roadmap
 
-**Version actuelle :** `0.0.5` &nbsp;•&nbsp; **Derniere mise a jour :** 2026-04-14 &nbsp;•&nbsp; **Statut :** P1 finalisation (M1.1 ✅ · M1.2 ✅ · M1.3 🟡 blocage certs · M1.4 ✅) | Phase 2-4 ✅ completes
+**Version actuelle :** `0.0.8` &nbsp;•&nbsp; **Derniere mise a jour :** 2026-04-18 &nbsp;•&nbsp; **Statut :** P1 finalisation (M1.1 ✅ · M1.2 ✅ · M1.3 🟡 blocage certs · M1.4 ✅) | Phase 2-4 ✅ completes | Phase 4+ features continues
 
 > Document vivant. Les milestones sont groupes en 4 phases. Chaque milestone liste un **but**, des **taches concretes** (avec fichiers), des **criteres d'acceptation** et une **estimation**.
 >
@@ -15,7 +15,7 @@
 **Phase 1 (fondation):**
 - ✅ Core flow : scan apps → recherche fuzzy → launch, multi-plateforme (Windows/macOS/Linux)
 - ✅ Indexation fichiers : **SQLite persistent + file watcher incremental** (database.rs, watcher.rs)
-- ✅ Plugins builtin (11 frontend + 3 backend) : calculator, emoji-picker, timer, websearch, systemcommands, systemmonitor, games, steam, clipboard, snippets, preview
+- ✅ Plugins builtin (13 frontend + 3 backend) : calculator, emoji-picker, timer, websearch, systemcommands, systemmonitor, games, steam, clipboard, snippets, preview, quicklinks, shell, window-management
 - ✅ Settings : 8 categories + panneau Integrations, hotkey configurable, autostart, 9 positions fenetre
 - ✅ Auto-updater : signature minisign, GitHub Releases, end-to-end
 - ✅ CI/CD : matrice W/macOS(Intel+ARM)/Linux, release pipeline, bundles
@@ -44,7 +44,7 @@
 - ✅ Power operators : ext:, in:, size:, modified: parses par queryParser.ts
 - ✅ Results grouping : Applications, Commands, Games, Files sections
 - ✅ Clipboard history : 9 commands, core fonctionnel
-- ✅ Games & Steam : 7 platforms (Steam, Epic, GOG, Xbox, EA, Ubisoft, Riot)
+- ✅ Games & Steam : 10 platforms (Steam, Epic, GOG, Xbox, EA, Ubisoft, Riot, Amazon, Battle.net, Rockstar)
 - ✅ **Integrations tierces** : OAuth GitHub/Notion, credentials chiffres, panneau Settings
 - ✅ **i18n** : 2 langues (en/fr), 9 namespaces, plugins localises, detection locale OS
 - ✅ **Performance** : batch IPC (search_all), scoring nucleo unifie, O(1) file clone, sync watcher cache
@@ -187,7 +187,7 @@
 - [x] `VoltError` discriminated union + tous commands migres
 - [x] CI gates : `cargo fmt --check` + `cargo clippy -D warnings`
 - [x] 166 tests frontend, 143 tests Rust
-- [x] Game scanners : 7 platforms fonctionnels
+- [x] Game scanners : 10 platforms fonctionnels (Steam, Epic, GOG, Xbox, EA, Ubisoft, Riot, Amazon, Battle.net, Rockstar)
 
 ### ✅ Milestone 2.3 — Accessibilite (TERMINE)
 
@@ -269,11 +269,93 @@
 - [x] Constantes scoring centralisees (`searchScoring.ts`)
 - [x] 3 TODOs en suspens resolus
 
+### ✅ Shell commands inline (2026-04-17)
+
+- [x] Prefixe `>` pour execution inline
+- [x] Streaming output via Tauri Channels
+- [x] Kill propre des processus (cancel/timeout)
+- [x] Ctrl+C cancel, `!!` re-run, `!prefix` history search
+- [x] Historique frecency (500 entries, persistence JSON)
+- [x] ANSI color rendering (16 colors + bright, bold, dim, italic, underline)
+- [x] Settings panel (shell, timeout, working dir, history size)
+- [x] Preview panel + context menu + i18n (en/fr)
+- [x] Securite : blocklist 14 patterns destructeurs, redaction secrets avant persistance, execution tokens
+- [x] Limites : 50KB max output par stream, validation UTF-8
+
+### ✅ Extension hardening & securite (2026-04-18)
+
+- [x] **State signatures** : HMAC-SHA256 sur `installed.json` / `dev-extensions.json`, cle stockee dans OS keyring
+- [x] **Tamper detection** : signature `.sig` detachee, alertes UI si mismatch, schema "sig-first, JSON-atomic, rename-last"
+- [x] **Worker sandbox renforce** : `eval`, `Function`, `WebSocket`, `XMLHttpRequest`, `importScripts` desactives
+- [x] **SSRF prevention** : blocage IP privees (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, ::1), credentials omit, headers Cookie/Auth strippes
+- [x] **Response body cap** : 10 MB limite dure contre OOM
+- [x] **Request IDs crypto** : UUIDs non-devinables pour match/execute (anti-forge Worker)
+- [x] **Manifest validation** : permissions fictives droppees, dev paths restreints (pas de `.ssh`, `.aws`, `.config`)
+- [x] **Launch validation** : LOLBIN denylist (cmd.exe, powershell.exe, regsvr32.exe...), normalisation NTFS, validation extensions
+
+### ✅ System Monitor v2 (2026-04-18)
+
+- [x] **Per-core CPU** : usage individuel par coeur + frequences
+- [x] **Per-disk** : points de montage, systemes de fichiers, classification SSD/HDD
+- [x] **Reseau** : throughput par interface (RX/TX bytes/s), historique, totaux agreges
+- [x] **Top processes** : top 5 CPU + top 5 RAM avec kill process (`kill_process_by_pid`)
+- [x] **Temperatures** : CPU package, GPU, capteurs avec seuils critiques
+- [x] **Uptime systeme**
+- [x] **Frontend detail** : modal avec sparklines 60s, indicateurs couleur, export CSV
+- [x] **Polling intelligent** : 1Hz quand modal ouvert, 60s en arriere-plan
+
+### ✅ Game Scanner etendu — 10 plateformes (2026-04-18)
+
+- [x] **Amazon Games** : lecture `metadata.json`, lancement via `amazon-games://play/<gameId>`
+- [x] **Battle.net** : mapping 80+ product codes Blizzard, lancement `battlenet://<ProductCode>`
+- [x] **Rockstar Games** : scan registre HKLM, `Launcher.exe -launchTitleInFolder`
+- [x] **Scan parallele** : `std::thread::scope` pour tous les scanners
+- [x] **Deduplication** : HashMap case-insensitive par nom
+- [x] **Filtrage non-jeux** : 60+ patterns (launchers, anticheat, redistributables)
+
+### ✅ Timer / Focus Timer (Pomodoro) (2026-04-18)
+
+- [x] **Modes** : focus 25min, short break 5min, long break 15min, duree custom
+- [x] **Parsing flexible** : `5m`, `1h30m`, `90`, `1:30`
+- [x] **Interface** : anneau de progression, tracking sessions, gestion de taches integree
+- [x] **Persistence** : timer survit hide/show de l'app
+- [x] **Notifications** : desktop + audio a la fin de chaque phase
+- [x] **Auto-cycle** : enchainement automatique focus → break → focus
+
+### ✅ Quicklinks ameliores (2026-04-18)
+
+- [x] **Validation** : URL (whitelist http/https/mailto), folders (existence), commands (chemin absolu + blocage metacaracteres shell)
+- [x] **Commandes** : `ql:add`, `ql:list`, `ql:remove` avec hints
+- [x] **Cache intelligent** : lazy-loading, recherche fuzzy sur nom + shortcut
+- [x] **Icones par type** : URL, dossier, commande
+
+### ✅ Deep links & Auth (2026-04-18)
+
+- [x] **Deep links** : `volt://auth/callback` + `volt://oauth-callback` pour OAuth
+- [x] **Single instance** : tauri-plugin-single-instance redirige les URL vers l'instance existante
+- [x] **Dev mode** : enregistrement runtime des schemes sur Windows/Linux
+- [x] **Redaction** : query params masques dans les logs
+
+### ✅ CI/Release automation (2026-04-18)
+
+- [x] **auto-tag.yml** : tag automatique sur merge PR `release/v*` → main, validation semver
+- [x] **pr-title.yml** : enforcement Conventional Commits sur titres PR (squash-merge)
+- [x] **commitlint.config.mjs** : standardisation types de commit → sections changelog
+- [x] **generate-changelog.mjs** : generation CHANGELOG.md depuis commits, commits securite collapses
+- [x] **commit-msg hook** : validation locale avant push
+
+### ✅ UI & Settings (2026-04-18)
+
+- [x] **ResultItem enrichi** : progress bars system monitor, calculator card, shell output streaming, badges type
+- [x] **Update manager** : check, download, install avec progress bar dans Settings
+- [x] **Index stats** : fichiers indexes, taille DB, dernier scan dans Settings
+- [x] **App shortcuts** : gestion enable/disable dans Settings
+- [x] **Export diagnostics** : export complet depuis Settings > About
+- [x] **Tests i18n** : parity check en/fr automatise
+
 ### A faire (post-2.0)
 
-- Shell commands inline (prefixe `>`)
 - Redaction automatique clipboard
-- Deep links OAuth
 - Token rotation
 - Apprentissage des preferences (exploitation query-result binding)
 
@@ -300,20 +382,19 @@
 
 ---
 
-## Timeline revisee (2026-04-14)
+## Timeline revisee (2026-04-18)
 
 | Jalon | Contenu | Bloquants | Estimation |
 |-------|---------|-----------|-----------|
-| **v1.0.0** | Phase 1-4 feature-complete | Code signing cert (~340 €) + CSP test | **Fin avril 2026** |
+| **v1.0.0** | Phase 1-4 feature-complete + hardening securite | Code signing cert (~340 €) + CSP test | **Fin avril 2026** |
 | **v1.0.1** | Bug fixes + polish | Retours utilisateurs | **Mai 2026** |
 | **v2.0.0** | Phase 5 ecosystem | User feedback | **Juin 2026+** |
 
 **Actions immediatement necessaires :**
-1. Fixer le test Rust en echec (`test_calculate_match_score_nucleo_word_boundary_bonus`)
-2. Acquerir Windows Authenticode + macOS Developer ID certs (~340 €/an)
-3. Integrer certs dans CI/CD + tester code signing
-4. Test CSP en prod : `bun tauri build` + verifier DevTools console
-5. Test fresh install Windows + macOS vierges
+1. Acquerir Windows Authenticode + macOS Developer ID certs (~340 €/an)
+2. Integrer certs dans CI/CD + tester code signing
+3. Test CSP en prod : `bun tauri build` + verifier DevTools console
+4. Test fresh install Windows + macOS vierges
 
 ---
 
@@ -339,4 +420,4 @@
 
 ---
 
-_Document vivant — mettre a jour a chaque fin de milestone. **Derniere revision :** 2026-04-14 (Phase 2-4 completes, Phase 1 bloquee certs)._
+_Document vivant — mettre a jour a chaque fin de milestone. **Derniere revision :** 2026-04-18 (Extension hardening, System Monitor v2, 10 game scanners, Focus Timer, Quicklinks, Deep links, CI automation)._

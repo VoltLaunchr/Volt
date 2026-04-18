@@ -8,8 +8,10 @@ pub mod search;
 pub mod utils;
 mod window;
 
+use commands::clipboard::ClipboardManagerState;
 use commands::files::{FileHistoryState, FileIndexState, WatcherState};
 use commands::launcher::LaunchHistoryState;
+use commands::shell::ShellExecutionState;
 use commands::system_monitor::SystemMonitorState;
 use commands::*;
 use hotkey::HotkeyState;
@@ -41,7 +43,25 @@ pub struct LogGuard(#[allow(dead_code)] pub WorkerGuard);
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let mut builder = tauri::Builder::default();
+
+    // Single-instance MUST be registered before any other plugin so that
+    // subsequent `volt://` launches forward the URL to the running instance
+    // (via the `deep-link` feature) instead of spawning a new process that
+    // fails to grab the global hotkey. The callback fires on the existing
+    // instance with the new process's argv — we use it to re-focus the window.
+    #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+    {
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.show();
+                let _ = window.unminimize();
+                let _ = window.set_focus();
+            }
+        }));
+    }
+
+    builder
         .plugin(tauri_plugin_positioner::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
@@ -260,6 +280,9 @@ pub fn run() {
             // Initialize snippet state
             app.manage(SnippetState::new(data_dir.clone()));
 
+            // Initialize shell history state
+            app.manage(ShellHistoryState::new(data_dir.clone()));
+
             // Initialize quicklink state
             app.manage(QuicklinkState::new(data_dir.clone()));
 
@@ -281,11 +304,65 @@ pub fn run() {
                 api: plugin_api.clone(),
             });
 
+            // Clipboard manager state (lazy-init on first command, participates
+            // in Tauri lifecycle instead of living in a process-global static).
+            app.manage(ClipboardManagerState::new());
+
             // Store persistent system monitor instance for accurate CPU readings
+            app.manage(ShellExecutionState::new());
+
             app.manage(SystemMonitorState {
                 monitor: std::sync::Mutex::new(
                     plugins::builtin::SystemMonitorPlugin::new().with_api(plugin_api),
                 ),
+            });
+
+            // Prime the CPU baseline in the background so the first user
+            // query returns a meaningful value. sysinfo requires two
+            // `refresh_cpu_usage()` calls separated by MINIMUM_CPU_UPDATE_INTERVAL.
+            let priming_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                tokio::time::sleep(sysinfo::MINIMUM_CPU_UPDATE_INTERVAL).await;
+                if let Some(state) = priming_handle.try_state::<SystemMonitorState>() {
+                    match state.monitor.lock() {
+                        Ok(monitor) => {
+                            if let Err(e) = monitor.prime_cpu() {
+                                warn!("Failed to prime CPU baseline: {}", e);
+                            } else {
+                                info!("System monitor CPU baseline primed");
+                            }
+                        }
+                        Err(e) => warn!("SystemMonitorState lock poisoned during prime: {}", e),
+                    }
+                }
+            });
+
+            // Background ticker: refresh the system monitor's in-memory cache
+            // every ~5s so frontend queries are served instantly instead of
+            // running a full sysinfo refresh per keystroke. Interval is
+            // hard-coded for now since `PluginRegistry::initialize_all` is a
+            // stub (config wiring is out of scope for this phase).
+            let ticker_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                // Wait for the CPU prime task to finish its dual-sample before
+                // the first cache refresh, so the ticker's first tick produces
+                // meaningful CPU readings without blocking.
+                tokio::time::sleep(sysinfo::MINIMUM_CPU_UPDATE_INTERVAL).await;
+                loop {
+                    if let Some(state) = ticker_handle.try_state::<SystemMonitorState>() {
+                        match state.monitor.lock() {
+                            Ok(monitor) => {
+                                if let Err(e) = monitor.refresh_cache() {
+                                    warn!("System monitor cache refresh failed: {}", e);
+                                }
+                            }
+                            Err(e) => {
+                                warn!("SystemMonitorState lock poisoned in ticker: {}", e)
+                            }
+                        }
+                    }
+                    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                }
             });
 
             // Log plugin count
@@ -389,6 +466,7 @@ pub fn run() {
             get_history_count,
             get_frecency_suggestions,
             record_search_selection,
+            open_path,
             // Batch search command
             search_all,
             // File indexing commands
@@ -418,6 +496,7 @@ pub fn run() {
             update_indexing_settings,
             update_plugin_settings,
             update_shortcuts_settings,
+            update_shell_settings,
             get_theme,
             set_theme,
             get_app_shortcuts,
@@ -460,6 +539,9 @@ pub fn run() {
             get_memory_usage,
             get_disk_usage,
             get_system_metrics,
+            get_system_metrics_v2,
+            kill_process_by_pid,
+            open_task_manager,
             // Game Scanner plugin commands
             get_all_games,
             search_games,
@@ -491,6 +573,8 @@ pub fn run() {
             get_extension_details,
             read_extension_source,
             get_enabled_extensions_sources,
+            get_extension_tamper_alert,
+            acknowledge_extension_tamper_alert,
             // Dev extensions commands
             get_dev_extensions,
             link_dev_extension,
@@ -532,6 +616,17 @@ pub fn run() {
             expand_snippet,
             import_snippets,
             export_snippets,
+            // Shell command execution
+            execute_shell_command,
+            execute_shell_command_streaming,
+            cancel_shell_command,
+            // Shell command history
+            record_shell_command,
+            get_shell_history,
+            get_shell_suggestions,
+            pin_shell_command,
+            clear_shell_history,
+            remove_shell_command,
             // Streaming search
             search_streaming,
             // Window management commands

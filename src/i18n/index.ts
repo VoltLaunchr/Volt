@@ -18,7 +18,6 @@ import enWebsearch from '../features/plugins/builtin/websearch/locales/en.json';
 import enSystemCommands from '../features/plugins/builtin/systemcommands/locales/en.json';
 import enSystemMonitor from '../features/plugins/builtin/systemmonitor/locales/en.json';
 import enTimer from '../features/plugins/builtin/timer/locales/en.json';
-import enSteam from '../features/plugins/builtin/steam/locales/en.json';
 import enGames from '../features/plugins/builtin/games/locales/en.json';
 import enEmojiPicker from '../features/plugins/builtin/emoji-picker/locales/en.json';
 
@@ -39,7 +38,6 @@ import frWebsearch from '../features/plugins/builtin/websearch/locales/fr.json';
 import frSystemCommands from '../features/plugins/builtin/systemcommands/locales/fr.json';
 import frSystemMonitor from '../features/plugins/builtin/systemmonitor/locales/fr.json';
 import frTimer from '../features/plugins/builtin/timer/locales/fr.json';
-import frSteam from '../features/plugins/builtin/steam/locales/fr.json';
 import frGames from '../features/plugins/builtin/games/locales/fr.json';
 import frEmojiPicker from '../features/plugins/builtin/emoji-picker/locales/fr.json';
 
@@ -77,7 +75,7 @@ export async function initI18n(savedLanguage?: string): Promise<void> {
     fallbackLng: 'en',
     ns: [
       'common', 'settings', 'help', 'onboarding', 'results', 'clipboard', 'fileSearch', 'extensions', 'changelog',
-      'calculator', 'websearch', 'systemcommands', 'systemmonitor', 'timer', 'steam', 'games', 'emoji-picker',
+      'calculator', 'websearch', 'systemcommands', 'systemmonitor', 'timer', 'games', 'emoji-picker',
     ],
     defaultNS: 'common',
     interpolation: {
@@ -102,7 +100,6 @@ export async function initI18n(savedLanguage?: string): Promise<void> {
         systemcommands: enSystemCommands,
         systemmonitor: enSystemMonitor,
         timer: enTimer,
-        steam: enSteam,
         games: enGames,
         'emoji-picker': enEmojiPicker,
       },
@@ -121,7 +118,6 @@ export async function initI18n(savedLanguage?: string): Promise<void> {
         systemcommands: frSystemCommands,
         systemmonitor: frSystemMonitor,
         timer: frTimer,
-        steam: frSteam,
         games: frGames,
         'emoji-picker': frEmojiPicker,
       },
