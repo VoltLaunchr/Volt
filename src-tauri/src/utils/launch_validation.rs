@@ -124,6 +124,12 @@ mod tests {
         assert!(validate_launch_path("   ").is_err());
     }
 
+    // The LOLBIN denylist tests below rely on Windows-style paths. On Unix
+    // targets, `Path::new(r"C:\Windows\System32\cmd.exe").file_name()` returns
+    // the whole string (backslash is a regular filename character) and the
+    // `split(':')` drive-letter stripping produces "c" rather than "cmd.exe".
+    // The denylist is only meaningful on Windows, so gate the tests there.
+    #[cfg(target_os = "windows")]
     #[test]
     fn test_blocked_executables() {
         assert!(validate_launch_path(r"C:\Windows\System32\cmd.exe").is_err());
@@ -133,6 +139,7 @@ mod tests {
         assert!(validate_launch_path(r"C:\Windows\System32\CMD.EXE").is_err());
     }
 
+    #[cfg(target_os = "windows")]
     #[test]
     fn test_blocked_executables_with_trailing_space() {
         // NTFS accepts a trailing space on filenames and still resolves to
@@ -141,6 +148,7 @@ mod tests {
         assert!(validate_launch_path("C:\\Windows\\System32\\powershell.exe  ").is_err());
     }
 
+    #[cfg(target_os = "windows")]
     #[test]
     fn test_blocked_executables_with_alternate_data_stream() {
         // `file.exe:Zone.Identifier` should map to the base executable for
