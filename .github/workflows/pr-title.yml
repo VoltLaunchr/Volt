@@ -1,0 +1,44 @@
+name: PR Title Lint
+
+# Enforces Conventional Commits format on PR titles.
+# Required because we use squash-merge: the PR title becomes the commit
+# on main, which git-cliff consumes to build CHANGELOG.md. A non-conventional
+# PR title would silently drop commits from the generated changelog.
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize]
+
+permissions:
+  pull-requests: read
+
+jobs:
+  lint-pr-title:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: amannn/action-semantic-pull-request@v5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          # Keep in sync with commitlint.config.mjs `type-enum`
+          types: |
+            feat
+            fix
+            perf
+            refactor
+            docs
+            test
+            style
+            ci
+            build
+            chore
+            revert
+          # Scope is optional but lowercase if present
+          requireScope: false
+          subjectPattern: ^(?![A-Z]).+$
+          subjectPatternError: |
+            The subject "{subject}" must start with a lowercase letter.
+            Example: "feat(search): add fuzzy match"
+          # Reject release-PR titles from being considered features
+          ignoreLabels: |
+            release
+            dependencies

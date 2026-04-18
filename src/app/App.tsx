@@ -3,7 +3,8 @@ import Snowfall from 'react-snowfall';
 import { useTranslation } from 'react-i18next';
 import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow, LogicalSize } from '@tauri-apps/api/window';
-import { TimerDisplay } from '../features/plugins/builtin';
+import { SystemMonitorDetail, TimerDisplay } from '../features/plugins/builtin';
+import { PermissionDialog } from '../features/extensions/components/PermissionDialog';
 import { SearchBar } from '../features/search/components/SearchBar';
 import { useWindowState } from '../features/window';
 import { Footer } from '../shared/components/layout';
@@ -50,7 +51,8 @@ function App() {
   const propertiesResult = useUiStore((s) => s.propertiesResult);
   const isHelpOpen = useUiStore((s) => s.isHelpOpen);
   const isPreviewOpen = useUiStore((s) => s.isPreviewOpen);
-  const { setActiveView, closeContextMenu, openProperties, closeProperties, toggleHelp, togglePreview } =
+  const permissionRequest = useUiStore((s) => s.permissionRequest);
+  const { setActiveView, closeContextMenu, openProperties, closeProperties, toggleHelp, togglePreview, setPermissionRequest } =
     useUiStore.getState();
 
   // Get selected result for preview panel
@@ -118,6 +120,17 @@ function App() {
     setActiveView({ type: 'calculator' });
     clearSearch();
   }, [setActiveView, clearSearch]);
+
+  const handleOpenTimerView = useCallback(() => {
+    setActiveView({ type: 'timer' });
+    clearSearch();
+  }, [setActiveView, clearSearch]);
+
+  useEffect(() => {
+    const openTimer = () => handleOpenTimerView();
+    window.addEventListener('volt:open-timer', openTimer);
+    return () => window.removeEventListener('volt:open-timer', openTimer);
+  }, [handleOpenTimerView]);
 
   const { handleKeyDown } = useGlobalHotkey({
     closeOnLaunch,
@@ -189,7 +202,7 @@ function App() {
 
       {activeView.type === 'search' && (
         <>
-          <TimerDisplay />
+          <TimerDisplay onOpenView={handleOpenTimerView} />
           <Footer isIndexing={isIndexing} />
         </>
       )}
@@ -209,10 +222,28 @@ function App() {
 
       <HelpDialog isOpen={isHelpOpen} onClose={toggleHelp} />
 
+      <SystemMonitorDetail />
+
       <ToastContainer />
 
       {settings && !settings.general.hasSeenOnboarding && (
         <OnboardingModal isOpen={true} onComplete={handleOnboardingComplete} />
+      )}
+
+      {permissionRequest && (
+        <PermissionDialog
+          isOpen={true}
+          extensionName={permissionRequest.extensionName}
+          permissions={permissionRequest.permissions}
+          onGrant={() => {
+            permissionRequest.resolve(permissionRequest.permissions);
+            setPermissionRequest(null);
+          }}
+          onDeny={() => {
+            permissionRequest.resolve([]);
+            setPermissionRequest(null);
+          }}
+        />
       )}
 
       {showSnowEffect && (

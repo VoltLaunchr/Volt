@@ -1,5 +1,6 @@
 
 import { invoke } from '@tauri-apps/api/core';
+import i18n from 'i18next';
 import { logger } from '../../../../shared/utils/logger';
 import { Plugin, PluginContext, PluginResult, PluginResultType } from '../../types';
 
@@ -13,6 +14,30 @@ interface SystemMetrics {
   diskUsedGb: number;
 }
 
+const SYSTEMMONITOR_NS = 'systemmonitor';
+
+const CPU_KEYWORDS = ['cpu'];
+const MEMORY_KEYWORDS = ['memory', 'ram', 'mémoire'];
+const DISK_KEYWORDS = ['disk', 'disque'];
+const GENERIC_KEYWORDS = ['system', 'système', 'performance', 'usage', 'utilisation'];
+
+const ALL_KEYWORDS = [
+  ...CPU_KEYWORDS,
+  ...MEMORY_KEYWORDS,
+  ...DISK_KEYWORDS,
+  ...GENERIC_KEYWORDS,
+];
+
+/**
+ * Word-boundary keyword match. Splits the query on whitespace and checks whether
+ * any whole token matches a keyword, so `"scpurgatory"` and `"occupy"` no longer
+ * falsely trigger on `"cpu"`.
+ */
+function hasKeyword(query: string, keywords: readonly string[]): boolean {
+  const words = query.toLowerCase().split(/\s+/).filter(Boolean);
+  return keywords.some((kw) => words.includes(kw));
+}
+
 /**
  * System Monitor Plugin
  * Professional system monitoring with custom UI
@@ -24,24 +49,24 @@ export class SystemMonitorPlugin implements Plugin {
   enabled = true;
 
   canHandle(context: PluginContext): boolean {
-    const query = context.query.toLowerCase().trim();
-    const keywords = ['cpu', 'memory', 'ram', 'disk', 'system', 'performance', 'usage'];
-    return keywords.some((kw) => query.includes(kw));
+    return hasKeyword(context.query.trim(), ALL_KEYWORDS);
   }
 
   async match(context: PluginContext): Promise<PluginResult[]> {
-    const query = context.query.toLowerCase().trim();
+    const query = context.query.trim();
 
     try {
       const metrics = await invoke<SystemMetrics>('get_system_metrics');
       const results: PluginResult[] = [];
 
+      const matchesGeneric = hasKeyword(query, GENERIC_KEYWORDS);
+
       // CPU result
-      if (query.includes('cpu') || query.includes('system') || query.includes('performance')) {
+      if (hasKeyword(query, CPU_KEYWORDS) || matchesGeneric) {
         results.push({
           id: 'system_cpu',
           type: PluginResultType.SystemMonitor,
-          title: `CPU ${metrics.cpuUsage.toFixed(1)}%`,
+          title: `${i18n.t('cpu', { ns: SYSTEMMONITOR_NS })} ${metrics.cpuUsage.toFixed(1)}%`,
           subtitle: this.getUsageLabel(metrics.cpuUsage),
           score: 95,
           data: {
@@ -54,18 +79,17 @@ export class SystemMonitorPlugin implements Plugin {
       }
 
       // Memory result
-      if (
-        query.includes('memory') ||
-        query.includes('ram') ||
-        query.includes('system') ||
-        query.includes('performance')
-      ) {
+      if (hasKeyword(query, MEMORY_KEYWORDS) || matchesGeneric) {
         const availableGb = metrics.memoryTotalGb - metrics.memoryUsedGb;
+        const availableLabel = i18n.t('available', {
+          ns: SYSTEMMONITOR_NS,
+          value: availableGb.toFixed(1),
+        });
         results.push({
           id: 'system_memory',
           type: PluginResultType.SystemMonitor,
-          title: `Memory ${metrics.memoryUsedGb.toFixed(1)} / ${metrics.memoryTotalGb.toFixed(1)} GB`,
-          subtitle: `${availableGb.toFixed(1)} GB available • ${this.getUsageLabel(metrics.memoryUsage)}`,
+          title: `${i18n.t('memory', { ns: SYSTEMMONITOR_NS })} ${metrics.memoryUsedGb.toFixed(1)} / ${metrics.memoryTotalGb.toFixed(1)} GB`,
+          subtitle: `${availableLabel} • ${this.getUsageLabel(metrics.memoryUsage)}`,
           score: 95,
           data: {
             type: 'memory',
@@ -77,13 +101,17 @@ export class SystemMonitorPlugin implements Plugin {
       }
 
       // Disk result
-      if (query.includes('disk') || query.includes('system') || query.includes('performance')) {
+      if (hasKeyword(query, DISK_KEYWORDS) || matchesGeneric) {
         const availableGb = metrics.diskTotalGb - metrics.diskUsedGb;
+        const freeLabel = i18n.t('free', {
+          ns: SYSTEMMONITOR_NS,
+          value: availableGb.toFixed(0),
+        });
         results.push({
           id: 'system_disk',
           type: PluginResultType.SystemMonitor,
-          title: `Disk ${metrics.diskUsedGb.toFixed(0)} / ${metrics.diskTotalGb.toFixed(0)} GB`,
-          subtitle: `${availableGb.toFixed(0)} GB free • ${this.getUsageLabel(metrics.diskUsage)}`,
+          title: `${i18n.t('disk', { ns: SYSTEMMONITOR_NS })} ${metrics.diskUsedGb.toFixed(0)} / ${metrics.diskTotalGb.toFixed(0)} GB`,
+          subtitle: `${freeLabel} • ${this.getUsageLabel(metrics.diskUsage)}`,
           score: 95,
           data: {
             type: 'disk',
@@ -102,21 +130,34 @@ export class SystemMonitorPlugin implements Plugin {
   }
 
   async execute(result: PluginResult): Promise<void> {
-    const metrics = result.data?.metrics as SystemMetrics;
+    // Primary action: open the detail modal. The SystemMonitorDetail component
+    // mounted at App.tsx listens for this event and toggles its open state.
+    window.dispatchEvent(new CustomEvent('volt:openSystemMonitor'));
+
+    // Secondary: if the caller opted into the clipboard fallback via
+    // result.data.copyToClipboard, keep the old summary behaviour so power
+    // users can still script it from context menus / alternate actions.
+    if (!result.data?.copyToClipboard) return;
+
+    const metrics = result.data?.metrics as SystemMetrics | undefined;
     if (!metrics) return;
 
-    // Copy detailed metrics to clipboard
+    const title = i18n.t('clipboardTitle', { ns: SYSTEMMONITOR_NS });
+    const cpuLabel = i18n.t('cpu', { ns: SYSTEMMONITOR_NS });
+    const memLabel = i18n.t('memory', { ns: SYSTEMMONITOR_NS });
+    const diskLabel = i18n.t('disk', { ns: SYSTEMMONITOR_NS });
+
     const summary = [
-      '═══ System Performance ═══',
+      `═══ ${title} ═══`,
       '',
-      `CPU:    ${metrics.cpuUsage.toFixed(1)}%`,
-      `Memory: ${metrics.memoryUsedGb.toFixed(1)} / ${metrics.memoryTotalGb.toFixed(1)} GB (${metrics.memoryUsage.toFixed(1)}%)`,
-      `Disk:   ${metrics.diskUsedGb.toFixed(0)} / ${metrics.diskTotalGb.toFixed(0)} GB (${metrics.diskUsage.toFixed(1)}%)`,
+      `${cpuLabel}:    ${metrics.cpuUsage.toFixed(1)}%`,
+      `${memLabel}: ${metrics.memoryUsedGb.toFixed(1)} / ${metrics.memoryTotalGb.toFixed(1)} GB (${metrics.memoryUsage.toFixed(1)}%)`,
+      `${diskLabel}:   ${metrics.diskUsedGb.toFixed(0)} / ${metrics.diskTotalGb.toFixed(0)} GB (${metrics.diskUsage.toFixed(1)}%)`,
     ].join('\n');
 
     try {
       await navigator.clipboard.writeText(summary);
-      console.log('✓ System metrics copied to clipboard');
+      logger.info('System metrics copied to clipboard');
     } catch (error) {
       logger.error('Failed to copy to clipboard:', error);
     }
@@ -133,15 +174,14 @@ export class SystemMonitorPlugin implements Plugin {
   }
 
   /**
-   * Get usage status label
+   * Get localized usage status label
    */
   private getUsageLabel(usage: number): string {
-    if (usage >= 90) return 'Critical usage';
-    if (usage >= 75) return 'High usage';
-    if (usage >= 50) return 'Moderate usage';
-    return 'Normal';
+    const key = usage >= 90 ? 'critical' : usage >= 75 ? 'high' : usage >= 50 ? 'moderate' : 'normal';
+    return i18n.t(`usage.${key}`, { ns: SYSTEMMONITOR_NS });
   }
 }
 
 export { SystemMetricBadge } from './components/SystemMetricBadge';
+export { SystemMonitorDetail } from './components/SystemMonitorDetail';
 export { CpuIcon, MemoryIcon, DiskIcon } from './icons';

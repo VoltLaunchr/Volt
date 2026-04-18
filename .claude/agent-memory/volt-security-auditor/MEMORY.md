@@ -1,0 +1,2 @@
+- [Extension System Audit](audit_extension_system.md) -- Key vulns and good patterns in extension/Worker sandbox (2026-04-17)
+- [Shell Execution & dev-branch Audit](audit_shell_execution.md) -- Shell cmd exposure (critical), preview path leak, history secrets, 2026-04-18

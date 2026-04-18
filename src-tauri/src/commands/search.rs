@@ -129,12 +129,14 @@ pub async fn search_all(
         async { search_files_batch(&query_files, &files_snapshot, &options, max_results) },
         async {
             let mut records = history.get_all();
+            // Compound-key sort: pinned first, then by frecency.
             records.sort_by(|a, b| {
-                let fa = crate::search::calculate_frecency(a);
-                let fb = crate::search::calculate_frecency(b);
-                fb.partial_cmp(&fa).unwrap_or(std::cmp::Ordering::Equal)
+                b.pinned.cmp(&a.pinned).then_with(|| {
+                    let fa = crate::search::calculate_frecency(a);
+                    let fb = crate::search::calculate_frecency(b);
+                    fb.partial_cmp(&fa).unwrap_or(std::cmp::Ordering::Equal)
+                })
             });
-            records.sort_by(|a, b| b.pinned.cmp(&a.pinned));
             records.truncate(5);
             records
         },

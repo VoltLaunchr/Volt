@@ -234,13 +234,11 @@ fn flush_events(
                             removals.push(path_str);
                         }
                     }
-                    RenameMode::To => {
-                        if path.is_file() {
-                            if let Ok(meta) = std::fs::metadata(path) {
-                                if let Some(fi) = create_file_info_pub(path, &meta) {
-                                    if db.upsert_file(&fi).is_ok() {
-                                        upserts.push(fi);
-                                    }
+                    RenameMode::To if path.is_file() => {
+                        if let Ok(meta) = std::fs::metadata(path) {
+                            if let Some(fi) = create_file_info_pub(path, &meta) {
+                                if db.upsert_file(&fi).is_ok() {
+                                    upserts.push(fi);
                                 }
                             }
                         }

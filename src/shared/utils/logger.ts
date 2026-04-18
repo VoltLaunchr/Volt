@@ -1,4 +1,3 @@
-/* global localStorage */
 /**
  * Lightweight logging wrapper.
  *

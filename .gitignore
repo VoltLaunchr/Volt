@@ -76,3 +76,4 @@ mcp.json
 test-results/
 playwright-report/
 blob-report/
+.claude/scheduled_tasks.lock

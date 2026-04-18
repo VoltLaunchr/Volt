@@ -3,10 +3,13 @@
 //! Aggregates games from all supported platforms and provides
 //! a unified interface for searching and launching games.
 
+use super::amazon::AmazonScanner;
+use super::battlenet::BattleNetScanner;
 use super::ea::EAScanner;
 use super::epic::EpicScanner;
 use super::gog::GOGScanner;
 use super::riot::RiotScanner;
+use super::rockstar::RockstarScanner;
 use super::steam::SteamScanner;
 use super::types::{GameInfo, GamePlatform, GameScanner};
 use super::ubisoft::UbisoftScanner;
@@ -68,7 +71,7 @@ impl GameScannerPlugin {
         }
     }
 
-    /// Scan all platforms for games
+    /// Scan all platforms for games (parallelised across platforms)
     pub fn scan_all_games(&self) -> Vec<GameInfo> {
         // Return cached if valid
         if self.is_cache_valid()
@@ -77,67 +80,53 @@ impl GameScannerPlugin {
             return cache.clone();
         }
 
+        // Build the list of scanners to run
+        let scanners: Vec<Box<dyn GameScanner>> = vec![
+            Box::new(SteamScanner::new()),
+            Box::new(EpicScanner::new()),
+            Box::new(GOGScanner::new()),
+            Box::new(UbisoftScanner::new()),
+            Box::new(EAScanner::new()),
+            Box::new(XboxScanner::new()),
+            Box::new(RiotScanner::new()),
+            Box::new(BattleNetScanner::new()),
+            Box::new(AmazonScanner::new()),
+            Box::new(RockstarScanner::new()),
+        ];
+
+        // Scan all platforms in parallel using scoped threads
+        let results: Vec<Vec<GameInfo>> = std::thread::scope(|s| {
+            let handles: Vec<_> = scanners
+                .iter()
+                .map(|scanner| {
+                    s.spawn(|| {
+                        if scanner.is_installed() {
+                            scanner.scan_games().unwrap_or_default()
+                        } else {
+                            Vec::new()
+                        }
+                    })
+                })
+                .collect();
+
+            handles
+                .into_iter()
+                .map(|h| h.join().unwrap_or_default())
+                .collect()
+        });
+
+        // Merge and deduplicate
         let mut all_games = Vec::new();
         let mut seen_names: HashMap<String, ()> = HashMap::new();
-
-        // Scan Steam (using existing Steam scanner)
-        if let Ok(steam_games) = self.scan_steam_games() {
-            Self::add_games_deduplicated(&mut all_games, &mut seen_names, steam_games);
-        }
-
-        // Scan Epic Games
-        let epic_scanner = EpicScanner::new();
-        if epic_scanner.is_installed()
-            && let Ok(games) = epic_scanner.scan_games()
-        {
-            Self::add_games_deduplicated(&mut all_games, &mut seen_names, games);
-        }
-
-        // Scan GOG
-        let gog_scanner = GOGScanner::new();
-        if gog_scanner.is_installed()
-            && let Ok(games) = gog_scanner.scan_games()
-        {
-            Self::add_games_deduplicated(&mut all_games, &mut seen_names, games);
-        }
-
-        // Scan Ubisoft
-        let ubisoft_scanner = UbisoftScanner::new();
-        if ubisoft_scanner.is_installed()
-            && let Ok(games) = ubisoft_scanner.scan_games()
-        {
-            Self::add_games_deduplicated(&mut all_games, &mut seen_names, games);
-        }
-
-        // Scan EA
-        let ea_scanner = EAScanner::new();
-        if ea_scanner.is_installed()
-            && let Ok(games) = ea_scanner.scan_games()
-        {
-            Self::add_games_deduplicated(&mut all_games, &mut seen_names, games);
-        }
-
-        // Scan Xbox
-        let xbox_scanner = XboxScanner::new();
-        if xbox_scanner.is_installed()
-            && let Ok(games) = xbox_scanner.scan_games()
-        {
-            Self::add_games_deduplicated(&mut all_games, &mut seen_names, games);
-        }
-
-        // Scan Riot
-        let riot_scanner = RiotScanner::new();
-        if riot_scanner.is_installed()
-            && let Ok(games) = riot_scanner.scan_games()
-        {
-            Self::add_games_deduplicated(&mut all_games, &mut seen_names, games);
+        for platform_games in results {
+            Self::add_games_deduplicated(&mut all_games, &mut seen_names, platform_games);
         }
 
         // Filter out non-game applications (anticheat, launchers, etc.)
         all_games.retain(Self::is_actual_game);
 
         // Sort by name
-        all_games.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+        all_games.sort_by_key(|a| a.name.to_lowercase());
 
         // Update cache
         if let Ok(mut cache) = self.games_cache.write() {
@@ -204,12 +193,6 @@ impl GameScannerPlugin {
         true
     }
 
-    /// Scan Steam games using the local Steam scanner
-    fn scan_steam_games(&self) -> Result<Vec<GameInfo>, String> {
-        let scanner = SteamScanner::new();
-        scanner.scan_games()
-    }
-
     /// Get all games (cached)
     pub fn get_games(&self) -> Vec<GameInfo> {
         self.scan_all_games()
@@ -258,6 +241,9 @@ impl GameScannerPlugin {
             GamePlatform::EA => EAScanner::new().launch_game(game_id),
             GamePlatform::Xbox => XboxScanner::new().launch_game(game_id),
             GamePlatform::Riot => RiotScanner::new().launch_game(game_id),
+            GamePlatform::Battlenet => BattleNetScanner::new().launch_game(game_id),
+            GamePlatform::Amazon => AmazonScanner::new().launch_game(game_id),
+            GamePlatform::Rockstar => RockstarScanner::new().launch_game(game_id),
             GamePlatform::Other => {
                 if let Some(exe) = &game.executable {
                     std::process::Command::new(exe)
@@ -325,6 +311,15 @@ impl GameScannerPlugin {
         }
         if RiotScanner::new().is_installed() {
             platforms.push(GamePlatform::Riot);
+        }
+        if BattleNetScanner::new().is_installed() {
+            platforms.push(GamePlatform::Battlenet);
+        }
+        if AmazonScanner::new().is_installed() {
+            platforms.push(GamePlatform::Amazon);
+        }
+        if RockstarScanner::new().is_installed() {
+            platforms.push(GamePlatform::Rockstar);
         }
 
         platforms

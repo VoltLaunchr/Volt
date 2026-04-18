@@ -14,15 +14,36 @@ const MAX_FOLDER_CHILDREN: usize = 20;
 
 /// Path segments that indicate sensitive directories we never want to preview.
 /// Matched case-insensitively against canonicalised path components.
-const SENSITIVE_DIR_NAMES: &[&str] = &[
-    ".ssh",
-    ".aws",
-    ".gnupg",
+const SENSITIVE_DIR_NAMES: &[&str] = &[".ssh", ".aws", ".gnupg", ".docker", ".kube", ".azure"];
+
+/// File names (case-insensitive) that should never surface text content,
+/// regardless of extension or containing directory. Covers keypairs,
+/// credential stores, package-manager auth tokens, and similar.
+const SENSITIVE_FILE_NAMES: &[&str] = &[
     ".netrc",
     ".npmrc",
-    ".docker",
-    ".kube",
-    ".azure",
+    ".yarnrc",
+    ".pypirc",
+    ".pgpass",
+    ".my.cnf",
+    "credentials",
+    "credentials.json",
+    "id_rsa",
+    "id_dsa",
+    "id_ecdsa",
+    "id_ed25519",
+    "authorized_keys",
+    "known_hosts",
+    ".htpasswd",
+    ".env",
+];
+
+/// File extensions (case-insensitive) that always indicate sensitive content
+/// (private keys, signed certs, encryption material). We block these at
+/// detection time so they render as Binary (no text preview) even if they
+/// live in a non-forbidden directory.
+const SENSITIVE_FILE_EXTENSIONS: &[&str] = &[
+    "pem", "key", "pfx", "p12", "p7b", "asc", "gpg", "jks", "kdbx", "keystore",
 ];
 
 /// Absolute path prefixes that are never allowed for previewing.
@@ -154,7 +175,6 @@ const TEXT_EXTENSIONS: &[&str] = &[
     "sql",
     "graphql",
     "proto",
-    "env",
     "gitignore",
     "dockerfile",
     "makefile",
@@ -190,6 +210,23 @@ fn detect_preview_type(path: &Path) -> PreviewType {
         .and_then(|f| f.to_str())
         .unwrap_or("")
         .to_lowercase();
+
+    // Block sensitive filenames (credentials, private keys, package-manager
+    // auth files, …) from text preview regardless of their extension.
+    if SENSITIVE_FILE_NAMES.contains(&filename.as_str())
+        || filename.starts_with(".env.")
+        || filename.starts_with("id_rsa")
+        || filename.starts_with("id_ed25519")
+        || filename.starts_with("id_ecdsa")
+        || filename.starts_with("id_dsa")
+    {
+        return PreviewType::Binary;
+    }
+
+    // Block by extension: private keys / certs / keystores.
+    if SENSITIVE_FILE_EXTENSIONS.contains(&ext.as_str()) {
+        return PreviewType::Binary;
+    }
 
     if TEXT_EXTENSIONS.contains(&ext.as_str())
         || filename == "makefile"
@@ -258,6 +295,12 @@ pub async fn get_file_preview(path: String) -> VoltResult<FilePreview> {
     let canonical = validate_preview_path(&path)?;
     let p = canonical.as_path();
 
+    // Always surface the canonical path to the frontend. Downstream consumers
+    // (copy-to-clipboard, reveal-in-explorer, …) then operate on the same
+    // resolved path that passed validation, closing a TOCTOU gap where a
+    // symlink could be swapped between validate and read.
+    let canonical_path = canonical.to_string_lossy().into_owned();
+
     let meta = fs::metadata(p).map_err(|e| VoltError::FileSystem(e.to_string()))?;
     let size = meta.len();
     let modified = meta
@@ -293,8 +336,9 @@ pub async fn get_file_preview(path: String) -> VoltResult<FilePreview> {
             (text, None)
         }
         PreviewType::Image => {
-            // Return the path as content for frontend to render via asset protocol
-            metadata.insert("image_path".to_string(), path.clone());
+            // Return the canonical path so the frontend renders the exact
+            // file that passed validation, not the possibly-symlinked input.
+            metadata.insert("image_path".to_string(), canonical_path.clone());
             (None, None)
         }
         PreviewType::Folder => {
@@ -312,7 +356,7 @@ pub async fn get_file_preview(path: String) -> VoltResult<FilePreview> {
     };
 
     Ok(FilePreview {
-        path,
+        path: canonical_path,
         name,
         size,
         modified,

@@ -80,6 +80,13 @@ export function useResultActions({
           if (plugin) {
             await plugin.execute(pluginResult);
           }
+        } else if (result.type === SearchResultType.SystemMonitor) {
+          // System monitor rows carry the unwrapped inner payload (not a
+          // full PluginResult) so the generic plugin dispatch below would
+          // fail the isPluginResultData guard. Activation just opens the
+          // detail modal — a DOM event is all we need.
+          shouldHideWindow = false;
+          window.dispatchEvent(new CustomEvent('volt:openSystemMonitor'));
         } else {
           // Handle other plugin results (Calculator, WebSearch, Timer, etc.)
           const pluginResult = result.data as PluginResultData;
@@ -88,8 +95,11 @@ export function useResultActions({
           }
           const pluginId = pluginResult.pluginId || pluginResult.type;
 
-          // Don't hide window for Timer - we want to show the countdown
-          if (result.type === SearchResultType.Timer) {
+          // Don't hide window for Timer or Shell commands - we want to show output
+          if (
+            result.type === SearchResultType.Timer ||
+            result.type === SearchResultType.ShellCommand
+          ) {
             shouldHideWindow = false;
           }
 
@@ -120,8 +130,11 @@ export function useResultActions({
           await hideWindow();
         }
 
-        setSearchQuery('');
-        setResults([]);
+        // Keep query and results visible for shell commands so user can read output
+        if (result.type !== SearchResultType.ShellCommand) {
+          setSearchQuery('');
+          setResults([]);
+        }
       } catch (err) {
         const errorMessage = err instanceof Error ? err.message : String(err);
         logger.error('Failed to launch:', errorMessage);

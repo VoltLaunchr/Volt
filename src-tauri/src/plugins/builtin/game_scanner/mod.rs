@@ -8,12 +8,18 @@
 //! - EA App (Origin)
 //! - Xbox/Microsoft Store
 //! - Riot Games
+//! - Battle.net (Blizzard)
+//! - Amazon Games
+//! - Rockstar Games Launcher
 
+pub mod amazon;
+pub mod battlenet;
 pub mod ea;
 pub mod epic;
 pub mod gog;
 pub mod plugin;
 pub mod riot;
+pub mod rockstar;
 pub mod steam;
 pub mod types;
 pub mod ubisoft;

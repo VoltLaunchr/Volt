@@ -93,6 +93,7 @@ export enum SearchResultType {
   Timer = 'timer',
   SystemMonitor = 'systemmonitor',
   Game = 'game',
+  ShellCommand = 'shellcommand',
 }
 
 /**

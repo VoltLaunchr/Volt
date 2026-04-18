@@ -4,4 +4,6 @@
 
 mod plugin;
 
-pub use plugin::SystemMonitorPlugin;
+pub use plugin::{
+    ComponentInfo, CpuCoreInfo, DiskInfo, NetworkInfo, ProcessInfo, SystemMonitorPlugin,
+};

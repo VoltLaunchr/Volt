@@ -5,6 +5,8 @@
 
 import { logger } from '../../../../shared/utils/logger';
 
+const STORAGE_KEY = 'volt-timers';
+
 export interface ActiveTimer {
   id: string;
   label: string;
@@ -30,6 +32,10 @@ class TimerStore {
   private timeouts: Map<string, ReturnType<typeof setTimeout>> = new Map();
   private intervals: Map<string, ReturnType<typeof setInterval>> = new Map();
   private listeners: Set<TimerListener> = new Set();
+
+  constructor() {
+    this.restoreTimers();
+  }
 
   subscribe(listener: TimerListener): () => void {
     this.listeners.add(listener);
@@ -79,6 +85,7 @@ class TimerStore {
     this.intervals.set(id, interval);
 
     this.emit({ type: 'start', timer });
+    this.persist();
     this.showNotification('⏱️ Timer Started', `${label} - ${this.formatDuration(duration)}`).catch(
       (err) => logger.error('Timer start notification failed:', err)
     );
@@ -100,6 +107,7 @@ class TimerStore {
     timer.remainingWhenPaused = timer.endTime - now;
 
     this.emit({ type: 'pause', timer });
+    this.persist();
   }
 
   resumeTimer(id: string): void {
@@ -119,6 +127,7 @@ class TimerStore {
 
     timer.remainingWhenPaused = undefined;
     this.emit({ type: 'resume', timer });
+    this.persist();
   }
 
   cancelTimer(id: string): void {
@@ -136,6 +145,7 @@ class TimerStore {
 
     this.timers.delete(id);
     this.emit({ type: 'cancel', timer });
+    this.persist();
   }
 
   private completeTimer(id: string): void {
@@ -150,6 +160,7 @@ class TimerStore {
 
     this.timers.delete(id);
     this.emit({ type: 'complete', timer });
+    this.persist();
 
     this.showNotification('⏰ Timer Complete!', `${timer.label} has finished`, true).catch(
       (err) => logger.error('Timer complete notification failed:', err)
@@ -203,8 +214,67 @@ class TimerStore {
     }
   }
 
+  // ── Persistence ────────────────────────────────────────────────────────
+
+  private persist(): void {
+    try {
+      const data = Array.from(this.timers.values());
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    } catch {
+      // localStorage may be unavailable in some environments
+    }
+  }
+
+  private restoreTimers(): void {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return;
+
+      const saved: ActiveTimer[] = JSON.parse(raw);
+      const now = Date.now();
+
+      for (const timer of saved) {
+        // Skip timers that already expired while the app was closed
+        if (!timer.isPaused && timer.endTime <= now) continue;
+
+        this.timers.set(timer.id, timer);
+
+        if (timer.isPaused) {
+          // Paused timers just sit in memory, no timeout needed
+          this.emit({ type: 'start', timer });
+          continue;
+        }
+
+        const remaining = timer.endTime - now;
+
+        // Set timeout for completion
+        const timeout = setTimeout(() => {
+          this.completeTimer(timer.id);
+        }, remaining);
+        this.timeouts.set(timer.id, timeout);
+
+        // Set interval for tick events
+        const interval = setInterval(() => {
+          const t = this.timers.get(timer.id);
+          if (t && !t.isPaused) this.emit({ type: 'tick', timer: t });
+        }, 1000);
+        this.intervals.set(timer.id, interval);
+
+        this.emit({ type: 'start', timer });
+      }
+
+      // Clean up storage (remove expired)
+      this.persist();
+    } catch (err) {
+      logger.warn('Failed to restore timers from localStorage', err);
+    }
+  }
+
   private playSound(): void {
     try {
+      // Chrome caps open AudioContexts at ~6 per page. A fresh context per
+      // timer completion silently fails after the limit, so we close it as
+      // soon as playback ends.
       const audioContext = new (
         window.AudioContext ||
         (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext!
@@ -228,6 +298,10 @@ class TimerStore {
 
       oscillator.start(audioContext.currentTime);
       oscillator.stop(audioContext.currentTime + 0.75);
+
+      oscillator.addEventListener('ended', () => {
+        audioContext.close().catch(() => {});
+      });
     } catch (error) {
       logger.error('Failed to play sound:', error);
     }

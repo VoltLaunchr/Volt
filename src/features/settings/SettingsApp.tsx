@@ -77,7 +77,7 @@ export function SettingsApp() {
   const [updateProgress, setUpdateProgress] = useState(0);
   const [updateChecked, setUpdateChecked] = useState(false);
   const [updateError, setUpdateError] = useState<string | null>(null);
-  const appVersion = '0.0.6';
+  const appVersion = '0.0.8';
 
   // Indexing stats for the File Search panel
   const [indexStats, setIndexStats] = useState<{
@@ -1514,6 +1514,124 @@ export function SettingsApp() {
     </div>
   );
 
+  // Render Shell Commands section
+  const renderShellSection = () => (
+    <div className="settings-panel">
+      <div className="settings-panel-header">
+        <h2 className="settings-panel-title">Shell Commands</h2>
+      </div>
+
+      <div className="settings-panel-content">
+        <div className="settings-info-box">
+          <Terminal size={20} className="settings-info-icon" />
+          <p>
+            Execute shell commands directly from Volt with the <kbd>&gt;</kbd> prefix.
+            Output streams in real-time with ANSI color support.
+          </p>
+        </div>
+
+        <div className="settings-row">
+          <div className="settings-row-info">
+            <span className="settings-row-label">Enable Shell Commands</span>
+            <span className="settings-row-desc">Allow running commands with the &gt; prefix</span>
+          </div>
+          <Toggle
+            checked={settings.shell?.enabled ?? true}
+            onChange={(enabled) => updateSettings('shell', 'enabled', enabled)}
+          />
+        </div>
+
+        <div className="settings-row">
+          <div className="settings-row-info">
+            <span className="settings-row-label">Default Shell</span>
+            <span className="settings-row-desc">Override the system shell (leave empty for default: cmd on Windows, sh on Unix)</span>
+          </div>
+          <input
+            type="text"
+            className="settings-input"
+            placeholder="System default"
+            value={settings.shell?.defaultShell ?? ''}
+            onChange={(e) =>
+              updateSettings('shell', 'defaultShell', e.target.value || null)
+            }
+          />
+        </div>
+
+        <div className="settings-row">
+          <div className="settings-row-info">
+            <span className="settings-row-label">Working Directory</span>
+            <span className="settings-row-desc">Default directory for commands (leave empty for home directory)</span>
+          </div>
+          <input
+            type="text"
+            className="settings-input"
+            placeholder="Home directory"
+            value={settings.shell?.workingDir ?? ''}
+            onChange={(e) =>
+              updateSettings('shell', 'workingDir', e.target.value || null)
+            }
+          />
+        </div>
+
+        <div className="settings-row">
+          <div className="settings-row-info">
+            <span className="settings-row-label">Timeout (ms)</span>
+            <span className="settings-row-desc">Maximum time before a command is killed</span>
+          </div>
+          <input
+            type="number"
+            className="settings-input"
+            min={1000}
+            max={300000}
+            step={1000}
+            value={settings.shell?.timeoutMs ?? 30000}
+            onChange={(e) =>
+              updateSettings('shell', 'timeoutMs', Math.max(1000, Number(e.target.value)))
+            }
+          />
+        </div>
+
+        <div className="settings-row">
+          <div className="settings-row-info">
+            <span className="settings-row-label">History Size</span>
+            <span className="settings-row-desc">Maximum number of commands to remember</span>
+          </div>
+          <input
+            type="number"
+            className="settings-input"
+            min={0}
+            max={5000}
+            step={50}
+            value={settings.shell?.historySize ?? 500}
+            onChange={(e) =>
+              updateSettings('shell', 'historySize', Math.max(0, Number(e.target.value)))
+            }
+          />
+        </div>
+
+        <div className="settings-row">
+          <div className="settings-row-info">
+            <span className="settings-row-label">Clear Command History</span>
+            <span className="settings-row-desc">Remove all saved shell command history</span>
+          </div>
+          <Button
+            variant="secondary"
+            onClick={async () => {
+              try {
+                await invoke('clear_shell_history');
+              } catch (err) {
+                logger.error('Failed to clear shell history:', err);
+                setError('Failed to clear shell history');
+              }
+            }}
+          >
+            Clear
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+
   // Render main content
   const renderContent = () => {
     if (isLoading) {
@@ -1556,6 +1674,8 @@ export function SettingsApp() {
         return renderFileSearchSection();
       case 'clipboard':
         return renderClipboardSection();
+      case 'shell':
+        return renderShellSection();
       default:
         return renderGeneralSection();
     }

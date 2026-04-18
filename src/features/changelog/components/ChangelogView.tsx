@@ -203,17 +203,19 @@ export const ChangelogView: React.FC<ChangelogViewProps> = ({ onClose }) => {
           </div>
 
           {/* Footer Message */}
-          <div className="changelog-message">
-            <p>
-              <strong>Getting Started:</strong> {changelog.footer.gettingStarted}
-            </p>
-            <p className="feedback-text">
-              {changelog.footer.feedback}{' '}
-              <a href={changelog.footer.links.github} target="_blank" rel="noopener noreferrer">
-                GitHub repository
-              </a>
-            </p>
-          </div>
+          {changelog.footer && (
+            <div className="changelog-message">
+              <p>
+                <strong>Getting Started:</strong> {changelog.footer.gettingStarted}
+              </p>
+              <p className="feedback-text">
+                {changelog.footer.feedback}{' '}
+                <a href={changelog.footer.links?.github} target="_blank" rel="noopener noreferrer">
+                  GitHub repository
+                </a>
+              </p>
+            </div>
+          )}
         </div>
       </div>
 

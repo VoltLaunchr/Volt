@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(gh issue *)",
+      "Bash(cargo clippy *)",
+      "Bash(cargo test *)"
+    ]
+  }
+}

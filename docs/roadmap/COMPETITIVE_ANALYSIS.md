@@ -6,7 +6,7 @@
 
 ## Comparatif des fonctionnalites
 
-| Fonctionnalite | Volt (v0.0.5) | Alfred (macOS) | Raycast (macOS) | PowerToys Run (Windows) | Ulauncher (Linux) |
+| Fonctionnalite | Volt (v0.0.8) | Alfred (macOS) | Raycast (macOS) | PowerToys Run (Windows) | Ulauncher (Linux) |
 |----------------|:---:|:---:|:---:|:---:|:---:|
 | **Cross-platform** | ✅ Win/Mac/Linux | ❌ macOS only | ❌ macOS only | ❌ Windows only | ❌ Linux only |
 | **Open source** | ✅ MIT | ❌ Proprietary | ❌ Proprietary | ✅ MIT | ✅ GPL |
@@ -16,24 +16,28 @@
 | **Recherche fuzzy** | ✅ nucleo-matcher | ✅ | ✅ | ✅ | ✅ |
 | **Calculatrice** | ✅ Builtin | ✅ | ✅ | ✅ | ⚠️ Via extension |
 | **Clipboard history** | ✅ Builtin | ✅ Powerpack | ✅ | ✅ | ❌ |
-| **Snippets/text expansion** | ❌ Roadmap v2.0 | ✅ Powerpack | ✅ | ❌ | ❌ |
+| **Snippets/text expansion** | ✅ Builtin | ✅ Powerpack | ✅ | ❌ | ❌ |
 | **Emojis** | ✅ Builtin | ❌ | ✅ | ✅ | ❌ |
 | **Web search** | ✅ Multi-moteurs | ✅ | ✅ | ✅ | ✅ |
 | **System commands** | ✅ | ✅ | ✅ | ✅ | ✅ |
 | **System monitor** | ✅ Builtin | ❌ | ❌ | ❌ | ❌ |
-| **Game scanner** | ✅ 7 plateformes | ❌ | ❌ | ❌ | ❌ |
-| **Timer/pomodoro** | ✅ Builtin | ❌ | ⚠️ Extension | ❌ | ❌ |
-| **Shell commands inline** | ❌ Roadmap v2.0 | ✅ Terminal | ✅ | ❌ | ❌ |
-| **Preview fichiers** | ❌ Roadmap v2.0 | ✅ Quick Look | ✅ | ❌ | ❌ |
+| **Game scanner** | ✅ 10 plateformes | ❌ | ❌ | ❌ | ❌ |
+| **Timer/pomodoro** | ✅ Focus Timer (Pomodoro complet) | ❌ | ⚠️ Extension | ❌ | ❌ |
+| **Shell commands inline** | ✅ Streaming + ANSI + historique | ✅ Terminal | ✅ | ❌ | ❌ |
+| **Preview fichiers** | ✅ Texte/image/dossier/shell | ✅ Quick Look | ✅ | ❌ | ❌ |
 | **Themes** | ✅ Dark/Light/Auto | ✅ Custom | ✅ Custom | ⚠️ Suit le systeme | ✅ Custom |
 | **Themes custom** | ❌ Roadmap v2.x | ✅ | ✅ | ❌ | ✅ |
-| **Plugins/extensions** | ✅ 9 builtin | ✅ Workflows | ✅ Store riche | ✅ Plugins | ✅ Extensions |
-| **Plugin marketplace** | ❌ Roadmap v1.5 | ✅ | ✅ | ✅ | ✅ |
-| **Plugin externe (loader)** | ❌ Roadmap v1.5 | ✅ | ✅ | ✅ | ✅ |
+| **Quicklinks** | ✅ URL/dossier/commande + validation | ✅ | ✅ | ❌ | ✅ |
+| **Window management** | ✅ Snap windows (6 zones) | ❌ | ✅ | ✅ FancyZones | ❌ |
+| **Plugins/extensions** | ✅ 13 builtin | ✅ Workflows | ✅ Store riche | ✅ Plugins | ✅ Extensions |
+| **Plugin marketplace** | ✅ Extension Store | ✅ | ✅ | ✅ | ✅ |
+| **Plugin externe (loader)** | ✅ Worker sandbox | ✅ | ✅ | ✅ | ✅ |
 | **Hotkey configurable** | ✅ Live rebind | ✅ | ✅ | ✅ | ✅ |
 | **Auto-update** | ✅ | ✅ | ✅ | ✅ Via Microsoft Store | ✅ |
-| **Frecency scoring** | ❌ Roadmap v2.0 | ✅ | ✅ | ❌ | ❌ |
+| **Frecency scoring** | ✅ Apps + Shell | ✅ | ✅ | ❌ | ❌ |
 | **Code signe** | ❌ En attente certs | ✅ | ✅ | ✅ | N/A |
+| **Extension sandboxing** | ✅ HMAC + Worker isolé + SSRF block | N/A | ⚠️ | N/A | ⚠️ |
+| **Deep links** | ✅ volt:// protocol | ✅ | ✅ | ❌ | ❌ |
 | **Accessibilite (WCAG)** | ⚠️ Partiel | ⚠️ | ⚠️ | ✅ | ⚠️ |
 
 **Legende :** ✅ Disponible — ⚠️ Partiel/conditionnel — ❌ Absent
@@ -56,42 +60,47 @@ Le backend Tauri v2 + Rust offre des performances natives : demarrage rapide, fa
 
 ### Game scanner unique
 
-Aucun concurrent ne propose de detection et lancement de jeux integre. Volt scanne 7 plateformes (Steam, Epic, GOG, EA, Ubisoft, Riot, Xbox) automatiquement.
+Aucun concurrent ne propose de detection et lancement de jeux integre. Volt scanne **10 plateformes** (Steam, Epic, GOG, EA, Ubisoft, Riot, Xbox, Amazon Games, Battle.net, Rockstar) automatiquement avec scan parallele et deduplication.
 
-### System monitor integre
+### System monitor integre (v2)
 
-Metriques CPU/RAM/disque en temps reel directement dans le lanceur, sans ouvrir un outil externe.
+Metriques CPU/RAM/disque en temps reel directement dans le lanceur, sans ouvrir un outil externe. La v2 ajoute : usage par coeur, details par disque (SSD/HDD), reseau par interface, top 5 processus CPU/RAM, temperatures, sparklines 60s, et export CSV.
 
-### Extensible par design
+### Extensible par design avec securite avancee
 
-Architecture plugin avec isolation (timeout 500ms, error boundaries), API documentee, et roadmap vers un marketplace communautaire.
+Architecture plugin avec isolation (timeout 500ms, error boundaries), API documentee, et marketplace communautaire avec extension store integre. Securite renforcee : signatures HMAC-SHA256 sur l'etat des extensions, sandbox Worker avec blocage eval/WebSocket/SSRF, validation des manifests, et detection de tampering avec alertes UI.
+
+### Shell commands integre
+
+Volt propose l'execution de commandes shell directement dans le lanceur avec streaming temps reel de la sortie, historique avec frecency, rendu des couleurs ANSI, et annulation via Ctrl+C. Aucun concurrent ne propose le streaming ligne-par-ligne ni le rendu ANSI natif.
 
 ---
 
 ## Gaps a combler pour etre competitif
 
-### Priorite haute (v1.0 - v1.5)
+### Resolus ✅
+
+| Gap | Statut | Detail |
+|-----|--------|--------|
+| **Plugin loader externe** | ✅ v0.0.6 | Worker sandbox + Sucrase transpilation |
+| **Extension marketplace** | ✅ v0.0.6 | Extension Store dans Settings |
+| **Frecency scoring** | ✅ v0.0.7 | Apps + Shell commands avec frecency |
+| **Snippets/text expansion** | ✅ v0.0.7 | Prefixe `;`, variables dynamiques, import/export |
+| **Preview fichiers** | ✅ v0.0.7 | Texte, images, dossiers, output shell |
+| **Shell commands** | ✅ v0.0.8 | Streaming, ANSI colors, historique, `!!`, Ctrl+C, blocklist securite |
+| **Extension security** | ✅ v0.0.8 | HMAC state signatures, sandbox hardening, SSRF prevention, tamper alerts |
+| **System Monitor v2** | ✅ v0.0.8 | Per-core CPU, reseau, top processes, temperatures, sparklines, CSV export |
+| **10 game platforms** | ✅ v0.0.8 | +Amazon Games, Battle.net, Rockstar (scan parallele, deduplication) |
+| **Focus Timer (Pomodoro)** | ✅ v0.0.8 | Modes focus/break, auto-cycle, gestion taches, notifications |
+| **Deep links** | ✅ v0.0.8 | volt:// protocol pour OAuth callback, single-instance |
+| **CI automation** | ✅ v0.0.8 | Auto-tag, PR title lint, changelog generation, commitlint |
+
+### Restants
 
 | Gap | Impact | Plan |
 |-----|--------|------|
-| **Code signing** | Avertissements SmartScreen/Gatekeeper rebutent les utilisateurs | Phase 1 — bloque sur achat certs |
-| **Plugin loader externe** | Impossible d'installer des plugins communautaires | Phase 3 — M3.2 |
-| **Extension marketplace** | Pas d'ecosysteme de plugins | Phase 3 — M3.3 |
-
-### Priorite moyenne (v2.0)
-
-| Gap | Impact | Plan |
-|-----|--------|------|
-| **Frecency scoring** | Resultats moins pertinents qu'Alfred/Raycast pour les power users | Phase 4 |
-| **Snippets/text expansion** | Feature cle d'Alfred Powerpack et Raycast | Phase 4 |
-| **Preview fichiers** | Quick Look est tres apprecie sur macOS | Phase 4 |
-| **Shell commands** | Power users veulent executer des commandes sans quitter le lanceur | Phase 4 |
-
-### Priorite basse (v2.x)
-
-| Gap | Impact | Plan |
-|-----|--------|------|
-| **Themes custom** | Personnalisation visuelle attendue par la communaute | Phase 5 |
+| **Code signing** | Avertissements SmartScreen/Gatekeeper | Bloque sur achat certs (~340 €/an) |
+| **Themes custom** | Personnalisation visuelle attendue | Phase 5 |
 | **Wayland Linux** | Support Linux moderne incomplet | Phase 5 |
 | **Sync cloud** | Pas de synchro cross-device | Phase 5 |
 
@@ -138,4 +147,4 @@ Architecture plugin avec isolation (timeout 500ms, error boundaries), API docume
 
 ---
 
-_Document vivant — a mettre a jour lors de chaque release majeure pour refleter l'evolution du positionnement._
+_Document vivant — a mettre a jour lors de chaque release majeure. **Derniere revision : 2026-04-18.**_

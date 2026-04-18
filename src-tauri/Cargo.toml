@@ -61,6 +61,13 @@ flate2 = "1.0"
 url = "2.5"
 uuid = { version = "1", features = ["v4"] }
 keyring = { version = "3", features = ["sync-secret-service", "crypto-rust"] }
+hmac = "0.12"
+sha2 = "0.10"
+rand = "0.9"
+hex = "0.4"
+
+[target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
+tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
 
 [target.'cfg(windows)'.dependencies]
 winapi = { version = "0.3", features = ["shellapi", "winuser", "wingdi", "winnt", "winreg", "fileapi"] }

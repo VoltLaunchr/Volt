@@ -9,6 +9,7 @@ import {
   Clipboard,
   Store,
   Link as LinkIcon,
+  Terminal,
   User,
   type LucideIcon,
 } from 'lucide-react';
@@ -24,7 +25,8 @@ export type SettingsCategory =
   | 'applications'
   | 'plugins'
   | 'file-search'
-  | 'clipboard';
+  | 'clipboard'
+  | 'shell';
 
 export interface CategoryItem {
   id: SettingsCategory;
@@ -47,4 +49,5 @@ export const SETTINGS_CATEGORIES: CategoryItem[] = [
   { id: 'plugins', label: 'Plugins', icon: Puzzle, section: 'BUILT-IN' },
   { id: 'file-search', label: 'File Search', icon: Search, section: 'BUILT-IN' },
   { id: 'clipboard', label: 'Clipboard History', icon: Clipboard, section: 'BUILT-IN' },
+  { id: 'shell', label: 'Shell Commands', icon: Terminal, section: 'BUILT-IN' },
 ];

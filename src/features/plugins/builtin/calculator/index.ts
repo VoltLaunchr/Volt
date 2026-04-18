@@ -176,6 +176,7 @@ export class CalculatorPlugin implements Plugin {
         score: 95,
         data: {
           queryType: 'unit',
+          expression: inputFormatted,
           value,
           from,
           to,
@@ -242,6 +243,7 @@ export class CalculatorPlugin implements Plugin {
         score: 95,
         data: {
           queryType: 'date',
+          expression: result.description,
           operation,
           result: result.value,
           formatted: result.formatted,
@@ -287,6 +289,7 @@ export class CalculatorPlugin implements Plugin {
         badge: 'Time',
         data: {
           queryType: 'timezone',
+          expression: result.description,
           operation,
           formatted: result.formatted,
           description: result.description,

@@ -10,7 +10,7 @@ import {
   GamesPlugin,
   QuicklinksPlugin,
   WindowManagementPlugin,
-  SteamPlugin,
+  ShellCommandPlugin,
   SystemCommandsPlugin,
   SystemMonitorPlugin,
   TimerPlugin,
@@ -28,6 +28,8 @@ import { AppInfo } from '../../shared/types/common.types';
 import { logger } from '../../shared/utils/logger';
 import { useToastStore } from '../../shared/components/ui/Toast';
 import { useAppStore } from '../../stores/appStore';
+import { useUiStore } from '../../stores/uiStore';
+import type { ExtensionPermission } from '../../features/extensions/types/extension.types';
 
 export interface UseAppLifecycleResult {
   allApps: AppInfo[];
@@ -87,11 +89,11 @@ export function useAppLifecycle(): UseAppLifecycleResult {
           pluginRegistry.register(new SystemCommandsPlugin());
           pluginRegistry.register(new TimerPlugin());
           pluginRegistry.register(new SystemMonitorPlugin());
-          pluginRegistry.register(new SteamPlugin());
           pluginRegistry.register(new GamesPlugin()); // Unified games plugin (all platforms)
           pluginRegistry.register(new SnippetsPlugin());
           pluginRegistry.register(new QuicklinksPlugin());
           pluginRegistry.register(new WindowManagementPlugin());
+          pluginRegistry.register(new ShellCommandPlugin());
 
           // Start clipboard monitoring
           await ClipboardPlugin.startMonitoring();
@@ -104,6 +106,18 @@ export function useAppLifecycle(): UseAppLifecycleResult {
               .getAllPlugins()
               .map((p) => p.name)
               .join(', ')
+          );
+
+          // Wire up permission consent handler before loading extensions
+          extensionLoader.setPermissionRequestHandler(
+            (extensionName: string, permissions: ExtensionPermission[]) =>
+              new Promise<ExtensionPermission[]>((resolve) => {
+                useUiStore.getState().setPermissionRequest({
+                  extensionName,
+                  permissions,
+                  resolve,
+                });
+              })
           );
 
           // Load external extensions
@@ -136,25 +150,42 @@ export function useAppLifecycle(): UseAppLifecycleResult {
     initializeApp();
   }, [setSettings]);
 
-  // Best-effort update check on startup (silent)
+  // Best-effort update check on startup + periodic background check.
+  // Respects the autoCheckForUpdates setting, throttle (6h), snooze, and skip-version.
   useEffect(() => {
-    if (updateCheckDone.current) return;
-    updateCheckDone.current = true;
-    void updateService.checkUpdateOnStartup().then((update) => {
-      if (update) {
-        const { addToast } = useToastStore.getState();
-        addToast(
-          `Update available: v${update.version} — Open Settings to update`,
-          'update',
-          0,
-          () => {
-            // Emit custom event so Settings can pick up the update info
-            window.dispatchEvent(new CustomEvent('volt:open-settings-update', { detail: update }));
-          }
-        );
-      }
-    });
-  }, []);
+    const autoCheck = settings?.general.autoCheckForUpdates ?? true;
+    if (!autoCheck) {
+      updateService.stopPeriodicCheck();
+      return;
+    }
+
+    const showUpdateToast = (update: { version: string }) => {
+      const { addToast } = useToastStore.getState();
+      addToast(
+        `Update available: v${update.version} — Open Settings to update`,
+        'update',
+        0,
+        () => {
+          window.dispatchEvent(new CustomEvent('volt:open-settings-update', { detail: update }));
+        }
+      );
+    };
+
+    // Startup check (once per mount, throttled inside the service)
+    if (!updateCheckDone.current) {
+      updateCheckDone.current = true;
+      void updateService.checkUpdateOnStartup().then((update) => {
+        if (update) showUpdateToast(update);
+      });
+    }
+
+    // Periodic background check every 6h
+    updateService.startPeriodicCheck((update) => showUpdateToast(update));
+
+    return () => {
+      updateService.stopPeriodicCheck();
+    };
+  }, [settings?.general.autoCheckForUpdates]);
 
   // Setup listener for system theme changes (for auto mode)
   useEffect(() => {
@@ -304,7 +335,17 @@ export function useAppLifecycle(): UseAppLifecycleResult {
         indexingUnlistenRef.current = null;
       }
     };
-  }, [settings, setIsIndexing]);
+    // Narrow deps to the indexing knobs that actually decide whether to start.
+    // Broader deps (`settings`) caused this effect to re-run on every unrelated
+    // settings change; the cleanup then tore down the active indexing-progress
+    // listener mid-scan, leaving the UI stuck on "Indexing…".
+  }, [
+    settings?.indexing.indexOnStartup,
+    settings?.indexing.folders,
+    settings?.indexing.excludedPaths,
+    settings?.indexing.fileExtensions,
+    setIsIndexing,
+  ]);
 
   return {
     allApps,

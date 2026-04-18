@@ -215,3 +215,213 @@
     transform: translateX(100%);
   }
 }
+
+/* Shell Command Plugin */
+.plugin-icon.shell {
+  color: #a3e635;
+  stroke-width: 2.5;
+}
+
+.result-item:hover .plugin-icon.shell,
+.result-item.selected .plugin-icon.shell {
+  color: #bef264;
+  transform: scale(1.1);
+}
+
+.result-item.shell-expanded {
+  height: auto;
+  min-height: var(--result-item-height);
+  align-items: flex-start;
+  padding-top: var(--spacing-sm);
+}
+
+.result-item.shell-expanded .result-icon {
+  margin-top: 2px;
+}
+
+.shell-command-title {
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-sm);
+}
+
+.shell-output-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+}
+
+.shell-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  flex-shrink: 0;
+}
+
+.shell-timing {
+  font-size: 10px;
+  color: var(--color-text-tertiary);
+  font-family: var(--font-family-mono);
+}
+
+.shell-exit-code {
+  font-size: 10px;
+  color: #ef4444;
+  font-family: var(--font-family-mono);
+}
+
+.shell-timeout {
+  font-size: 10px;
+  color: #f59e0b;
+  font-family: var(--font-family-mono);
+  font-weight: var(--font-weight-medium);
+}
+
+.shell-copy-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.shell-copy-btn:hover {
+  color: var(--color-text-primary);
+  background: var(--color-surface-hover);
+}
+
+.shell-output-block {
+  margin-top: 4px;
+  padding: var(--spacing-sm);
+  background: rgba(0, 0, 0, 0.25);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-family-mono);
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--color-text-secondary);
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 200px;
+  overflow-y: auto;
+  margin-bottom: var(--spacing-xs);
+}
+
+.shell-output-block.shell-loading {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  color: var(--color-text-tertiary);
+  font-style: italic;
+}
+
+.shell-output-block.shell-error {
+  color: #ef4444;
+}
+
+.shell-output-block.shell-empty {
+  color: var(--color-text-tertiary);
+  font-style: italic;
+}
+
+.shell-stderr {
+  color: #ef4444;
+  display: block;
+  margin-top: 4px;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.shell-spinner {
+  animation: spin 1s linear infinite;
+}
+
+/* Calculator Card - Raycast-inspired */
+.result-item.calculator-expanded {
+  height: auto;
+  min-height: var(--result-item-height);
+  padding: var(--spacing-sm) var(--spacing-md);
+}
+
+.calculator-card-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.calculator-card {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-lg);
+  padding: var(--spacing-md) var(--spacing-lg);
+  background: var(--color-surface);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+}
+
+.result-item.selected .calculator-card,
+.result-item:hover .calculator-card {
+  border-color: rgba(99, 102, 241, 0.3);
+  background: rgba(30, 30, 50, 0.95);
+}
+
+.calculator-card-expression,
+.calculator-card-result {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+
+.calculator-card-value {
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-semibold);
+  font-family: var(--font-family-mono);
+  color: var(--color-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.calculator-card-result .calculator-card-value {
+  color: #10b981;
+}
+
+.result-item.selected .calculator-card-result .calculator-card-value,
+.result-item:hover .calculator-card-result .calculator-card-value {
+  color: #34d399;
+}
+
+.calculator-card-label {
+  font-size: 10px;
+  font-weight: var(--font-weight-medium);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-tertiary);
+  padding: 2px 8px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: var(--radius-full);
+}
+
+.calculator-card-separator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: var(--color-text-tertiary);
+}
+
+.result-item.selected .calculator-card-separator,
+.result-item:hover .calculator-card-separator {
+  color: var(--color-text-secondary);
+}

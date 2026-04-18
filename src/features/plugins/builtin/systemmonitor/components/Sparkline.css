@@ -1,0 +1,20 @@
+.volt-sparkline {
+  display: block;
+  overflow: visible;
+}
+
+.volt-sparkline__area {
+  opacity: 0.18;
+}
+
+.volt-sparkline__line {
+  fill: none;
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.volt-sparkline__empty {
+  stroke: var(--color-border);
+  stroke-dasharray: 3 3;
+}

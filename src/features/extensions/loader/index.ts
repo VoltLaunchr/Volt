@@ -13,8 +13,49 @@ import { transform } from 'sucrase';
 import { logger } from '../../../shared/utils/logger';
 import { pluginRegistry } from '../../plugins/core';
 import { Plugin } from '../../plugins/types';
-import type { ExtensionManifest } from '../types/extension.types';
+import {
+  isExtensionPermission,
+  type ExtensionManifest,
+  type ExtensionPermission,
+} from '../types/extension.types';
 import { WorkerPlugin } from './worker-sandbox';
+
+/**
+ * Filter an arbitrary permission list down to known `ExtensionPermission`
+ * values. Unknown entries are dropped and logged so a misbehaving or malicious
+ * manifest can't smuggle fictitious permissions through to the consent dialog
+ * or the Worker sandbox.
+ *
+ * Deduplicates results to keep downstream code (sets, UI lists) tidy.
+ */
+function sanitizePermissions(
+  permissions: readonly unknown[] | undefined | null,
+  context: string
+): ExtensionPermission[] {
+  if (!permissions || permissions.length === 0) {
+    return [];
+  }
+  const valid: ExtensionPermission[] = [];
+  const seen = new Set<ExtensionPermission>();
+  const unknown: unknown[] = [];
+  for (const perm of permissions) {
+    if (isExtensionPermission(perm)) {
+      if (!seen.has(perm)) {
+        seen.add(perm);
+        valid.push(perm);
+      }
+    } else {
+      unknown.push(perm);
+    }
+  }
+  if (unknown.length > 0) {
+    logger.warn(
+      `[ExtensionLoader] ${context} — dropping unknown permission(s):`,
+      unknown
+    );
+  }
+  return valid;
+}
 
 // Ensure VoltAPI is available globally
 import '../api';
@@ -51,14 +92,20 @@ export class ExtensionLoader {
    * Returns the list of granted permissions, or empty array if denied.
    */
   private permissionRequestHandler:
-    | ((extensionName: string, permissions: string[]) => Promise<string[]>)
+    | ((
+        extensionName: string,
+        permissions: ExtensionPermission[]
+      ) => Promise<ExtensionPermission[]>)
     | null = null;
 
   /**
    * Register a handler for permission consent requests.
    */
   setPermissionRequestHandler(
-    handler: (extensionName: string, permissions: string[]) => Promise<string[]>
+    handler: (
+      extensionName: string,
+      permissions: ExtensionPermission[]
+    ) => Promise<ExtensionPermission[]>
   ): void {
     this.permissionRequestHandler = handler;
   }
@@ -103,14 +150,20 @@ export class ExtensionLoader {
 
   /**
    * Get granted permissions for an installed extension from the backend.
+   *
+   * The Rust side stores permissions as raw strings; we sanitize here so that
+   * only known `ExtensionPermission` values surface to the TS runtime.
    */
-  private async getGrantedPermissions(extensionId: string): Promise<string[]> {
+  private async getGrantedPermissions(extensionId: string): Promise<ExtensionPermission[]> {
     try {
       const installed = await invoke<{ manifest: { id: string }; grantedPermissions?: string[] }[]>(
         'get_installed_extensions'
       );
       const ext = installed.find((e) => e.manifest.id === extensionId);
-      return ext?.grantedPermissions || [];
+      return sanitizePermissions(
+        ext?.grantedPermissions,
+        `granted permissions for ${extensionId}`
+      );
     } catch {
       return [];
     }
@@ -123,8 +176,8 @@ export class ExtensionLoader {
   private async resolvePermissions(
     extensionId: string,
     extensionName: string,
-    requiredPermissions: string[]
-  ): Promise<string[]> {
+    requiredPermissions: ExtensionPermission[]
+  ): Promise<ExtensionPermission[]> {
     if (!requiredPermissions || requiredPermissions.length === 0) {
       return [];
     }
@@ -139,21 +192,32 @@ export class ExtensionLoader {
 
     // Ask user for consent
     if (this.permissionRequestHandler) {
-      const granted = await this.permissionRequestHandler(extensionName, requiredPermissions);
+      const rawGranted = await this.permissionRequestHandler(
+        extensionName,
+        requiredPermissions
+      );
+      // Defensive: handler is typed but lives outside this module — re-sanitize.
+      const granted = sanitizePermissions(
+        rawGranted,
+        `consent response for ${extensionId}`
+      );
       if (granted.length > 0) {
-        // Persist granted permissions
+        // Persist granted permissions. For dev extensions the Rust side has no
+        // matching installed record, so this is an intentional no-op (the IPC
+        // resolves with NotFound and we swallow the error) — dev sources
+        // re-prompt on every reload by design.
         await invoke('update_extension_permissions', {
           extensionId,
           permissions: granted,
         }).catch((err) => {
-          console.warn(`[ExtensionLoader] Failed to persist permissions for ${extensionId}:`, err);
+          logger.warn(`[ExtensionLoader] Failed to persist permissions for ${extensionId}:`, err);
         });
       }
       return granted;
     }
 
     // No handler registered — deny by default
-    console.warn(`[ExtensionLoader] No permission handler — denying permissions for ${extensionId}`);
+    logger.warn(`[ExtensionLoader] No permission handler — denying permissions for ${extensionId}`);
     return [];
   }
 
@@ -170,8 +234,13 @@ export class ExtensionLoader {
       const hasKeywords = manifest.keywords && manifest.keywords.length > 0;
       const hasPrefix = !!manifest.prefix;
 
-      // Resolve permissions before loading
-      const requiredPermissions = manifest.permissions || [];
+      // Resolve permissions before loading. Sanitize the manifest first so
+      // that fictitious permission strings can neither reach the consent
+      // dialog nor be persisted as granted.
+      const requiredPermissions = sanitizePermissions(
+        manifest.permissions,
+        `manifest permissions for ${id}`
+      );
       const grantedPermissions = await this.resolvePermissions(
         id,
         manifest.name,
@@ -206,7 +275,10 @@ export class ExtensionLoader {
    * Load extension in a Web Worker sandbox.
    * The Worker gets its own thread — canHandle is declarative on main thread.
    */
-  private loadInWorker(source: ExtensionSource, grantedPermissions: string[]): LoadedExtension | null {
+  private loadInWorker(
+    source: ExtensionSource,
+    grantedPermissions: ExtensionPermission[]
+  ): LoadedExtension | null {
     const { id, manifest } = source;
 
     console.log(`[ExtensionLoader] Loading ${id} in Worker sandbox`);
@@ -300,262 +372,51 @@ export class ExtensionLoader {
   }
 
   /**
-   * Transform a single module's code
+   * Transform a single module's code via Sucrase AST-based transforms.
+   *
+   * Security note: previous implementation used regex replacements on the raw
+   * source string, which is forgeable — a string literal like
+   * `"import { x } from '../../api'"` would get rewritten, and carefully
+   * crafted source could leak references to VoltAPI past the Worker sandbox
+   * boundary. Sucrase runs a real lexer/parser: `import`/`export` tokens are
+   * only matched at statement level, never inside strings, template literals,
+   * or comments.
+   *
+   * We use Sucrase's `['typescript', 'imports']` pipeline which:
+   *  - strips TS type annotations and type-only imports/re-exports
+   *  - transforms every top-level ESM `import`/`export` into CommonJS
+   *    `require(...)` / `exports.X = ...` form
+   * Sucrase's output references `require`, `exports`, and `module` as free
+   * identifiers — the module IIFE in {@link buildBundleWithOrder} supplies
+   * those as locals (sandbox CJS emulation), so the bundled code runs without
+   * any additional text-level rewriting.
    */
   private transformModuleCode(code: string, filePath: string): string {
-    let transformed = code;
+    console.log(
+      `[ExtensionLoader] [${filePath}] Original code:`,
+      code.substring(0, 500)
+    );
 
-    console.log(`[ExtensionLoader] [${filePath}] Original code:`, transformed.substring(0, 500));
-
-    // Remove TypeScript type annotations using Sucrase
-    transformed = this.transpileTypeScript(transformed);
-    console.log(`[ExtensionLoader] [${filePath}] After Sucrase:`, transformed.substring(0, 500));
-
-    // Transform imports to use our module system
-    transformed = this.transformImports(transformed, filePath);
-
-    // Transform exports
-    transformed = this.transformExports(transformed);
-
-    // Replace Node.js crypto with Web Crypto API
-    transformed = this.replaceNodeCrypto(transformed);
-
-    console.log(`[ExtensionLoader] [${filePath}] Final code:`, transformed.substring(0, 500));
-
-    return transformed;
-  }
-
-  /**
-   * Transpile TypeScript to JavaScript using Sucrase
-   * This properly handles all TypeScript syntax including:
-   * - Type annotations, interfaces, type aliases
-   * - Generics, union types, intersection types
-   * - 'as const', 'as Type' assertions
-   * - implements, extends clauses
-   */
-  private transpileTypeScript(code: string): string {
     try {
       const result = transform(code, {
-        transforms: ['typescript'],
-        // Note: disableESTransforms removed to allow class fields transformation
+        transforms: ['typescript', 'imports'],
+        // filePath helps Sucrase produce better error messages.
+        filePath,
       });
+      console.log(
+        `[ExtensionLoader] [${filePath}] After Sucrase:`,
+        result.code.substring(0, 500)
+      );
       return result.code;
     } catch (error) {
-      console.warn('[ExtensionLoader] Sucrase transpilation failed, returning original code:', error);
+      logger.error(
+        `[ExtensionLoader] [${filePath}] Sucrase transform failed:`,
+        error
+      );
+      // Fall back to original source — almost certainly broken, but better
+      // than silently producing a bundle with half the module stripped.
       return code;
     }
-  }
-
-  /**
-   * Transform import statements
-   */
-  private transformImports(code: string, currentFile: string): string {
-    let result = code;
-
-    // Handle: import { X, Y } from './path'
-    result = result.replace(
-      /import\s*\{\s*([^}]+)\s*\}\s*from\s*['"]([^'"]+)['"];?/g,
-      (_match, imports, importPath) => {
-        // Check if it's a relative import or API import
-        if (importPath.includes('/api/') || importPath.includes('../../api')) {
-          // Map to VoltAPI
-          const importList = imports.split(',').map((s: string) => s.trim());
-          return importList
-            .map((name: string) => {
-              const cleanName = name.split(' as ')[0].trim();
-              if (cleanName === 'PluginResultType') {
-                return `const ${cleanName} = VoltAPI.types.PluginResultType;`;
-              }
-              if (['Plugin', 'PluginContext', 'PluginResult'].includes(cleanName)) {
-                return ''; // Types, not needed at runtime
-              }
-              return '';
-            })
-            .filter(Boolean)
-            .join('\n');
-        }
-
-        // For relative imports, mark for module resolution
-        const resolvedPath = this.resolveImportPath(importPath, currentFile);
-        const importList = imports.split(',').map((s: string) => s.trim());
-        return importList
-          .map((name: string) => {
-            const parts = name.split(' as ');
-            const importName = parts[0].trim();
-            const localName = parts[1]?.trim() || importName;
-            // Skip empty imports (happens when Sucrase removes type-only imports)
-            if (!importName || !localName) {
-              return '';
-            }
-            return `const ${localName} = __modules__["${resolvedPath}"]?.${importName};`;
-          })
-          .filter(Boolean)
-          .join('\n');
-      }
-    );
-
-    // Handle: import X from './path'
-    result = result.replace(
-      /import\s+(\w+)\s+from\s*['"]([^'"]+)['"];?/g,
-      (_match, name, importPath) => {
-        if (importPath === 'crypto') {
-          return ''; // Will be handled by replaceNodeCrypto
-        }
-        const resolvedPath = this.resolveImportPath(importPath, currentFile);
-        return `const ${name} = __modules__["${resolvedPath}"]?.default;`;
-      }
-    );
-
-    // Handle: import './path' (side effect imports)
-    result = result.replace(
-      /import\s*['"]([^'"]+)['"];?/g,
-      ''
-    );
-
-    return result;
-  }
-
-  /**
-   * Transform export statements
-   */
-  private transformExports(code: string): string {
-    let result = code;
-    const namedExports: string[] = [];
-
-    // Handle: export default X
-    result = result.replace(
-      /export\s+default\s+(\w+);?$/gm,
-      '__exports__.default = $1;'
-    );
-
-    // Handle: export default class X
-    result = result.replace(
-      /export\s+default\s+class\s+(\w+)/g,
-      (_match, name) => {
-        namedExports.push(`default: ${name}`);
-        return `class ${name}`;
-      }
-    );
-
-    // Handle: export class X
-    result = result.replace(
-      /export\s+class\s+(\w+)/g,
-      (_match, name) => {
-        namedExports.push(name);
-        return `class ${name}`;
-      }
-    );
-
-    // Handle: export async function X
-    result = result.replace(
-      /export\s+async\s+function\s+(\w+)/g,
-      (_match, name) => {
-        namedExports.push(name);
-        return `async function ${name}`;
-      }
-    );
-
-    // Handle: export function X
-    result = result.replace(
-      /export\s+function\s+(\w+)/g,
-      (_match, name) => {
-        namedExports.push(name);
-        return `function ${name}`;
-      }
-    );
-
-    // Handle: export const X
-    result = result.replace(
-      /export\s+const\s+(\w+)/g,
-      (_match, name) => {
-        namedExports.push(name);
-        return `const ${name}`;
-      }
-    );
-
-    // Handle: export let X
-    result = result.replace(
-      /export\s+let\s+(\w+)/g,
-      (_match, name) => {
-        namedExports.push(name);
-        return `let ${name}`;
-      }
-    );
-
-    // Handle: export var X
-    result = result.replace(
-      /export\s+var\s+(\w+)/g,
-      (_match, name) => {
-        namedExports.push(name);
-        return `var ${name}`;
-      }
-    );
-
-    // Handle: export { X, Y } from './path' (re-exports)
-    // This MUST come before the simple export { X, Y } pattern
-    result = result.replace(
-      /export\s*\{\s*([^}]+)\s*\}\s*from\s*['"]([^'"]+)['"];?/g,
-      '' // Re-exports are handled via imports, remove them
-    );
-
-    // Handle: export { X, Y }
-    result = result.replace(
-      /export\s*\{\s*([^}]+)\s*\};?/g,
-      (_match, exports) => {
-        const exportList = exports.split(',').map((s: string) => s.trim());
-        return exportList
-          .map((name: string) => {
-            const parts = name.split(' as ');
-            const localName = parts[0].trim();
-            const exportName = parts[1]?.trim() || localName;
-            // Skip empty exports
-            if (!localName) return '';
-            return `__exports__.${exportName} = ${localName};`;
-          })
-          .filter(Boolean)
-          .join('\n');
-      }
-    );
-
-    // Add all named exports at the end
-    if (namedExports.length > 0) {
-      const exportStatements = namedExports
-        .map((name) => {
-          if (name.startsWith('default: ')) {
-            const className = name.replace('default: ', '');
-            return `__exports__.default = ${className};`;
-          }
-          return `__exports__.${name} = ${name};`;
-        })
-        .join('\n');
-      result += '\n' + exportStatements;
-    }
-
-    // Debug: Check for remaining exports
-    const remainingExports = result.match(/\bexport\s+\w+/g);
-    if (remainingExports) {
-      console.warn('[ExtensionLoader] Unhandled exports found:', remainingExports);
-    }
-
-    return result;
-  }
-
-  /**
-   * Replace Node.js crypto with Web Crypto API
-   */
-  private replaceNodeCrypto(code: string): string {
-    let result = code;
-
-    // Remove crypto import
-    result = result.replace(/import\s*\{\s*randomInt\s*\}\s*from\s*['"]crypto['"];?/g, '');
-
-    // Replace randomInt calls with Web Crypto equivalent
-    result = result.replace(
-      /randomInt\s*\(\s*(\w+)\s*,\s*(\w+)\s*\)/g,
-      '__secureRandomInt__($1, $2)'
-    );
-
-    return result;
   }
 
   /**
@@ -594,7 +455,19 @@ export class ExtensionLoader {
   }
 
   /**
-   * Build the final bundle from all modules with pre-sorted order
+   * Build the final bundle from all modules with pre-sorted order.
+   *
+   * Each module is wrapped in an IIFE that provides CommonJS-compatible
+   * locals (`require`, `exports`, `module`) as well as the Volt-specific
+   * `__secureRandomInt__` helper and a `VoltAPI` shim (mapped to the global
+   * in the renderer bundle, or the Worker-side mock in the Worker bundle).
+   *
+   * The `require` function inside each IIFE only resolves to:
+   *   - `crypto` → a tiny Web Crypto adapter exposing `randomInt`
+   *   - the Volt extension API (`volt-api`, `'/api'`, `'../../api'`, etc.)
+   *   - a previously bundled module from `__modules__`
+   * It does NOT fetch from the network or touch the real CommonJS require,
+   * so the bundle can never reach out for arbitrary modules at runtime.
    */
   private buildBundleWithOrder(
     modules: Record<string, string>,
@@ -616,32 +489,103 @@ function __secureRandomInt__(min, max) {
 // Module registry
 const __modules__ = {};
 
-// VoltAPI reference
-const VoltAPI = window.VoltAPI;
-const PluginResultType = VoltAPI.types.PluginResultType;
-const copyToClipboard = VoltAPI.utils.copyToClipboard;
+// NOTE: the renderer-side inline-execution path is currently disabled (see
+// loadExtension in index.ts — extensions without keywords/prefix are rejected),
+// so this header only ever runs stripped-down inside the Worker bootstrap,
+// which injects its own VoltAPI mock. If the renderer path is ever
+// re-enabled it MUST assign VoltAPI explicitly from window.VoltAPI and fail
+// loud when absent — do NOT re-introduce the previous
+// \`const VoltAPI = ... || VoltAPI\` self-fallback: the RHS refers to the same
+// TDZ binding and throws ReferenceError in any context where window.VoltAPI
+// is unavailable.
+
+// Shim surfaced to extension code when it does \`import { PluginResultType } from '../../api'\`.
+// Intentionally minimal: only values that extensions legitimately consume at runtime.
+const __voltApiShim__ = Object.freeze({
+  PluginResultType: VoltAPI.types.PluginResultType,
+  copyToClipboard: VoltAPI.utils.copyToClipboard,
+  openUrl: VoltAPI.utils.openUrl,
+  formatNumber: VoltAPI.utils.formatNumber,
+  fuzzyScore: VoltAPI.utils.fuzzyScore,
+  notify: VoltAPI.notify ? VoltAPI.notify.bind(VoltAPI) : function() {},
+  events: VoltAPI.events,
+});
+
+// Adapter for Node.js 'crypto' — only exposes what extensions legitimately need.
+const __cryptoShim__ = Object.freeze({
+  randomInt: function(min, max) { return __secureRandomInt__(min, max); },
+});
 
 // i18n API for extensions
 const VoltI18n = {
   addTranslations: function(lng, namespace, resources) {
     const prefixed = 'ext-' + namespace;
-    window.__volt_i18n_addBundle__(lng, prefixed, resources);
+    if (typeof window !== 'undefined' && typeof window.__volt_i18n_addBundle__ === 'function') {
+      window.__volt_i18n_addBundle__(lng, prefixed, resources);
+    }
   }
 };
 
+// Shared require-path resolver. Relative paths resolve against the caller
+// module's directory; bare specifiers fall through to the shim tables.
+function __resolveRelativePath__(requestPath, fromPath) {
+  if (!requestPath.startsWith('.')) return requestPath;
+  var fromDir = fromPath.includes('/') ? fromPath.substring(0, fromPath.lastIndexOf('/')) : '';
+  var parts = requestPath.split('/');
+  var base = fromDir ? fromDir.split('/') : [];
+  for (var i = 0; i < parts.length; i++) {
+    var p = parts[i];
+    if (p === '.') continue;
+    if (p === '..') { base.pop(); continue; }
+    base.push(p);
+  }
+  var resolved = base.join('/');
+  if (!/\\.(ts|js)$/.test(resolved)) resolved += '.ts';
+  return resolved;
+}
+
+function __voltRequire__(requestPath, fromPath) {
+  if (requestPath === 'crypto') return __cryptoShim__;
+  // Only exact "volt-api" or a specifier whose final path segment is "api"
+  // (optionally with a .ts/.js/.tsx/.jsx/.mjs extension) resolves to the shim.
+  // This matches the legitimate patterns \`import ... from '../../api'\` and
+  // \`import ... from './api.ts'\` while rejecting mid-path segments like
+  // '../../vendor/api/foo' — otherwise a malicious extension could shadow its
+  // own bundled 'vendor/api/foo.ts' module with the frozen shim and subvert
+  // its module graph.
+  if (requestPath === 'volt-api' || /(?:^|\\/)api(?:\\.(?:ts|js|tsx|jsx|mjs))?$/.test(requestPath)) {
+    return __voltApiShim__;
+  }
+  var resolved = __resolveRelativePath__(requestPath, fromPath);
+  var mod = __modules__[resolved];
+  if (!mod) {
+    // Return an empty module rather than throwing, so optional side-effect
+    // imports don't crash the whole extension. A warning would be useful,
+    // but we avoid noise for type-only imports that Sucrase already stripped.
+    return {};
+  }
+  return mod;
+}
+
 `;
 
-    // Add each module in sorted order
+    // Add each module in sorted order. Each module gets its own CommonJS
+    // environment — `require`, `exports`, `module` — so Sucrase's CJS output
+    // runs verbatim without any post-transform text rewriting.
     for (const modulePath of sortedPaths) {
       const code = modules[modulePath];
       if (!code) continue;
 
+      const escapedPath = JSON.stringify(modulePath);
       bundle += `
 // Module: ${modulePath}
 (function() {
-  const __exports__ = {};
+  var exports = {};
+  var module = { exports: exports };
+  function require(p) { return __voltRequire__(p, ${escapedPath}); }
   ${code}
-  __modules__["${modulePath}"] = __exports__;
+  // Honour \`module.exports = ...\` reassignment (rare but legal).
+  __modules__[${escapedPath}] = (module.exports !== exports) ? module.exports : exports;
 })();
 `;
     }
@@ -675,7 +619,17 @@ return __defaultExport__;
       const code = modules[path];
       if (!code) return;
 
-      // Find dependencies
+      // Find dependencies.
+      //
+      // Note: this is a raw-source regex pass rather than an AST-based one. It
+      // is used ONLY to compute a visit order for the dependency-free topological
+      // sort below; the actual module transform goes through Sucrase (see
+      // transformModuleCode) and runtime specifier resolution goes through
+      // __voltRequire__ inside each IIFE. A false positive here (e.g. an
+      // import-like string literal) only over-includes a module in the visit
+      // order — it cannot pull an extra file into the bundle, nor escape the
+      // shim. A false negative cannot occur for a real import. We intentionally
+      // keep this simple rather than running a second Sucrase pass.
       const importMatches = code.matchAll(/from\s*['"]\.([^'"]+)['"]/g);
       for (const match of importMatches) {
         const depPath = this.resolveImportPath('.' + match[1], path);

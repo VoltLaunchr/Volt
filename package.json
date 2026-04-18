@@ -27,6 +27,7 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "sync-version": "node scripts/sync-version.mjs",
+    "generate-changelog": "node scripts/generate-changelog.mjs",
     "check-version": "node scripts/sync-version.mjs --check",
     "setup-hooks": "node scripts/setup-hooks.mjs",
     "test:e2e": "playwright test",
@@ -55,6 +56,8 @@
     "zustand": "^5.0.12"
   },
   "devDependencies": {
+    "@commitlint/cli": "^20.5.0",
+    "@commitlint/config-conventional": "^20.5.0",
     "@eslint/js": "^9.39.1",
     "@playwright/test": "^1.59.1",
     "@tauri-apps/cli": "^2",

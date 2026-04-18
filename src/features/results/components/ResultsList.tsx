@@ -27,29 +27,42 @@ function getSectionKey(type: SearchResultType): string {
       return 'commands';
     case SearchResultType.File:
       return 'files';
+    case SearchResultType.ShellCommand:
+      return 'shell';
+    case SearchResultType.SystemMonitor:
+      // System monitor rows are direct answers ("CPU 42%"), not a list to
+      // scan — surface them before the app list so they are visible without
+      // scrolling when the user types a monitoring keyword.
+      return 'system';
     default:
       return 'results';
   }
 }
 
-/** Get section order — prioritize sections that have the most results */
+/** Get section order — prioritize sections that have the most results.
+ *
+ * 'system' and 'results' carry plugin direct-answers (CPU %, timer, calculator,
+ * web search) which are single-value replies to the query, not a list to
+ * browse — surface them above the long app list so the user never has to
+ * scroll to see them. */
 function getSectionOrder(grouped: Map<string, unknown[]>): string[] {
-  const base = ['applications', 'commands', 'games', 'results', 'files'];
-  // If games section has more items than apps, put games first
+  const base = ['system', 'results', 'applications', 'commands', 'games', 'shell', 'files'];
   const gameCount = (grouped.get('games') as unknown[] | undefined)?.length ?? 0;
   const appCount = (grouped.get('applications') as unknown[] | undefined)?.length ?? 0;
   if (gameCount > appCount) {
-    return ['games', 'applications', 'commands', 'results', 'files'];
+    return ['system', 'results', 'games', 'applications', 'commands', 'shell', 'files'];
   }
   return base;
 }
 
 /** Section labels */
 const SECTION_LABELS: Record<string, string> = {
+  system: 'System',
   applications: 'Applications',
   commands: 'Commands',
   games: 'Games',
   results: 'Results',
+  shell: 'Shell',
   files: 'Files',
 };
 
@@ -135,9 +148,9 @@ export const ResultsList: React.FC<ResultsListProps> = ({
       aria-label="Search results"
       aria-activedescendant={selectedItemId}
     >
-      {sections.map((section) => (
+      {sections.map((section, sectionIndex) => (
         <div
-          key={section.label || 'single'}
+          key={`section-${sectionIndex}-${section.label}`}
           className="results-section"
           role="group"
           aria-label={section.label || undefined}
@@ -153,6 +166,7 @@ export const ResultsList: React.FC<ResultsListProps> = ({
               role="option"
               aria-selected={globalIndex === selectedIndex}
               aria-label={`${result.title}${result.subtitle ? ` - ${result.subtitle}` : ''}`}
+              tabIndex={globalIndex === selectedIndex ? 0 : -1}
             >
               <ResultItem
                 result={result}

@@ -1,10 +1,14 @@
 name: Version Bump & Release
 
 # Manual trigger: bumps version everywhere, creates a PR to main, and after
-# merge pushes the tag to trigger the release workflow.
+# merge an auto-tag workflow pushes the tag to trigger the release build.
 #
 # Usage: Actions → Version Bump & Release → Run workflow
 #   version: "0.1.0" (semver, no v prefix)
+#
+# Source of truth = package.json. `scripts/sync-version.mjs` propagates the
+# value to every other file that hard-codes it (Cargo.toml, tauri.conf.json,
+# SettingsApp.tsx, suggestions.ts, i18n/{en,fr}/common.json).
 on:
   workflow_dispatch:
     inputs:
@@ -43,34 +47,45 @@ jobs:
             exit 1
           fi
 
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install Rust (for Cargo.lock update)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
       - name: Create release branch
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git checkout -b "release/${{ env.TAG }}"
 
-      - name: Bump versions in config files
+      - name: Bump package.json
         run: |
-          VERSION="${{ env.VERSION }}"
+          node -e "
+            const fs = require('fs');
+            const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+            pkg.version = '${{ env.VERSION }}';
+            fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
+          "
 
-          # Core config (semver only — 3 segments)
-          sed -i 's/"version": "[^"]*"/"version": "'"$VERSION"'"/' package.json
-          sed -i 's/"version": "[^"]*"/"version": "'"$VERSION"'"/' src-tauri/tauri.conf.json
-          sed -i 's/^version = "[^"]*"/version = "'"$VERSION"'"/' src-tauri/Cargo.toml
+      - name: Refresh bun.lock
+        run: bun install --frozen-lockfile=false
 
-          # Display version in app
-          sed -i "s/const appVersion = '[^']*'/const appVersion = '$VERSION'/" src/features/settings/SettingsApp.tsx
-          sed -i "s/subtitle: 'v[^']*'/subtitle: 'v$VERSION'/" src/shared/constants/suggestions.ts
+      - name: Propagate version to all manifests
+        run: bun run sync-version
 
-          # i18n subtitles
-          sed -i 's/"subtitle": "v[^"]*"/"subtitle": "v'"$VERSION"'"/' src/i18n/locales/en/common.json
-          sed -i 's/"subtitle": "v[^"]*"/"subtitle": "v'"$VERSION"'"/' src/i18n/locales/fr/common.json
-
-          echo "Bumped all version references to $VERSION"
+      - name: Generate changelog entry from commits
+        run: bun run generate-changelog --version "${{ env.VERSION }}"
 
       - name: Update Cargo.lock
-        run: |
-          cd src-tauri && cargo check 2>/dev/null || true
+        run: cd src-tauri && cargo check --quiet 2>/dev/null || true
 
       - name: Commit and push
         run: |
@@ -85,18 +100,18 @@ jobs:
           gh pr create \
             --base main \
             --head "release/${{ env.TAG }}" \
-            --title "Release ${{ env.TAG }}" \
+            --label "release" \
+            --title "chore(release): ${{ env.TAG }}" \
             --body "$(cat <<'EOF'
           ## Release ${{ env.TAG }}
 
-          Automated version bump. After merge, push the tag to trigger the release build:
+          Automated version bump driven by `scripts/sync-version.mjs`.
 
-          ```bash
-          git pull origin main
-          git tag ${{ env.TAG }}
-          git push origin ${{ env.TAG }}
-          ```
+          ### Reviewer checklist
+          - [ ] Review auto-generated `public/changelog.json` entry (tweak wording if needed).
+          - [ ] No unintended diffs in Cargo.lock / bun.lock.
 
-          Or use the **Create Tag** workflow dispatch.
+          After merge, the **Auto Tag Release** workflow pushes `${{ env.TAG }}`
+          which triggers the release build. No manual tagging required.
           EOF
           )"

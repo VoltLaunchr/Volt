@@ -148,16 +148,29 @@ export async function copyToClipboard(text: string): Promise<boolean> {
 }
 
 /**
- * Open URL in default browser
+ * Open URL in default browser.
+ * Only http:, https:, and mailto: schemes are allowed.
  */
 export async function openUrl(url: string): Promise<void> {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    logger.error('Failed to open URL — invalid URL:', url);
+    return;
+  }
+
+  const allowedProtocols = ['http:', 'https:', 'mailto:'];
+  if (!allowedProtocols.includes(parsed.protocol)) {
+    logger.error(`Blocked openUrl with disallowed protocol: ${parsed.protocol}`);
+    return;
+  }
+
   try {
     // Use Tauri plugin-opener to open URL in default browser
     const { openUrl: tauriOpenUrl } = await import('@tauri-apps/plugin-opener');
     await tauriOpenUrl(url);
   } catch (error) {
     logger.error('Failed to open URL via Tauri:', error);
-    // Fallback to window.open
-    window.open(url, '_blank');
   }
 }

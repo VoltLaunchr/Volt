@@ -92,6 +92,34 @@ pub async fn save_quicklink(
         ql.id = Uuid::new_v4().to_string();
     }
 
+    // --- Validate target based on quicklink type ---
+    match ql.link_type.as_str() {
+        "command" => {
+            validate_command_target(&ql.target)?;
+        }
+        "url" => {
+            // Validate URL scheme on save, not just on open
+            let parsed = url::Url::parse(&ql.target).map_err(|e| {
+                VoltError::InvalidConfig(format!("Invalid URL '{}': {}", ql.target, e))
+            })?;
+            if !ALLOWED_URL_SCHEMES.contains(&parsed.scheme()) {
+                return Err(VoltError::InvalidConfig(format!(
+                    "URL scheme '{}' not allowed (only {} are permitted)",
+                    parsed.scheme(),
+                    ALLOWED_URL_SCHEMES.join(", ")
+                )));
+            }
+        }
+        "folder"
+            // Folder validation is lightweight on save (just check non-empty)
+            if ql.target.trim().is_empty() => {
+                return Err(VoltError::InvalidConfig(
+                    "Folder path cannot be empty".into(),
+                ));
+            }
+        _ => {}
+    }
+
     {
         let mut quicklinks = state
             .quicklinks
@@ -102,6 +130,55 @@ pub async fn save_quicklink(
 
     state.save().map_err(VoltError::Unknown)?;
     Ok(ql)
+}
+
+/// Validate a command-type quicklink target.
+///
+/// The program (first whitespace-separated token) must be an absolute path to
+/// an existing file. Shell metacharacters are also rejected (same list used at
+/// open time).
+fn validate_command_target(target: &str) -> VoltResult<()> {
+    if target.trim().is_empty() {
+        return Err(VoltError::InvalidConfig(
+            "Command target cannot be empty".into(),
+        ));
+    }
+
+    // Reject shell metacharacters (defense in depth - also checked at open time)
+    if target.chars().any(|c| SHELL_METACHARS.contains(&c)) {
+        return Err(VoltError::InvalidConfig(
+            "Command contains forbidden shell metacharacters (|, &, ;, >, <, `, $, newline, parentheses)".into(),
+        ));
+    }
+
+    let program = target.split_whitespace().next().unwrap_or("");
+
+    // The program must be an absolute path
+    let program_path = std::path::Path::new(program);
+    if !program_path.is_absolute() {
+        return Err(VoltError::InvalidConfig(format!(
+            "Command program must be an absolute path, got: {}",
+            program
+        )));
+    }
+
+    // The program must exist on disk
+    if !program_path.exists() {
+        return Err(VoltError::InvalidConfig(format!(
+            "Command program does not exist: {}",
+            program
+        )));
+    }
+
+    // The program must be a file, not a directory
+    if !program_path.is_file() {
+        return Err(VoltError::InvalidConfig(format!(
+            "Command program is not a file: {}",
+            program
+        )));
+    }
+
+    Ok(())
 }
 
 /// Delete a quicklink by ID
@@ -158,19 +235,15 @@ pub async fn open_quicklink(_app: tauri::AppHandle, quicklink: Quicklink) -> Vol
                 .map_err(|e| VoltError::Launch(format!("Failed to open folder: {}", e)))?;
         }
         "command" => {
-            // Execute command *without* passing through a shell (no `cmd /C`, no `sh -c`).
-            // This eliminates shell metacharacter interpretation. As defense in depth we
-            // also reject tokens containing shell-control characters.
-            if quicklink.target.chars().any(|c| SHELL_METACHARS.contains(&c)) {
-                return Err(VoltError::Launch(
-                    "Command contains forbidden shell metacharacters (|, &, ;, >, <, `, $, newline, parentheses)".into(),
-                ));
-            }
+            // Re-validate at execution time (the quicklink file could have been
+            // edited manually, or saved before validation was added).
+            validate_command_target(&quicklink.target)
+                .map_err(|e| VoltError::Launch(format!("Command validation failed: {}", e)))?;
 
             let mut tokens = quicklink.target.split_whitespace();
-            let program = tokens.next().ok_or_else(|| {
-                VoltError::Launch("Command quicklink target is empty".into())
-            })?;
+            let program = tokens
+                .next()
+                .ok_or_else(|| VoltError::Launch("Command quicklink target is empty".into()))?;
             let args: Vec<&str> = tokens.collect();
 
             std::process::Command::new(program)

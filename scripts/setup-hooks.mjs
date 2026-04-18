@@ -30,10 +30,13 @@ execFileSync('git', ['config', 'core.hooksPath', HOOKS_DIR], {
 });
 
 // Make hooks executable (mostly a no-op on Windows, required on Unix)
-try {
-  chmodSync(resolve(ROOT, HOOKS_DIR, 'pre-commit'), 0o755);
-} catch {}
+for (const hook of ['pre-commit', 'commit-msg']) {
+  try {
+    chmodSync(resolve(ROOT, HOOKS_DIR, hook), 0o755);
+  } catch {}
+}
 
 console.log(`\n✓ git hooks activated (core.hooksPath = ${HOOKS_DIR})`);
-console.log('  Pre-commit will run: tsc --noEmit + cargo fmt --check');
+console.log('  pre-commit  → tsc --noEmit + cargo fmt --check');
+console.log('  commit-msg  → commitlint (Conventional Commits)');
 console.log('  To disable: git config --unset core.hooksPath');

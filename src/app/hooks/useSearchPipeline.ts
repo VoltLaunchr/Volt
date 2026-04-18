@@ -51,7 +51,7 @@ type SearchBatch =
 
 // Plugin keywords map - when query starts with these, boost that plugin significantly
 const PLUGIN_KEYWORDS: Record<string, string[]> = {
-  calculator: ['calc', 'calculatrice', 'calculer', 'calcul', '=', 'math'],
+  calculator: ['calc', 'calculatrice', 'calculer', 'calcul', '=', 'math', 'time'],
   timer: ['timer', 'minuteur', 'chrono', 'countdown', 'pomodoro'],
   websearch: ['?', 'web', 'search', 'google', 'bing', 'ddg', 'chercher'],
   systemcommands: ['reload', 'settings', 'quit', 'exit', 'preferences', 'config', 'paramètres'],
@@ -59,6 +59,7 @@ const PLUGIN_KEYWORDS: Record<string, string[]> = {
   system_monitor: ['system', 'cpu', 'ram', 'memory', 'disk', 'système', 'monitor'],
   games: ['game', 'jeu', 'steam', 'epic', 'gog'],
   clipboard: ['clipboard', 'presse-papier', 'copier', 'coller'],
+  shellcommand: ['>'],
 };
 
 // Check if query matches any plugin keywords
@@ -156,6 +157,11 @@ const convertPlugins = (
 ): SearchResult[] =>
   pluginResults.map((result) => {
     let searchResultType: SearchResultType;
+    // For most plugins we pass the full PluginResult through as `data` so
+    // downstream consumers can inspect metadata (pluginId, badge, etc.).
+    // System monitor is the exception: the renderer expects the inner
+    // `{ type, value, color }` payload directly, so we unwrap here.
+    let data: SearchResult['data'] = result;
     switch (result.type) {
       case 'calculator':
         searchResultType = SearchResultType.Calculator;
@@ -172,13 +178,21 @@ const convertPlugins = (
       case 'timer':
         searchResultType = SearchResultType.Timer;
         break;
+      case 'shellcommand':
+        searchResultType = SearchResultType.ShellCommand;
+        break;
+      case 'systemmonitor':
+        searchResultType = SearchResultType.SystemMonitor;
+        data = (result.data ?? result) as SearchResult['data'];
+        break;
       default:
         searchResultType = SearchResultType.Plugin;
     }
 
     const pluginId = result.pluginId || result.type;
     const keywordBoost = getPluginKeywordBoost(rawQuery, pluginId);
-    const finalScore = keywordBoost > 0 ? keywordBoost + result.score : result.score;
+    const baseScore = SEARCH_SCORING.PLUGIN_BASE + result.score;
+    const finalScore = keywordBoost > 0 ? keywordBoost + baseScore : baseScore;
 
     return {
       id: result.id,
@@ -188,7 +202,7 @@ const convertPlugins = (
       icon: result.icon,
       badge: result.badge,
       score: finalScore,
-      data: result,
+      data,
     };
   });
 
@@ -225,11 +239,16 @@ export function useSearchPipeline({
       const appsReady = !isLoading && allApps.length > 0;
 
       if (!query.trim()) {
-        // Predictive results: show top frecency suggestions
+        // Predictive results: show top frecency suggestions.
+        // Guard with latestSearchId so a late frecency response doesn't
+        // overwrite a newer search that started while the IPC was in flight.
+        const searchId = ++latestSearchId.current;
         try {
           const suggestions = await invoke<LaunchRecord[]>('get_frecency_suggestions', {
             limit: maxResults,
           }).catch(() => [] as LaunchRecord[]);
+
+          if (searchId !== latestSearchId.current) return;
 
           if (suggestions.length > 0) {
             const predictiveResults: SearchResult[] = suggestions.map((record, i) => ({
@@ -250,7 +269,7 @@ export function useSearchPipeline({
             setResults([]);
           }
         } catch {
-          setResults([]);
+          if (searchId === latestSearchId.current) setResults([]);
         }
         setShowSnowEffect(false);
         return;

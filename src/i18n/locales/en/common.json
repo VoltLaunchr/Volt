@@ -34,17 +34,68 @@
     "commands": "Commands"
   },
   "suggestions": {
-    "whats-new": { "title": "See what's new", "subtitle": "v0.0.5.2" },
-    "settings": { "title": "Settings", "subtitle": "Application Settings" },
-    "clipboard-history": { "title": "Clipboard History", "subtitle": "View Clipboard" },
-    "search-files": { "title": "Search Files", "subtitle": "File Search" },
-    "search-emoji": { "title": "Search Emoji & Symbols", "subtitle": "Emoji Picker" },
-    "about": { "title": "About", "subtitle": "Volt Information" },
-    "account": { "title": "Account", "subtitle": "User Settings" },
-    "system-monitor": { "title": "System Monitor", "subtitle": "View Performance" },
-    "calculator": { "title": "Calculator", "subtitle": "Quick Math" },
-    "timer": { "title": "Timer", "subtitle": "Set Timer" },
-    "web-search": { "title": "Web Search", "subtitle": "Search Online" },
-    "steam-games": { "title": "Games", "subtitle": "Launch Games" }
+    "whats-new": {
+      "title": "See what's new",
+      "subtitle": "v0.0.8"
+    },
+    "settings": {
+      "title": "Settings",
+      "subtitle": "Application Settings"
+    },
+    "clipboard-history": {
+      "title": "Clipboard History",
+      "subtitle": "View Clipboard"
+    },
+    "search-files": {
+      "title": "Search Files",
+      "subtitle": "File Search"
+    },
+    "search-emoji": {
+      "title": "Search Emoji & Symbols",
+      "subtitle": "Emoji Picker"
+    },
+    "about": {
+      "title": "About",
+      "subtitle": "Volt Information"
+    },
+    "account": {
+      "title": "Account",
+      "subtitle": "User Settings"
+    },
+    "system-monitor": {
+      "title": "System Monitor",
+      "subtitle": "View Performance"
+    },
+    "calculator": {
+      "title": "Calculator",
+      "subtitle": "Quick Math"
+    },
+    "timer": {
+      "title": "Timer",
+      "subtitle": "Set Timer"
+    },
+    "web-search": {
+      "title": "Web Search",
+      "subtitle": "Search Online"
+    },
+    "steam-games": {
+      "title": "Games",
+      "subtitle": "Launch Games"
+    }
+  },
+  "shell": {
+    "mode": "Shell Command Mode",
+    "pressEnterToRun": "Press Enter to run",
+    "running": "Running...",
+    "ctrlCCancel": "Ctrl+C to cancel",
+    "noOutput": "No output",
+    "commandFailed": "Command failed",
+    "timedOut": "Timed out",
+    "rerunLast": "Re-run last command",
+    "noHistory": "No command history yet",
+    "copyOutput": "Copy output",
+    "exitCode": "exit {{code}}",
+    "ranTimes": "Ran {{count}}x",
+    "pinned": "Pinned"
   }
 }

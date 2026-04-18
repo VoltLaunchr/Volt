@@ -11,12 +11,12 @@ export default defineConfig({
     css: false,
     coverage: {
       provider: 'v8',
-      include: [
-        'src/features/plugins/core/**',
-        'src/features/plugins/builtin/calculator/**',
-        'src/features/plugins/builtin/websearch/**',
-        'src/features/plugins/builtin/systemcommands/**',
-        'src/shared/components/ui/HotkeyCapture.tsx',
+      include: ['src/**/*.{ts,tsx}'],
+      exclude: [
+        'src/test/**',
+        'src/**/*.d.ts',
+        'src/main.tsx',
+        'src/vite-env.d.ts',
       ],
       thresholds: {
         'src/features/plugins/core/registry.ts': {

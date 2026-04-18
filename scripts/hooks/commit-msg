@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# Volt commit-msg hook — validates commit messages against Conventional Commits.
+# Enable with: bun run setup-hooks
+set -e
+
+# Skip commitlint for merge commits and reverts (Git generates these itself).
+COMMIT_MSG_FILE="$1"
+FIRST_LINE=$(head -n1 "$COMMIT_MSG_FILE")
+case "$FIRST_LINE" in
+  Merge\ *|Revert\ *) exit 0 ;;
+esac
+
+# Prefer bunx, fall back to npx so the hook still runs for contributors using node/npm.
+if command -v bunx >/dev/null 2>&1; then
+  bunx --no-install commitlint --edit "$COMMIT_MSG_FILE"
+elif command -v npx >/dev/null 2>&1; then
+  npx --no-install commitlint --edit "$COMMIT_MSG_FILE"
+else
+  echo "! commitlint not found (no bunx/npx). Run \`bun install\` then retry."
+  exit 1
+fi

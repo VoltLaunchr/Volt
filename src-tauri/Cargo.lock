@@ -6017,6 +6017,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "tauri-plugin-single-instance"
+version = "2.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a33a5b7d78f0dec4406b003ea87c40bf928d801b6fd9323a556172c91d8712c1"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-plugin-deep-link",
+ "thiserror 2.0.18",
+ "tracing",
+ "windows-sys 0.60.2",
+ "zbus 5.14.0",
+]
+
+[[package]]
 name = "tauri-plugin-updater"
 version = "2.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6802,6 +6818,8 @@ dependencies = [
  "dirs 5.0.1",
  "dotenvy",
  "flate2 1.1.9",
+ "hex",
+ "hmac",
  "icns",
  "image",
  "keyring",
@@ -6812,12 +6830,14 @@ dependencies = [
  "once_cell",
  "plist",
  "png 0.17.16",
+ "rand 0.9.4",
  "regex",
  "reqwest 0.12.28",
  "rusqlite",
  "semver",
  "serde",
  "serde_json",
+ "sha2",
  "sysinfo",
  "tar",
  "tauri",
@@ -6831,6 +6851,7 @@ dependencies = [
  "tauri-plugin-positioner",
  "tauri-plugin-process",
  "tauri-plugin-shell",
+ "tauri-plugin-single-instance",
  "tauri-plugin-updater",
  "tempfile",
  "tokio",

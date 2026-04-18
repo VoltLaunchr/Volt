@@ -15,9 +15,12 @@ export function searchEmojis(emojis: SearchableEmoji[], query: string): Searchab
     return [];
   }
 
+  // Compile regex once per search call (not once per emoji)
+  const wordBoundaryRegex = new RegExp(`\\b${escapeRegex(normalizedQuery)}`, 'i');
+
   const results = emojis
     .map((emoji) => {
-      const score = calculateScore(emoji, normalizedQuery);
+      const score = calculateScore(emoji, normalizedQuery, wordBoundaryRegex);
       return { emoji, score };
     })
     .filter((result) => result.score > 0)
@@ -31,7 +34,11 @@ export function searchEmojis(emojis: SearchableEmoji[], query: string): Searchab
 /**
  * Calculate match score for an emoji
  */
-function calculateScore(emoji: SearchableEmoji, query: string): number {
+function calculateScore(
+  emoji: SearchableEmoji,
+  query: string,
+  wordBoundaryRegex: RegExp
+): number {
   const label = emoji.label.toLowerCase();
   const tags = emoji.tags.map((tag) => tag.toLowerCase());
 
@@ -66,7 +73,6 @@ function calculateScore(emoji: SearchableEmoji, query: string): number {
   }
 
   // Word boundary match (e.g., "cat" matches "cat face" but not "scatter")
-  const wordBoundaryRegex = new RegExp(`\\b${escapeRegex(query)}`, 'i');
   if (wordBoundaryRegex.test(label)) {
     return 80;
   }

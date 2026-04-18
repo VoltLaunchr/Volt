@@ -1,6 +1,8 @@
+pub mod extension_state_sig;
 pub mod game_icon;
 pub mod hash;
 pub mod icon;
+pub mod launch_validation;
 pub mod matching;
 pub mod path;
 #[cfg(target_os = "windows")]

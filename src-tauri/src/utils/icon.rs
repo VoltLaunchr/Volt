@@ -21,8 +21,14 @@ fn extract_icon_windows(path: &str) -> Option<String> {
     use winapi::um::shellapi::{SHFILEINFOW, SHGFI_ICON, SHGFI_LARGEICON, SHGetFileInfoW};
     use winapi::um::winuser::DestroyIcon;
 
+    // SHGetFileInfoW rejects paths that mix '/' and '\\' even when they
+    // reference the same file on disk (Path::exists returns true either way).
+    // Epic manifests store LaunchExecutable with forward slashes — joining
+    // them onto an InstallLocation produces exactly such a mixed path.
+    let normalized = path.replace('/', "\\");
+
     // Convert path to wide string (UTF-16)
-    let wide_path: Vec<u16> = OsStr::new(path)
+    let wide_path: Vec<u16> = OsStr::new(&normalized)
         .encode_wide()
         .chain(std::iter::once(0))
         .collect();

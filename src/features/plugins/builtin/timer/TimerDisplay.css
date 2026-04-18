@@ -1,62 +1,164 @@
+/**
+ * Timer display — Apple-inspired inline bar
+ * Uses per-item --timer-color for mode theming (focus/short/long/custom)
+ */
+
 .timer-display {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
   padding: 8px 12px;
-  border-top: 1px solid var(--border-color, rgba(255, 255, 255, 0.1));
+  border-top: 0.5px solid var(--color-border);
 }
 
 .timer-item {
+  --timer-color: var(--color-accent);
   position: relative;
-  background: var(--surface-color, rgba(255, 255, 255, 0.05));
-  border-radius: 8px;
-  overflow: hidden;
-  min-height: 44px;
-}
-
-.timer-progress {
-  position: absolute;
-  top: 0;
-  left: 0;
-  height: 100%;
-  background: linear-gradient(
-    90deg,
-    var(--accent-color, #ff6b6b) 0%,
-    var(--accent-secondary, #ffa502) 100%
-  );
-  opacity: 0.2;
-  transition: width 1s linear;
-}
-
-.timer-content {
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 10px 12px;
-  z-index: 1;
-}
-
-.timer-info {
   display: flex;
   align-items: center;
   gap: 12px;
+  padding: 8px 12px 8px 10px;
+  border-radius: 12px;
+  background: var(--color-surface);
+  border: 0.5px solid var(--color-border);
+  transition:
+    border-color var(--transition-fast),
+    background var(--transition-fast);
+}
+
+.timer-item:hover {
+  border-color: color-mix(in srgb, var(--timer-color) 35%, var(--color-border));
+}
+
+/* Clickable wrapper for ring+info+time — opens the full Focus Timer view */
+.timer-open-view {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+  border-radius: 10px;
+  transition: background var(--transition-fast);
+}
+
+.timer-open-view:disabled {
+  cursor: default;
+}
+
+.timer-open-view:not(:disabled):hover {
+  background: color-mix(in srgb, var(--timer-color) 6%, transparent);
+}
+
+.timer-open-view:focus-visible {
+  outline: 2px solid var(--timer-color);
+  outline-offset: 2px;
+}
+
+/* ── Circular progress ring ───────────────────────────────────────────── */
+
+.timer-ring-wrap {
+  position: relative;
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+}
+
+.timer-ring {
+  position: absolute;
+  inset: 0;
+  transform: rotate(-90deg);
+}
+
+.timer-ring-track {
+  fill: none;
+  stroke-width: 3;
+  stroke: var(--color-border);
+}
+
+.timer-ring-progress {
+  fill: none;
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke: var(--timer-color);
+  transition:
+    stroke-dashoffset 1s linear,
+    stroke var(--transition-normal);
+}
+
+.timer-ring-emoji {
+  position: relative;
+  font-size: 14px;
+  line-height: 1;
+  filter: saturate(1.1);
+}
+
+/* ── Info column ─────────────────────────────────────────────────────── */
+
+.timer-info {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  flex: 1;
 }
 
 .timer-label {
   font-size: 13px;
   font-weight: 500;
-  color: var(--text-primary, #fff);
+  color: var(--color-text-primary);
+  letter-spacing: -0.1px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.2;
 }
 
-.timer-time {
-  font-size: 18px;
-  font-weight: 700;
-  font-family: 'SF Mono', 'Consolas', monospace;
-  color: var(--accent-color, #ff6b6b);
-  min-width: 70px;
-  text-align: right;
+.timer-sublabel {
+  font-size: 10.5px;
+  font-weight: 500;
+  color: var(--color-text-tertiary);
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  line-height: 1.2;
 }
+
+/* ── Time ─────────────────────────────────────────────────────────────── */
+
+.timer-time {
+  font-family: var(--font-family);
+  font-size: 18px;
+  font-weight: 300;
+  letter-spacing: -0.8px;
+  color: var(--color-text-primary);
+  font-variant-numeric: tabular-nums;
+  min-width: 62px;
+  text-align: right;
+  line-height: 1;
+}
+
+.timer-item.is-paused .timer-time {
+  color: var(--color-text-secondary);
+}
+
+.timer-item.is-low .timer-time {
+  color: var(--timer-color);
+  animation: timer-pulse 1.2s ease-in-out infinite;
+}
+
+.timer-item.is-low .timer-ring-progress {
+  animation: timer-pulse 1.2s ease-in-out infinite;
+}
+
+/* ── Controls (Apple-style) ─────────────────────────────────────────── */
 
 .timer-controls {
   display: flex;
@@ -65,52 +167,76 @@
 }
 
 .timer-btn {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
-  border: none;
-  border-radius: 6px;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border-radius: 50%;
+  border: 0.5px solid var(--color-border);
+  background: var(--color-surface-hover);
+  color: var(--color-text-secondary);
   cursor: pointer;
-  font-size: 12px;
-  transition: all 0.15s ease;
-  background: var(--surface-hover, rgba(255, 255, 255, 0.1));
-  color: var(--text-primary, #fff);
+  transition:
+    transform var(--transition-fast),
+    background var(--transition-fast),
+    color var(--transition-fast),
+    border-color var(--transition-fast);
 }
 
 .timer-btn:hover {
-  transform: scale(1.05);
+  color: var(--color-text-primary);
+  border-color: color-mix(in srgb, var(--timer-color) 50%, var(--color-border));
+  background: color-mix(in srgb, var(--timer-color) 10%, var(--color-surface-hover));
 }
 
-.timer-btn-pause:hover,
-.timer-btn-resume:hover {
-  background: var(--accent-color, #ff6b6b);
+.timer-btn:active {
+  transform: scale(0.92);
+}
+
+.timer-btn:focus-visible {
+  outline: 2px solid var(--timer-color);
+  outline-offset: 2px;
+}
+
+.timer-btn-primary {
+  background: var(--timer-color);
   color: #fff;
+  border-color: transparent;
+}
+
+.timer-btn-primary:hover {
+  background: var(--timer-color);
+  color: #fff;
+  border-color: transparent;
+  opacity: 0.88;
 }
 
 .timer-btn-cancel:hover {
-  background: #e74c3c;
   color: #fff;
+  background: var(--color-error);
+  border-color: transparent;
 }
 
-/* Pomodoro specific styling */
-.timer-item[data-timer-type='pomodoro'] .timer-progress {
-  background: linear-gradient(90deg, #e74c3c 0%, #c0392b 100%);
-}
+/* ── Animations ──────────────────────────────────────────────────────── */
 
-/* Animation for low time */
-@keyframes pulse {
+@keyframes timer-pulse {
   0%,
   100% {
     opacity: 1;
   }
   50% {
-    opacity: 0.5;
+    opacity: 0.55;
   }
 }
 
-.timer-time.low-time {
-  animation: pulse 1s ease-in-out infinite;
-  color: #e74c3c;
+@media (prefers-reduced-motion: reduce) {
+  .timer-ring-progress,
+  .timer-item.is-low .timer-time,
+  .timer-item.is-low .timer-ring-progress,
+  .timer-btn {
+    transition: none;
+    animation: none;
+  }
 }

@@ -26,6 +26,12 @@ pub struct GeneralSettings {
     pub search_sensitivity: String,
     #[serde(default = "default_show_on_screen")]
     pub show_on_screen: String,
+    #[serde(default = "default_true")]
+    pub auto_check_for_updates: bool,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 fn default_language() -> String {
@@ -51,6 +57,7 @@ impl Default for GeneralSettings {
             feature_preview: false,
             search_sensitivity: "medium".to_string(),
             show_on_screen: "cursor".to_string(),
+            auto_check_for_updates: true,
         }
     }
 }
@@ -167,6 +174,46 @@ pub struct ShortcutsSettings {
     pub app_shortcuts: Vec<AppShortcut>,
 }
 
+/// Shell command settings
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ShellSettings {
+    /// Whether shell commands (> prefix) are enabled
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    /// Shell override (e.g. "powershell", "pwsh", "bash", "zsh"). None = system default.
+    #[serde(default)]
+    pub default_shell: Option<String>,
+    /// Default working directory. None = user home directory.
+    #[serde(default)]
+    pub working_dir: Option<String>,
+    /// Command timeout in milliseconds
+    #[serde(default = "default_shell_timeout")]
+    pub timeout_ms: u64,
+    /// Maximum history entries to keep
+    #[serde(default = "default_history_size")]
+    pub history_size: usize,
+}
+
+fn default_shell_timeout() -> u64 {
+    30_000
+}
+fn default_history_size() -> usize {
+    500
+}
+
+impl Default for ShellSettings {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            default_shell: None,
+            working_dir: None,
+            timeout_ms: default_shell_timeout(),
+            history_size: default_history_size(),
+        }
+    }
+}
+
 /// Complete application settings
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Settings {
@@ -182,6 +229,8 @@ pub struct Settings {
     pub plugins: PluginSettings,
     #[serde(default)]
     pub shortcuts: ShortcutsSettings,
+    #[serde(default)]
+    pub shell: ShellSettings,
 }
 
 /// Get the settings file path
@@ -296,6 +345,14 @@ pub async fn update_plugin_settings(
     update_settings_section(app_handle, |s| s.plugins = plugins).await
 }
 
+#[tauri::command]
+pub async fn update_shell_settings(
+    app_handle: AppHandle,
+    shell: ShellSettings,
+) -> VoltResult<Settings> {
+    update_settings_section(app_handle, |s| s.shell = shell).await
+}
+
 /// Get the current theme
 #[tauri::command]
 pub async fn get_theme(app_handle: AppHandle) -> VoltResult<String> {
@@ -368,9 +425,101 @@ pub struct SettingsExport {
     pub settings: Settings,
 }
 
+/// Validate and sanitize a settings import/export path.
+///
+/// - Rejects paths containing `..` traversal segments
+/// - Canonicalizes the parent directory (must exist)
+/// - Blocks writes into system directories
+/// - Optionally enforces a required file extension
+fn validate_settings_path(path: &str, required_extension: Option<&str>) -> VoltResult<PathBuf> {
+    let path_buf = PathBuf::from(path);
+
+    // Block path traversal
+    for component in path_buf.components() {
+        if let std::path::Component::ParentDir = component {
+            return Err(VoltError::PermissionDenied(
+                "Path traversal ('..') is not allowed".to_string(),
+            ));
+        }
+    }
+
+    // Enforce file extension when required (e.g. ".json" for export)
+    if let Some(ext) = required_extension {
+        match path_buf.extension().and_then(|e| e.to_str()) {
+            Some(e) if e.eq_ignore_ascii_case(ext) => {}
+            _ => {
+                return Err(VoltError::PermissionDenied(format!(
+                    "File must have a .{} extension",
+                    ext
+                )));
+            }
+        }
+    }
+
+    // Canonicalize the parent directory so symlinks / junctions are resolved
+    let parent = path_buf
+        .parent()
+        .ok_or_else(|| VoltError::FileSystem("Invalid path: no parent directory".to_string()))?;
+
+    let canonical_parent = parent.canonicalize().map_err(|e| {
+        VoltError::FileSystem(format!(
+            "Cannot resolve parent directory '{}': {}",
+            parent.display(),
+            e
+        ))
+    })?;
+
+    // Block system directories
+    let canonical_str = canonical_parent.to_str().unwrap_or_default().to_lowercase();
+
+    #[cfg(target_os = "windows")]
+    {
+        let blocked = [
+            "c:\\windows",
+            "c:\\program files",
+            "c:\\program files (x86)",
+            "c:\\programdata",
+        ];
+        // Also handle the \\?\ extended-path prefix that canonicalize adds on Windows
+        let normalized = canonical_str
+            .strip_prefix("\\\\?\\")
+            .unwrap_or(&canonical_str);
+        for prefix in blocked {
+            if normalized.starts_with(prefix) {
+                return Err(VoltError::PermissionDenied(format!(
+                    "Writing to system directory '{}' is not allowed",
+                    parent.display()
+                )));
+            }
+        }
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let blocked = ["/etc", "/usr", "/bin", "/sbin", "/var"];
+        for prefix in blocked {
+            if canonical_str.starts_with(prefix) {
+                return Err(VoltError::PermissionDenied(format!(
+                    "Writing to system directory '{}' is not allowed",
+                    parent.display()
+                )));
+            }
+        }
+    }
+
+    // Reconstruct the full path with the canonical parent + original file name
+    let file_name = path_buf
+        .file_name()
+        .ok_or_else(|| VoltError::FileSystem("Invalid path: no file name".to_string()))?;
+
+    Ok(canonical_parent.join(file_name))
+}
+
 /// Export settings to a JSON file at the given path
 #[tauri::command]
 pub async fn export_settings(app_handle: AppHandle, path: String) -> VoltResult<String> {
+    let validated_path = validate_settings_path(&path, Some("json"))?;
+
     let settings = load_settings(app_handle).await?;
 
     let export_data = SettingsExport {
@@ -383,16 +532,18 @@ pub async fn export_settings(app_handle: AppHandle, path: String) -> VoltResult<
     let content = serde_json::to_string_pretty(&export_data)
         .map_err(|e| VoltError::Serialization(format!("Failed to serialize settings: {}", e)))?;
 
-    fs::write(&path, &content)
+    fs::write(&validated_path, &content)
         .map_err(|e| VoltError::FileSystem(format!("Failed to write export file: {}", e)))?;
 
-    Ok(path)
+    Ok(validated_path.to_string_lossy().to_string())
 }
 
 /// Import settings from a JSON file at the given path
 #[tauri::command]
 pub async fn import_settings(app_handle: AppHandle, path: String) -> VoltResult<Settings> {
-    let content = fs::read_to_string(&path)
+    let validated_path = validate_settings_path(&path, None)?;
+
+    let content = fs::read_to_string(&validated_path)
         .map_err(|e| VoltError::FileSystem(format!("Failed to read import file: {}", e)))?;
 
     let export_data: serde_json::Value = serde_json::from_str(&content)
