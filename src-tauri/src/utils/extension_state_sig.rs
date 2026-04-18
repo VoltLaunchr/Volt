@@ -171,7 +171,7 @@ fn load_or_create_key() -> Option<[u8; HMAC_KEY_LEN]> {
 /// spam warnings.
 fn generate_and_store_key() -> Option<[u8; HMAC_KEY_LEN]> {
     let mut key = [0u8; HMAC_KEY_LEN];
-    rand::thread_rng().fill_bytes(&mut key);
+    rand::rng().fill_bytes(&mut key);
 
     // Persist. hex-encode so the keyring entry is plain ASCII (some backends
     // dislike NUL bytes or non-UTF-8 in the password field).

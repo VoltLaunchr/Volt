@@ -6830,7 +6830,7 @@ dependencies = [
  "once_cell",
  "plist",
  "png 0.17.16",
- "rand 0.8.5",
+ "rand 0.9.4",
  "regex",
  "reqwest 0.12.28",
  "rusqlite",
