@@ -82,7 +82,7 @@ plist = "1.7"
 tauri-plugin-positioner = "2"
 
 [features]
-default = []
+default = ["devtools"]
 devtools = ["tauri/devtools"]
 
 [dev-dependencies]
