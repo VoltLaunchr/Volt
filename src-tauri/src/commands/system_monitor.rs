@@ -226,7 +226,7 @@ pub fn open_task_manager() -> VoltResult<()> {
             .args(["-a", "Activity Monitor"])
             .spawn()
             .map_err(|e| VoltError::Launch(format!("Failed to launch Activity Monitor: {}", e)))?;
-        return Ok(());
+        Ok(())
     }
 
     #[cfg(target_os = "linux")]
