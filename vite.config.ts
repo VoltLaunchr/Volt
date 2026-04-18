@@ -24,8 +24,15 @@ export default defineConfig(async () => ({
         manualChunks: (id) => {
           // Vendor libraries in separate chunks
           if (id.includes('node_modules')) {
-            // React core
-            if (id.includes('react') || id.includes('react-dom')) {
+            // React ecosystem + deps that cause circular chunk imports at init
+            if (
+              id.includes('react') ||
+              id.includes('react-dom') ||
+              id.includes('scheduler') ||
+              id.includes('i18next') ||
+              id.includes('zustand') ||
+              id.includes('use-sync-external-store')
+            ) {
               return 'vendor-react';
             }
             // Tauri APIs
