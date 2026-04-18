@@ -159,6 +159,7 @@ impl GameScanner for RiotScanner {
         // scheme. Riot's supported integration path is passing
         // `--launch-product` and `--launch-patchline` directly to
         // RiotClientServices.exe (see Riot Client FAQ / community docs).
+        #[cfg_attr(not(target_os = "windows"), allow(unused_variables))]
         let product = game_id
             .strip_prefix("riot_")
             .ok_or("Invalid Riot game ID")?;

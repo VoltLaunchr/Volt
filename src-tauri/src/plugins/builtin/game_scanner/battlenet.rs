@@ -11,6 +11,7 @@
 use super::types::{GameInfo, GamePlatform, GameScanner};
 #[allow(unused_imports)]
 use crate::utils::game_icon::find_game_icon;
+#[allow(unused_imports)]
 use std::path::PathBuf;
 #[allow(unused_imports)]
 use tracing::{debug, warn};
@@ -29,6 +30,7 @@ impl BattleNetScanner {
     /// the one maintained by Playnite's BattleNetLibrary.
     ///
     /// Exposed as a pure helper for unit testing.
+    #[allow(dead_code)]
     pub(crate) fn resolve_product_code(
         display_name: &str,
         install_folder: &str,

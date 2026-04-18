@@ -44,6 +44,7 @@ impl XboxScanner {
     ///
     /// Returns `None` if `full_name` doesn't have the expected 5 underscore-
     /// separated segments.
+    #[allow(dead_code)]
     pub(crate) fn package_family_name_from_full_name(full_name: &str) -> Option<String> {
         let parts: Vec<&str> = full_name.split('_').collect();
         if parts.len() != 5 {

@@ -223,6 +223,7 @@ impl GameScanner for GOGScanner {
 
     fn launch_game(&self, game_id: &str) -> Result<(), String> {
         // Extract GOG product ID from game_id (format: "gog_12345")
+        #[cfg_attr(not(target_os = "windows"), allow(unused_variables))]
         let product_id = game_id.strip_prefix("gog_").ok_or("Invalid GOG game ID")?;
 
         // Resolve the installed game so we can pass /path= to GalaxyClient.
