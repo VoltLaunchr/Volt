@@ -24,6 +24,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
+#[cfg(test)]
+use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tracing::{debug, info, warn};
@@ -127,7 +129,7 @@ fn spawn_persist(data_dir: Arc<PathBuf>, snapshot: HashMap<String, ShellHistoryR
 /// tests). Kept private; prefer `spawn_persist` from async code.
 #[cfg(test)]
 fn persist_blocking(
-    data_dir: &PathBuf,
+    data_dir: &Path,
     snapshot: &HashMap<String, ShellHistoryRecord>,
 ) -> Result<(), VoltError> {
     let path = data_dir.join("shell_history.json");
