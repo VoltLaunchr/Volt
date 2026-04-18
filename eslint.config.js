@@ -7,7 +7,7 @@ import reactRefresh from 'eslint-plugin-react-refresh';
 export default [
   // Ignore patterns
   {
-    ignores: ['dist/**', 'src-tauri/target/**', 'node_modules/**', '.eslintrc.cjs'],
+    ignores: ['dist/**', 'src-tauri/target/**', 'node_modules/**', '.eslintrc.cjs', '.claude/**'],
   },
   // Base config for all files
   {
@@ -27,6 +27,9 @@ export default [
         document: 'readonly',
         console: 'readonly',
         navigator: 'readonly',
+        localStorage: 'readonly',
+        sessionStorage: 'readonly',
+        fetch: 'readonly',
         setTimeout: 'readonly',
         clearTimeout: 'readonly',
         setInterval: 'readonly',
@@ -38,16 +41,32 @@ export default [
         HTMLButtonElement: 'readonly',
         HTMLDivElement: 'readonly',
         Node: 'readonly',
+        Event: 'readonly',
         MouseEvent: 'readonly',
         KeyboardEvent: 'readonly',
         CustomEvent: 'readonly',
         MediaQueryListEvent: 'readonly',
         Notification: 'readonly',
         AudioContext: 'readonly',
+        URL: 'readonly',
+        URLSearchParams: 'readonly',
+        Blob: 'readonly',
+        FileReader: 'readonly',
+        AbortController: 'readonly',
+        AbortSignal: 'readonly',
+        Worker: 'readonly',
+        MessageEvent: 'readonly',
+        ErrorEvent: 'readonly',
+        RequestInit: 'readonly',
+        Request: 'readonly',
+        Response: 'readonly',
+        Headers: 'readonly',
         // React
         React: 'readonly',
-        // Node.js (for vite.config.ts)
+        // Node.js (for vite.config.ts and test scripts)
         process: 'readonly',
+        __dirname: 'readonly',
+        __filename: 'readonly',
       },
     },
     plugins: {

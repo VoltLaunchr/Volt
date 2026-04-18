@@ -46,7 +46,7 @@ test.describe('Search Flow', () => {
     await searchInput.fill('2+2');
     const firstResult = page.locator('.result-item').first();
     await expect(firstResult).toBeVisible({ timeout: 5000 });
-    await expect(page.locator('.result-title').first()).toContainText('4');
+    await expect(page.locator('.calculator-card-result .calculator-card-value').first()).toContainText('4');
   });
 
   test('calculator plugin shows result for complex expression', async ({ page }) => {
@@ -56,7 +56,7 @@ test.describe('Search Flow', () => {
     await searchInput.fill('10*5+3');
     const firstResult = page.locator('.result-item').first();
     await expect(firstResult).toBeVisible({ timeout: 5000 });
-    await expect(page.locator('.result-title').first()).toContainText('53');
+    await expect(page.locator('.calculator-card-result .calculator-card-value').first()).toContainText('53');
   });
 
   test('calculator result has Calculator badge', async ({ page }) => {
@@ -146,7 +146,9 @@ test.describe('Search Flow', () => {
   test('result items have correct structure', async ({ page }) => {
     await injectTauriMock(page);
     await page.goto('/');
-    await page.locator('#search-input').fill('2+2');
+    // websearch (? prefix) renders the canonical result layout with .result-title.
+    // calculator now uses a dedicated card component without .result-title.
+    await page.locator('#search-input').fill('?hello');
     const firstResult = page.locator('.result-item').first();
     await expect(firstResult).toBeVisible({ timeout: 5000 });
     await expect(firstResult.locator('.result-icon')).toBeVisible();

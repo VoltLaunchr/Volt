@@ -73,6 +73,7 @@ export function parseAnsi(input: string): AnsiSegment[] {
 
   const segments: AnsiSegment[] = [];
   let state = emptyState();
+  // eslint-disable-next-line no-control-regex
   const regex = /\x1b\[([0-9;]*)([a-zA-Z])/g;
   let lastIndex = 0;
   let match: RegExpExecArray | null;

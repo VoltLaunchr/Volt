@@ -1,4 +1,4 @@
-/* global Worker, MessageEvent, RequestInit, Response, fetch, ErrorEvent, Blob, URL, Headers, TextDecoder, crypto, btoa */
+/* global TextDecoder, crypto, btoa */
 /**
  * Worker Sandbox
  *

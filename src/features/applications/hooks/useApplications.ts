@@ -1,4 +1,3 @@
-/* global AbortController */
 /**
  * Hook for managing applications state
  * Handles loading, caching, and refreshing applications
