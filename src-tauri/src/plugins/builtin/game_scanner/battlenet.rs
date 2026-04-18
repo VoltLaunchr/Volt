@@ -212,7 +212,7 @@ impl GameScanner for BattleNetScanner {
 
     fn scan_games(&self) -> Result<Vec<GameInfo>, String> {
         let mut games = self.scan_from_registry()?;
-        games.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+        games.sort_by_key(|a| a.name.to_lowercase());
         games.dedup_by(|a, b| a.id == b.id);
         Ok(games)
     }

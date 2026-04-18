@@ -190,7 +190,7 @@ impl LaunchHistory {
     /// Get most recently launched apps
     pub fn get_recent(&self, limit: usize) -> Vec<LaunchRecord> {
         let mut records = self.get_all();
-        records.sort_by(|a, b| b.last_launched.cmp(&a.last_launched));
+        records.sort_by_key(|b| std::cmp::Reverse(b.last_launched));
         records.truncate(limit);
         records
     }
@@ -198,7 +198,7 @@ impl LaunchHistory {
     /// Get most frequently launched apps
     pub fn get_frequent(&self, limit: usize) -> Vec<LaunchRecord> {
         let mut records = self.get_all();
-        records.sort_by(|a, b| b.launch_count.cmp(&a.launch_count));
+        records.sort_by_key(|b| std::cmp::Reverse(b.launch_count));
         records.truncate(limit);
         records
     }

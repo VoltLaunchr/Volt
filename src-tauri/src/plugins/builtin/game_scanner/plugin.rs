@@ -126,7 +126,7 @@ impl GameScannerPlugin {
         all_games.retain(Self::is_actual_game);
 
         // Sort by name
-        all_games.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+        all_games.sort_by_key(|a| a.name.to_lowercase());
 
         // Update cache
         if let Ok(mut cache) = self.games_cache.write() {

@@ -110,14 +110,13 @@ pub async fn save_quicklink(
                 )));
             }
         }
-        "folder" => {
+        "folder"
             // Folder validation is lightweight on save (just check non-empty)
-            if ql.target.trim().is_empty() {
+            if ql.target.trim().is_empty() => {
                 return Err(VoltError::InvalidConfig(
                     "Folder path cannot be empty".into(),
                 ));
             }
-        }
         _ => {}
     }
 

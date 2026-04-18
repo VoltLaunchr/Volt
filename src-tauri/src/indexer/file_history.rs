@@ -110,7 +110,7 @@ impl FileHistory {
         let records = self.records.lock().map_err(|e| e.to_string())?;
 
         let mut recent: Vec<FileAccessRecord> = records.values().cloned().collect();
-        recent.sort_by(|a, b| b.last_accessed.cmp(&a.last_accessed));
+        recent.sort_by_key(|b| std::cmp::Reverse(b.last_accessed));
         recent.truncate(limit);
 
         Ok(recent)

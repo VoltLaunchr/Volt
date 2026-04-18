@@ -302,7 +302,7 @@ impl GameScanner for XboxScanner {
         }
 
         // Sort by name
-        games.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+        games.sort_by_key(|a| a.name.to_lowercase());
 
         Ok(games)
     }
