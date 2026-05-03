@@ -178,11 +178,18 @@ pub fn run() {
                             }
                         }
 
-                        // Apply autostart setting
-                        if settings.general.start_with_windows
-                            && let Err(e) = enable_autostart(app_handle.clone()).await
-                        {
-                            warn!("Could not enable autostart: {}", e);
+                        // Apply autostart setting — blocked in debug builds since the dev
+                        // binary requires the Vite dev server (localhost:1420) which is not
+                        // running at boot. On dev launches we also clean up any stale entry
+                        // left by a previous dev session to prevent ERR_CONNECTION_REFUSED.
+                        if !cfg!(debug_assertions) {
+                            if settings.general.start_with_windows
+                                && let Err(e) = enable_autostart(app_handle.clone()).await
+                            {
+                                warn!("Could not enable autostart: {}", e);
+                            }
+                        } else if let Err(e) = disable_autostart(app_handle.clone()).await {
+                            warn!("Could not clean up dev autostart registration: {}", e);
                         }
 
                         // Apply window position from settings
@@ -590,6 +597,7 @@ pub fn run() {
             get_credential_info,
             // Auth commands (Supabase)
             auth_login,
+            auth_start_login,
             auth_get_session,
             auth_get_profile,
             auth_refresh_token,
