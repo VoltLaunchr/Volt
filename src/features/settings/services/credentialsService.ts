@@ -32,7 +32,7 @@ class CredentialsService {
         logger.warn('Notion token does not start with expected prefix');
       }
 
-      await invoke('save_credential', {
+      await invoke<void>('save_credential', {
         service,
         token: token.trim(),
       });
@@ -59,12 +59,15 @@ class CredentialsService {
   }
 
   /**
-   * Check if token exists
+   * Check if token exists.
+   *
+   * Uses the `has_credential` IPC command rather than `load_credential` so
+   * the bare token never crosses the renderer boundary just for an existence
+   * check (audit M2). `load_credential` is no longer exposed via IPC.
    */
   async hasToken(service: 'github' | 'notion'): Promise<boolean> {
     try {
-      const token = await this.loadToken(service);
-      return !!token;
+      return await invoke<boolean>('has_credential', { service });
     } catch {
       return false;
     }
@@ -75,7 +78,7 @@ class CredentialsService {
    */
   async deleteToken(service: 'github' | 'notion'): Promise<boolean> {
     try {
-      await invoke('delete_credential', { service });
+      await invoke<void>('delete_credential', { service });
       logger.info(`${service} token deleted`);
       return true;
     } catch (error) {

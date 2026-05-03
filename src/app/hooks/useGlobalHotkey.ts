@@ -179,7 +179,7 @@ export function useGlobalHotkey({
             ? (selectedResult.data as FileInfo).path
             : (selectedResult.data as AppInfo).path;
         const dirPath = getDirectoryPath(path);
-        invoke('open_path', { path: dirPath }).catch((err) => logger.error(err));
+        invoke<void>('open_path', { path: dirPath }).catch((err) => logger.error(err));
         return;
       }
 
@@ -237,7 +237,7 @@ export function useGlobalHotkey({
         // Remove from history if it's an app or file
         if (selectedResult.type === SearchResultType.Application) {
           const appData = selectedResult.data as AppInfo;
-          invoke('remove_from_history', { path: appData.path }).catch((err) => logger.error(err));
+          invoke<void>('remove_from_history', { path: appData.path }).catch((err) => logger.error(err));
           // Remove from current results
           setResults(results.filter((r) => r.id !== selectedResult.id));
         }
@@ -256,7 +256,7 @@ export function useGlobalHotkey({
             selectedResult.type === SearchResultType.File
               ? (selectedResult.data as FileInfo).path
               : (selectedResult.data as AppInfo).path;
-          invoke('launch_application', { path, asAdmin: true })
+          invoke<void>('launch_application', { path, asAdmin: true })
             .then(() => {
               if (closeOnLaunch) {
                 hideWindow();

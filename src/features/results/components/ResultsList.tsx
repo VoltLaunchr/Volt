@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { SearchResult, SearchResultType } from '../../../shared/types/common.types';
 import { ResultItem } from './ResultItem';
@@ -12,6 +12,7 @@ interface ResultsListProps {
 }
 
 interface ResultSection {
+  key: string;
   label: string;
   results: { result: SearchResult; globalIndex: number }[];
 }
@@ -47,31 +48,20 @@ function getSectionKey(type: SearchResultType): string {
  * scroll to see them. */
 function getSectionOrder(grouped: Map<string, unknown[]>): string[] {
   const base = ['system', 'results', 'applications', 'commands', 'games', 'shell', 'files'];
-  const gameCount = (grouped.get('games') as unknown[] | undefined)?.length ?? 0;
-  const appCount = (grouped.get('applications') as unknown[] | undefined)?.length ?? 0;
+  const gameCount = grouped.get('games')?.length ?? 0;
+  const appCount = grouped.get('applications')?.length ?? 0;
   if (gameCount > appCount) {
     return ['system', 'results', 'games', 'applications', 'commands', 'shell', 'files'];
   }
   return base;
 }
 
-/** Section labels */
-const SECTION_LABELS: Record<string, string> = {
-  system: 'System',
-  applications: 'Applications',
-  commands: 'Commands',
-  games: 'Games',
-  results: 'Results',
-  shell: 'Shell',
-  files: 'Files',
-};
-
-export const ResultsList: React.FC<ResultsListProps> = ({
+export function ResultsList({
   results,
   selectedIndex,
   onSelect,
   onLaunch,
-}) => {
+}: ResultsListProps) {
   const { t } = useTranslation('results');
   const selectedRef = useRef<HTMLDivElement>(null);
 
@@ -104,14 +94,15 @@ export const ResultsList: React.FC<ResultsListProps> = ({
       const items = grouped.get(key);
       if (items && items.length > 0) {
         ordered.push({
-          label: sectionCount > 1 ? SECTION_LABELS[key] || key : '',
+          key,
+          label: sectionCount > 1 ? t(`sections.${key}`, { defaultValue: key }) : '',
           results: items,
         });
       }
     }
 
     return ordered;
-  }, [results]);
+  }, [results, t]);
 
   if (results.length === 0) {
     return (
@@ -151,7 +142,7 @@ export const ResultsList: React.FC<ResultsListProps> = ({
       >
         {sections.map((section, sectionIndex) => (
           <div
-            key={`section-${sectionIndex}-${section.label}`}
+            key={`section-${sectionIndex}-${section.key}`}
             role="group"
             aria-label={section.label || undefined}
           >
@@ -172,13 +163,18 @@ export const ResultsList: React.FC<ResultsListProps> = ({
                 aria-selected={globalIndex === selectedIndex}
                 aria-label={`${result.title}${result.subtitle ? ` - ${result.subtitle}` : ''}`}
                 tabIndex={globalIndex === selectedIndex ? 0 : -1}
+                onClick={() => onLaunch(result)}
+                onMouseEnter={() => onSelect(globalIndex)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    onLaunch(result);
+                  }
+                }}
               >
                 <ResultItem
                   result={result}
                   isSelected={globalIndex === selectedIndex}
-                  index={globalIndex}
-                  onSelect={() => onSelect(globalIndex)}
-                  onLaunch={() => onLaunch(result)}
                 />
               </div>
             ))}
@@ -187,4 +183,4 @@ export const ResultsList: React.FC<ResultsListProps> = ({
       </div>
     </div>
   );
-};
+}

@@ -13,7 +13,7 @@ interface SearchBarProps {
   selectedIndex?: number;
 }
 
-export const SearchBar: React.FC<SearchBarProps> = ({
+export function SearchBar({
   value,
   onChange,
   onKeyDown,
@@ -21,7 +21,7 @@ export const SearchBar: React.FC<SearchBarProps> = ({
   autoFocus = true,
   resultCount,
   selectedIndex,
-}) => {
+}: SearchBarProps): React.JSX.Element {
   const { t } = useTranslation('common');
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -80,4 +80,4 @@ export const SearchBar: React.FC<SearchBarProps> = ({
       </span>
     </div>
   );
-};
+}

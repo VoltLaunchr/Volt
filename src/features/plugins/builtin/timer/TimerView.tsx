@@ -136,7 +136,7 @@ interface TimerViewProps {
   onClose: () => void;
 }
 
-export const TimerView: React.FC<TimerViewProps> = ({ onClose }) => {
+export function TimerView({ onClose }: TimerViewProps): React.JSX.Element {
   const [session, setSession] = useState<SessionState>(() => loadSession());
   const [tasks, setTasks] = useState<PomodoroTask[]>(() => tasksStore.getTasks());
   const [adding, setAdding] = useState(false);
@@ -694,6 +694,6 @@ export const TimerView: React.FC<TimerViewProps> = ({ onClose }) => {
       </div>
     </div>
   );
-};
+}
 
 export default TimerView;

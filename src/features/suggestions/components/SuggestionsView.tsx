@@ -23,12 +23,12 @@ const BADGE_KEYS: Record<string, string> = {
   Changelog: 'suggestionsBadge.changelog',
 };
 
-export const SuggestionsView: React.FC<SuggestionsViewProps> = ({
+export function SuggestionsView({
   suggestions,
   selectedIndex,
   onSelect,
   onActivate,
-}) => {
+}: SuggestionsViewProps): React.JSX.Element {
   const { t } = useTranslation('common');
   const selectedRef = useRef<HTMLDivElement>(null);
   const [appVersion, setAppVersion] = useState<string>('');
@@ -174,4 +174,4 @@ export const SuggestionsView: React.FC<SuggestionsViewProps> = ({
       })}
     </div>
   );
-};
+}

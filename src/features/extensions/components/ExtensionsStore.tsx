@@ -61,8 +61,7 @@ interface ExtensionsStoreProps {
   onRefresh?: () => void;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-export const ExtensionsStore: React.FC<ExtensionsStoreProps> = (_props) => {
+export function ExtensionsStore(_props: ExtensionsStoreProps): React.JSX.Element {
   const { t } = useTranslation('extensions');
   const [availableExtensions, setAvailableExtensions] = useState<ExtensionInfo[]>([]);
   const [installedExtensions, setInstalledExtensions] = useState<InstalledExtension[]>([]);
@@ -504,7 +503,7 @@ export const ExtensionsStore: React.FC<ExtensionsStoreProps> = (_props) => {
       </div>
     </div>
   );
-};
+}
 
 // Extension card for browse tab
 interface ExtensionCardProps {
@@ -516,14 +515,14 @@ interface ExtensionCardProps {
   onUninstall: () => void;
 }
 
-const ExtensionCard: React.FC<ExtensionCardProps> = ({
+function ExtensionCard({
   extension,
   installed,
   installing,
   uninstalling,
   onInstall,
   onUninstall,
-}) => {
+}: ExtensionCardProps): React.JSX.Element {
   const { t } = useTranslation('extensions');
   const { manifest } = extension;
 
@@ -623,7 +622,7 @@ const ExtensionCard: React.FC<ExtensionCardProps> = ({
       </div>
     </div>
   );
-};
+}
 
 // Installed extension card
 interface InstalledExtensionCardProps {
@@ -633,12 +632,12 @@ interface InstalledExtensionCardProps {
   onUninstall: () => void;
 }
 
-const InstalledExtensionCard: React.FC<InstalledExtensionCardProps> = ({
+function InstalledExtensionCard({
   extension,
   uninstalling,
   onToggle,
   onUninstall,
-}) => {
+}: InstalledExtensionCardProps): React.JSX.Element {
   const { t } = useTranslation('extensions');
   const { manifest, enabled, installedAt } = extension;
 
@@ -699,7 +698,7 @@ const InstalledExtensionCard: React.FC<InstalledExtensionCardProps> = ({
       </div>
     </div>
   );
-};
+}
 
 // Dev extension card with DEV badge
 interface DevExtensionCardProps {
@@ -709,12 +708,12 @@ interface DevExtensionCardProps {
   onRefresh: () => void;
 }
 
-const DevExtensionCard: React.FC<DevExtensionCardProps> = ({
+function DevExtensionCard({
   extension,
   onToggle,
   onUnlink,
   onRefresh,
-}) => {
+}: DevExtensionCardProps): React.JSX.Element {
   const { t } = useTranslation('extensions');
   const { manifest, enabled, path } = extension;
 
@@ -790,6 +789,6 @@ const DevExtensionCard: React.FC<DevExtensionCardProps> = ({
       </div>
     </div>
   );
-};
+}
 
 export default ExtensionsStore;

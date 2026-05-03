@@ -22,7 +22,7 @@ const FILE_TYPE_EXTENSIONS: Record<FileTypeFilter, string[]> = {
   other: [],
 };
 
-export const FileSearchView: React.FC<FileSearchViewProps> = ({ onClose }) => {
+export function FileSearchView({ onClose }: FileSearchViewProps): React.JSX.Element {
   const { t } = useTranslation('fileSearch');
   const [searchQuery, setSearchQuery] = useState('');
   const [files, setFiles] = useState<FileInfo[]>([]);
@@ -172,9 +172,9 @@ export const FileSearchView: React.FC<FileSearchViewProps> = ({ onClose }) => {
   // Handle file opening
   const handleOpenFile = async (file: FileInfo) => {
     try {
-      await invoke('launch_application', { path: file.path });
+      await invoke<void>('launch_application', { path: file.path });
       // Track file access for recent files
-      await invoke('track_file_access', { path: file.path, name: file.name });
+      await invoke<void>('track_file_access', { path: file.path, name: file.name });
       // Reload recent files for next time
       loadRecentFiles();
       onClose();
@@ -448,4 +448,4 @@ export const FileSearchView: React.FC<FileSearchViewProps> = ({ onClose }) => {
       </div>
     </div>
   );
-};
+}

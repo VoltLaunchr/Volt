@@ -31,6 +31,15 @@
     "file": "File",
     "command": "Command"
   },
+  "sections": {
+    "system": "System",
+    "applications": "Applications",
+    "commands": "Commands",
+    "games": "Games",
+    "results": "Results",
+    "shell": "Shell",
+    "files": "Files"
+  },
   "empty": "No results found",
   "loading": "Searching...",
   "shortcuts": {

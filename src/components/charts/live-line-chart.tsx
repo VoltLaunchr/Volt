@@ -240,28 +240,29 @@ function LiveLineChartInner({
   const innerHeight = height - margin.top - margin.bottom;
 
   // ---- Animation state ----
-  const animRef = useRef<AnimFrame>({
+  const [frame, setFrame] = useState<AnimFrame>(() => ({
     now: Date.now(),
     yMin: 0,
     yMax: 100,
     displayValue: value,
-  });
-  const [frame, setFrame] = useState<AnimFrame>({
-    now: Date.now(),
-    yMin: 0,
-    yMax: 100,
-    displayValue: value,
-  });
+  }));
+  const animRef = useRef<AnimFrame | null>(null);
+  if (animRef.current === null) {
+    animRef.current = frame;
+  }
 
   const pausedRef = useRef(paused);
   const dataRef = useRef(data);
   const dataKeyRef = useRef(dataKey);
-  dataRef.current = data;
-  dataKeyRef.current = dataKey;
 
   useEffect(() => {
     pausedRef.current = paused;
   }, [paused]);
+
+  useEffect(() => {
+    dataRef.current = data;
+    dataKeyRef.current = dataKey;
+  }, [data, dataKey]);
 
   const targetRange = useMemo(
     () => computeTargetRange(data, value, exaggerate),
@@ -272,9 +273,11 @@ function LiveLineChartInner({
   const targetRangeRef = useRef(targetRange);
   const valueRef = useRef(value);
   const lerpSpeedRef = useRef(lerpSpeed);
-  targetRangeRef.current = targetRange;
-  valueRef.current = value;
-  lerpSpeedRef.current = lerpSpeed;
+  useEffect(() => {
+    targetRangeRef.current = targetRange;
+    valueRef.current = value;
+    lerpSpeedRef.current = lerpSpeed;
+  }, [targetRange, value, lerpSpeed]);
 
   const lines = useMemo(() => extractLiveLineConfigs(children), [children]);
 
@@ -289,8 +292,13 @@ function LiveLineChartInner({
   useEffect(() => {
     let raf: number;
     const tick = () => {
+      const current = animRef.current;
+      if (current === null) {
+        raf = requestAnimationFrame(tick);
+        return;
+      }
       const next = nextAnimFrame(
-        animRef.current,
+        current,
         targetRangeRef.current,
         valueRef.current,
         lerpSpeedRef.current,

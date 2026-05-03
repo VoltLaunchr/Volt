@@ -1,5 +1,6 @@
 import { motion, useSpring } from "motion/react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { useChart } from "./chart-context";
 
 const TICKER_HALF_WIDTH = 50;
@@ -47,11 +48,11 @@ export function LiveXAxis({
   formatTime = defaultFormatTime,
 }: LiveXAxisProps) {
   const { xScale, margin, tooltipData, containerRef } = useChart();
-  const [mounted, setMounted] = useState(false);
+  const [container, setContainer] = useState<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    setMounted(true);
-  }, []);
+    setContainer(containerRef.current);
+  }, [containerRef]);
 
   const domain = xScale.domain();
   const startMs = domain[0]?.getTime() ?? 0;
@@ -82,19 +83,14 @@ export function LiveXAxis({
   // so the pill and crosshair line move in lockstep
   const pillX = tooltipData ? tooltipData.x + margin.left : 0;
   const animatedPillX = useSpring(pillX, crosshairSpringConfig);
-  const springRef = useRef(animatedPillX);
-  springRef.current = animatedPillX;
 
   useEffect(() => {
-    springRef.current.set(pillX);
-  }, [pillX]);
+    animatedPillX.set(pillX);
+  }, [pillX, animatedPillX]);
 
-  const container = containerRef.current;
-  if (!(mounted && container)) {
+  if (!container) {
     return null;
   }
-
-  const { createPortal } = require("react-dom") as typeof import("react-dom");
 
   return createPortal(
     <div className="pointer-events-none absolute inset-0">

@@ -118,7 +118,7 @@ export class GamesPlugin implements Plugin {
     if (!gameId) return;
 
     try {
-      await invoke('launch_game', { gameId });
+      await invoke<void>('launch_game', { gameId });
     } catch (error) {
       logger.error(`Failed to launch game ${gameId}:`, error);
     }

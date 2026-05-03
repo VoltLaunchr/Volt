@@ -7,7 +7,7 @@ interface FooterProps {
   isIndexing?: boolean;
 }
 
-export const Footer: React.FC<FooterProps> = ({ isIndexing = false }) => {
+export function Footer({ isIndexing = false }: FooterProps): React.JSX.Element {
   const { t } = useTranslation('common');
   return (
     <footer className="flex items-center justify-between h-8 px-3 border-t border-hairline bg-canvas shrink-0">
@@ -41,4 +41,4 @@ export const Footer: React.FC<FooterProps> = ({ isIndexing = false }) => {
       </div>
     </footer>
   );
-};
+}

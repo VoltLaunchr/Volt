@@ -6,10 +6,11 @@ import { logger } from '../../../../../shared/utils/logger';
 import { GameInfo, PlatformInfo } from '../index';
 
 // Game controller SVG icon component
-const GameControllerIcon: React.FC<{ size?: number; className?: string }> = ({
+function GameControllerIcon({
   size = 24,
   className,
-}) => (
+}: { size?: number; className?: string }): React.JSX.Element {
+  return (
   <svg
     xmlns="http://www.w3.org/2000/svg"
     viewBox="0 0 24 24"
@@ -28,7 +29,8 @@ const GameControllerIcon: React.FC<{ size?: number; className?: string }> = ({
     <path d="M15.9881 10H15.9971" />
     <path d="M17.9881 13H17.9971" />
   </svg>
-);
+  );
+}
 
 interface GameViewProps {
   onClose: () => void;
@@ -36,7 +38,7 @@ interface GameViewProps {
 
 type PlatformFilter = 'all' | string;
 
-export const GameView: React.FC<GameViewProps> = ({ onClose }) => {
+export function GameView({ onClose }: GameViewProps): React.JSX.Element {
   const { t } = useTranslation('games');
   const [games, setGames] = useState<GameInfo[]>([]);
   const [filteredGames, setFilteredGames] = useState<GameInfo[]>([]);
@@ -145,7 +147,7 @@ export const GameView: React.FC<GameViewProps> = ({ onClose }) => {
   // Launch game
   const handleLaunchGame = async (game: GameInfo) => {
     try {
-      await invoke('launch_game', { gameId: game.id });
+      await invoke<void>('launch_game', { gameId: game.id });
       onClose();
     } catch (error) {
       logger.error('Failed to launch game:', error);
@@ -156,7 +158,7 @@ export const GameView: React.FC<GameViewProps> = ({ onClose }) => {
   const handleRescan = async () => {
     try {
       setIsRescanning(true);
-      await invoke('rescan_all_games');
+      await invoke<number>('rescan_all_games');
       await loadGames();
     } catch (error) {
       logger.error('Failed to rescan games:', error);
@@ -524,7 +526,7 @@ export const GameView: React.FC<GameViewProps> = ({ onClose }) => {
               <button
                 className="flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium rounded-md border border-hairline bg-surface text-ink cursor-pointer transition-all hover:bg-surface-elevated hover:border-hairline-strong"
                 onClick={() => {
-                  invoke('open_path', { path: selectedGame.installPath });
+                  invoke<void>('open_path', { path: selectedGame.installPath });
                 }}
               >
                 <svg

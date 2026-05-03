@@ -653,7 +653,7 @@ function NetStat({
 }
 
 // ── Root component ────────────────────────────────────────────────────────────
-export const SystemMonitorApp: React.FC = () => {
+export function SystemMonitorApp(): React.JSX.Element {
   const { metrics, isLoading } = useSystemMetricsV2(1000);
   const history = useMetricsHistory(metrics, 90);
   const [killError, setKillError] = useState<string | null>(null);
@@ -667,7 +667,7 @@ export const SystemMonitorApp: React.FC = () => {
 
   const handleKill = useCallback(async (pid: number, name: string) => {
     try {
-      await invoke('kill_process_by_pid', { pid });
+      await invoke<void>('kill_process_by_pid', { pid });
       logger.info(`Killed process ${name} (${pid})`);
       setKillError(null);
     } catch (e) {
@@ -688,7 +688,7 @@ export const SystemMonitorApp: React.FC = () => {
 
   const handleTaskManager = useCallback(async () => {
     try {
-      await invoke('open_task_manager');
+      await invoke<void>('open_task_manager');
     } catch (e) {
       logger.error('open_task_manager failed:', e);
     }
@@ -1048,4 +1048,4 @@ export const SystemMonitorApp: React.FC = () => {
       </div>
     </div>
   );
-};
+}

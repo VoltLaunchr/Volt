@@ -43,11 +43,11 @@ const CATEGORY_I18N_KEY: Record<string, string> = {
   flags: 'flags',
 };
 
-export const EmojiPickerView: React.FC<EmojiPickerViewProps> = ({
+export function EmojiPickerView({
   onClose,
   onSelectEmoji,
   initialQuery = '',
-}) => {
+}: EmojiPickerViewProps): React.JSX.Element {
   const { t } = useTranslation('emoji-picker');
   const [allEmojis, setAllEmojis] = useState<SearchableEmoji[]>([]);
   const [displayedEmojis, setDisplayedEmojis] = useState<SearchableEmoji[]>([]);
@@ -330,4 +330,4 @@ export const EmojiPickerView: React.FC<EmojiPickerViewProps> = ({
       </div>
     </div>
   );
-};
+}

@@ -90,7 +90,7 @@ export function ResultContextMenu({
         icon: '\ud83d\udccc',
         onClick: () => {
           if (command) {
-            invoke('pin_shell_command', { command }).catch(() => {});
+            invoke<void>('pin_shell_command', { command }).catch(() => {});
           }
         },
       },
@@ -117,7 +117,7 @@ export function ResultContextMenu({
             icon: '\ud83d\udce6',
             onClick: () => {
               if (state.result) {
-                invoke('open_file_with_dialog', { path: pathOf(state.result) }).catch(() => {});
+                invoke<void>('open_file_with_dialog', { path: pathOf(state.result) }).catch(() => {});
                 onClose();
               }
             },

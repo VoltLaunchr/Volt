@@ -13,7 +13,7 @@ const fillColors: Record<SystemMetricBadgeProps['status'], string> = {
   critical: 'linear-gradient(90deg, rgba(239,68,68,0.3), rgba(239,68,68,0.5))',
 };
 
-export const SystemMetricBadge: React.FC<SystemMetricBadgeProps> = ({ value, status }) => {
+export function SystemMetricBadge({ value, status }: SystemMetricBadgeProps): React.JSX.Element {
   const rounded = Math.round(value);
   return (
     <div
@@ -36,4 +36,4 @@ export const SystemMetricBadge: React.FC<SystemMetricBadgeProps> = ({ value, sta
       </span>
     </div>
   );
-};
+}

@@ -17,7 +17,7 @@ export const windowService = {
    */
   async show(): Promise<void> {
     try {
-      await invoke('show_window');
+      await invoke<void>('show_window');
     } catch (error) {
       logger.error('Failed to show window:', error);
       throw new Error(`Failed to show window: ${error}`);
@@ -29,7 +29,7 @@ export const windowService = {
    */
   async hide(): Promise<void> {
     try {
-      await invoke('hide_window');
+      await invoke<void>('hide_window');
     } catch (error) {
       logger.error('Failed to hide window:', error);
       throw new Error(`Failed to hide window: ${error}`);
@@ -41,7 +41,7 @@ export const windowService = {
    */
   async toggle(): Promise<void> {
     try {
-      await invoke('toggle_window');
+      await invoke<void>('toggle_window');
     } catch (error) {
       logger.error('Failed to toggle window:', error);
       throw new Error(`Failed to toggle window: ${error}`);
@@ -53,7 +53,7 @@ export const windowService = {
    */
   async center(): Promise<void> {
     try {
-      await invoke('center_window');
+      await invoke<void>('center_window');
     } catch (error) {
       logger.error('Failed to center window:', error);
       throw new Error(`Failed to center window: ${error}`);
@@ -68,7 +68,7 @@ export const windowService = {
    */
   async setPosition(position: WindowPosition, customX?: number, customY?: number): Promise<void> {
     try {
-      await invoke('set_window_position', {
+      await invoke<void>('set_window_position', {
         position,
         customX,
         customY,

@@ -11,7 +11,7 @@ interface ClipboardHistoryViewProps {
 
 type FilterType = 'all' | ClipboardType;
 
-export const ClipboardHistoryView: React.FC<ClipboardHistoryViewProps> = ({ onClose }) => {
+export function ClipboardHistoryView({ onClose }: ClipboardHistoryViewProps): React.JSX.Element {
   const { t } = useTranslation('clipboard');
   const [items, setItems] = useState<ClipboardItem[]>([]);
   const [filteredItems, setFilteredItems] = useState<ClipboardItem[]>([]);
@@ -117,7 +117,7 @@ export const ClipboardHistoryView: React.FC<ClipboardHistoryViewProps> = ({ onCl
   // Handle paste action
   const handlePaste = async (item: ClipboardItem) => {
     try {
-      await invoke('copy_to_clipboard', { content: item.content });
+      await invoke<void>('copy_to_clipboard', { content: item.content });
       onClose();
     } catch (error) {
       logger.error('Failed to paste:', error);
@@ -127,7 +127,7 @@ export const ClipboardHistoryView: React.FC<ClipboardHistoryViewProps> = ({ onCl
   // Handle delete action
   const handleDelete = async (item: ClipboardItem) => {
     try {
-      await invoke('delete_clipboard_item', { id: item.id });
+      await invoke<void>('delete_clipboard_item', { id: item.id });
       await loadHistory();
     } catch (error) {
       logger.error('Failed to delete item:', error);
@@ -137,7 +137,7 @@ export const ClipboardHistoryView: React.FC<ClipboardHistoryViewProps> = ({ onCl
   // Handle pin toggle
   const handleTogglePin = async (item: ClipboardItem) => {
     try {
-      await invoke('toggle_clipboard_pin', { id: item.id });
+      await invoke<void>('toggle_clipboard_pin', { id: item.id });
       await loadHistory();
     } catch (error) {
       logger.error('Failed to toggle pin:', error);
@@ -575,4 +575,4 @@ export const ClipboardHistoryView: React.FC<ClipboardHistoryViewProps> = ({ onCl
       </div>
     </div>
   );
-};
+}

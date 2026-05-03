@@ -18,7 +18,7 @@ export interface ContextMenuProps {
   onClose: () => void;
 }
 
-export const ContextMenu: React.FC<ContextMenuProps> = ({ isOpen, position, actions, onClose }) => {
+export function ContextMenu({ isOpen, position, actions, onClose }: ContextMenuProps): React.JSX.Element | null {
   const menuRef = useRef<HTMLDivElement>(null);
 
   // Close menu when clicking outside
@@ -89,4 +89,4 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ isOpen, position, acti
       })}
     </div>
   );
-};
+}

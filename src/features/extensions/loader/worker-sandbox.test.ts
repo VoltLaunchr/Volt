@@ -26,7 +26,6 @@ const newPlugin = (): WorkerPlugin =>
   });
 
 const isUrlSafe = (p: WorkerPlugin, url: string): boolean =>
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (p as unknown as { isUrlSafe(url: string): boolean }).isUrlSafe(url);
 
 describe('WorkerPlugin.isUrlSafe — M2 hostname hardening', () => {

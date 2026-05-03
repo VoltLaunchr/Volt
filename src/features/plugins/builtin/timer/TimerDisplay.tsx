@@ -36,7 +36,7 @@ interface TimerDisplayProps {
   onOpenView?: () => void;
 }
 
-export const TimerDisplay: React.FC<TimerDisplayProps> = ({ onOpenView }) => {
+export function TimerDisplay({ onOpenView }: TimerDisplayProps): React.JSX.Element | null {
   const { activeTimers, cancelTimer, pauseTimer, resumeTimer, formatDuration } = useTimers();
 
   if (activeTimers.length === 0) return null;
@@ -176,6 +176,6 @@ export const TimerDisplay: React.FC<TimerDisplayProps> = ({ onOpenView }) => {
       })}
     </div>
   );
-};
+}
 
 export default TimerDisplay;

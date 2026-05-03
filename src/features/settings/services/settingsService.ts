@@ -33,7 +33,7 @@ export const settingsService = {
    */
   async saveSettings(settings: Settings): Promise<void> {
     try {
-      await invoke('save_settings', { settings });
+      await invoke<void>('save_settings', { settings });
     } catch (error) {
       logger.error('Failed to save settings:', error);
       throw new Error(`Failed to save settings: ${error}`);
@@ -118,7 +118,7 @@ export const settingsService = {
    */
   async setTheme(theme: Theme): Promise<void> {
     try {
-      await invoke('set_theme', { theme });
+      await invoke<void>('set_theme', { theme });
     } catch (error) {
       logger.error('Failed to set theme:', error);
       throw new Error(`Failed to set theme: ${error}`);

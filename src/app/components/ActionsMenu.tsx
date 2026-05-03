@@ -99,7 +99,7 @@ export function ActionsMenu({ isOpen, result, onLaunch, onShowProperties, onClos
               id: 'pin-command',
               label: 'Pin Command',
               icon: Pin,
-              onClick: () => { if (command) invoke('pin_shell_command', { command }).catch(() => {}); },
+              onClick: () => { if (command) invoke<void>('pin_shell_command', { command }).catch(() => {}); },
             },
           ],
         },
@@ -125,7 +125,7 @@ export function ActionsMenu({ isOpen, result, onLaunch, onShowProperties, onClos
                 label: 'Open With…',
                 icon: Package,
                 onClick: () => {
-                  invoke('open_file_with_dialog', { path }).catch(() => {});
+                  invoke<void>('open_file_with_dialog', { path }).catch(() => {});
                   onClose();
                 },
               } satisfies Action]

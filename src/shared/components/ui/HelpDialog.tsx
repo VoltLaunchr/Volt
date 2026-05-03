@@ -62,7 +62,7 @@ export interface HelpDialogProps {
   onClose: () => void;
 }
 
-export const HelpDialog: React.FC<HelpDialogProps> = ({ isOpen, onClose }) => {
+export function HelpDialog({ isOpen, onClose }: HelpDialogProps): React.JSX.Element {
   const { t } = useTranslation('help');
   const shortcutGroups = getShortcutGroups(t);
   return (
@@ -106,4 +106,4 @@ export const HelpDialog: React.FC<HelpDialogProps> = ({ isOpen, onClose }) => {
       </div>
     </Modal>
   );
-};
+}

@@ -65,7 +65,7 @@ class ExtensionService {
    */
   async uninstallExtension(extensionId: string): Promise<void> {
     try {
-      await invoke('uninstall_extension', { extensionId });
+      await invoke<void>('uninstall_extension', { extensionId });
     } catch (error) {
       logger.error('Failed to uninstall extension:', error);
       throw error;
@@ -77,7 +77,7 @@ class ExtensionService {
    */
   async toggleExtension(extensionId: string, enabled: boolean): Promise<void> {
     try {
-      await invoke('toggle_extension', { extensionId, enabled });
+      await invoke<void>('toggle_extension', { extensionId, enabled });
     } catch (error) {
       logger.error('Failed to toggle extension:', error);
       throw error;
@@ -138,7 +138,7 @@ class ExtensionService {
    */
   async incrementDownload(extensionId: string): Promise<void> {
     try {
-      await invoke('increment_extension_download', { extensionId });
+      await invoke<void>('increment_extension_download', { extensionId });
     } catch {
       // non-critical, ignore
     }
@@ -200,7 +200,7 @@ class ExtensionService {
    */
   async unlinkDevExtension(extensionId: string): Promise<void> {
     try {
-      await invoke('unlink_dev_extension', { extensionId });
+      await invoke<void>('unlink_dev_extension', { extensionId });
     } catch (error) {
       logger.error('Failed to unlink dev extension:', error);
       throw error;
@@ -212,7 +212,7 @@ class ExtensionService {
    */
   async toggleDevExtension(extensionId: string, enabled: boolean): Promise<void> {
     try {
-      await invoke('toggle_dev_extension', { extensionId, enabled });
+      await invoke<void>('toggle_dev_extension', { extensionId, enabled });
     } catch (error) {
       logger.error('Failed to toggle dev extension:', error);
       throw error;

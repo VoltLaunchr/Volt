@@ -267,7 +267,7 @@ export function useAppLifecycle(): UseAppLifecycleResult {
       if ((foldersChanged || extensionsChanged) && newSettings.indexing.folders.length > 0) {
         try {
           setIsIndexing(true);
-          await invoke('start_indexing', {
+          await invoke<void>('start_indexing', {
             folders: newSettings.indexing.folders,
             excludedPaths: newSettings.indexing.excludedPaths,
             fileExtensions: newSettings.indexing.fileExtensions,
@@ -374,7 +374,7 @@ export function useAppLifecycle(): UseAppLifecycleResult {
 
         // Start indexing (returns immediately, work happens in background).
         // force=true bypasses the SQLite cache when the config changed since last run.
-        await invoke('start_indexing', {
+        await invoke<void>('start_indexing', {
           folders: foldersToIndex,
           excludedPaths: settings.indexing.excludedPaths,
           fileExtensions: settings.indexing.fileExtensions,

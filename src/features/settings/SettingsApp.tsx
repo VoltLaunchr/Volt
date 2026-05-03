@@ -193,7 +193,7 @@ export function SettingsApp() {
 
   const saveAppShortcut = async (shortcut: AppShortcut) => {
     try {
-      await invoke('save_app_shortcut', { shortcut });
+      await invoke<void>('save_app_shortcut', { shortcut });
       await loadAppShortcuts();
     } catch (err) {
       logger.error('Failed to save app shortcut:', err);
@@ -294,9 +294,9 @@ export function SettingsApp() {
   const handleAutostartChange = async (checked: boolean) => {
     try {
       if (checked) {
-        await invoke('enable_autostart');
+        await invoke<void>('enable_autostart');
       } else {
-        await invoke('disable_autostart');
+        await invoke<void>('disable_autostart');
       }
       updateSettings('general', 'startWithWindows', checked);
     } catch (err) {
@@ -325,7 +325,7 @@ export function SettingsApp() {
   const handleToggleWindowHotkeyChange = async (hotkey: string) => {
     setHotkeyError(null);
     try {
-      await invoke('set_global_hotkey', { newHotkey: hotkey });
+      await invoke<void>('set_global_hotkey', { newHotkey: hotkey });
       updateSettings('hotkeys', 'toggleWindow', hotkey);
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
@@ -345,9 +345,9 @@ export function SettingsApp() {
   const handleClipboardMonitoringToggle = async (enabled: boolean) => {
     try {
       if (enabled) {
-        await invoke('start_clipboard_monitoring');
+        await invoke<void>('start_clipboard_monitoring');
       } else {
-        await invoke('stop_clipboard_monitoring');
+        await invoke<void>('stop_clipboard_monitoring');
       }
       updateSettings('plugins', 'clipboardMonitoring', enabled);
     } catch (error) {
@@ -762,7 +762,7 @@ export function SettingsApp() {
               updateSettings('appearance', 'windowPosition', position);
               if (position !== 'custom') {
                 try {
-                  await invoke('set_window_position', {
+                  await invoke<void>('set_window_position', {
                     position,
                     customX: null,
                     customY: null,
@@ -792,7 +792,7 @@ export function SettingsApp() {
               const value = e.target.value as ShowOnScreen;
               updateSettings('general', 'showOnScreen', value);
               try {
-                await invoke('update_show_on_screen', { value });
+                await invoke<void>('update_show_on_screen', { value });
               } catch (err) {
                 logger.error('Failed to update show_on_screen state:', err);
               }
@@ -1353,7 +1353,7 @@ export function SettingsApp() {
               onClick={async () => {
                 setIsRebuilding(true);
                 try {
-                  await invoke('invalidate_index');
+                  await invoke<void>('invalidate_index');
                   // Poll until indexing is done
                   const pollStats = async () => {
                     try {
@@ -1520,7 +1520,7 @@ export function SettingsApp() {
             variant="secondary"
             onClick={async () => {
               try {
-                await invoke('clear_clipboard_history');
+                await invoke<void>('clear_clipboard_history');
               } catch (err) {
                 logger.error('Failed to clear clipboard history:', err);
                 setError(t('errors.saveFailed'));
@@ -1639,7 +1639,7 @@ export function SettingsApp() {
             variant="secondary"
             onClick={async () => {
               try {
-                await invoke('clear_shell_history');
+                await invoke<void>('clear_shell_history');
               } catch (err) {
                 logger.error('Failed to clear shell history:', err);
                 setError(t('shell.clearFailed'));

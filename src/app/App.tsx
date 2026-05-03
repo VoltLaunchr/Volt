@@ -77,15 +77,6 @@ function App() {
 
   const closeOnLaunch = settings?.general.closeOnLaunch !== false;
 
-  // Switch to emoji picker when query starts with `:`
-  useEffect(() => {
-    if (searchQuery.startsWith(':')) {
-      setActiveView({ type: 'emoji', initialQuery: searchQuery.substring(1) });
-    } else if (activeView.type === 'emoji' && !searchQuery.startsWith(':')) {
-      setActiveView({ type: 'search' });
-    }
-  }, [searchQuery, activeView.type, setActiveView]);
-
   useEffect(() => {
     let unlisten: (() => void) | undefined;
     listen<{ language: string }>('volt://language-changed', ({ payload }) => {
@@ -223,6 +214,7 @@ function App() {
           <ViewRouter
             onSelectEmoji={handleSelectEmoji}
             onLaunchResult={handleLaunch}
+            onActivateSuggestion={handleSuggestionActivate}
           />
         </div>
         <PreviewPanel result={selectedResult} isOpen={isPreviewOpen} />

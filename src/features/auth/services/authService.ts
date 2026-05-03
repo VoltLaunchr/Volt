@@ -11,7 +11,7 @@ export const authService = {
   /** Opens browser to website login page */
   async login(): Promise<void> {
     try {
-      await invoke('auth_login');
+      await invoke<void>('auth_login');
     } catch (err) {
       logger.error('[auth] login failed:', err);
       throw err;
@@ -51,7 +51,7 @@ export const authService = {
   /** Log out and clear stored tokens */
   async logout(): Promise<void> {
     try {
-      await invoke('auth_logout');
+      await invoke<void>('auth_logout');
     } catch (err) {
       logger.error('[auth] logout failed:', err);
       throw err;

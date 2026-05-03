@@ -1,6 +1,7 @@
 import { motion, useSpring } from "motion/react";
 import type { RefObject } from "react";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 
 // Spring config for smooth tooltip movement
@@ -50,30 +51,21 @@ export function TooltipBox({
   const tooltipRef = useRef<HTMLDivElement>(null);
   const tooltipWidthRef = useRef(180);
   const tooltipHeightRef = useRef(80);
-  const [mounted, setMounted] = useState(false);
+  const [container, setContainer] = useState<HTMLDivElement | null>(null);
+  // Re-render to refresh `shouldFlipX` after tooltipWidthRef is measured.
+  const [measuredWidth, setMeasuredWidth] = useState(180);
 
   useEffect(() => {
-    setMounted(true);
-  }, []);
+    setContainer(containerRef.current);
+  }, [containerRef]);
 
   const animatedLeft = useSpring(x + offset, springConfig);
   const animatedTop = useSpring(y, springConfig);
 
-  const tw = tooltipWidthRef.current;
-  const th = tooltipHeightRef.current;
-  const shouldFlipX = x + tw + offset > containerWidth;
-  const targetX = shouldFlipX ? x - offset - tw : x + offset;
-  const targetY = Math.max(
-    offset,
-    Math.min(y - th / 2, containerHeight - th - offset)
+  const shouldFlipX = useMemo(
+    () => x + measuredWidth + offset > containerWidth,
+    [x, measuredWidth, offset, containerWidth]
   );
-
-  if (leftOverride === undefined) {
-    animatedLeft.set(targetX);
-  }
-  if (topOverride === undefined) {
-    animatedTop.set(targetY);
-  }
 
   useLayoutEffect(() => {
     if (!(visible && tooltipRef.current)) {
@@ -84,6 +76,7 @@ export function TooltipBox({
     const h = el.offsetHeight;
     if (w > 0) {
       tooltipWidthRef.current = w;
+      setMeasuredWidth(w);
     }
     if (h > 0) {
       tooltipHeightRef.current = h;
@@ -130,12 +123,9 @@ export function TooltipBox({
   const isFlipped = flippedOverride ?? shouldFlipX;
   const transformOrigin = isFlipped ? "right top" : "left top";
 
-  const container = containerRef.current;
-  if (!(mounted && container)) {
+  if (!container) {
     return null;
   }
-
-  const { createPortal } = require("react-dom") as typeof import("react-dom");
 
   if (!visible) {
     return null;

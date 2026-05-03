@@ -191,10 +191,10 @@ export class WindowManagementPlugin implements Plugin {
       const { invoke } = await import('@tauri-apps/api/core');
 
       // Hide Volt first so the foreground window is the user's target
-      await invoke('hide_window');
+      await invoke<void>('hide_window');
 
       // Snap the (now-foreground) window
-      await invoke('snap_window', { position });
+      await invoke<void>('snap_window', { position });
     } catch (error) {
       logger.error('Failed to snap window:', error);
     }

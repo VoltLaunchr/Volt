@@ -31,6 +31,15 @@
     "file": "Fichier",
     "command": "Commande"
   },
+  "sections": {
+    "system": "Système",
+    "applications": "Applications",
+    "commands": "Commandes",
+    "games": "Jeux",
+    "results": "Résultats",
+    "shell": "Shell",
+    "files": "Fichiers"
+  },
   "empty": "Aucun résultat",
   "loading": "Recherche en cours...",
   "shortcuts": {

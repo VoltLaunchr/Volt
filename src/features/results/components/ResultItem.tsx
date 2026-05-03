@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AppWindow,
   Copy,
@@ -70,9 +70,6 @@ const isSystemMonitorData = (data: unknown): data is SystemMonitorData => {
 interface ResultItemProps {
   result: SearchResult;
   isSelected: boolean;
-  index: number;
-  onSelect: () => void;
-  onLaunch: () => void;
 }
 
 /** Render a title string with highlighted matching characters */
@@ -96,24 +93,13 @@ function HighlightedText({
   );
 }
 
-export const ResultItem: React.FC<ResultItemProps> = ({
-  result,
-  isSelected,
-  onSelect,
-  onLaunch,
-}) => {
+export function ResultItem({ result, isSelected }: ResultItemProps) {
   const searchQuery = useSearchStore((s) => s.searchQuery);
 
   const titleSegments = useMemo(
     () => highlightMatch(result.title, searchQuery),
     [result.title, searchQuery],
   );
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
-      onLaunch();
-    }
-  };
 
   // Render custom system monitor item with progress bar
   const renderSystemMonitorIcon = () => (
@@ -321,9 +307,6 @@ export const ResultItem: React.FC<ResultItemProps> = ({
           : 'hover:bg-surface-elevated border-l-transparent',
         isShellCommand && shellData?.status && shellData.status !== 'pending' && 'items-start pt-2',
       )}
-      onClick={onLaunch}
-      onMouseEnter={onSelect}
-      onKeyDown={handleKeyDown}
     >
       {/* Left icon area (32×32px) */}
       {result.type === SearchResultType.ShellCommand ? (
@@ -397,4 +380,4 @@ export const ResultItem: React.FC<ResultItemProps> = ({
       )}
     </div>
   );
-};
+}

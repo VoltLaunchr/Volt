@@ -75,7 +75,7 @@ export class SteamPlugin implements Plugin {
     if (!appId) return;
 
     try {
-      await invoke('launch_steam_game', { appId });
+      await invoke<void>('launch_steam_game', { appId });
     } catch (error) {
       logger.error(`Failed to launch game ${appId}:`, error);
       throw error;

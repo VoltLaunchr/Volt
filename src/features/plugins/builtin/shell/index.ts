@@ -550,7 +550,7 @@ export class ShellCommandPlugin implements Plugin {
         }
       };
 
-      invoke('execute_shell_command_streaming', {
+      invoke<void>('execute_shell_command_streaming', {
         command,
         timeoutMs,
         workingDir: null,
@@ -593,7 +593,7 @@ export class ShellCommandPlugin implements Plugin {
   cancel(command: string): void {
     const cached = this.findCachedByCommand(command);
     if (cached?.executionId && cached.status === 'running') {
-      invoke('cancel_shell_command', { executionId: cached.executionId }).catch((err) =>
+      invoke<void>('cancel_shell_command', { executionId: cached.executionId }).catch((err) =>
         logger.warn('Shell: failed to cancel', err),
       );
     }

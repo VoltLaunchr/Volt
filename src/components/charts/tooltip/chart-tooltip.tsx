@@ -1,5 +1,6 @@
 import { motion, useSpring } from "motion/react";
 import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { chartCssVars, useChart } from "../chart-context";
 import { DateTicker } from "./date-ticker";
 import { TooltipBox } from "./tooltip-box";
@@ -62,12 +63,11 @@ export function ChartTooltip({
 
   const isHorizontal = orientation === "horizontal";
 
-  const [mounted, setMounted] = useState(false);
+  const [container, setContainer] = useState<HTMLDivElement | null>(null);
 
-  // Only render portals on client side after mount
   useEffect(() => {
-    setMounted(true);
-  }, []);
+    setContainer(containerRef.current);
+  }, [containerRef]);
 
   const visible = tooltipData !== null;
   const x = tooltipData?.x ?? 0;
@@ -83,7 +83,9 @@ export function ChartTooltip({
   // Animated crosshair position
   const animatedX = useSpring(xWithMargin, crosshairSpringConfig);
 
-  animatedX.set(xWithMargin);
+  useEffect(() => {
+    animatedX.set(xWithMargin);
+  }, [xWithMargin, animatedX]);
 
   // Generate rows from lines
   const tooltipRows = useMemo(() => {
@@ -133,15 +135,9 @@ export function ChartTooltip({
     });
   }, [tooltipData, barXAccessor, xAccessor]);
 
-  // Use portal to render into the chart container
-  // Only render after mount on client side
-  const container = containerRef.current;
-  if (!(mounted && container)) {
+  if (!container) {
     return null;
   }
-
-  // Dynamic import to avoid SSR issues
-  const { createPortal } = require("react-dom") as typeof import("react-dom");
 
   const tooltipContent = (
     <>

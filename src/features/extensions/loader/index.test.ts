@@ -109,9 +109,21 @@ describe('ExtensionLoader __voltRequire__ resolution', () => {
       filePath: 'test.ts',
     }).code;
 
-  // Production regex — keep in sync with index.ts.
+  // Production allowlist — keep in sync with __SHIM_IDS__ in index.ts.
+  const SHIM_IDS: Record<string, true> = {
+    'volt-api': true,
+    './api': true,
+    '../api': true,
+    '../../api': true,
+    './api.ts': true,
+    '../api.ts': true,
+    '../../api.ts': true,
+    './api.js': true,
+    '../api.js': true,
+    '../../api.js': true,
+  };
   const isVoltApiSpecifier = (p: string): boolean =>
-    p === 'volt-api' || /(?:^|\/)api(?:\.(?:ts|js|tsx|jsx|mjs))?$/.test(p);
+    Object.prototype.hasOwnProperty.call(SHIM_IDS, p);
 
   // Minimal shim mirroring the renderer/Worker shim surface.
   const shim = Object.freeze({
@@ -198,20 +210,29 @@ describe('ExtensionLoader __voltRequire__ resolution', () => {
   });
 
   it('static require boundary: api-segment shapes resolve correctly', () => {
-    // Covers the H1 regex boundary without Sucrase indirection.
+    // The narrowed allowlist replaces the previous regex (H1 fix). It
+    // intentionally excludes mid-path \`api\` segments AND uncommon
+    // extensions like .tsx/.jsx/.mjs that no extension actually uses to
+    // import the Volt API surface.
     expect(isVoltApiSpecifier('./vendor/api/foo')).toBe(false);
     expect(isVoltApiSpecifier('./vendor/api/foo.ts')).toBe(false);
     expect(isVoltApiSpecifier('./api-client')).toBe(false);
     expect(isVoltApiSpecifier('./api-client.ts')).toBe(false);
+    // Out-of-allowlist extensions: these used to match the old regex but
+    // are now rejected. If a real extension needs one, add it to
+    // __SHIM_IDS__ in production AND here.
+    expect(isVoltApiSpecifier('./api.tsx')).toBe(false);
+    expect(isVoltApiSpecifier('./api.jsx')).toBe(false);
+    expect(isVoltApiSpecifier('./api.mjs')).toBe(false);
     // Legitimate shapes still resolve.
     expect(isVoltApiSpecifier('volt-api')).toBe(true);
     expect(isVoltApiSpecifier('../../api')).toBe(true);
+    expect(isVoltApiSpecifier('../api')).toBe(true);
     expect(isVoltApiSpecifier('./api')).toBe(true);
     expect(isVoltApiSpecifier('./api.ts')).toBe(true);
     expect(isVoltApiSpecifier('./api.js')).toBe(true);
-    expect(isVoltApiSpecifier('./api.tsx')).toBe(true);
-    expect(isVoltApiSpecifier('./api.jsx')).toBe(true);
-    expect(isVoltApiSpecifier('./api.mjs')).toBe(true);
+    expect(isVoltApiSpecifier('../api.ts')).toBe(true);
+    expect(isVoltApiSpecifier('../../api.js')).toBe(true);
   });
 
   it('import.meta is preserved as-is by Sucrase (not rewritten to require)', () => {

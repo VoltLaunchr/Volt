@@ -10,10 +10,10 @@ interface CalculatorViewProps {
   initialExpression?: string;
 }
 
-export const CalculatorView: React.FC<CalculatorViewProps> = ({
+export function CalculatorView({
   onClose,
   initialExpression = '',
-}) => {
+}: CalculatorViewProps): React.JSX.Element {
   const { t } = useTranslation('calculator');
   const [expression, setExpression] = useState(initialExpression);
   const [result, setResult] = useState<string | null>(null);
@@ -309,4 +309,4 @@ export const CalculatorView: React.FC<CalculatorViewProps> = ({
       </div>
     </div>
   );
-};
+}

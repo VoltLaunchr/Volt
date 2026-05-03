@@ -15,7 +15,7 @@ interface SparklineProps {
  * Minimal dependency-free SVG sparkline. `min`/`max` default to the data range
  * (always including 0) so the curve can't be visually clipped.
  */
-export const Sparkline: React.FC<SparklineProps> = ({
+export function Sparkline({
   data,
   min,
   max,
@@ -24,7 +24,7 @@ export const Sparkline: React.FC<SparklineProps> = ({
   color = 'var(--color-primary, #3b82f6)',
   label,
   valueSuffix = '',
-}) => {
+}: SparklineProps): React.JSX.Element {
   const latest = data.length > 0 ? data[data.length - 1] : 0;
   const ariaLabel = label
     ? `${label}: ${latest.toFixed(1)}${valueSuffix}`
@@ -89,4 +89,4 @@ export const Sparkline: React.FC<SparklineProps> = ({
       />
     </svg>
   );
-};
+}

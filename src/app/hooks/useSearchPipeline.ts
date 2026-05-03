@@ -377,7 +377,7 @@ export function useSearchPipeline({
 
         // Launch the streaming search command (sends apps/files via channel)
         const streamingPromise = appsReady
-          ? invoke('search_streaming', {
+          ? invoke<void>('search_streaming', {
               options: {
                 query: effectiveQuery,
                 maxResults: maxResults * 2,

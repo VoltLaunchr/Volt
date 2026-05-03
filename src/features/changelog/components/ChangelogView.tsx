@@ -59,7 +59,7 @@ const getIcon = (iconName: string): React.ReactNode => {
   return icons[iconName] || <Sparkles size={18} />;
 };
 
-export const ChangelogView: React.FC<ChangelogViewProps> = ({ onClose }) => {
+export function ChangelogView({ onClose }: ChangelogViewProps): React.JSX.Element {
   const { t } = useTranslation('changelog');
   const [changelog, setChangelog] = useState<ChangelogVersionData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -279,4 +279,4 @@ export const ChangelogView: React.FC<ChangelogViewProps> = ({ onClose }) => {
       </div>
     </div>
   );
-};
+}

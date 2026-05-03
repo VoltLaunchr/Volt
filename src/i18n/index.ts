@@ -67,6 +67,24 @@ async function resolveLanguage(savedLanguage?: string): Promise<SupportedLanguag
   return 'en';
 }
 
+/**
+ * Bridge function shape exposed on `window.__volt_i18n_addBundle__` so the
+ * extension Worker bundle (see `features/extensions/loader/index.ts` —
+ * `VoltI18n.addTranslations`) can install per-extension translation
+ * resources at runtime without taking a hard reference to the i18next
+ * instance. The loader looks the bridge up by name and no-ops if absent,
+ * so the bridge MUST be installed AFTER `i18n.init()` resolves to avoid a
+ * race where an extension's `activate()` runs before i18next is ready.
+ *
+ * The `declare global` for the Window augmentation lives in
+ * `features/extensions/api/index.ts` (it owns the extension surface).
+ */
+type VoltI18nBridge = (
+  lng: string,
+  ns: string,
+  resources: Record<string, unknown>
+) => void;
+
 export async function initI18n(savedLanguage?: string): Promise<void> {
   const lng = await resolveLanguage(savedLanguage);
 
@@ -123,6 +141,18 @@ export async function initI18n(savedLanguage?: string): Promise<void> {
       },
     },
   });
+
+  // Install the extension i18n bridge AFTER i18n is fully initialized so
+  // an extension calling VoltI18n.addTranslations() during activate() can
+  // never hit a half-built i18next instance. Idempotent: if bootstrap is
+  // re-run (unlikely) the assignment simply overwrites the previous bridge
+  // with one bound to the same i18next singleton.
+  if (typeof window !== 'undefined') {
+    const bridge: VoltI18nBridge = (lang, ns, resources) => {
+      i18n.addResourceBundle(lang, ns, resources, true, true);
+    };
+    window.__volt_i18n_addBundle__ = bridge;
+  }
 }
 
 export default i18n;

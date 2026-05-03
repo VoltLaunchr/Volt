@@ -1,5 +1,6 @@
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useChart } from "./chart-context";
 
 // ---------------------------------------------------------------------------
@@ -92,12 +93,12 @@ export function LiveYAxis({
   allowDecimals = true,
 }: LiveYAxisProps) {
   const { yScale, margin, innerHeight, containerRef } = useChart();
-  const [mounted, setMounted] = useState(false);
+  const [container, setContainer] = useState<HTMLDivElement | null>(null);
   const intervalRef = useRef(0);
 
   useEffect(() => {
-    setMounted(true);
-  }, []);
+    setContainer(containerRef.current);
+  }, [containerRef]);
 
   const domain = yScale.domain() as [number, number];
   const minVal = domain[0];
@@ -170,12 +171,9 @@ export function LiveYAxis({
 
   const isLeft = position === "left";
 
-  const container = containerRef.current;
-  if (!(mounted && container)) {
+  if (!container) {
     return null;
   }
-
-  const { createPortal } = require("react-dom") as typeof import("react-dom");
 
   return createPortal(
     <div className="pointer-events-none absolute inset-0">

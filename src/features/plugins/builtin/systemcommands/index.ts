@@ -152,7 +152,7 @@ export class SystemCommandsPlugin implements Plugin {
       // Use Tauri invoke command to quit
       const { invoke } = await import('@tauri-apps/api/core');
       // Hide window first, then the user can manually close or we rely on the app lifecycle
-      await invoke('hide_window');
+      await invoke<void>('hide_window');
       // Note: Full app exit would require a Tauri command. For now, hiding is sufficient.
       console.log('App hidden. To fully quit, close from system tray if available.');
     } catch (error) {

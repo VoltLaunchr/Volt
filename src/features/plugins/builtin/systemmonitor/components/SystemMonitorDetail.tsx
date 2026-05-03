@@ -45,7 +45,7 @@ function toPoints(history: MetricSample[], getValue: (s: MetricSample) => number
 
 const COMPACT_MARGIN = { top: 4, right: 4, bottom: 4, left: 4 };
 
-export const SystemMonitorDetail: React.FC = () => {
+export function SystemMonitorDetail(): React.JSX.Element {
   const { t } = useTranslation('systemmonitor');
   const [isOpen, setIsOpen] = useState(false);
   const [alertDismissed, setAlertDismissed] = useState(false);
@@ -83,7 +83,7 @@ export const SystemMonitorDetail: React.FC = () => {
     async (pid: number, name: string) => {
       if (!window.confirm(`${t('killProcess')} "${name}" (PID ${pid})?`)) return;
       try {
-        await invoke('kill_process_by_pid', { pid });
+        await invoke<void>('kill_process_by_pid', { pid });
         logger.info(`Killed process ${name} (${pid})`);
         setKillError(null);
       } catch (e) {
@@ -97,7 +97,7 @@ export const SystemMonitorDetail: React.FC = () => {
 
   const handleOpenTaskManager = useCallback(async () => {
     try {
-      await invoke('open_task_manager');
+      await invoke<void>('open_task_manager');
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       logger.error('open_task_manager failed:', msg);
@@ -483,4 +483,4 @@ export const SystemMonitorDetail: React.FC = () => {
       </div>
     </Modal>
   );
-};
+}
