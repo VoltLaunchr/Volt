@@ -1,18 +1,27 @@
 /**
  * Supabase Authentication Commands
  *
- * Handles browser-based OAuth flow for desktop app authentication:
- * 1. Opens system browser to voltlaunchr.com login page
- * 2. Website redirects to volt://auth/callback with tokens
- * 3. Deep link handler stores tokens and emits event
- * 4. Commands provide session/profile access and token refresh
+ * Handles browser-based OAuth + PKCE flow for desktop app authentication:
+ * 1. `auth_start_login` mints a CSRF state nonce AND a PKCE
+ *    code_verifier, kept in process memory; only the SHA-256
+ *    code_challenge ever leaves the desktop.
+ * 2. Browser hits voltlaunchr.com/auth/desktop-login?state=&code_challenge=
+ * 3. After the user logs in there, the site mints a single-use AUTH_CODE
+ *    bound to the challenge and redirects to volt://auth/callback?
+ *    state=&code=.
+ * 4. `handle_auth_deep_link` verifies state, posts {code, code_verifier}
+ *    to /api/auth/exchange-code over HTTPS, receives tokens, validates
+ *    the JWT signature against the project JWKS, and stores them in the
+ *    OS keyring (HMAC-tagged) under "supabase_auth".
  *
- * Auth session is stored in the OS keyring under "supabase_auth".
+ * Tokens never travel through URL params, browser history, or extensions.
  */
+use base64::Engine as _;
 use jsonwebtoken::jwk::JwkSet;
 use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode, decode_header};
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::sync::{Mutex, RwLock};
 use std::time::{Duration, Instant};
@@ -20,14 +29,22 @@ use tracing::{debug, error, info, warn};
 
 use super::keyring_store;
 
-/// Pending login state nonces. Maps state UUID -> instant initiated.
-/// Used to enforce CSRF protection on `volt://auth/callback`: the website
-/// MUST echo the state back so an attacker can't seed a session by tricking
-/// the browser into hitting the deep link.
-static AUTH_STATE: Lazy<Mutex<HashMap<String, Instant>>> =
+/// Per-flow state held in memory between `auth_start_login` and the
+/// matching `volt://auth/callback`. The `code_verifier` MUST never be
+/// sent to the website until we have a valid AUTH_CODE bound to it.
+struct PendingAuthFlow {
+    initiated: Instant,
+    code_verifier: String,
+}
+
+/// Pending login flows keyed by CSRF state nonce. `Mutex` rather than
+/// `RwLock` because every access mutates (insert / remove / prune).
+static AUTH_STATE: Lazy<Mutex<HashMap<String, PendingAuthFlow>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
 
-/// Lifetime of a pending login state nonce (5 minutes).
+/// Lifetime of a pending login flow (5 minutes — same as the website's
+/// auth-code TTL so the desktop never keeps state past what the server
+/// will accept).
 const AUTH_STATE_TTL: Duration = Duration::from_secs(5 * 60);
 
 /// Maximum allowed `expires_in` from a refresh response (24h). Prevents the
@@ -48,14 +65,33 @@ const JWKS_CACHE_TTL: Duration = Duration::from_secs(600);
 /// is small (~200 bytes) so anything over a few seconds means trouble.
 const JWKS_FETCH_TIMEOUT: Duration = Duration::from_secs(10);
 
-fn auth_state_lock() -> Result<std::sync::MutexGuard<'static, HashMap<String, Instant>>, String> {
+fn auth_state_lock()
+-> Result<std::sync::MutexGuard<'static, HashMap<String, PendingAuthFlow>>, String> {
     Ok(AUTH_STATE.lock().unwrap_or_else(|e| e.into_inner()))
 }
 
-/// Drop pending state nonces older than `AUTH_STATE_TTL`.
-fn prune_expired_auth_states(map: &mut HashMap<String, Instant>) {
+/// Drop pending flows older than `AUTH_STATE_TTL`.
+fn prune_expired_auth_states(map: &mut HashMap<String, PendingAuthFlow>) {
     let now = Instant::now();
-    map.retain(|_, initiated| now.duration_since(*initiated) <= AUTH_STATE_TTL);
+    map.retain(|_, flow| now.duration_since(flow.initiated) <= AUTH_STATE_TTL);
+}
+
+/// Generate a fresh PKCE pair: a 32-byte random verifier and its
+/// base64url-encoded SHA-256 challenge.
+///
+/// Per RFC 7636 the verifier must be 43-128 chars from the URL-safe
+/// alphabet; 32 raw bytes encoded base64url-no-pad is exactly 43 chars.
+fn generate_pkce_pair() -> (String, String) {
+    use rand::RngCore;
+    let mut bytes = [0u8; 32];
+    rand::rng().fill_bytes(&mut bytes);
+    let verifier = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
+
+    let mut hasher = Sha256::new();
+    hasher.update(verifier.as_bytes());
+    let challenge = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(hasher.finalize());
+
+    (verifier, challenge)
 }
 
 // Injected at compile time from .env or CI secrets via build.rs.
@@ -147,27 +183,38 @@ fn delete_auth_session() -> Result<(), String> {
 // Tauri commands
 // ---------------------------------------------------------------------------
 
-/// Generate a fresh login URL bound to a server-side state nonce.
+/// Generate a fresh login URL bound to a CSRF state nonce + a PKCE
+/// code challenge.
 ///
-/// The frontend should call this command, store the returned URL, then open it
-/// (or call `auth_login` which opens the same URL). The website MUST echo the
-/// state back in the `volt://auth/callback?state=...` deep link or the
-/// callback is rejected — preventing a malicious page from injecting a
-/// session into the user's keyring via a forged deep link.
+/// The verifier stays in process memory; only the challenge ships with
+/// the URL. The website later mints a single-use AUTH_CODE bound to that
+/// challenge, redirects to `volt://auth/callback?state=&code=`, and the
+/// desktop submits {code, code_verifier} to /api/auth/exchange-code to
+/// obtain tokens. Tokens never travel through the browser.
 #[tauri::command]
 pub async fn auth_start_login() -> Result<String, String> {
     ensure_configured()?;
 
     let state = uuid::Uuid::new_v4().to_string();
+    let (verifier, challenge) = generate_pkce_pair();
 
     {
         let mut map = auth_state_lock()?;
         prune_expired_auth_states(&mut map);
-        map.insert(state.clone(), Instant::now());
+        map.insert(
+            state.clone(),
+            PendingAuthFlow {
+                initiated: Instant::now(),
+                code_verifier: verifier,
+            },
+        );
     }
 
-    info!("Generated new auth login state");
-    Ok(format!("{}?state={}", AUTH_REDIRECT_URL, state))
+    info!("Generated new auth login state (PKCE)");
+    Ok(format!(
+        "{}?state={}&code_challenge={}&code_challenge_method=S256",
+        AUTH_REDIRECT_URL, state, challenge
+    ))
 }
 
 /// Start login flow — opens system browser to the website login page.
@@ -347,18 +394,37 @@ pub async fn auth_logout() -> Result<(), String> {
 // Deep link callback handler (called from lib.rs setup)
 // ---------------------------------------------------------------------------
 
-/// Parse a `volt://auth/callback?...` URL and persist the session.
+/// Endpoint that exchanges the PKCE auth code for tokens.
+const AUTH_EXCHANGE_URL: &str = "https://voltlaunchr.com/api/auth/exchange-code";
+
+/// Network timeout for the code exchange HTTP call. The website looks up
+/// a single row by primary key and returns ~1KB of JSON, so anything past
+/// a few seconds means trouble.
+const EXCHANGE_TIMEOUT: Duration = Duration::from_secs(10);
+
+#[derive(Debug, Deserialize)]
+struct ExchangeResponse {
+    access_token: String,
+    refresh_token: String,
+    expires_at: i64,
+    user_id: String,
+}
+
+/// Parse a `volt://auth/callback?state=&code=` URL, swap the code for a
+/// session over HTTPS using the stored PKCE verifier, then persist it.
 ///
-/// Performs three layers of validation before accepting tokens:
-/// 1. The URL host/path must match the expected callback shape.
-/// 2. The `state` query param MUST match a pending nonce stored by
-///    `auth_start_login` (CSRF binding) — prevents drive-by deep links
-///    from injecting a session into the victim's keyring.
-/// 3. The JWT signature is verified against the project JWKS (ES256 by
-///    default since Supabase's 2025-10 asymmetric migration), and the
-///    `iss` / `aud` / `exp` claims are validated. `user_id` and
-///    `expires_at` are taken from the verified claims, NEVER from the URL
-///    query params.
+/// Validation layers:
+/// 1. URL host/path must match the expected callback shape.
+/// 2. `state` MUST match a pending flow stored by `auth_start_login`
+///    (CSRF binding); the entry is removed on use so the nonce can't be
+///    replayed.
+/// 3. The auth code is exchanged at `/api/auth/exchange-code`; the website
+///    cross-checks `SHA256(code_verifier) == stored_challenge` server-side
+///    before releasing the tokens.
+/// 4. The returned access token's signature is verified against the
+///    project JWKS (ES256), and `iss` / `aud` / `exp` are validated.
+///    `user_id` / `expires_at` come from the verified claims, never from
+///    the deep-link URL or the website body.
 pub async fn handle_auth_deep_link(url_str: &str) -> Result<AuthSession, String> {
     let parsed =
         url::Url::parse(url_str).map_err(|e| format!("Failed to parse deep link URL: {}", e))?;
@@ -371,49 +437,86 @@ pub async fn handle_auth_deep_link(url_str: &str) -> Result<AuthSession, String>
     let params: std::collections::HashMap<String, String> =
         parsed.query_pairs().into_owned().collect();
 
-    // 1. Verify the state nonce matches a pending login (CSRF protection).
-    //    We consume (remove) the nonce so it can't be replayed.
+    // 1. Verify the state nonce + claim the matching PKCE verifier.
     let state = params
         .get("state")
         .ok_or("Missing state in callback URL")?
         .clone();
 
-    {
+    let verifier = {
         let mut map = auth_state_lock()?;
         prune_expired_auth_states(&mut map);
-        let initiated = map.remove(&state).ok_or_else(|| {
+        let flow = map.remove(&state).ok_or_else(|| {
             warn!("Auth callback rejected: unknown or expired state nonce");
             "Invalid or expired auth state".to_string()
         })?;
-        if Instant::now().duration_since(initiated) > AUTH_STATE_TTL {
+        if Instant::now().duration_since(flow.initiated) > AUTH_STATE_TTL {
             warn!("Auth callback rejected: state nonce expired during processing");
             return Err("Auth state expired".into());
         }
+        flow.code_verifier
+    };
+
+    let code = params
+        .get("code")
+        .ok_or("Missing PKCE code in callback URL")?
+        .clone();
+
+    // 2. Exchange the code for tokens. The verifier proves to the website
+    //    that we are the same client that initiated the flow.
+    let client = reqwest::Client::builder()
+        .timeout(EXCHANGE_TIMEOUT)
+        .build()
+        .map_err(|e| format!("Failed to build exchange HTTP client: {}", e))?;
+
+    let resp = client
+        .post(AUTH_EXCHANGE_URL)
+        .json(&serde_json::json!({
+            "code": code,
+            "code_verifier": verifier,
+        }))
+        .send()
+        .await
+        .map_err(|e| format!("Auth code exchange failed: {}", e))?;
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let body = resp.text().await.unwrap_or_default();
+        warn!("Auth code exchange returned {}: {}", status, body);
+        return Err(format!("Auth code exchange failed with status {}", status));
     }
 
-    let access_token = params
-        .get("access_token")
-        .ok_or("Missing access_token in callback URL")?
-        .clone();
-    let refresh_token = params
-        .get("refresh_token")
-        .ok_or("Missing refresh_token in callback URL")?
-        .clone();
+    let exchange: ExchangeResponse = resp
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse exchange response: {}", e))?;
 
-    // 2. Verify JWT signature against the project JWKS and validate
-    //    `iss`/`aud`/`exp`. Pull authoritative user_id / expires_at from
-    //    the cryptographically verified claims rather than the URL.
-    let claims = validate_access_token(&access_token).await?;
+    // 3. Cryptographically verify the access token before trusting any
+    //    field of the response. `claims.sub` is the authoritative user id;
+    //    cross-check the body's `user_id` against it as defence-in-depth.
+    let claims = validate_access_token(&exchange.access_token).await?;
+    if claims.sub != exchange.user_id {
+        warn!(
+            "Exchange body user_id ({}) does not match JWT sub ({})",
+            exchange.user_id, claims.sub
+        );
+        return Err("Exchange response user_id mismatch".into());
+    }
+
+    // Use the JWT's `exp` as the lower bound for session expiry. The body
+    // can advertise `expires_at` for convenience but we always trust the
+    // signed value when it disagrees.
+    let expires_at = std::cmp::min(claims.exp, exchange.expires_at);
 
     let session = AuthSession {
-        access_token,
-        refresh_token,
-        expires_at: claims.exp,
+        access_token: exchange.access_token,
+        refresh_token: exchange.refresh_token,
+        expires_at,
         user_id: claims.sub,
     };
 
     save_auth_session(&session)?;
-    info!("Auth session saved from deep link callback");
+    info!("Auth session saved via PKCE code exchange");
 
     Ok(session)
 }
@@ -600,7 +703,6 @@ mod tests {
     async fn test_validate_access_token_rejects_jwt_without_kid() {
         // Header `{"alg":"ES256","typ":"JWT"}` (no kid) → must be rejected
         // before any JWKS fetch. Verifies the kid check is evaluated first.
-        use base64::Engine as _;
         let header = base64::engine::general_purpose::URL_SAFE_NO_PAD
             .encode(br#"{"alg":"ES256","typ":"JWT"}"#);
         let payload = base64::engine::general_purpose::URL_SAFE_NO_PAD
@@ -610,5 +712,53 @@ mod tests {
             .await
             .expect_err("token without kid should be rejected");
         assert!(err.to_lowercase().contains("kid"), "got: {}", err);
+    }
+
+    #[test]
+    fn test_pkce_pair_shape() {
+        // RFC 7636: 32 raw bytes -> 43-char URL-safe base64 (no padding).
+        // SHA-256 -> 32 bytes -> 43-char URL-safe base64 challenge.
+        let (verifier, challenge) = generate_pkce_pair();
+        assert_eq!(verifier.len(), 43, "verifier must be 43 chars");
+        assert_eq!(challenge.len(), 43, "challenge must be 43 chars");
+        // URL-safe alphabet only — no '+' '/' '=' so the values can ride
+        // through query strings without further encoding.
+        let safe = |s: &str| {
+            s.chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+        };
+        assert!(safe(&verifier), "verifier has unsafe chars: {}", verifier);
+        assert!(safe(&challenge), "challenge has unsafe chars: {}", challenge);
+        // Two consecutive calls must yield different verifiers (entropy
+        // sanity check — not a cryptographic test, just a regression
+        // guard for `generate_pkce_pair` accidentally becoming constant).
+        let (v2, _) = generate_pkce_pair();
+        assert_ne!(verifier, v2, "PKCE generator is not random");
+    }
+
+    #[tokio::test]
+    async fn test_handle_deep_link_rejects_missing_code() {
+        // State accepted (we plant one), but `code` absent → must be
+        // rejected before any HTTP call.
+        let state = "test-pkce-missing-code";
+        {
+            let mut map = auth_state_lock().unwrap();
+            map.insert(
+                state.to_string(),
+                PendingAuthFlow {
+                    initiated: Instant::now(),
+                    code_verifier: "x".repeat(43),
+                },
+            );
+        }
+        let url = format!("volt://auth/callback?state={}", state);
+        let err = handle_auth_deep_link(&url)
+            .await
+            .expect_err("missing code should be rejected");
+        assert!(
+            err.to_lowercase().contains("code"),
+            "expected code error, got: {}",
+            err
+        );
     }
 }
