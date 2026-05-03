@@ -81,7 +81,11 @@ pub fn save_credential(service: String, token: String) -> Result<(), String> {
 /// `retrieve_signed` validates the companion HMAC tag and silently drops
 /// the entry on mismatch (returning `None`); the caller observes a missing
 /// credential and triggers re-auth, which is the desired tamper response.
-#[tauri::command]
+///
+/// NOT exposed via IPC — bare tokens must never cross the renderer boundary
+/// (audit M2). Renderer code uses `has_credential` to check existence and
+/// `test_credential` to validate; the token is read directly from this
+/// function only by Rust callers (e.g. internal HTTP request builders).
 pub fn load_credential(service: String) -> Result<Option<String>, String> {
     debug!("Loading credential for service: {}", service);
     keyring_store::migrate_from_json_if_needed();

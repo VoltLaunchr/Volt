@@ -172,7 +172,10 @@ impl ClipboardManagerPlugin {
 
     /// Add item to clipboard history
     fn add_to_history(&self, content_type: ClipboardType, content: String) -> Result<(), String> {
-        let conn_guard = self.conn.lock().unwrap();
+        let conn_guard = self
+            .conn
+            .lock()
+            .map_err(|e| format!("clipboard db lock poisoned: {}", e))?;
         let conn = conn_guard.as_ref().ok_or("Database not initialized")?;
 
         let content_hash = self.calculate_hash(&content);
@@ -188,7 +191,10 @@ impl ClipboardManagerPlugin {
 
     /// Get clipboard history
     pub fn get_history(&self, limit: Option<usize>) -> Result<Vec<ClipboardItem>, String> {
-        let conn_guard = self.conn.lock().unwrap();
+        let conn_guard = self
+            .conn
+            .lock()
+            .map_err(|e| format!("clipboard db lock poisoned: {}", e))?;
         let conn = conn_guard.as_ref().ok_or("Database not initialized")?;
 
         let limit = limit.unwrap_or(50);
@@ -245,7 +251,10 @@ impl ClipboardManagerPlugin {
         query: &str,
         limit: Option<usize>,
     ) -> Result<Vec<ClipboardItem>, String> {
-        let conn_guard = self.conn.lock().unwrap();
+        let conn_guard = self
+            .conn
+            .lock()
+            .map_err(|e| format!("clipboard db lock poisoned: {}", e))?;
         let conn = conn_guard.as_ref().ok_or("Database not initialized")?;
 
         let limit = limit.unwrap_or(50);
@@ -302,7 +311,10 @@ impl ClipboardManagerPlugin {
 
     /// Pin/unpin clipboard item
     pub fn toggle_pin(&self, id: i64) -> Result<(), String> {
-        let conn_guard = self.conn.lock().unwrap();
+        let conn_guard = self
+            .conn
+            .lock()
+            .map_err(|e| format!("clipboard db lock poisoned: {}", e))?;
         let conn = conn_guard.as_ref().ok_or("Database not initialized")?;
 
         conn.execute(
@@ -316,7 +328,10 @@ impl ClipboardManagerPlugin {
 
     /// Delete clipboard item
     pub fn delete_item(&self, id: i64) -> Result<(), String> {
-        let conn_guard = self.conn.lock().unwrap();
+        let conn_guard = self
+            .conn
+            .lock()
+            .map_err(|e| format!("clipboard db lock poisoned: {}", e))?;
         let conn = conn_guard.as_ref().ok_or("Database not initialized")?;
 
         conn.execute("DELETE FROM clipboard_history WHERE id = ?1", params![id])
@@ -327,7 +342,10 @@ impl ClipboardManagerPlugin {
 
     /// Clear all clipboard history (except pinned items)
     pub fn clear_history(&self, include_pinned: bool) -> Result<(), String> {
-        let conn_guard = self.conn.lock().unwrap();
+        let conn_guard = self
+            .conn
+            .lock()
+            .map_err(|e| format!("clipboard db lock poisoned: {}", e))?;
         let conn = conn_guard.as_ref().ok_or("Database not initialized")?;
 
         if include_pinned {
@@ -346,7 +364,10 @@ impl ClipboardManagerPlugin {
     /// # Arguments
     /// * `content` - Content to copy to clipboard
     pub fn copy_content(&self, content: String) -> Result<(), String> {
-        let mut clipboard_guard = self.clipboard.lock().unwrap();
+        let mut clipboard_guard = self
+            .clipboard
+            .lock()
+            .map_err(|e| format!("clipboard lock poisoned: {}", e))?;
         let clipboard = clipboard_guard
             .as_mut()
             .ok_or("Clipboard not initialized")?;
@@ -360,7 +381,10 @@ impl ClipboardManagerPlugin {
 
     /// Check clipboard and update history if changed
     pub fn check_clipboard(&self) -> Result<(), String> {
-        let mut clipboard_guard = self.clipboard.lock().unwrap();
+        let mut clipboard_guard = self
+            .clipboard
+            .lock()
+            .map_err(|e| format!("clipboard lock poisoned: {}", e))?;
         let clipboard = clipboard_guard
             .as_mut()
             .ok_or("Clipboard not initialized")?;
@@ -395,7 +419,10 @@ impl ClipboardManagerPlugin {
 
                     // Check if content has changed
                     let current_hash = self.calculate_hash(&base64_content);
-                    let mut last_hash_guard = self.last_content_hash.lock().unwrap();
+                    let mut last_hash_guard = self
+                        .last_content_hash
+                        .lock()
+                        .map_err(|e| format!("clipboard hash lock poisoned: {}", e))?;
 
                     if let Some(last_hash) = last_hash_guard.as_ref()
                         && last_hash == &current_hash
@@ -428,7 +455,10 @@ impl ClipboardManagerPlugin {
 
             // Check if content has changed
             let current_hash = self.calculate_hash(&text);
-            let mut last_hash_guard = self.last_content_hash.lock().unwrap();
+            let mut last_hash_guard = self
+                .last_content_hash
+                .lock()
+                .map_err(|e| format!("clipboard hash lock poisoned: {}", e))?;
 
             if let Some(last_hash) = last_hash_guard.as_ref()
                 && last_hash == &current_hash
@@ -499,7 +529,13 @@ impl ClipboardManagerPlugin {
 
                 // Try to read image first (higher priority)
                 {
-                    let mut clipboard_guard = clipboard.lock().unwrap();
+                    let mut clipboard_guard = match clipboard.lock() {
+                        Ok(g) => g,
+                        Err(e) => {
+                            tracing::warn!("clipboard lock poisoned: {}", e);
+                            continue;
+                        }
+                    };
                     if let Some(cb) = clipboard_guard.as_mut()
                         && let Ok(image_data) = cb.get_image()
                     {
@@ -528,7 +564,16 @@ impl ClipboardManagerPlugin {
                                         general_purpose::STANDARD.encode(&png_bytes);
                                     let current_hash = crate::utils::hash_id(&base64_content);
 
-                                    let mut last_hash_guard = last_content_hash.lock().unwrap();
+                                    let mut last_hash_guard = match last_content_hash.lock() {
+                                        Ok(g) => g,
+                                        Err(e) => {
+                                            tracing::warn!(
+                                                "clipboard hash lock poisoned: {}",
+                                                e
+                                            );
+                                            continue;
+                                        }
+                                    };
                                     let should_add =
                                         if let Some(last_hash) = last_hash_guard.as_ref() {
                                             last_hash != &current_hash
@@ -567,7 +612,13 @@ impl ClipboardManagerPlugin {
 
                 // Only check text if no image was processed
                 if !image_processed {
-                    let mut clipboard_guard = clipboard.lock().unwrap();
+                    let mut clipboard_guard = match clipboard.lock() {
+                        Ok(g) => g,
+                        Err(e) => {
+                            tracing::warn!("clipboard lock poisoned: {}", e);
+                            continue;
+                        }
+                    };
                     if let Some(cb) = clipboard_guard.as_mut()
                         && let Ok(text) = cb.get_text()
                     {
@@ -583,7 +634,13 @@ impl ClipboardManagerPlugin {
 
                         // Check if content has changed
                         let current_hash = crate::utils::hash_id(&text);
-                        let mut last_hash_guard = last_content_hash.lock().unwrap();
+                        let mut last_hash_guard = match last_content_hash.lock() {
+                            Ok(g) => g,
+                            Err(e) => {
+                                tracing::warn!("clipboard hash lock poisoned: {}", e);
+                                continue;
+                            }
+                        };
 
                         let should_add = if let Some(last_hash) = last_hash_guard.as_ref() {
                             last_hash != &current_hash
@@ -703,7 +760,9 @@ impl ClipboardManagerPlugin {
         max_items: usize,
         max_days: u32,
     ) -> Result<(), String> {
-        let conn_guard = conn.lock().unwrap();
+        let conn_guard = conn
+            .lock()
+            .map_err(|e| format!("clipboard db lock poisoned: {}", e))?;
         let conn = conn_guard.as_ref().ok_or("Database not initialized")?;
 
         Self::insert_and_cleanup(
@@ -899,12 +958,18 @@ impl Plugin for ClipboardManagerPlugin {
                 // Open the long-lived reused connection
                 let conn = Connection::open(&db_path)
                     .map_err(|e| format!("Failed to open database: {}", e))?;
-                *self.conn.lock().unwrap() = Some(conn);
+                *self
+                    .conn
+                    .lock()
+                    .map_err(|e| format!("clipboard db lock poisoned: {}", e))? = Some(conn);
 
                 // Initialize clipboard
                 let clipboard = Clipboard::new()
                     .map_err(|e| format!("Failed to initialize clipboard: {}", e))?;
-                *self.clipboard.lock().unwrap() = Some(clipboard);
+                *self
+                    .clipboard
+                    .lock()
+                    .map_err(|e| format!("clipboard lock poisoned: {}", e))? = Some(clipboard);
             }
 
             // Load configuration

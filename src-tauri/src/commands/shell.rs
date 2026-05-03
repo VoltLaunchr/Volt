@@ -330,9 +330,12 @@ fn validate_working_dir(working_dir: Option<&str>) -> Result<Option<std::path::P
                     "UNC working_dir not allowed".into(),
                 ));
             }
+            // Generic error message — surfacing the raw OS error leaks
+            // path-existence info (e.g. "not found" vs "permission denied"
+            // vs "name too long") which is a minor enumeration oracle.
             let canon = std::path::Path::new(trimmed)
                 .canonicalize()
-                .map_err(|e| VoltError::FileSystem(format!("Invalid working_dir: {}", e)))?;
+                .map_err(|_| VoltError::FileSystem("working_dir is invalid".into()))?;
             if !canon.is_dir() {
                 return Err(VoltError::FileSystem(
                     "working_dir is not a directory".into(),

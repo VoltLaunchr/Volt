@@ -511,7 +511,10 @@ fn validate_registry_url(url: &str) -> VoltResult<()> {
 pub async fn fetch_extension_registry(url: String) -> VoltResult<ExtensionRegistry> {
     validate_registry_url(&url)?;
 
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .map_err(|e| VoltError::Unknown(format!("HTTP client build failed: {}", e)))?;
 
     let response = client
         .get(&url)
@@ -568,7 +571,10 @@ pub async fn install_extension(
 
     // Download the extension
     info!("Downloading extension from: {}", download_url);
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .map_err(|e| VoltError::Unknown(format!("HTTP client build failed: {}", e)))?;
     let response = client
         .get(&download_url)
         .header("User-Agent", "Volt-Launcher")
@@ -636,6 +642,23 @@ pub async fn install_extension(
             "Manifest id '{}' does not match requested extension id '{}'",
             manifest.id, extension_id
         )));
+    }
+
+    // Validate every declared permission against the canonical allowlist
+    // BEFORE the install record is written. This makes registry curation
+    // possible (the store/UI knows which manifests are installable) and
+    // closes the fingerprinting oracle where an unknown-permission manifest
+    // would silently install but later fail at grant time. Reject the
+    // entire install on a single bad entry. (M3)
+    if let Some(declared) = manifest.permissions.as_ref() {
+        for perm in declared {
+            if !ALLOWED_PERMISSIONS.contains(&perm.as_str()) {
+                return Err(VoltError::InvalidConfig(format!(
+                    "Manifest declares unknown permission: '{}'. Allowed: {:?}",
+                    perm, ALLOWED_PERMISSIONS
+                )));
+            }
+        }
     }
 
     // Create installed extension record
@@ -1454,7 +1477,10 @@ pub async fn fetch_extension_downloads() -> VoltResult<Vec<DownloadCount>> {
         SUPABASE_URL.trim_end_matches('/')
     );
 
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .map_err(|e| VoltError::Unknown(format!("HTTP client build failed: {}", e)))?;
     let resp = client
         .get(&url)
         .header("apikey", SUPABASE_ANON_KEY)
@@ -1475,10 +1501,41 @@ pub async fn fetch_extension_downloads() -> VoltResult<Vec<DownloadCount>> {
     Ok(counts)
 }
 
+/// Per-process leaky bucket for `increment_extension_download` calls.
+/// Prevents a misbehaving extension or compromised renderer from spamming
+/// the Supabase RPC endpoint and inflating download counts (M13). 60/hr
+/// comfortably covers normal usage (the UI calls this once per install).
+static INCREMENT_BUCKET: std::sync::Mutex<Vec<std::time::Instant>> =
+    std::sync::Mutex::new(Vec::new());
+const INCREMENT_RATE_LIMIT: usize = 60;
+const INCREMENT_WINDOW_SECS: u64 = 3600;
+
+fn check_increment_rate_limit() -> Result<(), String> {
+    let mut bucket = INCREMENT_BUCKET
+        .lock()
+        .map_err(|e| format!("lock poisoned: {}", e))?;
+    let now = std::time::Instant::now();
+    let window = std::time::Duration::from_secs(INCREMENT_WINDOW_SECS);
+    bucket.retain(|t| now.duration_since(*t) < window);
+    if bucket.len() >= INCREMENT_RATE_LIMIT {
+        return Err("download counter rate-limit exceeded".into());
+    }
+    bucket.push(now);
+    Ok(())
+}
+
 /// Increment the download counter for an extension in Supabase (fire-and-forget).
 #[tauri::command]
 pub async fn increment_extension_download(extension_id: String) -> VoltResult<()> {
     validate_extension_id(&extension_id)?;
+
+    // Per-process rate limit before we touch the network. The RPC is
+    // fire-and-forget so we silently no-op on rate-limit hits rather than
+    // bubbling an error to the renderer (the counter is best-effort UX).
+    if let Err(e) = check_increment_rate_limit() {
+        warn!("increment_extension_download dropped: {}", e);
+        return Ok(());
+    }
 
     if SUPABASE_URL.is_empty() || SUPABASE_ANON_KEY.is_empty() {
         return Ok(());
@@ -1489,7 +1546,10 @@ pub async fn increment_extension_download(extension_id: String) -> VoltResult<()
         SUPABASE_URL.trim_end_matches('/')
     );
 
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .map_err(|e| VoltError::Unknown(format!("HTTP client build failed: {}", e)))?;
     let _ = client
         .post(&url)
         .header("apikey", SUPABASE_ANON_KEY)

@@ -34,6 +34,18 @@ const BLOCKED_EXECUTABLES: &[&str] = &[
     "rundll32.exe",
     "certutil.exe",
     "bitsadmin.exe",
+    // Additional LOLBINs (M12). All from the LOLBAS project's known-abuse
+    // list — none are useful as user-launched applications.
+    "installutil.exe",
+    "msbuild.exe",
+    "cmstp.exe",
+    "wmic.exe",
+    "ngen.exe",
+    "presentationhost.exe",
+    "msxsl.exe",
+    "forfiles.exe",
+    "expand.exe",
+    "extexport.exe",
 ];
 
 /// File extensions considered valid application launch targets on Windows.

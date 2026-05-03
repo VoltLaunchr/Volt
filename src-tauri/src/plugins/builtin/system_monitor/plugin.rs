@@ -274,8 +274,12 @@ impl SystemMonitorPlugin {
             .with_cpu(CpuRefreshKind::new().with_cpu_usage())
             .with_memory(MemoryRefreshKind::new().with_ram());
         system.refresh_specifics(refresh_kind);
-        // CPU still needs the dual-sample dance.
-        self.refresh_cpu_dual_sample(&mut system);
+        // NOTE: Do NOT call `refresh_cpu_dual_sample` here — it would block the
+        // IPC hot path with `std::thread::sleep(MINIMUM_CPU_UPDATE_INTERVAL)` on
+        // cold cache. The 5-second background ticker (`refresh_cache`) primes
+        // the CPU baseline within ~200ms of startup; the first user query
+        // before that returns whatever the single-sample refresh gives (often
+        // 0.0), which is acceptable.
 
         let mut disks = self
             .disks

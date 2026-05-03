@@ -22,6 +22,8 @@ tauri-build = { version = "2", features = [] }
 dotenvy = "0.15"
 
 [dependencies]
+# Tauri features intentionally empty: devtools is gated to debug builds via the
+# `devtools` feature below, and no other Tauri optional features are required.
 tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"
 tauri-plugin-global-shortcut = "2"
@@ -90,7 +92,7 @@ plist = "1.7"
 tauri-plugin-positioner = "2"
 
 [features]
-default = ["devtools"]
+default = []
 devtools = ["tauri/devtools"]
 
 [dev-dependencies]

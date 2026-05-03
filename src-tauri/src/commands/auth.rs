@@ -85,7 +85,10 @@ const JWKS_RETRY_BACKOFF: Duration = Duration::from_millis(500);
 
 fn auth_state_lock()
 -> Result<std::sync::MutexGuard<'static, HashMap<String, PendingAuthFlow>>, String> {
-    Ok(AUTH_STATE.lock().unwrap_or_else(|e| e.into_inner()))
+    Ok(AUTH_STATE.lock().unwrap_or_else(|e| {
+        tracing::warn!("AUTH_STATE mutex was poisoned; recovering");
+        e.into_inner()
+    }))
 }
 
 /// Drop pending flows older than `AUTH_STATE_TTL`.
@@ -524,9 +527,8 @@ pub async fn handle_auth_deep_link(url_str: &str) -> Result<AuthSession, String>
         (params.get("access_token"), params.get("refresh_token"))
     {
         warn!(
-            "Auth callback: legacy implicit path (tokens in URL). \
-             This path is supported for backward compatibility but new \
-             flows should use PKCE."
+            "DEPRECATED: legacy implicit-grant auth callback used (token-in-URL). \
+             Will be removed in v0.2.0. Use PKCE flow instead."
         );
         return persist_implicit_session(access_token.clone(), refresh_token.clone()).await;
     }
@@ -640,6 +642,17 @@ pub struct AccessTokenClaims {
     /// by `Validation::set_issuer` during decode.
     #[allow(dead_code)]
     pub iss: String,
+    /// Optional `tier` claim published by a Supabase auth hook (defense in
+    /// depth for premium gating). Renderers can't issue the underlying JWT,
+    /// so a `tier` claim that survives signature verification is
+    /// authoritative — preferred over the `profiles.tier` REST lookup which
+    /// is exposed to a `profiles.tier` UPDATE-via-REST escalation if the
+    /// upstream RLS policy ever drifts.
+    ///
+    /// Migration path: configure a Supabase auth hook to publish this claim,
+    /// then the REST fallback in `sync::require_premium` can be retired.
+    #[serde(default)]
+    pub tier: Option<String>,
 }
 
 /// Fetch the Supabase project JWKS document. Performed once per cache miss.
