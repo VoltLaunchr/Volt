@@ -3,10 +3,13 @@
 //! Shared validation for `launch_application` / `launch_app` to ensure only
 //! legitimate application paths can be executed.
 
-use once_cell::sync::Lazy;
-use regex::Regex;
 use std::path::Path;
 use tracing::warn;
+
+#[cfg(target_os = "windows")]
+use once_cell::sync::Lazy;
+#[cfg(target_os = "windows")]
+use regex::Regex;
 
 /// Strict regex for UWP AppsFolder identifiers.
 ///
@@ -15,6 +18,7 @@ use tracing::warn;
 /// `Microsoft.WindowsCalculator_8wekyb3d8bbwe!App`.
 ///
 /// Anchored on both ends to prevent injection of arbitrary characters.
+#[cfg(target_os = "windows")]
 static UWP_APP_RE: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"^[A-Za-z0-9.\-]+_[A-Za-z0-9]{8,}![A-Za-z0-9.\-]+$").unwrap());
 
