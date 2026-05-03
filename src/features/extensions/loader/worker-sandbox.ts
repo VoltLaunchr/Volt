@@ -298,23 +298,95 @@ export class WorkerPlugin implements Plugin {
 
       const hostname = parsed.hostname.toLowerCase();
 
+      // Empty hostname is not addressable; refuse rather than letting the
+      // platform fetcher decide. (M2)
+      if (hostname === '') return false;
+
       // Block localhost by name.
       if (hostname === 'localhost') return false;
+
+      // Reject "compressed" IPv4 forms that browsers happily resolve to
+      // private addresses:
+      //   * `http://0/` → 0.0.0.0
+      //   * `http://2130706433/` → 127.0.0.1 (decimal-as-int)
+      //   * `http://0x7f000001/` → 127.0.0.1 (hex-as-int)
+      //   * `http://0177.0.0.1/` → 127.0.0.1 (octal-prefixed dotted form)
+      // Anything that isn't either a strict dotted-quad IPv4 or a host with
+      // at least one alphabetic character (FQDN) is suspicious. (M2)
+      if (
+        hostname === '0' ||
+        /^(?:0x[0-9a-f]+|\d+)$/i.test(hostname)
+      ) {
+        return false;
+      }
+
+      // If the hostname looks IPv4-shaped at all (digits + dots, no letters)
+      // require strict dotted-quad. This rejects octal forms like
+      // `0177.0.0.1` and partial forms like `127.1`.
+      const hasLetter = /[a-z]/i.test(hostname);
+      const looksIpv4ish = /^[0-9.]+$/.test(hostname);
+      if (!hasLetter && looksIpv4ish) {
+        const strictDottedQuad = /^\d{1,3}(\.\d{1,3}){3}$/;
+        if (!strictDottedQuad.test(hostname)) return false;
+        // Each octet must be 0..255 with no leading zero ambiguity.
+        const octets = hostname.split('.');
+        for (const o of octets) {
+          if (o.length > 1 && o.startsWith('0')) return false; // octal-style
+          const n = Number(o);
+          if (!Number.isInteger(n) || n < 0 || n > 255) return false;
+        }
+      }
 
       // IPv4 private/reserved ranges.
       if (this.isPrivateIPv4(hostname)) return false;
 
       // IPv6 loopback / ULA / link-local / IPv4-mapped-private.
       // `URL` exposes bracketed hostnames with brackets stripped, but we
-      // handle both forms defensively.
+      // handle both forms defensively. Catch IPv4-mapped IPv6 expressed
+      // purely in hex hextets (e.g. `[::ffff:7f00:1]`) which the original
+      // `isPrivateIPv6` regex (which only handled `::ffff:a.b.c.d`) missed.
+      // (M2)
       if (hostname.includes(':') || hostname.startsWith('[')) {
         if (this.isPrivateIPv6(hostname)) return false;
+        if (this.isHexMappedIpv4Private(hostname)) return false;
       }
 
       return true;
     } catch {
       return false;
     }
+  }
+
+  /**
+   * Detect IPv4-mapped IPv6 addresses encoded as hex hextets (e.g.
+   * `::ffff:7f00:1` == 127.0.0.1). The existing `isPrivateIPv6` only matches
+   * the dotted form (`::ffff:127.0.0.1`); without this helper an attacker can
+   * round-trip the same address as `[::ffff:7f00:1]` and bypass the check.
+   * (M2)
+   */
+  private isHexMappedIpv4Private(hostname: string): boolean {
+    // Strip brackets and lowercase.
+    const h = (
+      hostname.startsWith('[') && hostname.endsWith(']')
+        ? hostname.slice(1, -1)
+        : hostname
+    ).toLowerCase();
+    if (!h.includes(':')) return false;
+    const parts = h.split(':');
+    // Need at least the last two hextets to encode 32 bits of IPv4.
+    if (parts.length < 2) return false;
+    const lastTwo = parts.slice(-2);
+    const hex = /^[0-9a-f]{1,4}$/;
+    if (!hex.test(lastTwo[0]) || !hex.test(lastTwo[1])) return false;
+    const high = parseInt(lastTwo[0], 16);
+    const low = parseInt(lastTwo[1], 16);
+    if (Number.isNaN(high) || Number.isNaN(low)) return false;
+    const a = (high >> 8) & 0xff;
+    const b = high & 0xff;
+    const c = (low >> 8) & 0xff;
+    const d = low & 0xff;
+    const dotted = `${a}.${b}.${c}.${d}`;
+    return this.isPrivateIPv4(dotted);
   }
 
   /**
