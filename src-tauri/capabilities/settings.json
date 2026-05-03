@@ -131,6 +131,11 @@
     "allow-remove-from-history",
     "allow-get-history-count",
 
+    "allow-scan-applications",
+    "allow-invalidate-index",
+    "allow-get-index-status",
+    "allow-get-db-index-stats",
+
     "allow-record-shell-command",
     "allow-get-shell-history",
     "allow-pin-shell-command",
