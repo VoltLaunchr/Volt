@@ -152,11 +152,11 @@ test.describe('Keyboard Navigation', () => {
     }
   });
 
-  test('Ctrl+K clears search input', async ({ page }) => {
+  test('Ctrl+K opens actions menu when a result is selected', async ({ page }) => {
     await typeAndWaitForResults(page, 'Test');
     const input = page.locator('#search-input');
     await input.press('Control+k');
-    await expect(input).toHaveValue('');
+    await expect(page.getByRole('menu', { name: 'Actions' })).toBeVisible();
   });
 
   test('search input is focused on load', async ({ page }) => {

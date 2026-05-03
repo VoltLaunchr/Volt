@@ -567,10 +567,7 @@ impl ClipboardManagerPlugin {
                                     let mut last_hash_guard = match last_content_hash.lock() {
                                         Ok(g) => g,
                                         Err(e) => {
-                                            tracing::warn!(
-                                                "clipboard hash lock poisoned: {}",
-                                                e
-                                            );
+                                            tracing::warn!("clipboard hash lock poisoned: {}", e);
                                             continue;
                                         }
                                     };

@@ -273,10 +273,11 @@ impl SearchEngine {
 
                 // Get score with indices — discard Some(0) weak subsequence matches.
                 let mut indices = Vec::new();
-                let base_score = match pattern.indices(haystack_str, &mut self.matcher, &mut indices) {
-                    Some(s) if s > 0 => s,
-                    _ => return None,
-                };
+                let base_score =
+                    match pattern.indices(haystack_str, &mut self.matcher, &mut indices) {
+                        Some(s) if s > 0 => s,
+                        _ => return None,
+                    };
 
                 let category_boost = self.get_category_boost(&file.category);
                 let final_score = ((base_score as f32) * category_boost) as u32;

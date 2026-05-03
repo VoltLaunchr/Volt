@@ -352,8 +352,28 @@ pub async fn open_path(path: String) -> VoltResult<()> {
         && let Some(ext) = p.extension().and_then(|e| e.to_str())
     {
         const BLOCKED_OPEN_EXT: &[&str] = &[
-            "exe", "msi", "scr", "com", "bat", "cmd", "ps1", "psm1", "vbs", "vbe", "js", "jse",
-            "wsf", "wsh", "cpl", "lnk", "msc", "jar", "reg", "hta", "appref-ms", "url",
+            "exe",
+            "msi",
+            "scr",
+            "com",
+            "bat",
+            "cmd",
+            "ps1",
+            "psm1",
+            "vbs",
+            "vbe",
+            "js",
+            "jse",
+            "wsf",
+            "wsh",
+            "cpl",
+            "lnk",
+            "msc",
+            "jar",
+            "reg",
+            "hta",
+            "appref-ms",
+            "url",
         ];
         let lower = ext.to_ascii_lowercase();
         if BLOCKED_OPEN_EXT.contains(&lower.as_str()) {

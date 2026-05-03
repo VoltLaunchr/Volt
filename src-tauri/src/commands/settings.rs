@@ -132,8 +132,8 @@ pub fn default_excluded_paths() -> Vec<String> {
         "target".into(), // Rust
         "dist".into(),
         "build".into(),
-        ".next".into(),  // Next.js
-        ".nuxt".into(),  // Nuxt
+        ".next".into(), // Next.js
+        ".nuxt".into(), // Nuxt
         // Temp & cache (maps to **/tmp/**, **/temp/**)
         "tmp".into(),
         "temp".into(),
@@ -160,9 +160,16 @@ impl Default for IndexingSettings {
             folders: vec![],
             excluded_paths: default_excluded_paths(),
             file_extensions: vec![
-                "pdf".into(), "docx".into(), "doc".into(), "txt".into(),
-                "xlsx".into(), "xls".into(), "pptx".into(), "ppt".into(),
-                "md".into(), "csv".into(),
+                "pdf".into(),
+                "docx".into(),
+                "doc".into(),
+                "txt".into(),
+                "xlsx".into(),
+                "xls".into(),
+                "pptx".into(),
+                "ppt".into(),
+                "md".into(),
+                "csv".into(),
             ],
             index_on_startup: true,
         }
@@ -698,7 +705,8 @@ pub async fn import_settings(app_handle: AppHandle, path: String) -> VoltResult<
 
     // Re-validate path-bearing fields. A crafted import could otherwise point
     // the indexer at sensitive system roots or smuggle traversal sequences.
-    settings.indexing.folders = sanitize_imported_paths(std::mem::take(&mut settings.indexing.folders));
+    settings.indexing.folders =
+        sanitize_imported_paths(std::mem::take(&mut settings.indexing.folders));
     settings.indexing.excluded_paths =
         sanitize_imported_paths(std::mem::take(&mut settings.indexing.excluded_paths));
 

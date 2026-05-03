@@ -5,7 +5,7 @@
 
 use crate::commands::auth;
 use crate::commands::quicklinks::{
-    validate_command_target, validate_folder_target, validate_url_target, Quicklink, QuicklinkState,
+    Quicklink, QuicklinkState, validate_command_target, validate_folder_target, validate_url_target,
 };
 use crate::commands::snippets::{Snippet, SnippetState};
 use serde::{Deserialize, Serialize};
@@ -276,8 +276,8 @@ pub async fn sync_pull(
 
     // Snippets: merge by updated_at (keep newest per ID)
     if let Some(data) = fetch(&client, &session, "snippets").await? {
-        let remote: Vec<Snippet> = serde_json::from_value(data)
-            .map_err(|e| format!("parse remote snippets: {}", e))?;
+        let remote: Vec<Snippet> =
+            serde_json::from_value(data).map_err(|e| format!("parse remote snippets: {}", e))?;
 
         let local = snippet_state.get_all()?;
         let mut merged: HashMap<String, Snippet> =
@@ -314,8 +314,8 @@ pub async fn sync_pull(
 
     // Quicklinks: full replace (no timestamps on quicklinks)
     if let Some(data) = fetch(&client, &session, "quicklinks").await? {
-        let remote: Vec<Quicklink> = serde_json::from_value(data)
-            .map_err(|e| format!("parse remote quicklinks: {}", e))?;
+        let remote: Vec<Quicklink> =
+            serde_json::from_value(data).map_err(|e| format!("parse remote quicklinks: {}", e))?;
 
         let mut map: HashMap<String, Quicklink> = HashMap::new();
         let mut ql_accepted = 0usize;

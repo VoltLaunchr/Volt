@@ -501,10 +501,7 @@ pub fn run() {
                         // smother legitimate callbacks under "unknown state"
                         // warnings either.
                         if deeplink_rate_limited() {
-                            debug!(
-                                "Deep link dropped by rate limiter: {}",
-                                redacted_url
-                            );
+                            debug!("Deep link dropped by rate limiter: {}", redacted_url);
                             continue;
                         }
 
@@ -523,9 +520,7 @@ pub fn run() {
                                     Ok(_session) => {
                                         info!("Auth session saved from deep link");
                                         // Broadcast to every webview that's listening.
-                                        if let Err(e) =
-                                            emitter.emit("auth:session-updated", ())
-                                        {
+                                        if let Err(e) = emitter.emit("auth:session-updated", ()) {
                                             error!(
                                                 "Failed to emit auth:session-updated event: {}",
                                                 e
@@ -542,11 +537,9 @@ pub fn run() {
                                         // attached the listener). Dispatching
                                         // by label closes that gap.
                                         for label in ["main", "settings"] {
-                                            if let Err(e) = emitter.emit_to(
-                                                label,
-                                                "auth:session-updated",
-                                                (),
-                                            ) {
+                                            if let Err(e) =
+                                                emitter.emit_to(label, "auth:session-updated", ())
+                                            {
                                                 debug!(
                                                     "auth:session-updated emit_to({}) failed: {}",
                                                     label, e

@@ -21,13 +21,13 @@ test.describe('Search Flow', () => {
     await injectTauriMock(page);
     await page.goto('/');
     const searchInput = page.locator('#search-input');
-    const clearButton = page.locator('.clear-button');
-    await expect(clearButton).not.toBeVisible();
+    const clearButton = page.getByRole('button', { name: 'Clear search' });
+    await expect(clearButton).toHaveCount(0);
     await searchInput.fill('something');
     await expect(clearButton).toBeVisible();
     await clearButton.click();
     await expect(searchInput).toHaveValue('');
-    await expect(clearButton).not.toBeVisible();
+    await expect(clearButton).toHaveCount(0);
   });
 
   test('Escape clears the search input', async ({ page }) => {
@@ -44,9 +44,9 @@ test.describe('Search Flow', () => {
     await page.goto('/');
     const searchInput = page.locator('#search-input');
     await searchInput.fill('2+2');
-    const firstResult = page.locator('.result-item').first();
+    const firstResult = page.locator('[role="option"]').first();
     await expect(firstResult).toBeVisible({ timeout: 5000 });
-    await expect(page.locator('.calculator-card-result .calculator-card-value').first()).toContainText('4');
+    await expect(firstResult).toContainText('4');
   });
 
   test('calculator plugin shows result for complex expression', async ({ page }) => {
@@ -54,37 +54,37 @@ test.describe('Search Flow', () => {
     await page.goto('/');
     const searchInput = page.locator('#search-input');
     await searchInput.fill('10*5+3');
-    const firstResult = page.locator('.result-item').first();
+    const firstResult = page.locator('[role="option"]').first();
     await expect(firstResult).toBeVisible({ timeout: 5000 });
-    await expect(page.locator('.calculator-card-result .calculator-card-value').first()).toContainText('53');
+    await expect(firstResult).toContainText('53');
   });
 
   test('calculator result has Calculator badge', async ({ page }) => {
     await injectTauriMock(page);
     await page.goto('/');
     await page.locator('#search-input').fill('100/4');
-    const firstResult = page.locator('.result-item').first();
+    const firstResult = page.locator('[role="option"]').first();
     await expect(firstResult).toBeVisible({ timeout: 5000 });
-    await expect(page.locator('.result-badge').first()).toContainText('Calculator');
+    await expect(firstResult).toContainText('Calculator');
   });
 
   test('websearch activates with ? prefix', async ({ page }) => {
     await injectTauriMock(page);
     await page.goto('/');
     await page.locator('#search-input').fill('?playwright testing');
-    const firstResult = page.locator('.result-item').first();
+    const firstResult = page.locator('[role="option"]').first();
     await expect(firstResult).toBeVisible({ timeout: 5000 });
-    await expect(page.locator('.result-title').first()).toContainText('playwright testing');
-    await expect(page.locator('.result-badge').first()).toContainText('Web Search');
+    await expect(firstResult).toContainText('playwright testing');
+    await expect(firstResult).toContainText('Web Search');
   });
 
   test('websearch activates with "search" prefix', async ({ page }) => {
     await injectTauriMock(page);
     await page.goto('/');
     await page.locator('#search-input').fill('search how to use tauri');
-    const firstResult = page.locator('.result-item').first();
+    const firstResult = page.locator('[role="option"]').first();
     await expect(firstResult).toBeVisible({ timeout: 5000 });
-    await expect(page.locator('.result-title').first()).toContainText('how to use tauri');
+    await expect(firstResult).toContainText('how to use tauri');
   });
 
   test('search debounces rapid input', async ({ page }) => {
@@ -146,34 +146,35 @@ test.describe('Search Flow', () => {
   test('result items have correct structure', async ({ page }) => {
     await injectTauriMock(page);
     await page.goto('/');
-    // websearch (? prefix) renders the canonical result layout with .result-title.
-    // calculator now uses a dedicated card component without .result-title.
+    // websearch (? prefix) yields a canonical result row with title, image icon
+    // and a type badge ("Web Search"). The calculator path uses a custom card.
     await page.locator('#search-input').fill('?hello');
-    const firstResult = page.locator('.result-item').first();
+    const firstResult = page.locator('[role="option"]').first();
     await expect(firstResult).toBeVisible({ timeout: 5000 });
-    await expect(firstResult.locator('.result-icon')).toBeVisible();
-    await expect(firstResult.locator('.result-content')).toBeVisible();
-    await expect(firstResult.locator('.result-title')).toBeVisible();
-    await expect(firstResult.locator('.result-badge')).toBeVisible();
+    await expect(firstResult.locator('img').first()).toBeVisible();
+    await expect(firstResult).toContainText('hello');
+    await expect(firstResult).toContainText('Web Search');
   });
 
-  test('Ctrl+K clears the search input', async ({ page }) => {
+  test('Ctrl+K opens actions menu when a result is selected', async ({ page }) => {
     await injectTauriMock(page);
     await page.goto('/');
     await page.locator('#search-input').fill('2+2');
-    await expect(page.locator('.result-item').first()).toBeVisible({ timeout: 5000 });
+    await expect(page.locator('[role="option"]').first()).toBeVisible({ timeout: 5000 });
     await page.locator('#search-input').press('Control+k');
-    await expect(page.locator('#search-input')).toHaveValue('');
+    await expect(page.getByRole('menu', { name: 'Actions' })).toBeVisible();
   });
 
   test('Tab autocompletes with selected result title', async ({ page }) => {
     await injectTauriMock(page);
     await page.goto('/');
     await page.locator('#search-input').fill('?hello');
-    const firstResult = page.locator('.result-item').first();
+    const firstResult = page.locator('[role="option"]').first();
     await expect(firstResult).toBeVisible({ timeout: 5000 });
-    const resultTitle = await page.locator('.result-title').first().textContent();
+    // The websearch plugin titles its result `Search "<query>" on <Engine>`.
+    // The full row text also includes the type badge — match the title prefix.
+    const expectedTitle = 'Search "hello" on Google';
     await page.locator('#search-input').press('Tab');
-    await expect(page.locator('#search-input')).toHaveValue(resultTitle || '');
+    await expect(page.locator('#search-input')).toHaveValue(expectedTitle);
   });
 });

@@ -269,7 +269,10 @@ async fn search_files_batch(
         engine
             .search(query, files, &search_opts)
             .into_iter()
-            .map(|r| FileSearchResultCompact { file: r.file, score: r.score })
+            .map(|r| FileSearchResultCompact {
+                file: r.file,
+                score: r.score,
+            })
             .collect()
     } else {
         let mut engine = SearchEngine::new();
@@ -281,7 +284,10 @@ async fn search_files_batch(
         engine
             .search(query, files, &search_opts)
             .into_iter()
-            .map(|r| FileSearchResultCompact { file: r.file, score: r.score })
+            .map(|r| FileSearchResultCompact {
+                file: r.file,
+                score: r.score,
+            })
             .collect()
     };
 
@@ -290,7 +296,8 @@ async fn search_files_batch(
     #[cfg(target_os = "windows")]
     if results.len() < max_results {
         let needed = max_results - results.len();
-        if let Ok(ws_results) = crate::indexer::windows_search::search_windows_index(query, needed).await
+        if let Ok(ws_results) =
+            crate::indexer::windows_search::search_windows_index(query, needed).await
         {
             let existing_paths: std::collections::HashSet<String> =
                 results.iter().map(|f| f.file.path.clone()).collect();

@@ -193,7 +193,10 @@ pub fn retrieve_signed(account: &str) -> Result<Option<String>, String> {
         );
         // Best-effort cleanup; do not fail the read on a delete error.
         if let Err(e) = remove(account) {
-            warn!("Keyring: failed to remove tampered entry '{}': {}", account, e);
+            warn!(
+                "Keyring: failed to remove tampered entry '{}': {}",
+                account, e
+            );
         }
         if let Err(e) = remove(&sig_account) {
             warn!(

@@ -429,10 +429,7 @@ fn load_installed_state(app: &AppHandle) -> VoltResult<InstalledExtensionsState>
     let mut state: InstalledExtensionsState = serde_json::from_str(&content)
         .map_err(|e| VoltError::Serialization(format!("Failed to parse installed state: {}", e)))?;
 
-    if matches!(
-        verify_outcome,
-        extension_state_sig::VerifyOutcome::Mismatch
-    ) {
+    if matches!(verify_outcome, extension_state_sig::VerifyOutcome::Mismatch) {
         // Fail closed: tampered file MUST NOT carry forward permissions.
         // Other-process attackers running as the user can forge signatures
         // (DPAPI is per-user) so the signature gate alone is insufficient.

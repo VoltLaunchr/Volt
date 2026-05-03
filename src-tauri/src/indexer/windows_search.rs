@@ -136,21 +136,37 @@ try {{
     // Post-filter 2: exclude results from noisy directories.
     // Mirrors the component-based exclusions used by the Volt scanner.
     let excluded_components: &[&str] = &[
-        "node_modules", ".git", ".svn", "__pycache__", ".venv", "venv",
-        "target", "dist", "build", ".next", ".nuxt",
-        "tmp", "temp", "Temp",
-        "Cache", "cache", "Caches", "caches", ".cache",
-        "$Recycle.Bin", "System Volume Information", "AppData", "Windows",
+        "node_modules",
+        ".git",
+        ".svn",
+        "__pycache__",
+        ".venv",
+        "venv",
+        "target",
+        "dist",
+        "build",
+        ".next",
+        ".nuxt",
+        "tmp",
+        "temp",
+        "Temp",
+        "Cache",
+        "cache",
+        "Caches",
+        "caches",
+        ".cache",
+        "$Recycle.Bin",
+        "System Volume Information",
+        "AppData",
+        "Windows",
         "Library",
     ];
     results.retain(|r| {
-        !std::path::Path::new(&r.path)
-            .components()
-            .any(|c| {
-                c.as_os_str()
-                    .to_str()
-                    .is_some_and(|s| excluded_components.contains(&s))
-            })
+        !std::path::Path::new(&r.path).components().any(|c| {
+            c.as_os_str()
+                .to_str()
+                .is_some_and(|s| excluded_components.contains(&s))
+        })
     });
 
     // Post-filter 3: drop temp/junk file extensions (*.tmp, *.temp).

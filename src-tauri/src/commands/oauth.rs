@@ -94,20 +94,17 @@ fn validate_token_format(service: &str, token: &str) -> Result<(), String> {
         return Err(format!("token too long: {}", len));
     }
     match service {
-        "github" => {
+        "github"
             if !token.starts_with("ghp_")
                 && !token.starts_with("gho_")
                 && !token.starts_with("ghu_")
                 && !token.starts_with("ghs_")
-                && !token.starts_with("github_pat_")
-            {
-                return Err("github token has unexpected prefix".into());
-            }
+                && !token.starts_with("github_pat_") =>
+        {
+            return Err("github token has unexpected prefix".into());
         }
-        "notion" => {
-            if !token.starts_with("secret_") && !token.starts_with("ntn_") {
-                return Err("notion token has unexpected prefix".into());
-            }
+        "notion" if !token.starts_with("secret_") && !token.starts_with("ntn_") => {
+            return Err("notion token has unexpected prefix".into());
         }
         _ => {}
     }
@@ -158,10 +155,7 @@ pub fn get_github_oauth_url() -> Result<String, String> {
     // a verbose debug build doesn't leave a usable CSRF nonce in the log
     // file (M10).
     trace!("GitHub OAuth URL issued, request_id: {}", request_id);
-    info!(
-        "GitHub OAuth URL requested, state_hint: {:.8}",
-        request_id
-    );
+    info!("GitHub OAuth URL requested, state_hint: {:.8}", request_id);
     Ok(format!(
         "https://voltlaunchr.com/api/oauth/github/start?desktop_state={}",
         request_id
@@ -199,10 +193,7 @@ pub fn get_notion_oauth_url() -> Result<String, String> {
     // bare callback URL. The full request_id is at trace so a verbose log
     // file never carries a usable CSRF nonce.
     trace!("Notion OAuth URL issued, request_id: {}", request_id);
-    info!(
-        "Notion OAuth URL requested, state_hint: {:.8}",
-        request_id
-    );
+    info!("Notion OAuth URL requested, state_hint: {:.8}", request_id);
     Ok(format!(
         "https://voltlaunchr.com/api/oauth/notion/start?desktop_state={}",
         request_id
@@ -240,10 +231,7 @@ pub fn handle_oauth_callback(
         let pending_request = oauth_state.pending_requests.remove(&state).ok_or_else(|| {
             // Avoid logging the raw state at warn — leaked log files
             // shouldn't carry a usable CSRF nonce. Keep only a hint.
-            warn!(
-                "OAuth callback with unknown state (hint: {:.8})",
-                state
-            );
+            warn!("OAuth callback with unknown state (hint: {:.8})", state);
             "Invalid or expired OAuth state parameter".to_string()
         })?;
 

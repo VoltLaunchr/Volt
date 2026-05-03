@@ -104,10 +104,8 @@ fn cap_auth_states(map: &mut HashMap<String, PendingAuthFlow>) {
     if map.len() <= AUTH_STATE_MAX_ENTRIES {
         return;
     }
-    let mut by_age: Vec<(String, Instant)> = map
-        .iter()
-        .map(|(k, v)| (k.clone(), v.initiated))
-        .collect();
+    let mut by_age: Vec<(String, Instant)> =
+        map.iter().map(|(k, v)| (k.clone(), v.initiated)).collect();
     by_age.sort_by_key(|(_, t)| *t);
     let to_remove = map.len() - AUTH_STATE_MAX_ENTRIES;
     for (k, _) in by_age.into_iter().take(to_remove) {
@@ -538,10 +536,7 @@ pub async fn handle_auth_deep_link(url_str: &str) -> Result<AuthSession, String>
 
 /// PKCE path — exchange the auth code for tokens via the website, then
 /// verify the JWT signature before persisting.
-async fn exchange_code_for_session(
-    code: String,
-    verifier: String,
-) -> Result<AuthSession, String> {
+async fn exchange_code_for_session(code: String, verifier: String) -> Result<AuthSession, String> {
     let client = reqwest::Client::builder()
         .timeout(EXCHANGE_TIMEOUT)
         .build()
@@ -738,8 +733,8 @@ fn jwk_to_algorithm(jwk: &jsonwebtoken::jwk::Jwk) -> Result<Algorithm, String> {
 /// algorithm advertised by the JWK matched via `kid`. This rejects tokens
 /// that try to swap an HS256 header onto a key that was issued for ES256.
 pub async fn validate_access_token(access_token: &str) -> Result<AccessTokenClaims, String> {
-    let header = decode_header(access_token)
-        .map_err(|e| format!("JWT header parse failed: {}", e))?;
+    let header =
+        decode_header(access_token).map_err(|e| format!("JWT header parse failed: {}", e))?;
 
     let kid = header
         .kid
@@ -859,7 +854,11 @@ mod tests {
                 .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
         };
         assert!(safe(&verifier), "verifier has unsafe chars: {}", verifier);
-        assert!(safe(&challenge), "challenge has unsafe chars: {}", challenge);
+        assert!(
+            safe(&challenge),
+            "challenge has unsafe chars: {}",
+            challenge
+        );
         // Two consecutive calls must yield different verifiers (entropy
         // sanity check — not a cryptographic test, just a regression
         // guard for `generate_pkce_pair` accidentally becoming constant).

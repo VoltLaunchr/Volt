@@ -196,9 +196,7 @@ pub fn is_command_blocked(command: &str) -> bool {
         return true;
     }
     let normalized = normalize_for_blocklist(raw);
-    BLOCKED_PATTERNS
-        .iter()
-        .any(|re| re.is_match(&normalized))
+    BLOCKED_PATTERNS.iter().any(|re| re.is_match(&normalized))
 }
 
 /// Result of a shell command execution.
@@ -317,7 +315,9 @@ fn truncate_output(s: &str, max_bytes: usize) -> String {
 ///   round-trips and can be used to leak NTLM hashes to attacker-controlled hosts.
 /// - Non-existent paths.
 /// - Paths that resolve to a non-directory.
-fn validate_working_dir(working_dir: Option<&str>) -> Result<Option<std::path::PathBuf>, VoltError> {
+fn validate_working_dir(
+    working_dir: Option<&str>,
+) -> Result<Option<std::path::PathBuf>, VoltError> {
     match working_dir {
         None => Ok(None),
         Some(d) => {
@@ -444,8 +444,8 @@ pub async fn execute_shell_command(
 
     // Reject UNC paths and resolve symlinks BEFORE spawning. Falls back to
     // the canonicalized form so the child uses the same path the validator saw.
-    let canon_working_dir = validate_working_dir(working_dir.as_deref())?
-        .map(|p| p.to_string_lossy().into_owned());
+    let canon_working_dir =
+        validate_working_dir(working_dir.as_deref())?.map(|p| p.to_string_lossy().into_owned());
 
     info!(
         "Executing shell command: {} (timeout={}ms, id={})",
@@ -1086,9 +1086,7 @@ mod tests {
         assert!(is_command_blocked("Format-Volume -DriveLetter C"));
         assert!(is_command_blocked("Clear-Disk -Number 0"));
         assert!(is_command_blocked("diskpart /s script.txt"));
-        assert!(is_command_blocked(
-            "Remove-Item -Recurse -Force C:\\Users"
-        ));
+        assert!(is_command_blocked("Remove-Item -Recurse -Force C:\\Users"));
         assert!(is_command_blocked("logoff"));
     }
 

@@ -15,9 +15,8 @@ use tracing::warn;
 /// `Microsoft.WindowsCalculator_8wekyb3d8bbwe!App`.
 ///
 /// Anchored on both ends to prevent injection of arbitrary characters.
-static UWP_APP_RE: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"^[A-Za-z0-9.\-]+_[A-Za-z0-9]{8,}![A-Za-z0-9.\-]+$").unwrap()
-});
+static UWP_APP_RE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"^[A-Za-z0-9.\-]+_[A-Za-z0-9]{8,}![A-Za-z0-9.\-]+$").unwrap());
 
 /// Executable file names (case-insensitive) that should never be launched
 /// directly because they are commonly abused as LOLBIN (Living Off The Land
@@ -124,7 +123,10 @@ fn validate_windows_path(path: &str, p: &Path) -> Result<(), String> {
                 let b_stripped = b_lower.strip_suffix(".exe").unwrap_or(&b_lower);
                 b_stripped == token_stripped
             }) {
-                warn!("Blocked UWP-style identifier with denylisted prefix: {}", path);
+                warn!(
+                    "Blocked UWP-style identifier with denylisted prefix: {}",
+                    path
+                );
                 return Err(format!(
                     "Direct execution of '{}' is not allowed for security reasons.",
                     first_token
@@ -247,8 +249,6 @@ mod tests {
         // 8+ character publisher hash and a '.'/alphanumeric package name.
         assert!(validate_launch_path("Microsoft.WindowsCalculator_8wekyb3d8bbwe!App").is_ok());
         assert!(validate_launch_path("Microsoft.Paint_8wekyb3d8bbwe!App").is_ok());
-        assert!(
-            validate_launch_path("Spotify.Music_zpdnekdrzrea0!Spotify").is_ok()
-        );
+        assert!(validate_launch_path("Spotify.Music_zpdnekdrzrea0!Spotify").is_ok());
     }
 }
