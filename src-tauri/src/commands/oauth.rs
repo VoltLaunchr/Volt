@@ -82,17 +82,20 @@ pub fn get_github_oauth_url() -> Result<String, String> {
         },
     );
 
-    // Return OAuth endpoint URL with state parameter - frontend will open it.
-    // Log only an 8-char hint of the state at info; the full request_id
-    // stays at debug so a leaked log file can't be used to replay the
-    // CSRF nonce.
+    // Open the website's `/start` route in the user's browser. That route
+    // mints its own CSRF nonce, sets an HttpOnly cookie pairing it with our
+    // `desktop_state`, and 302-redirects to GitHub's authorize endpoint.
+    // After GitHub redirects back, the site forwards the access token to
+    // `volt://oauth-callback?token=...&state={request_id}`. We log only an
+    // 8-char hint at info; the full request_id stays at debug so a leaked
+    // log file cannot be replayed.
     debug!("GitHub OAuth URL issued, request_id: {}", request_id);
     info!(
         "GitHub OAuth URL requested, state_hint: {:.8}",
         request_id
     );
     Ok(format!(
-        "https://voltlaunchr.com/api/oauth/github?state={}",
+        "https://voltlaunchr.com/api/oauth/github/start?desktop_state={}",
         request_id
     ))
 }
@@ -121,15 +124,15 @@ pub fn get_notion_oauth_url() -> Result<String, String> {
         },
     );
 
-    // Return OAuth endpoint URL with state parameter - frontend will open it.
-    // See comment on GitHub equivalent: full request_id is debug-only.
+    // See `get_github_oauth_url` for why we open `/start` rather than the
+    // bare callback URL. The full request_id stays debug-only.
     debug!("Notion OAuth URL issued, request_id: {}", request_id);
     info!(
         "Notion OAuth URL requested, state_hint: {:.8}",
         request_id
     );
     Ok(format!(
-        "https://voltlaunchr.com/api/oauth/notion?state={}",
+        "https://voltlaunchr.com/api/oauth/notion/start?desktop_state={}",
         request_id
     ))
 }
@@ -317,12 +320,20 @@ mod tests {
     #[test]
     fn test_state_included_in_github_url() {
         let url = get_github_oauth_url().unwrap();
-        assert!(url.starts_with("https://voltlaunchr.com/api/oauth/github?state="));
+        assert!(
+            url.starts_with("https://voltlaunchr.com/api/oauth/github/start?desktop_state="),
+            "got: {}",
+            url
+        );
     }
 
     #[test]
     fn test_state_included_in_notion_url() {
         let url = get_notion_oauth_url().unwrap();
-        assert!(url.starts_with("https://voltlaunchr.com/api/oauth/notion?state="));
+        assert!(
+            url.starts_with("https://voltlaunchr.com/api/oauth/notion/start?desktop_state="),
+            "got: {}",
+            url
+        );
     }
 }
