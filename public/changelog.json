@@ -1,17 +1,17 @@
 {
   "versions": [
     {
-      "version": "0.1.2",
-      "date": "2026-05-03",
-      "title": "V0.1.2 — Cloud Sync preview, onboarding, system monitor, UI migration & more",
-      "description": "Volt v0.1.2 brings 27 new features, 33 bug fixes, security improvements, performance optimizations.",
+      "version": "0.1.3",
+      "date": "2026-05-04",
+      "title": "v0.1.3 — Cloud Sync preview, onboarding, system monitor, UI migration & more",
+      "description": "Volt v0.1.3 brings 27 new features, 33 bug fixes, security improvements, performance optimizations.",
       "sections": [
         {
           "type": "features",
           "title": "New Features",
           "icon": "sparkles",
           "items": [
-            "V0.1.2 — Cloud Sync preview, onboarding, system monitor, UI migration",
+            "v0.1.3 — Cloud Sync preview, onboarding, system monitor, UI migration",
             "Shell execution, system monitor v2, extension hardening, CI tooling",
             "Desktop auth + extension installer hardening + Cargo.lock resync (#58)",
             "Auth deep-link, extension hardening, watcher fix, plus misc upgrades",
@@ -53,6 +53,8 @@
           "title": "Bug Fixes",
           "icon": "shield",
           "items": [
+            "Grant the settings window the missing IPC permissions for index rebuild and app scanning",
+            "Restore the version-bump workflow after a bun CLI flag change",
             "Point GitHub/Notion init at new /start route on the website",
             "Clear -D warnings on launcher/windows_search/lib",
             "Rate-limit + log forensic trail on single-instance forwards (H9)",
@@ -148,7 +150,7 @@
         }
       ],
       "footer": {
-        "gettingStarted": "Press Ctrl+Space to open Volt anytime. Check out what's new in v0.1.2!",
+        "gettingStarted": "Press Ctrl+Space to open Volt anytime. Check out what's new in v0.1.3!",
         "feedback": "Have feedback or found a bug? Visit our GitHub repository to report issues or request features.",
         "links": {
           "github": "https://github.com/VoltLaunchr/Volt",
