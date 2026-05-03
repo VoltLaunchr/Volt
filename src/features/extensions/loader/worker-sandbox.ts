@@ -137,6 +137,21 @@ export class WorkerPlugin implements Plugin {
   }
 
   /**
+   * Reject and clear ALL pending requests (used when the worker is being torn
+   * down). Without this, a per-request timeout that recreates the worker
+   * leaves stale `pending` entries whose later timer firings call
+   * `terminateWorker()` on the freshly-recreated worker, breaking the new
+   * one. See M12.
+   */
+  private cleanupPending(reason: string): void {
+    for (const [, p] of this.pending) {
+      clearTimeout(p.timer);
+      p.reject(new Error(reason));
+    }
+    this.pending.clear();
+  }
+
+  /**
    * Send a typed request to the Worker and wait for response with timeout.
    */
   private sendRequest<T>(worker: Worker, type: 'match' | 'execute', payload: unknown): Promise<T> {
@@ -147,7 +162,13 @@ export class WorkerPlugin implements Plugin {
       const id = crypto.randomUUID();
 
       const timer = setTimeout(() => {
-        this.pending.delete(id);
+        // Reject ALL pending entries — not just this one. Keeping the others
+        // alive past `terminateWorker()` is unsafe: their later timer firings
+        // would call `terminateWorker()` again, killing whichever worker the
+        // plugin has lazily recreated in the meantime. (M12)
+        this.cleanupPending(
+          `Worker reset due to timeout (after ${WORKER_TIMEOUT_MS}ms on ${type})`
+        );
         this.terminateWorker();
         reject(new Error(`Worker timeout after ${WORKER_TIMEOUT_MS}ms for ${type}`));
       }, WORKER_TIMEOUT_MS);
@@ -545,12 +566,10 @@ export class WorkerPlugin implements Plugin {
    */
   private handleError = (event: ErrorEvent) => {
     logger.error(`[WorkerPlugin:${this.id}] Worker error:`, event.message);
-    // Reject all pending requests
-    for (const [, pending] of this.pending) {
-      clearTimeout(pending.timer);
-      pending.reject(new Error(`Worker error: ${event.message}`));
-    }
-    this.pending.clear();
+    // Reject ALL pending requests and clear timers in one shot — same M12
+    // rationale as in `sendRequest`: orphaned timers would call
+    // `terminateWorker()` on the next-created worker.
+    this.cleanupPending(`Worker error: ${event.message}`);
     this.terminateWorker();
   };
 
@@ -634,12 +653,9 @@ export class WorkerPlugin implements Plugin {
    * Clean up resources when the plugin is unloaded.
    */
   destroy(): void {
-    // Reject all pending requests
-    for (const [, pending] of this.pending) {
-      clearTimeout(pending.timer);
-      pending.reject(new Error('Plugin destroyed'));
-    }
-    this.pending.clear();
+    // Reject all pending requests via the shared helper (same semantics as
+    // the timeout / error paths — see M12).
+    this.cleanupPending('Plugin destroyed');
     this.terminateWorker();
   }
 }
