@@ -4,11 +4,11 @@ import { useTranslation } from 'react-i18next';
 import { Modal } from '../../../../../shared/components/ui/Modal';
 import { logger } from '../../../../../shared/utils/logger';
 import { SystemMetricBadge } from './SystemMetricBadge';
-import { Sparkline } from './Sparkline';
+import { LiveLineChart } from '../../../../../components/charts/live-line-chart';
+import { LiveLine } from '../../../../../components/charts/live-line';
 import { useSystemMetricsV2 } from '../useSystemMetricsV2';
 import { useMetricsHistory, type MetricSample } from '../useMetricsHistory';
 import { exportMetricsCsv, formatBytesPerSec, formatUptime } from '../utils';
-import './SystemMonitorDetail.css';
 
 const OPEN_EVENT = 'volt:openSystemMonitor';
 const HIGH_CPU_THRESHOLD = 90;
@@ -27,19 +27,23 @@ function usageFillColor(v: number): string {
   if (v >= 90) return '#ef4444';
   if (v >= 75) return '#f97316';
   if (v >= 50) return '#f59e0b';
-  return '#10b981';
+  return '#FBBF24';
 }
 
 function isHighCpuSustained(history: MetricSample[]): boolean {
   if (history.length === 0) return false;
   const now = Date.now();
-  // Look at samples from the last HIGH_CPU_SECONDS window.
   const windowStart = now - HIGH_CPU_SECONDS * 1000;
   const inWindow = history.filter((s) => s.timestamp >= windowStart);
-  // Require at least HIGH_CPU_SECONDS-1 samples (1Hz poll) AND all above threshold.
   if (inWindow.length < HIGH_CPU_SECONDS - 1) return false;
   return inWindow.every((s) => s.cpuUsage >= HIGH_CPU_THRESHOLD);
 }
+
+function toPoints(history: MetricSample[], getValue: (s: MetricSample) => number) {
+  return history.map((s) => ({ time: s.timestamp / 1000, value: getValue(s) }));
+}
+
+const COMPACT_MARGIN = { top: 4, right: 4, bottom: 4, left: 4 };
 
 export const SystemMonitorDetail: React.FC = () => {
   const { t } = useTranslation('systemmonitor');
@@ -47,9 +51,8 @@ export const SystemMonitorDetail: React.FC = () => {
   const [alertDismissed, setAlertDismissed] = useState(false);
   const [killError, setKillError] = useState<string | null>(null);
 
-  // Only poll while the modal is open.
   const { metrics } = useSystemMetricsV2(isOpen ? 1000 : 60_000);
-  const history = useMetricsHistory(isOpen ? metrics : null, 60);
+  const history = useMetricsHistory(isOpen ? metrics : null, 90);
 
   useEffect(() => {
     const onOpen = () => {
@@ -63,15 +66,14 @@ export const SystemMonitorDetail: React.FC = () => {
 
   const handleClose = useCallback(() => setIsOpen(false), []);
 
-  const cpuSeries = useMemo(() => history.map((s) => s.cpuUsage), [history]);
-  const memSeries = useMemo(() => history.map((s) => s.memoryUsage), [history]);
-  const diskSeries = useMemo(() => history.map((s) => s.diskUsage), [history]);
-  const rxSeries = useMemo(() => history.map((s) => s.networkRxBps), [history]);
-  const txSeries = useMemo(() => history.map((s) => s.networkTxBps), [history]);
+  const cpuPoints  = useMemo(() => toPoints(history, (s) => s.cpuUsage), [history]);
+  const memPoints  = useMemo(() => toPoints(history, (s) => s.memoryUsage), [history]);
+  const diskPoints = useMemo(() => toPoints(history, (s) => s.diskUsage), [history]);
+  const rxPoints   = useMemo(() => toPoints(history, (s) => s.networkRxBps), [history]);
+  const txPoints   = useMemo(() => toPoints(history, (s) => s.networkTxBps), [history]);
 
   const showHighCpuAlert = !alertDismissed && isHighCpuSustained(history);
   useEffect(() => {
-    // Auto-reset dismissal once CPU drops below the threshold.
     if (alertDismissed && metrics && metrics.cpuUsage < HIGH_CPU_THRESHOLD) {
       setAlertDismissed(false);
     }
@@ -114,7 +116,7 @@ export const SystemMonitorDetail: React.FC = () => {
   if (!metrics) {
     return (
       <Modal isOpen={isOpen} onClose={handleClose} title={t('detailTitle')} size="large">
-        <div className="sm-detail">{t('usage.normal')}…</div>
+        <div className="flex flex-col gap-4 text-ink text-sm">{t('usage.normal')}…</div>
       </Modal>
     );
   }
@@ -125,15 +127,19 @@ export const SystemMonitorDetail: React.FC = () => {
 
   return (
     <Modal isOpen={isOpen} onClose={handleClose} title={t('detailTitle')} size="large">
-      <div className="sm-detail">
+      <div className="flex flex-col gap-4 text-ink text-sm">
+        {/* High CPU alert */}
         {showHighCpuAlert && (
-          <div className="sm-detail__alert" role="alert">
+          <div
+            className="flex items-center justify-between gap-3 px-3 py-2 bg-[rgba(239,68,68,0.12)] border border-[rgba(239,68,68,0.45)] text-[#ef4444] font-medium"
+            role="alert"
+          >
             <span>
               {t('alertHighCpu', { threshold: HIGH_CPU_THRESHOLD, seconds: HIGH_CPU_SECONDS })}
             </span>
             <button
               type="button"
-              className="sm-detail__alert-close"
+              className="bg-transparent border-0 cursor-pointer text-inherit text-lg leading-none px-1.5 py-0.5 hover:bg-[rgba(239,68,68,0.2)]"
               onClick={() => setAlertDismissed(true)}
               aria-label="Dismiss alert"
             >
@@ -143,65 +149,96 @@ export const SystemMonitorDetail: React.FC = () => {
         )}
 
         {/* Header: CPU / Memory / Disk + Uptime */}
-        <div className="sm-detail__header">
-          <div className="sm-detail__hero">
-            <span className="sm-detail__hero-label">{t('cpu')}</span>
-            <span className="sm-detail__hero-value">{cpu.toFixed(1)}%</span>
-            <Sparkline
-              data={cpuSeries}
-              min={0}
-              max={100}
-              width={140}
-              height={30}
-              color={usageFillColor(cpu)}
-              label={t('cpu')}
-              valueSuffix="%"
-            />
+        <div className="grid gap-4 items-start" style={{ gridTemplateColumns: 'repeat(3,1fr) auto' }}>
+          {/* CPU hero */}
+          <div className="flex flex-col gap-1">
+            <span className="text-xs text-mute uppercase tracking-[0.5px]">{t('cpu')}</span>
+            <span className="text-lg font-semibold tabular-nums">{cpu.toFixed(1)}%</span>
+            <LiveLineChart
+              data={cpuPoints}
+              value={cpu}
+              dataKey="value"
+              window={60}
+              style={{ height: 56 }}
+              margin={COMPACT_MARGIN}
+            >
+              <LiveLine
+                dataKey="value"
+                stroke={usageFillColor(cpu)}
+                fill
+                badge={false}
+                formatValue={(v) => `${v.toFixed(1)}%`}
+              />
+            </LiveLineChart>
           </div>
-          <div className="sm-detail__hero">
-            <span className="sm-detail__hero-label">{t('memory')}</span>
-            <span className="sm-detail__hero-value">{mem.toFixed(1)}%</span>
-            <Sparkline
-              data={memSeries}
-              min={0}
-              max={100}
-              width={140}
-              height={30}
-              color={usageFillColor(mem)}
-              label={t('memory')}
-              valueSuffix="%"
-            />
+
+          {/* Memory hero */}
+          <div className="flex flex-col gap-1">
+            <span className="text-xs text-mute uppercase tracking-[0.5px]">{t('memory')}</span>
+            <span className="text-lg font-semibold tabular-nums">{mem.toFixed(1)}%</span>
+            <LiveLineChart
+              data={memPoints}
+              value={mem}
+              dataKey="value"
+              window={60}
+              style={{ height: 56 }}
+              margin={COMPACT_MARGIN}
+            >
+              <LiveLine
+                dataKey="value"
+                stroke="#57c1ff"
+                fill
+                badge={false}
+                formatValue={(v) => `${v.toFixed(1)}%`}
+              />
+            </LiveLineChart>
           </div>
-          <div className="sm-detail__hero">
-            <span className="sm-detail__hero-label">{t('disk')}</span>
-            <span className="sm-detail__hero-value">{disk.toFixed(1)}%</span>
-            <Sparkline
-              data={diskSeries}
-              min={0}
-              max={100}
-              width={140}
-              height={30}
-              color={usageFillColor(disk)}
-              label={t('disk')}
-              valueSuffix="%"
-            />
+
+          {/* Disk hero */}
+          <div className="flex flex-col gap-1">
+            <span className="text-xs text-mute uppercase tracking-[0.5px]">{t('disk')}</span>
+            <span className="text-lg font-semibold tabular-nums">{disk.toFixed(1)}%</span>
+            <LiveLineChart
+              data={diskPoints}
+              value={disk}
+              dataKey="value"
+              window={60}
+              style={{ height: 56 }}
+              margin={COMPACT_MARGIN}
+            >
+              <LiveLine
+                dataKey="value"
+                stroke="#9c9c9d"
+                fill
+                badge={false}
+                formatValue={(v) => `${v.toFixed(1)}%`}
+              />
+            </LiveLineChart>
           </div>
-          <div className="sm-detail__hero-uptime">
-            <span className="sm-detail__hero-value">
+
+          {/* Uptime */}
+          <div className="flex flex-col items-end gap-0.5 tabular-nums">
+            <span className="text-lg font-semibold tabular-nums">
               {t('uptime', { value: formatUptime(metrics.uptimeSeconds) })}
             </span>
           </div>
         </div>
 
         {/* Per-core CPU */}
-        <section className="sm-detail__section" aria-labelledby="sm-cores-title">
-          <h3 id="sm-cores-title" className="sm-detail__section-title">
+        <section className="flex flex-col gap-2" aria-labelledby="sm-cores-title">
+          <h3
+            id="sm-cores-title"
+            className="m-0 text-sm font-semibold text-mute uppercase tracking-[0.5px]"
+          >
             {t('perCoreTitle')}
           </h3>
-          <div className="sm-detail__cores">
+          <div className="grid gap-2" style={{ gridTemplateColumns: 'repeat(auto-fill,minmax(120px,1fr))' }}>
             {metrics.perCoreCpu.map((core) => (
-              <div key={core.name} className="sm-detail__core">
-                <span className="sm-detail__core-name">{core.name}</span>
+              <div
+                key={core.name}
+                className="p-2 bg-surface border border-hairline flex flex-col gap-1.5"
+              >
+                <span className="text-xs text-mute tabular-nums">{core.name}</span>
                 <SystemMetricBadge value={core.usagePercent} status={usageStatus(core.usagePercent)} />
               </div>
             ))}
@@ -209,24 +246,33 @@ export const SystemMonitorDetail: React.FC = () => {
         </section>
 
         {/* Per-disk list */}
-        <section className="sm-detail__section" aria-labelledby="sm-disks-title">
-          <h3 id="sm-disks-title" className="sm-detail__section-title">
+        <section className="flex flex-col gap-2" aria-labelledby="sm-disks-title">
+          <h3
+            id="sm-disks-title"
+            className="m-0 text-sm font-semibold text-mute uppercase tracking-[0.5px]"
+          >
             {t('perDiskTitle')}
           </h3>
-          <div className="sm-detail__disks">
+          <div className="flex flex-col gap-2">
             {metrics.perDisk.map((d) => {
               const pct = d.totalGb > 0 ? (d.usedGb / d.totalGb) * 100 : 0;
               return (
-                <div key={d.mountPoint} className="sm-detail__disk">
-                  <span className="sm-detail__disk-mount" title={d.mountPoint}>
+                <div
+                  key={d.mountPoint}
+                  className="grid items-center gap-3 p-2 border border-hairline bg-surface"
+                  style={{ gridTemplateColumns: 'minmax(120px,1fr) auto auto' }}
+                >
+                  <span className="font-medium overflow-hidden text-ellipsis whitespace-nowrap" title={d.mountPoint}>
                     {d.mountPoint}
                   </span>
-                  <span className="sm-detail__disk-usage">
+                  <span className="tabular-nums text-mute text-xs">
                     {d.usedGb.toFixed(0)} / {d.totalGb.toFixed(0)} GB ({pct.toFixed(1)}%)
                   </span>
-                  <span className="sm-detail__disk-kind">{d.kind}</span>
+                  <span className="px-2 py-0.5 bg-hairline text-xs uppercase tracking-[0.5px]">
+                    {d.kind}
+                  </span>
                   <div
-                    className="sm-detail__disk-bar"
+                    className="col-span-3 h-1.5 bg-hairline overflow-hidden"
                     role="progressbar"
                     aria-valuenow={Math.round(pct)}
                     aria-valuemin={0}
@@ -234,7 +280,7 @@ export const SystemMonitorDetail: React.FC = () => {
                     aria-label={`${d.mountPoint} ${pct.toFixed(0)}%`}
                   >
                     <div
-                      className="sm-detail__disk-bar-fill"
+                      className="h-full transition-all duration-300"
                       style={{ width: `${pct}%`, background: usageFillColor(pct) }}
                     />
                   </div>
@@ -245,61 +291,80 @@ export const SystemMonitorDetail: React.FC = () => {
         </section>
 
         {/* Network */}
-        <section className="sm-detail__section" aria-labelledby="sm-net-title">
-          <h3 id="sm-net-title" className="sm-detail__section-title">
+        <section className="flex flex-col gap-2" aria-labelledby="sm-net-title">
+          <h3
+            id="sm-net-title"
+            className="m-0 text-sm font-semibold text-mute uppercase tracking-[0.5px]"
+          >
             {t('networkTitle')}
           </h3>
-          <div className="sm-detail__net">
-            <div className="sm-detail__net-card">
-              <div className="sm-detail__net-card-header">
-                <span className="sm-detail__net-card-label">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="p-2 bg-surface border border-hairline flex flex-col gap-1.5">
+              <div className="flex justify-between items-baseline tabular-nums">
+                <span className="text-xs text-mute uppercase tracking-[0.5px]">
                   {t('rxLabel', { value: formatBytesPerSec(metrics.network.receivedBytesPerSec) })}
                 </span>
               </div>
-              <Sparkline
-                data={rxSeries}
-                min={0}
-                width={260}
-                height={36}
-                color="#10b981"
-                label="RX"
-                valueSuffix=" B/s"
-              />
+              <LiveLineChart
+                data={rxPoints}
+                value={metrics.network.receivedBytesPerSec}
+                dataKey="value"
+                window={60}
+                style={{ height: 48 }}
+                margin={COMPACT_MARGIN}
+              >
+                <LiveLine
+                  dataKey="value"
+                  stroke="#59d499"
+                  fill
+                  badge={false}
+                  pulse={false}
+                  formatValue={(v) => formatBytesPerSec(v)}
+                />
+              </LiveLineChart>
             </div>
-            <div className="sm-detail__net-card">
-              <div className="sm-detail__net-card-header">
-                <span className="sm-detail__net-card-label">
+            <div className="p-2 bg-surface border border-hairline flex flex-col gap-1.5">
+              <div className="flex justify-between items-baseline tabular-nums">
+                <span className="text-xs text-mute uppercase tracking-[0.5px]">
                   {t('txLabel', {
                     value: formatBytesPerSec(metrics.network.transmittedBytesPerSec),
                   })}
                 </span>
               </div>
-              <Sparkline
-                data={txSeries}
-                min={0}
-                width={260}
-                height={36}
-                color="#3b82f6"
-                label="TX"
-                valueSuffix=" B/s"
-              />
+              <LiveLineChart
+                data={txPoints}
+                value={metrics.network.transmittedBytesPerSec}
+                dataKey="value"
+                window={60}
+                style={{ height: 48 }}
+                margin={COMPACT_MARGIN}
+              >
+                <LiveLine
+                  dataKey="value"
+                  stroke="#a78bfa"
+                  fill
+                  badge={false}
+                  pulse={false}
+                  formatValue={(v) => formatBytesPerSec(v)}
+                />
+              </LiveLineChart>
             </div>
           </div>
           {metrics.network.interfaces.length > 0 && (
-            <table className="sm-detail__ifaces">
+            <table className="w-full border-collapse text-xs tabular-nums">
               <thead>
                 <tr>
-                  <th scope="col">Interface</th>
-                  <th scope="col">RX</th>
-                  <th scope="col">TX</th>
+                  <th scope="col" className="text-left px-2 py-1 border-b border-hairline text-mute font-medium uppercase tracking-[0.5px]">Interface</th>
+                  <th scope="col" className="text-left px-2 py-1 border-b border-hairline text-mute font-medium uppercase tracking-[0.5px]">RX</th>
+                  <th scope="col" className="text-left px-2 py-1 border-b border-hairline text-mute font-medium uppercase tracking-[0.5px]">TX</th>
                 </tr>
               </thead>
               <tbody>
                 {metrics.network.interfaces.map((iface) => (
                   <tr key={iface.name}>
-                    <td>{iface.name}</td>
-                    <td>{formatBytesPerSec(iface.receivedBytesPerSec)}</td>
-                    <td>{formatBytesPerSec(iface.transmittedBytesPerSec)}</td>
+                    <td className="text-left px-2 py-1 border-b border-hairline">{iface.name}</td>
+                    <td className="text-left px-2 py-1 border-b border-hairline">{formatBytesPerSec(iface.receivedBytesPerSec)}</td>
+                    <td className="text-left px-2 py-1 border-b border-hairline">{formatBytesPerSec(iface.transmittedBytesPerSec)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -308,24 +373,32 @@ export const SystemMonitorDetail: React.FC = () => {
         </section>
 
         {/* Top processes */}
-        <section className="sm-detail__section">
+        <section className="flex flex-col gap-2">
           {killError && (
-            <div className="sm-detail__inline-error" role="status">
+            <div
+              className="px-2.5 py-1.5 bg-[rgba(239,68,68,0.1)] border border-[rgba(239,68,68,0.35)] text-[#ef4444] text-xs mb-2"
+              role="status"
+            >
               {killError}
             </div>
           )}
-          <div className="sm-detail__top-cols">
+          <div className="grid grid-cols-2 gap-3">
             <div>
-              <h3 className="sm-detail__section-title">{t('topCpuTitle')}</h3>
+              <h3 className="m-0 mb-2 text-sm font-semibold text-mute uppercase tracking-[0.5px]">
+                {t('topCpuTitle')}
+              </h3>
               {metrics.topCpuProcesses.slice(0, 5).map((p) => (
-                <div key={`cpu-${p.pid}`} className="sm-detail__proc">
-                  <span className="sm-detail__proc-name" title={p.name}>
+                <div
+                  key={`cpu-${p.pid}`}
+                  className="flex items-center justify-between gap-2 px-2 py-1.5 border-b border-hairline last:border-0"
+                >
+                  <span className="overflow-hidden text-ellipsis whitespace-nowrap flex-1" title={p.name}>
                     {p.name}
                   </span>
-                  <span className="sm-detail__proc-val">{p.cpuUsagePercent.toFixed(1)}%</span>
+                  <span className="tabular-nums text-mute text-xs">{p.cpuUsagePercent.toFixed(1)}%</span>
                   <button
                     type="button"
-                    className="sm-detail__kill-btn"
+                    className="px-2 py-0.5 bg-transparent border border-hairline text-mute text-xs cursor-pointer transition-all hover:bg-[rgba(239,68,68,0.12)] hover:border-[rgba(239,68,68,0.45)] hover:text-[#ef4444]"
                     aria-label={`${t('killProcess')} ${p.name} (PID ${p.pid})`}
                     onClick={() => handleKill(p.pid, p.name)}
                   >
@@ -335,18 +408,23 @@ export const SystemMonitorDetail: React.FC = () => {
               ))}
             </div>
             <div>
-              <h3 className="sm-detail__section-title">{t('topMemoryTitle')}</h3>
+              <h3 className="m-0 mb-2 text-sm font-semibold text-mute uppercase tracking-[0.5px]">
+                {t('topMemoryTitle')}
+              </h3>
               {metrics.topMemoryProcesses.slice(0, 5).map((p) => (
-                <div key={`mem-${p.pid}`} className="sm-detail__proc">
-                  <span className="sm-detail__proc-name" title={p.name}>
+                <div
+                  key={`mem-${p.pid}`}
+                  className="flex items-center justify-between gap-2 px-2 py-1.5 border-b border-hairline last:border-0"
+                >
+                  <span className="overflow-hidden text-ellipsis whitespace-nowrap flex-1" title={p.name}>
                     {p.name}
                   </span>
-                  <span className="sm-detail__proc-val">
+                  <span className="tabular-nums text-mute text-xs">
                     {(p.memoryBytes / (1024 * 1024)).toFixed(0)} MB
                   </span>
                   <button
                     type="button"
-                    className="sm-detail__kill-btn"
+                    className="px-2 py-0.5 bg-transparent border border-hairline text-mute text-xs cursor-pointer transition-all hover:bg-[rgba(239,68,68,0.12)] hover:border-[rgba(239,68,68,0.45)] hover:text-[#ef4444]"
                     aria-label={`${t('killProcess')} ${p.name} (PID ${p.pid})`}
                     onClick={() => handleKill(p.pid, p.name)}
                   >
@@ -359,18 +437,24 @@ export const SystemMonitorDetail: React.FC = () => {
         </section>
 
         {/* Temperatures */}
-        <section className="sm-detail__section" aria-labelledby="sm-temps-title">
-          <h3 id="sm-temps-title" className="sm-detail__section-title">
+        <section className="flex flex-col gap-2" aria-labelledby="sm-temps-title">
+          <h3
+            id="sm-temps-title"
+            className="m-0 text-sm font-semibold text-mute uppercase tracking-[0.5px]"
+          >
             {t('temperaturesTitle')}
           </h3>
           {metrics.components.length === 0 ? (
-            <div className="sm-detail__temp">{t('noTempSensors')}</div>
+            <div className="flex justify-between px-2 py-1 tabular-nums">{t('noTempSensors')}</div>
           ) : (
-            <div className="sm-detail__temps">
+            <div className="flex flex-col gap-1">
               {metrics.components
                 .filter((c) => c.temperatureC !== null)
-                .map((c) => (
-                  <div key={c.label} className="sm-detail__temp">
+                .map((c, idx) => (
+                  <div
+                    key={c.label}
+                    className={`flex justify-between px-2 py-1 tabular-nums${idx % 2 === 0 ? ' bg-surface' : ''}`}
+                  >
                     <span>{c.label}</span>
                     <span>{c.temperatureC!.toFixed(1)}°C</span>
                   </div>
@@ -380,15 +464,19 @@ export const SystemMonitorDetail: React.FC = () => {
         </section>
 
         {/* Footer actions */}
-        <div className="sm-detail__footer">
+        <div className="flex gap-2 pt-3 border-t border-hairline">
           <button
             type="button"
-            className="sm-detail__action-btn"
+            className="px-3 py-1.5 bg-surface border border-hairline text-ink text-sm cursor-pointer transition-all hover:bg-hairline"
             onClick={handleOpenTaskManager}
           >
             {t('openTaskManager')}
           </button>
-          <button type="button" className="sm-detail__action-btn" onClick={handleExport}>
+          <button
+            type="button"
+            className="px-3 py-1.5 bg-surface border border-hairline text-ink text-sm cursor-pointer transition-all hover:bg-hairline"
+            onClick={handleExport}
+          >
             {t('exportCsv')}
           </button>
         </div>

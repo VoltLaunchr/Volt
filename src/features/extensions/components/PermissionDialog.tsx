@@ -9,7 +9,6 @@ import { Shield, Clipboard, Globe, Bell, ExternalLink } from 'lucide-react';
 import { Modal } from '../../../shared/components/ui';
 import { logger } from '../../../shared/utils/logger';
 import type { ExtensionPermission } from '../types/extension.types';
-import './PermissionDialog.css';
 
 const PERMISSION_INFO: Record<
   ExtensionPermission,
@@ -54,15 +53,17 @@ export function PermissionDialog({
 }: PermissionDialogProps) {
   return (
     <Modal isOpen={isOpen} onClose={onDeny} title="Extension Permissions">
-      <div className="permission-dialog">
-        <div className="permission-header">
-          <Shield size={24} />
-          <p>
-            <strong>{extensionName}</strong> requests the following permissions:
+      <div className="py-2">
+        {/* Header */}
+        <div className="flex items-start gap-3 mb-4">
+          <Shield size={24} className="shrink-0 text-accent-blue mt-0.5" />
+          <p className="m-0 text-sm leading-relaxed text-body">
+            <strong className="text-on-dark">{extensionName}</strong> requests the following permissions:
           </p>
         </div>
 
-        <ul className="permission-list">
+        {/* Permission list */}
+        <ul className="list-none p-0 m-0 mb-5 flex flex-col gap-2">
           {permissions.map((perm) => {
             const info = PERMISSION_INFO[perm];
             if (!info) {
@@ -78,22 +79,34 @@ export function PermissionDialog({
               return null;
             }
             return (
-              <li key={perm} className="permission-item">
-                <span className="permission-icon">{info.icon}</span>
-                <div className="permission-info">
-                  <span className="permission-label">{info.label}</span>
-                  <span className="permission-desc">{info.description}</span>
+              <li
+                key={perm}
+                className="flex items-start gap-2.5 py-2 px-3 rounded-md bg-surface-elevated"
+              >
+                <span className="flex items-center text-accent-blue shrink-0 mt-0.5">
+                  {info.icon}
+                </span>
+                <div className="flex flex-col gap-0.5">
+                  <span className="text-sm font-semibold text-on-dark">{info.label}</span>
+                  <span className="text-xs text-mute">{info.description}</span>
                 </div>
               </li>
             );
           })}
         </ul>
 
-        <div className="permission-actions">
-          <button className="permission-btn permission-btn-deny" onClick={onDeny}>
+        {/* Actions */}
+        <div className="flex justify-end gap-2">
+          <button
+            className="px-4 py-2 rounded-sm border-0 text-sm font-medium cursor-pointer transition-opacity bg-surface-elevated text-on-dark hover:opacity-85"
+            onClick={onDeny}
+          >
             Deny
           </button>
-          <button className="permission-btn permission-btn-grant" onClick={onGrant}>
+          <button
+            className="px-4 py-2 rounded-sm border-0 text-sm font-medium cursor-pointer transition-opacity bg-accent-blue text-white hover:opacity-85"
+            onClick={onGrant}
+          >
             Grant Permissions
           </button>
         </div>

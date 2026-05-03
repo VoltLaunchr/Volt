@@ -3,7 +3,16 @@
     "allow": [
       "Bash(gh issue *)",
       "Bash(cargo clippy *)",
-      "Bash(cargo test *)"
+      "Bash(cargo test *)",
+      "Bash(git ls-tree *)",
+      "mcp__plugin_figma_figma__whoami",
+      "mcp__plugin_figma_figma__get_screenshot",
+      "mcp__plugin_figma_figma__use_figma",
+      "Bash(Select-Object -First 10)"
     ]
+  },
+  "enabledPlugins": {
+    "figma@claude-plugins-official": true,
+    "supabase@claude-plugins-official": true
   }
 }

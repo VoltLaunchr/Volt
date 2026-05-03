@@ -118,6 +118,33 @@ class ExtensionService {
   }
 
   /**
+   * Fetch live download counts from Supabase for all extensions.
+   * Returns a map of extensionId → count.
+   */
+  async fetchDownloadCounts(): Promise<Record<string, number>> {
+    try {
+      const rows = await invoke<{ extensionId: string; count: number }[]>(
+        'fetch_extension_downloads'
+      );
+      return Object.fromEntries(rows.map((r) => [r.extensionId, r.count]));
+    } catch {
+      return {};
+    }
+  }
+
+  /**
+   * Increment the download counter for an extension in Supabase.
+   * Fire-and-forget — never throws.
+   */
+  async incrementDownload(extensionId: string): Promise<void> {
+    try {
+      await invoke('increment_extension_download', { extensionId });
+    } catch {
+      // non-critical, ignore
+    }
+  }
+
+  /**
    * Get extension details (for both installed and available)
    */
   async getExtensionDetails(

@@ -3,7 +3,7 @@
 export { SettingsApp } from './SettingsApp';
 
 // Services
-export { applyTheme, settingsService, setupThemeListener } from './services/settingsService';
+export { applyTheme, applyTransparency, settingsService, setupThemeListener } from './services/settingsService';
 
 // Types
 export type {

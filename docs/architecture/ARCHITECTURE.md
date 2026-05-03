@@ -19,24 +19,34 @@ The Tauri backend is organized into modules:
 - Registers invoke handlers for Tauri commands
 - Sets up global hotkey on startup
 
-**Commands** ([src-tauri/src/commands/](../src-tauri/src/commands/)) — 13 command files:
+**Commands** ([src-tauri/src/commands/](../src-tauri/src/commands/)) — 24+ command files:
 
 - `apps.rs` - Application discovery and search logic
   - `scan_applications()` - Scans Windows Program Files, AppData, and Start Menu for .exe files and .lnk shortcuts
   - `search_applications()` - Fuzzy search with scoring (exact match > starts with > contains > fuzzy)
   - `launch_application()` - Cross-platform app launching (Windows/macOS/Linux)
 - `window.rs` - Window management commands
-  - `show_window()`, `hide_window()`, `toggle_window()`, `center_window()`
-- `settings.rs` - Settings management (read/write user preferences)
+- `settings.rs` - Settings management (8 categories, shell settings, export/import)
 - `files.rs` - File indexing and search commands
-- `launcher.rs` - Launch history and pinned apps
-- `clipboard.rs` - Clipboard manager commands
-- `extensions.rs` - Extension system management
-- `games.rs` - Game scanner commands
-- `system_monitor.rs` - System metrics (CPU, RAM, disk)
-- `updater.rs` - Auto-update commands
-- `theme.rs` - Theme management
-- `properties.rs` - File/app properties
+- `launcher.rs` - Launch history and pinned apps; `open_file_with_dialog` (OS "Open With", UNC/.lnk blocked); `open_path` (rejects executable types)
+- `clipboard.rs` - Clipboard manager (9 commands)
+- `extensions.rs` - Extension system (14 commands); permission allowlist enforced server-side; fail-closed on HMAC mismatch
+- `games.rs` - Game scanner (10 platforms: Steam, Epic, GOG, Xbox, EA, Ubisoft, Riot, Amazon, Battle.net, Rockstar)
+- `system_monitor.rs` - CPU/RAM/disk + v2 (per-core, network, temps, processes)
+- `snippets.rs` - Snippet CRUD + variable expansion; JSON import size capped
+- `quicklinks.rs` - Quicklinks CRUD with URL/folder/command validation
+- `shell.rs` - Shell command execution (streaming, extended blocklist with NFKC normalization, redactors for GitHub/AWS/Stripe/Slack/JWT tokens, UNC working_dir rejected)
+- `shell_history.rs` - Shell history with frecency scoring (500 entries)
+- `preview.rs` - File preview for preview panel
+- `plugins.rs` - Plugin commands
+- `auth.rs` - Supabase auth + deep link; CSRF state nonce binding; JWT claim validation; refresh user_id check; HMAC-signed keyring storage
+- `oauth.rs` - OAuth flow (GitHub, Notion) + deep link callbacks
+- `credentials.rs` - Encrypted credential storage (OS keyring); `test_credential` command (token never in renderer)
+- `keyring_store.rs` - OS keyring abstraction with `store_signed`/`retrieve_signed` (domain-tagged HMAC-SHA256)
+- `hotkey.rs` - Hotkey commands
+- `autostart.rs` - Autostart management
+- `logging.rs` - Log management
+- `window_management.rs` - Window snap commands
 - `mod.rs` - Module exports
 
 **Hotkey Module** ([src-tauri/src/hotkey/mod.rs](../src-tauri/src/hotkey/mod.rs)):
@@ -119,13 +129,29 @@ interface AppInfo {
 
 Volt supports community extensions via the [volt-extensions](https://github.com/VoltLaunchr/volt-extensions) repository. Extensions can be browsed, installed, and managed through Settings.
 
+**Security model:**
+- HMAC-SHA256 state signatures on `installed.json`/`dev-extensions.json` (key in OS keyring)
+- Signature mismatch → fail-closed: `granted_permissions` reset to empty for every extension (H4)
+- Server-side `ALLOWED_PERMISSIONS` allowlist: entire batch rejected on any unknown permission (M1)
+- Worker sandbox: `eval`/`Function`/`WebSocket`/`XMLHttpRequest`/`importScripts` disabled
+- SSRF prevention: private IP blocking, numeric IPv4/IPv6-mapped hosts rejected, redirect SSRF blocked, Cookie/Auth headers stripped, 10MB body cap
+- Launch validation: LOLBIN denylist, NTFS normalization, executable extension validation
+
+### Auth & Credentials Security Model
+
+- **Auth CSRF**: `auth_start_login` generates a UUID state nonce (5 min TTL). `handle_auth_deep_link` verifies and consumes the nonce — drive-by deep links rejected
+- **JWT validation**: `exp`, `iss`, `sub` claims verified against `SUPABASE_URL`; `user_id` and `expires_at` taken from verified claims, never from URL query params
+- **Refresh guard**: user_id mismatch in refresh response rejected; `expires_in` capped at 24h
+- **Keyring HMAC**: `store_signed`/`retrieve_signed` attach a domain-tagged HMAC-SHA256 (length-prefixed domain prefix prevents cross-domain replay); tamper → silent logout (M10)
+- **Deep-link rate-limit**: `single-instance` forward path rate-limited with forensic logging (H9)
+
 ### Window Configuration
 
 The Tauri window ([src-tauri/tauri.conf.json](../src-tauri/tauri.conf.json)) is configured as:
 
 - Always on top, no decorations, transparent background
-- 600x400px, not resizable
-- Skips taskbar, auto-focused when shown
+- 800x550px (expands to 1100px with preview panel), skips taskbar
+- Auto-focused when shown
 - Uses `beforeDevCommand` and `beforeBuildCommand` with bun
 
 ## Known Patterns & Strategies

@@ -1,22 +1,11 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { invoke } from '@tauri-apps/api/core';
-import App from './app/App';
-import { ErrorBoundary } from './shared/components/ErrorBoundary';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import { initI18n } from './i18n';
 import './styles/global.css';
 
 const root = ReactDOM.createRoot(document.getElementById('root') as HTMLElement);
-
-function renderApp() {
-  root.render(
-    <React.StrictMode>
-      <ErrorBoundary>
-        <App />
-      </ErrorBoundary>
-    </React.StrictMode>
-  );
-}
 
 function renderFatalError(error: unknown) {
   const message = error instanceof Error ? error.message : String(error);
@@ -61,11 +50,11 @@ function renderFatalError(error: unknown) {
 }
 
 async function bootstrap() {
-  // Load settings and init i18n in parallel for faster startup
+  const windowLabel = getCurrentWindow().label;
+
   const [settingsResult] = await Promise.allSettled([
     invoke<{ general: { language?: string } }>('load_settings'),
   ]);
-
   const savedLanguage =
     settingsResult.status === 'fulfilled' ? settingsResult.value.general.language : undefined;
 
@@ -73,10 +62,48 @@ async function bootstrap() {
     await initI18n(savedLanguage);
   } catch (err) {
     console.error('[Volt] i18n init failed, falling back to defaults:', err);
-    // Render app anyway — i18next will show translation keys as fallback
   }
 
-  renderApp();
+  switch (windowLabel) {
+    case 'settings': {
+      const { SettingsPage } = await import('./pages/SettingsPage');
+      root.render(
+        <React.StrictMode>
+          <SettingsPage />
+        </React.StrictMode>
+      );
+      break;
+    }
+    case 'onboarding': {
+      const { OnboardingPage } = await import('./pages/OnboardingPage');
+      root.render(
+        <React.StrictMode>
+          <OnboardingPage />
+        </React.StrictMode>
+      );
+      break;
+    }
+    case 'system-monitor': {
+      const { SystemMonitorPage } = await import('./pages/SystemMonitorPage');
+      root.render(
+        <React.StrictMode>
+          <SystemMonitorPage />
+        </React.StrictMode>
+      );
+      break;
+    }
+    default: {
+      const { MainPage } = await import('./pages/MainPage');
+      const { ErrorBoundary } = await import('./shared/components/ErrorBoundary');
+      root.render(
+        <React.StrictMode>
+          <ErrorBoundary>
+            <MainPage />
+          </ErrorBoundary>
+        </React.StrictMode>
+      );
+    }
+  }
 }
 
 bootstrap().catch((err) => {

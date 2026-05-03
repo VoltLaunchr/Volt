@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { SearchResult, SearchResultType } from '../../../shared/types/common.types';
 import { ResultItem } from './ResultItem';
-import './ResultsList.css';
+import { cn } from '@/lib/utils';
 
 interface ResultsListProps {
   results: SearchResult[];
@@ -115,7 +115,7 @@ export const ResultsList: React.FC<ResultsListProps> = ({
 
   if (results.length === 0) {
     return (
-      <div className="results-empty">
+      <div className={cn('flex items-center justify-center h-16 text-sm text-ash')}>
         <svg
           width="48"
           height="48"
@@ -141,44 +141,50 @@ export const ResultsList: React.FC<ResultsListProps> = ({
       : undefined;
 
   return (
-    <div
-      id="results-listbox"
-      className="results-list"
-      role="listbox"
-      aria-label="Search results"
-      aria-activedescendant={selectedItemId}
-    >
-      {sections.map((section, sectionIndex) => (
-        <div
-          key={`section-${sectionIndex}-${section.label}`}
-          className="results-section"
-          role="group"
-          aria-label={section.label || undefined}
-        >
-          {section.label && (
-            <div className="results-section-header" aria-hidden="true">{section.label}</div>
-          )}
-          {section.results.map(({ result, globalIndex }) => (
-            <div
-              key={`${result.id}-${globalIndex}`}
-              ref={globalIndex === selectedIndex ? selectedRef : null}
-              id={`result-item-${globalIndex}`}
-              role="option"
-              aria-selected={globalIndex === selectedIndex}
-              aria-label={`${result.title}${result.subtitle ? ` - ${result.subtitle}` : ''}`}
-              tabIndex={globalIndex === selectedIndex ? 0 : -1}
-            >
-              <ResultItem
-                result={result}
-                isSelected={globalIndex === selectedIndex}
-                index={globalIndex}
-                onSelect={() => onSelect(globalIndex)}
-                onLaunch={() => onLaunch(result)}
-              />
-            </div>
-          ))}
-        </div>
-      ))}
+    <div className="flex-1 overflow-y-auto min-h-0">
+      <div
+        id="results-listbox"
+        className="py-1"
+        role="listbox"
+        aria-label="Search results"
+        aria-activedescendant={selectedItemId}
+      >
+        {sections.map((section, sectionIndex) => (
+          <div
+            key={`section-${sectionIndex}-${section.label}`}
+            role="group"
+            aria-label={section.label || undefined}
+          >
+            {section.label && (
+              <div
+                className="px-3 pt-3 pb-1 text-[11px] font-medium text-stone uppercase tracking-wider"
+                aria-hidden="true"
+              >
+                {section.label}
+              </div>
+            )}
+            {section.results.map(({ result, globalIndex }) => (
+              <div
+                key={`${result.id}-${globalIndex}`}
+                ref={globalIndex === selectedIndex ? selectedRef : null}
+                id={`result-item-${globalIndex}`}
+                role="option"
+                aria-selected={globalIndex === selectedIndex}
+                aria-label={`${result.title}${result.subtitle ? ` - ${result.subtitle}` : ''}`}
+                tabIndex={globalIndex === selectedIndex ? 0 : -1}
+              >
+                <ResultItem
+                  result={result}
+                  isSelected={globalIndex === selectedIndex}
+                  index={globalIndex}
+                  onSelect={() => onSelect(globalIndex)}
+                  onLaunch={() => onLaunch(result)}
+                />
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
     </div>
   );
 };

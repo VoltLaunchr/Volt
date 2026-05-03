@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
-import './HotkeyCapture.css';
+import { cn } from '@/lib/utils';
+import { Keycap } from './Keycap';
 
 export interface HotkeyCaptureProps {
   value: string;
   onChange: (hotkey: string) => void;
   onError?: (error: string) => void;
+  onRecordingChange?: (recording: boolean) => void;
   disabled?: boolean;
   'aria-labelledby'?: string;
   'aria-describedby'?: string;
@@ -14,11 +16,16 @@ export function HotkeyCapture({
   value,
   onChange,
   onError,
+  onRecordingChange,
   disabled,
   'aria-labelledby': ariaLabelledBy,
   'aria-describedby': ariaDescribedBy,
 }: HotkeyCaptureProps) {
   const [isRecording, setIsRecording] = useState(false);
+
+  useEffect(() => {
+    onRecordingChange?.(isRecording);
+  }, [isRecording, onRecordingChange]);
   const [pressedKeys, setPressedKeys] = useState<Set<string>>(new Set());
   // Mirror of pressedKeys so handleKeyUp can read current keys without
   // running side effects inside a setState updater (which StrictMode /
@@ -146,24 +153,28 @@ export function HotkeyCapture({
   };
 
   return (
-    <div className="hotkey-capture" aria-labelledby={ariaLabelledBy} aria-describedby={ariaDescribedBy}>
+    <div className="inline-flex items-center gap-2" aria-labelledby={ariaLabelledBy} aria-describedby={ariaDescribedBy}>
       {isRecording ? (
-        <div className="hotkey-recording">
-          <div className="hotkey-recording-display">
+        <div className="flex items-center gap-2 px-3 py-2 bg-accent-blue border-2 border-accent-blue rounded-md animate-pulse">
+          <div className="flex items-center gap-1 min-w-[120px] text-white font-medium">
             {pressedKeys.size > 0 ? (
               Array.from(pressedKeys).map((key, index) => (
-                <kbd key={key}>
-                  {key}
-                  {index < pressedKeys.size - 1 && ' + '}
-                </kbd>
+                <span key={key} className="flex items-center gap-1">
+                  <kbd className="px-2 py-0.5 text-sm font-mono bg-white/20 border border-white/30 rounded-sm text-white font-bold">
+                    {key}
+                  </kbd>
+                  {index < pressedKeys.size - 1 && (
+                    <span className="text-white/80 text-xs">+</span>
+                  )}
+                </span>
               ))
             ) : (
-              <span className="hotkey-prompt">Press your key combination...</span>
+              <span className="text-sm text-white/90 italic">Press your key combination...</span>
             )}
           </div>
           <button
             type="button"
-            className="hotkey-cancel"
+            className="flex items-center justify-center w-6 h-6 p-0 bg-white/20 border-0 rounded-sm text-white cursor-pointer text-base font-bold transition-colors hover:bg-white/30 hover:scale-110"
             onClick={handleCancelRecording}
             aria-label="Cancel recording"
           >
@@ -173,17 +184,21 @@ export function HotkeyCapture({
       ) : (
         <button
           type="button"
-          className={`hotkey-button ${!value ? 'hotkey-button-empty' : ''}`}
+          className={cn(
+            'flex items-center gap-2 px-3 py-2 bg-surface-elevated border border-hairline rounded-md cursor-pointer transition-colors',
+            'hover:border-hairline-strong disabled:opacity-50 disabled:cursor-not-allowed',
+            !value && 'border-dashed border-white/20 hover:border-accent-blue hover:bg-accent-blue/5'
+          )}
           onClick={handleStartRecording}
           disabled={disabled}
         >
           {value ? (
             <>
-              <kbd>{value}</kbd>
-              <span className="hotkey-edit-icon">✏️</span>
+              <Keycap>{value}</Keycap>
+              <span className="text-sm opacity-60">✏️</span>
             </>
           ) : (
-            <span className="hotkey-placeholder">Record Hotkey</span>
+            <span className="text-xs text-ash">Record Hotkey</span>
           )}
         </button>
       )}

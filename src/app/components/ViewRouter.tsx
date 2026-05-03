@@ -167,6 +167,7 @@ export function ViewRouter({ onSelectEmoji, onLaunchResult }: ViewRouterProps) {
 
   return (
     <div
+      className="flex flex-col flex-1 min-h-0"
       style={{
         opacity: isResultsStale ? 0.7 : 1,
         transition: 'opacity 100ms ease-out',

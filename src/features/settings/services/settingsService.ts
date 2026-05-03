@@ -151,6 +151,13 @@ export const settingsService = {
 };
 
 /**
+ * Apply window transparency by updating the --canvas-opacity CSS variable
+ */
+export function applyTransparency(transparency: number): void {
+  document.documentElement.style.setProperty('--canvas-opacity', String(transparency));
+}
+
+/**
  * Apply theme to the document
  */
 export function applyTheme(theme: Theme): void {

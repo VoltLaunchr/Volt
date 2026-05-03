@@ -126,7 +126,7 @@ pub async fn search_all(
             .map(|(app, score)| AppInfoWithScore { app, score })
             .collect::<Vec<_>>()
         },
-        async { search_files_batch(&query_files, &files_snapshot, &options, max_results) },
+        search_files_batch(&query_files, &files_snapshot, &options, max_results),
         async {
             let mut records = history.get_all();
             // Compound-key sort: pinned first, then by frecency.
@@ -206,7 +206,7 @@ pub async fn search_streaming(
     let tx_files = tx.clone();
     tokio::spawn(async move {
         let file_results =
-            search_files_batch(&query_files, &files_snapshot, &options_clone, max_results);
+            search_files_batch(&query_files, &files_snapshot, &options_clone, max_results).await;
         let _ = tx_files
             .send(SearchBatch::Files {
                 results: file_results,
@@ -234,7 +234,11 @@ pub async fn search_streaming(
 // ============================================================
 
 /// Internal helper: search files with optional operator filters.
-fn search_files_batch(
+///
+/// When the Volt in-memory index returns fewer results than requested (e.g. while
+/// indexing is still in progress), Windows Search is queried as a supplement so the
+/// main search bar shows file results immediately — same behaviour as the file plugin.
+async fn search_files_batch(
     query: &str,
     files: &[FileInfo],
     options: &SearchAllOptions,
@@ -247,7 +251,7 @@ fn search_files_batch(
         || options.modified_after.is_some()
         || options.modified_before.is_some();
 
-    if has_operators {
+    let mut results: Vec<FileSearchResultCompact> = if has_operators {
         let mut engine = SearchEngine::new();
         let search_opts = SearchOptions {
             limit: Some(max_results),
@@ -259,29 +263,52 @@ fn search_files_batch(
             modified_before: options.modified_before,
             recency_boost: Some(1.3),
             frequency_boost: Some(1.2),
+            filename_only: true,
             ..Default::default()
         };
         engine
             .search(query, files, &search_opts)
             .into_iter()
-            .map(|r| FileSearchResultCompact {
-                file: r.file,
-                score: r.score,
-            })
+            .map(|r| FileSearchResultCompact { file: r.file, score: r.score })
             .collect()
     } else {
         let mut engine = SearchEngine::new();
         let search_opts = SearchOptions {
             limit: Some(max_results),
+            filename_only: true,
             ..Default::default()
         };
         engine
             .search(query, files, &search_opts)
             .into_iter()
-            .map(|r| FileSearchResultCompact {
-                file: r.file,
-                score: r.score,
-            })
+            .map(|r| FileSearchResultCompact { file: r.file, score: r.score })
             .collect()
+    };
+
+    // Supplement with Windows Search when the Volt index is sparse (e.g. still indexing).
+    // This mirrors the behaviour of the dedicated file-search plugin command.
+    #[cfg(target_os = "windows")]
+    if results.len() < max_results {
+        let needed = max_results - results.len();
+        if let Ok(ws_results) = crate::indexer::windows_search::search_windows_index(query, needed).await
+        {
+            let existing_paths: std::collections::HashSet<String> =
+                results.iter().map(|f| f.file.path.clone()).collect();
+            // Supplement results sit just below Volt fuzzy matches (~50) but
+            // above 0 so they aren't sorted to the bottom by the frontend.
+            // Decrement to preserve Windows Search's own rank ordering.
+            const WS_BASE_SCORE: u32 = 30;
+            let mut rank: u32 = 0;
+            for file in ws_results {
+                if !existing_paths.contains(&file.path) {
+                    let score = WS_BASE_SCORE.saturating_sub(rank);
+                    results.push(FileSearchResultCompact { file, score });
+                    rank += 1;
+                }
+            }
+        }
     }
+
+    results.truncate(max_results);
+    results
 }

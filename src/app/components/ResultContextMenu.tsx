@@ -97,6 +97,8 @@ export function ResultContextMenu({
     ];
   };
 
+  const isFileResult = state.result?.type === SearchResultType.File;
+
   const defaultActions = [
     {
       id: 'launch',
@@ -107,6 +109,21 @@ export function ResultContextMenu({
         if (state.result) onLaunch(state.result);
       },
     },
+    ...(isFileResult
+      ? [
+          {
+            id: 'open-with',
+            label: 'Open With\u2026',
+            icon: '\ud83d\udce6',
+            onClick: () => {
+              if (state.result) {
+                invoke('open_file_with_dialog', { path: pathOf(state.result) }).catch(() => {});
+                onClose();
+              }
+            },
+          },
+        ]
+      : []),
     {
       id: 'open-location',
       label: t('contextMenu.openFolder'),

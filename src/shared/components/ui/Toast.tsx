@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { create } from 'zustand';
 import { CheckCircle, AlertCircle, Info, X, Download } from 'lucide-react';
-import './Toast.css';
+import { cn } from '@/lib/utils';
 
 export type ToastType = 'info' | 'success' | 'error' | 'update';
 
@@ -46,15 +46,22 @@ export function useToast() {
 }
 
 function ToastIcon({ type }: { type: ToastItem['type'] }) {
+  const iconClass = {
+    info: 'text-accent-blue',
+    success: 'text-accent-green',
+    error: 'text-accent-red',
+    update: 'text-accent-blue',
+  }[type];
+
   switch (type) {
     case 'success':
-      return <CheckCircle size={16} />;
+      return <CheckCircle size={16} className={iconClass} />;
     case 'error':
-      return <AlertCircle size={16} />;
+      return <AlertCircle size={16} className={iconClass} />;
     case 'update':
-      return <Download size={16} />;
+      return <Download size={16} className={iconClass} />;
     default:
-      return <Info size={16} />;
+      return <Info size={16} className={iconClass} />;
   }
 }
 
@@ -68,19 +75,31 @@ function ToastEntry({ toast }: { toast: ToastItem }) {
   }, [toast.id, toast.duration, removeToast]);
 
   return (
-    <div className={`toast toast-${toast.type}`} role="status">
+    <div
+      className="flex items-center gap-3 px-4 py-3 rounded-md border border-hairline-strong bg-surface-elevated text-body text-sm min-w-[260px] max-w-[400px] shadow-lg"
+      role="status"
+    >
       <ToastIcon type={toast.type} />
       <span
-        className={`toast-message${toast.action ? ' toast-message-clickable' : ''}`}
+        className={cn(
+          'flex-1 text-body',
+          toast.action && 'cursor-pointer hover:text-on-dark underline underline-offset-2'
+        )}
         onClick={toast.action}
         role={toast.action ? 'button' : undefined}
         tabIndex={toast.action ? 0 : undefined}
-        onKeyDown={toast.action ? (e) => { if (e.key === 'Enter' || e.key === ' ') toast.action?.(); } : undefined}
+        onKeyDown={
+          toast.action
+            ? (e) => {
+                if (e.key === 'Enter' || e.key === ' ') toast.action?.();
+              }
+            : undefined
+        }
       >
         {toast.message}
       </span>
       <button
-        className="toast-close"
+        className="text-mute hover:text-on-dark transition-colors ml-1 shrink-0 cursor-pointer"
         onClick={() => removeToast(toast.id)}
         aria-label="Dismiss notification"
       >
@@ -96,7 +115,10 @@ export function ToastContainer() {
   if (toasts.length === 0) return null;
 
   return (
-    <div className="toast-container" aria-live="polite">
+    <div
+      className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[3000] flex flex-col gap-2 items-center"
+      aria-live="polite"
+    >
       {toasts.map((toast) => (
         <ToastEntry key={toast.id} toast={toast} />
       ))}

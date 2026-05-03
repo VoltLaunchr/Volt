@@ -1,6 +1,6 @@
 [package]
 name = "volt"
-version = "0.1.1"
+version = "0.1.2"
 description = "Lightning-fast keyboard-driven launcher for Windows, macOS, and Linux"
 authors = ["VoltLaunchr Contributors"]
 license = "Apache-2.0"
@@ -60,7 +60,13 @@ tar = "0.4"
 flate2 = "1.0"
 url = "2.5"
 uuid = { version = "1", features = ["v4"] }
-keyring = { version = "3", features = ["sync-secret-service", "crypto-rust"] }
+# Per-platform credential backends MUST be enabled explicitly. keyring v3
+# made all platform backends opt-in: with no platform feature on, the crate
+# falls back to a mock store that silently accepts writes and returns
+# NoEntry on reads — auth and credential storage break completely without
+# any error. Removing apple-native / windows-native here will reproduce
+# that bug. sync-secret-service + crypto-rust cover Linux (D-Bus).
+keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service", "crypto-rust"] }
 hmac = "0.12"
 sha2 = "0.10"
 rand = "0.9"

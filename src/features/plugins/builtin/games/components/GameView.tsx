@@ -1,9 +1,9 @@
 import { invoke } from '@tauri-apps/api/core';
 import React, { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { cn } from '@/lib/utils';
 import { logger } from '../../../../../shared/utils/logger';
 import { GameInfo, PlatformInfo } from '../index';
-import './GameView.css';
 
 // Game controller SVG icon component
 const GameControllerIcon: React.FC<{ size?: number; className?: string }> = ({
@@ -167,7 +167,7 @@ export const GameView: React.FC<GameViewProps> = ({ onClose }) => {
 
   // Get platform icon as JSX element
   const getPlatformIcon = (_platform: string, size: number = 20): React.ReactNode => {
-    return <GameControllerIcon size={size} className="platform-icon-svg" />;
+    return <GameControllerIcon size={size} className="inline-block align-middle text-current" />;
   };
 
   // Group games by platform
@@ -200,15 +200,20 @@ export const GameView: React.FC<GameViewProps> = ({ onClose }) => {
 
   return (
     <div
-      className="game-view"
+      className="flex flex-col h-full bg-canvas text-ink"
       tabIndex={0}
       onKeyDown={handleKeyDown}
       aria-label="Games library view"
       style={{ outline: 'none' }}
     >
       {/* Header with search and filter */}
-      <div className="game-header">
-        <button className="back-button" onClick={onClose} title="Back">
+      <div className="flex items-center gap-3 px-4 py-3 border-b border-hairline bg-surface shrink-0">
+        {/* Back button */}
+        <button
+          className="flex items-center justify-center w-8 h-8 rounded-md text-mute transition-all cursor-pointer shrink-0 bg-transparent border-0 hover:bg-surface-elevated hover:text-ink"
+          onClick={onClose}
+          title="Back"
+        >
           <svg
             width="20"
             height="20"
@@ -221,10 +226,11 @@ export const GameView: React.FC<GameViewProps> = ({ onClose }) => {
           </svg>
         </button>
 
-        <div className="search-filter-container">
+        {/* Search input */}
+        <div className="flex-1">
           <input
             type="text"
-            className="filter-input"
+            className="w-full px-3 py-2 text-base bg-canvas border border-hairline rounded-md text-ink outline-none transition-all focus:border-hairline-strong focus:bg-surface placeholder:text-ash"
             placeholder={t('view.searchPlaceholder')}
             value={filterQuery}
             onChange={(e) => setFilterQuery(e.target.value)}
@@ -232,9 +238,10 @@ export const GameView: React.FC<GameViewProps> = ({ onClose }) => {
           />
         </div>
 
-        <div className="platform-filter-dropdown">
+        {/* Platform filter dropdown */}
+        <div className="relative">
           <button
-            className="platform-filter-button"
+            className="flex items-center gap-2 px-3 py-2 bg-canvas border border-hairline rounded-md text-ink text-sm cursor-pointer transition-all whitespace-nowrap hover:bg-surface-elevated hover:border-hairline-strong"
             onClick={() => setShowPlatformDropdown(!showPlatformDropdown)}
           >
             <svg
@@ -244,6 +251,7 @@ export const GameView: React.FC<GameViewProps> = ({ onClose }) => {
               fill="none"
               stroke="currentColor"
               strokeWidth="2"
+              className="text-mute"
             >
               <path d="M22 3H2l8 9.46V19l4 2v-8.54L22 3z" />
             </svg>
@@ -255,15 +263,19 @@ export const GameView: React.FC<GameViewProps> = ({ onClose }) => {
               fill="none"
               stroke="currentColor"
               strokeWidth="2"
+              className="text-ash"
             >
               <path d="m6 9 6 6 6-6" />
             </svg>
           </button>
 
           {showPlatformDropdown && (
-            <div className="platform-filter-menu">
+            <div className="absolute top-[calc(100%+4px)] right-0 min-w-[200px] bg-surface border border-hairline rounded-md shadow-[0_4px_12px_rgba(0,0,0,0.15)] overflow-hidden z-[100]">
               <button
-                className={`platform-filter-option ${platformFilter === 'all' ? 'active' : ''}`}
+                className={cn(
+                  'flex items-center gap-2 w-full px-3.5 py-2.5 text-left text-sm text-ink bg-transparent cursor-pointer transition-colors border-0 hover:bg-surface-elevated',
+                  platformFilter === 'all' && 'bg-accent-blue-soft text-on-dark'
+                )}
                 onClick={() => {
                   setPlatformFilter('all');
                   setShowPlatformDropdown(false);
@@ -274,13 +286,16 @@ export const GameView: React.FC<GameViewProps> = ({ onClose }) => {
               {platforms.map((platform) => (
                 <button
                   key={platform.id}
-                  className={`platform-filter-option ${platformFilter === platform.name ? 'active' : ''}`}
+                  className={cn(
+                    'flex items-center gap-2 w-full px-3.5 py-2.5 text-left text-sm text-ink bg-transparent cursor-pointer transition-colors border-0 hover:bg-surface-elevated',
+                    platformFilter === platform.name && 'bg-accent-blue-soft text-on-dark'
+                  )}
                   onClick={() => {
                     setPlatformFilter(platform.name);
                     setShowPlatformDropdown(false);
                   }}
                 >
-                  <span className="platform-emoji">{platform.icon}</span>
+                  <span className="text-base">{platform.icon}</span>
                   {platform.name} ({platform.gameCount})
                 </button>
               ))}
@@ -288,8 +303,9 @@ export const GameView: React.FC<GameViewProps> = ({ onClose }) => {
           )}
         </div>
 
+        {/* Rescan button */}
         <button
-          className="rescan-button"
+          className="flex items-center justify-center w-8 h-8 bg-canvas border border-hairline rounded-md text-mute cursor-pointer transition-all hover:bg-surface-elevated hover:border-hairline-strong hover:text-ink disabled:opacity-50 disabled:cursor-not-allowed"
           onClick={handleRescan}
           disabled={isRescanning}
           title={t('view.rescan')}
@@ -301,7 +317,7 @@ export const GameView: React.FC<GameViewProps> = ({ onClose }) => {
             fill="none"
             stroke="currentColor"
             strokeWidth="2"
-            className={isRescanning ? 'spinning' : ''}
+            className={isRescanning ? 'animate-spin' : ''}
           >
             <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" />
             <path d="M21 3v5h-5" />
@@ -310,24 +326,26 @@ export const GameView: React.FC<GameViewProps> = ({ onClose }) => {
       </div>
 
       {/* Main content area */}
-      <div className="game-content">
+      <div className="flex flex-1 overflow-hidden">
         {/* Games list */}
-        <div className="game-list">
+        <div className="w-[45%] border-r border-hairline overflow-y-auto bg-canvas">
           {isLoading ? (
-            <div className="loading-state">{t('view.loading')}</div>
+            <div className="flex flex-col items-center justify-center h-[200px] text-ash text-sm gap-2">
+              {t('view.loading')}
+            </div>
           ) : filteredGames.length === 0 ? (
-            <div className="empty-state">
+            <div className="flex flex-col items-center justify-center h-[200px] text-ash text-sm gap-2">
               {games.length === 0 ? (
                 <>
-                  <span className="empty-icon">
+                  <span className="flex items-center justify-center text-ash opacity-50">
                     <GameControllerIcon size={48} />
                   </span>
                   <span>{t('view.noGames')}</span>
-                  <span className="empty-hint">{t('view.noGamesHint')}</span>
+                  <span className="text-xs text-ash text-center">{t('view.noGamesHint')}</span>
                 </>
               ) : (
                 <>
-                  <span className="empty-icon">🔍</span>
+                  <span className="text-4xl opacity-50">🔍</span>
                   <span>{t('view.noMatchingGames')}</span>
                 </>
               )}
@@ -335,11 +353,11 @@ export const GameView: React.FC<GameViewProps> = ({ onClose }) => {
           ) : platformFilter === 'all' ? (
             // Grouped by platform when showing all
             Object.entries(groupedGames).map(([platform, platformGames]) => (
-              <div key={platform} className="game-group">
-                <div className="group-header">
-                  <span className="group-icon">{getPlatformIcon(platform, 14)}</span>
+              <div key={platform} className="mb-2">
+                <div className="flex items-center gap-2 px-4 py-2 text-xs font-semibold text-ash uppercase tracking-[0.5px] bg-surface sticky top-0 z-[1]">
+                  <span className="text-sm opacity-70">{getPlatformIcon(platform, 14)}</span>
                   <span>{platform}</span>
-                  <span className="group-count">{platformGames.length}</span>
+                  <span className="ml-auto px-2 py-0.5 text-xs bg-canvas rounded-sm">{platformGames.length}</span>
                 </div>
                 {platformGames.map((game) => {
                   const globalIndex = filteredGames.indexOf(game);
@@ -348,25 +366,32 @@ export const GameView: React.FC<GameViewProps> = ({ onClose }) => {
                   return (
                     <div
                       key={game.id}
-                      className={`game-item ${isSelected ? 'selected' : ''}`}
+                      className={cn(
+                        'flex items-center gap-3 px-4 py-2.5 cursor-pointer transition-colors',
+                        isSelected ? 'bg-accent-blue-soft text-on-dark' : 'hover:bg-surface-elevated'
+                      )}
                       onClick={() => {
                         setSelectedIndex(globalIndex);
                         setSelectedGame(game);
                       }}
                       onDoubleClick={() => handleLaunchGame(game)}
                     >
-                      <div className="game-icon">
+                      <div className="w-10 h-10 rounded-md overflow-hidden shrink-0 bg-surface flex items-center justify-center">
                         {game.iconPath ? (
-                          <img src={game.iconPath} alt={game.name} />
+                          <img src={game.iconPath} alt={game.name} className="w-full h-full object-cover" />
                         ) : (
-                          <span className="game-icon-fallback">
+                          <span className={cn('flex items-center justify-center', isSelected ? 'text-white/90' : 'text-ash')}>
                             {getPlatformIcon(game.platform, 24)}
                           </span>
                         )}
                       </div>
-                      <div className="game-info">
-                        <div className="game-name">{game.name}</div>
-                        <div className="game-subtitle">{game.platform}</div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-medium whitespace-nowrap overflow-hidden text-ellipsis mb-0.5">
+                          {game.name}
+                        </div>
+                        <div className={cn('text-xs', isSelected ? 'text-white/80' : 'text-ash')}>
+                          {game.platform}
+                        </div>
                       </div>
                     </div>
                   );
@@ -381,25 +406,32 @@ export const GameView: React.FC<GameViewProps> = ({ onClose }) => {
               return (
                 <div
                   key={game.id}
-                  className={`game-item ${isSelected ? 'selected' : ''}`}
+                  className={cn(
+                    'flex items-center gap-3 px-4 py-2.5 cursor-pointer transition-colors',
+                    isSelected ? 'bg-accent-blue-soft text-on-dark' : 'hover:bg-surface-elevated'
+                  )}
                   onClick={() => {
                     setSelectedIndex(index);
                     setSelectedGame(game);
                   }}
                   onDoubleClick={() => handleLaunchGame(game)}
                 >
-                  <div className="game-icon">
+                  <div className="w-10 h-10 rounded-md overflow-hidden shrink-0 bg-surface flex items-center justify-center">
                     {game.iconPath ? (
-                      <img src={game.iconPath} alt={game.name} />
+                      <img src={game.iconPath} alt={game.name} className="w-full h-full object-cover" />
                     ) : (
-                      <span className="game-icon-fallback">
+                      <span className={cn('flex items-center justify-center', isSelected ? 'text-white/90' : 'text-ash')}>
                         {getPlatformIcon(game.platform, 24)}
                       </span>
                     )}
                   </div>
-                  <div className="game-info">
-                    <div className="game-name">{game.name}</div>
-                    <div className="game-subtitle">{game.platform}</div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-medium whitespace-nowrap overflow-hidden text-ellipsis mb-0.5">
+                      {game.name}
+                    </div>
+                    <div className={cn('text-xs', isSelected ? 'text-white/80' : 'text-ash')}>
+                      {game.platform}
+                    </div>
                   </div>
                 </div>
               );
@@ -409,58 +441,66 @@ export const GameView: React.FC<GameViewProps> = ({ onClose }) => {
 
         {/* Details panel */}
         {selectedGame && (
-          <div className="game-details-panel">
-            <div className="details-content">
+          <div className="flex-1 flex flex-col bg-surface overflow-hidden">
+            <div className="flex-1 overflow-y-auto p-4">
               {/* Game header */}
-              <div className="game-detail-header">
-                <div className="game-detail-icon">
+              <div className="flex items-center gap-4 mb-4 pb-4 border-b border-hairline">
+                <div className="w-20 h-20 rounded-lg overflow-hidden bg-canvas flex items-center justify-center shrink-0">
                   {selectedGame.iconPath ? (
-                    <img src={selectedGame.iconPath} alt={selectedGame.name} />
+                    <img src={selectedGame.iconPath} alt={selectedGame.name} className="w-full h-full object-cover" />
                   ) : (
-                    <span className="game-icon-large">
+                    <span className="flex items-center justify-center text-ash">
                       {getPlatformIcon(selectedGame.platform, 40)}
                     </span>
                   )}
                 </div>
-                <div className="game-detail-title">
-                  <h2>{selectedGame.name}</h2>
-                  <span className="game-detail-platform">
+                <div>
+                  <h2 className="m-0 mb-1 text-lg font-semibold text-ink">{selectedGame.name}</h2>
+                  <span className="flex items-center gap-1 text-sm text-mute">
                     {getPlatformIcon(selectedGame.platform, 14)} {selectedGame.platform}
                   </span>
                 </div>
               </div>
 
               {/* Metadata */}
-              <div className="details-metadata">
-                <div className="metadata-section">
-                  <h3>{t('view.information')}</h3>
+              <div className="mt-3">
+                <div>
+                  <h3 className="text-sm font-semibold text-ash mb-3 uppercase tracking-[0.5px]">
+                    {t('view.information')}
+                  </h3>
 
-                  <div className="metadata-row">
-                    <span className="metadata-label">{t('view.platform')}</span>
-                    <span className="metadata-value">{selectedGame.platform}</span>
+                  <div className="flex justify-between items-center py-2 border-b border-hairline">
+                    <span className="text-sm text-mute">{t('view.platform')}</span>
+                    <span className="text-sm text-ink font-medium text-right max-w-[60%]">{selectedGame.platform}</span>
                   </div>
 
-                  <div className="metadata-row">
-                    <span className="metadata-label">{t('view.status')}</span>
+                  <div className="flex justify-between items-center py-2 border-b border-hairline">
+                    <span className="text-sm text-mute">{t('view.status')}</span>
                     <span
-                      className={`metadata-value status-${selectedGame.isInstalled ? 'installed' : 'not-installed'}`}
+                      className={cn(
+                        'text-sm font-medium text-right max-w-[60%]',
+                        selectedGame.isInstalled ? 'text-accent-green' : 'text-ash'
+                      )}
                     >
                       {selectedGame.isInstalled ? t('view.installed') : t('view.notInstalled')}
                     </span>
                   </div>
 
                   {selectedGame.lastPlayed && (
-                    <div className="metadata-row">
-                      <span className="metadata-label">{t('view.lastPlayed')}</span>
-                      <span className="metadata-value">
+                    <div className="flex justify-between items-center py-2 border-b border-hairline">
+                      <span className="text-sm text-mute">{t('view.lastPlayed')}</span>
+                      <span className="text-sm text-ink font-medium text-right max-w-[60%]">
                         {formatLastPlayed(selectedGame.lastPlayed)}
                       </span>
                     </div>
                   )}
 
-                  <div className="metadata-row">
-                    <span className="metadata-label">{t('view.installPath')}</span>
-                    <span className="metadata-value path" title={selectedGame.installPath}>
+                  <div className="flex justify-between items-center py-2">
+                    <span className="text-sm text-mute">{t('view.installPath')}</span>
+                    <span
+                      className="text-xs text-ink font-medium text-right max-w-[60%] font-mono whitespace-nowrap overflow-hidden text-ellipsis"
+                      title={selectedGame.installPath}
+                    >
                       {selectedGame.installPath}
                     </span>
                   </div>
@@ -469,9 +509,9 @@ export const GameView: React.FC<GameViewProps> = ({ onClose }) => {
             </div>
 
             {/* Actions footer */}
-            <div className="details-actions">
+            <div className="flex gap-2 px-4 py-3 border-t border-hairline bg-canvas">
               <button
-                className="action-button primary"
+                className="flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium rounded-md border border-hairline bg-accent-blue-soft text-on-dark cursor-pointer transition-all hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
                 onClick={() => handleLaunchGame(selectedGame)}
                 disabled={!selectedGame.isInstalled}
               >
@@ -479,10 +519,10 @@ export const GameView: React.FC<GameViewProps> = ({ onClose }) => {
                   <path d="M8 5v14l11-7z" />
                 </svg>
                 <span>{t('view.play')}</span>
-                <kbd>Enter</kbd>
+                <kbd className="px-1.5 py-0.5 text-xs font-mono bg-white/20 rounded-sm">Enter</kbd>
               </button>
               <button
-                className="action-button"
+                className="flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium rounded-md border border-hairline bg-surface text-ink cursor-pointer transition-all hover:bg-surface-elevated hover:border-hairline-strong"
                 onClick={() => {
                   invoke('open_path', { path: selectedGame.installPath });
                 }}
@@ -505,22 +545,26 @@ export const GameView: React.FC<GameViewProps> = ({ onClose }) => {
       </div>
 
       {/* Footer */}
-      <div className="game-footer">
-        <div className="footer-left">
-          <div className="footer-icon">
+      <div className="flex items-center justify-between px-4 py-2 border-t border-hairline bg-surface text-xs shrink-0">
+        <div className="flex items-center gap-2 text-mute font-medium">
+          <span className="flex items-center justify-center text-mute">
             <GameControllerIcon size={16} />
-          </div>
+          </span>
           <span>{t('view.gamesLibrary')}</span>
-          <span className="footer-count">
+          <span className="text-ash font-normal">
             {filteredGames.length}{' '}
             {filteredGames.length === 1 ? t('view.game') : t('view.games')}
           </span>
         </div>
-        <div className="footer-right">
-          <span className="footer-hint">
-            <kbd>↑</kbd> <kbd>↓</kbd> {t('view.footer.navigate')}
-            <kbd>Enter</kbd> {t('view.footer.play')}
-            <kbd>Esc</kbd> {t('view.footer.close')}
+        <div className="text-ash">
+          <span className="flex items-center gap-2">
+            <kbd className="px-1.5 py-0.5 text-xs font-mono bg-canvas border border-hairline rounded-sm text-mute">↑</kbd>
+            <kbd className="px-1.5 py-0.5 text-xs font-mono bg-canvas border border-hairline rounded-sm text-mute">↓</kbd>
+            {t('view.footer.navigate')}
+            <kbd className="px-1.5 py-0.5 text-xs font-mono bg-canvas border border-hairline rounded-sm text-mute">Enter</kbd>
+            {t('view.footer.play')}
+            <kbd className="px-1.5 py-0.5 text-xs font-mono bg-canvas border border-hairline rounded-sm text-mute">Esc</kbd>
+            {t('view.footer.close')}
           </span>
         </div>
       </div>

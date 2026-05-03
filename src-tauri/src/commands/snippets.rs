@@ -58,6 +58,19 @@ impl SnippetState {
         fs::write(&self.file_path, json).map_err(|e| e.to_string())?;
         Ok(())
     }
+
+    pub fn get_all(&self) -> Result<Vec<Snippet>, String> {
+        let snippets = self.snippets.lock().map_err(|e| e.to_string())?;
+        Ok(snippets.values().cloned().collect())
+    }
+
+    pub fn replace_all(&self, new_snippets: HashMap<String, Snippet>) -> Result<(), String> {
+        {
+            let mut snippets = self.snippets.lock().map_err(|e| e.to_string())?;
+            *snippets = new_snippets;
+        }
+        self.save()
+    }
 }
 
 fn now_millis() -> i64 {

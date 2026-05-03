@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "volt",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "identifier": "volt.launch",
   "build": {
     "beforeDevCommand": "bun run dev",
@@ -44,12 +44,46 @@
         "focus": true,
         "fullscreen": false,
         "label": "settings",
-        "url": "settings.html"
+        "url": "index.html"
+      },
+      {
+        "title": "Volt — Setup",
+        "width": 1300,
+        "height": 800,
+        "resizable": false,
+        "center": true,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "visible": false,
+        "focus": true,
+        "fullscreen": false,
+        "label": "onboarding",
+        "url": "index.html"
+      },
+      {
+        "title": "Volt System Monitor",
+        "width": 1060,
+        "height": 720,
+        "minWidth": 800,
+        "minHeight": 560,
+        "resizable": true,
+        "center": true,
+        "decorations": false,
+        "transparent": false,
+        "alwaysOnTop": false,
+        "skipTaskbar": false,
+        "visible": false,
+        "focus": true,
+        "fullscreen": false,
+        "label": "system-monitor",
+        "url": "index.html"
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self'; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: asset: http://asset.localhost https://asset.localhost; font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost https://github.com https://raw.githubusercontent.com/VoltLaunchr/ https://objects.githubusercontent.com https://crmykhdztiyvfnjxrelx.supabase.co; frame-src 'none'; object-src 'none'; base-uri 'self'; form-action 'self'",
-      "devCsp": "default-src 'self'; script-src 'self'; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: asset: http://asset.localhost https://asset.localhost; font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost http://localhost:* https://github.com https://raw.githubusercontent.com/VoltLaunchr/ https://objects.githubusercontent.com https://crmykhdztiyvfnjxrelx.supabase.co; frame-src 'none'; object-src 'none'; base-uri 'self'; form-action 'self'"
+      "csp": "default-src 'self'; script-src 'self'; worker-src 'self' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: asset: http://asset.localhost https://asset.localhost; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' ipc: http://ipc.localhost https://github.com https://raw.githubusercontent.com/VoltLaunchr/ https://objects.githubusercontent.com https://crmykhdztiyvfnjxrelx.supabase.co; frame-src 'none'; object-src 'none'; base-uri 'self'; form-action 'self'",
+      "devCsp": "default-src 'self'; script-src 'self'; worker-src 'self' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: asset: http://asset.localhost https://asset.localhost; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' ipc: http://ipc.localhost http://localhost:* https://github.com https://raw.githubusercontent.com/VoltLaunchr/ https://objects.githubusercontent.com https://crmykhdztiyvfnjxrelx.supabase.co; frame-src 'none'; object-src 'none'; base-uri 'self'; form-action 'self'"
     }
   },
   "bundle": {

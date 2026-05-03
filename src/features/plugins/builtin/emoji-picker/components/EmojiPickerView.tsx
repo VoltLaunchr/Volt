@@ -6,7 +6,7 @@ import { applyPreferredSkinTone } from '../utils/skinTones';
 import { addToHistory, getFrequentEmojis } from '../utils/history';
 import type { SearchableEmoji } from '../types';
 import { EMOJI_GROUPS } from '../types';
-import './EmojiPickerView.css';
+import { cn } from '@/lib/utils';
 
 interface EmojiPickerViewProps {
   onClose: () => void;
@@ -171,14 +171,18 @@ export const EmojiPickerView: React.FC<EmojiPickerViewProps> = ({
 
   return (
     <div
-      className="emoji-picker-view"
+      className="flex flex-col h-full w-full bg-canvas text-ink relative overflow-hidden"
       tabIndex={0}
       onKeyDown={handleKeyDown}
       style={{ outline: 'none' }}
     >
       {/* Header */}
-      <div className="emoji-picker-header">
-        <button className="back-button" onClick={onClose} title="Back">
+      <div className="flex items-center gap-3 px-4 py-4 border-b border-hairline shrink-0">
+        <button
+          className="flex items-center justify-center w-9 h-9 rounded-md bg-surface text-mute hover:bg-surface-elevated hover:text-ink hover:-translate-x-0.5 transition-all cursor-pointer"
+          onClick={onClose}
+          title="Back"
+        >
           <svg
             width="20"
             height="20"
@@ -193,19 +197,19 @@ export const EmojiPickerView: React.FC<EmojiPickerViewProps> = ({
 
         <input
           type="text"
-          className="emoji-search-input"
+          className="flex-1 h-11 px-4 bg-surface border border-hairline rounded-lg text-ink text-base outline-none transition-all focus:bg-surface-elevated focus:border-hairline-strong focus:shadow-[0_0_0_3px_rgba(99,102,241,0.15)] placeholder:text-stone"
           placeholder={t('view.placeholder')}
           value={searchQuery}
           onChange={handleSearchChange}
           autoFocus
         />
 
-        <div className="category-dropdown">
+        <div className="relative">
           <button
-            className="category-dropdown-button"
+            className="flex items-center gap-2 h-11 px-3 bg-surface border border-hairline rounded-lg text-ink text-sm cursor-pointer whitespace-nowrap hover:bg-surface-elevated hover:border-hairline-strong transition-all"
             onClick={() => setShowCategoryDropdown(!showCategoryDropdown)}
           >
-            <span className="category-icon">{CATEGORY_ICONS[selectedCategory] || '🔍'}</span>
+            <span className="text-lg leading-none">{CATEGORY_ICONS[selectedCategory] || '🔍'}</span>
             <span>{getCategoryLabel(selectedCategory)}</span>
             <svg
               width="12"
@@ -224,14 +228,19 @@ export const EmojiPickerView: React.FC<EmojiPickerViewProps> = ({
           </button>
 
           {showCategoryDropdown && (
-            <div className="category-dropdown-menu">
+            <div className="absolute top-[calc(100%+8px)] right-0 min-w-[220px] bg-surface border border-hairline rounded-lg shadow-xl z-[1000] overflow-hidden animate-[slideDown_0.15s_ease-out]">
               {availableCategories.map((category) => (
                 <button
                   key={category}
-                  className={`category-option ${selectedCategory === category ? 'active' : ''}`}
+                  className={cn(
+                    'flex items-center gap-3 w-full px-4 py-3 text-ink text-sm text-left cursor-pointer transition-colors',
+                    selectedCategory === category
+                      ? 'bg-surface-elevated text-on-dark'
+                      : 'hover:bg-surface-elevated'
+                  )}
                   onClick={() => handleCategoryChange(category)}
                 >
-                  <span className="category-icon">{CATEGORY_ICONS[category] || '📁'}</span>
+                  <span className="text-lg leading-none">{CATEGORY_ICONS[category] || '📁'}</span>
                   <span>{getCategoryLabel(category)}</span>
                 </button>
               ))}
@@ -241,23 +250,27 @@ export const EmojiPickerView: React.FC<EmojiPickerViewProps> = ({
       </div>
 
       {/* Category info */}
-      <div className="category-info">
-        <span className="category-name">{getCategoryLabel(selectedCategory)}</span>
-        <span className="emoji-count">{displayedEmojis.length}</span>
+      <div className="flex items-center justify-between px-4 py-3 border-b border-hairline shrink-0">
+        <span className="text-sm font-semibold text-ink">{getCategoryLabel(selectedCategory)}</span>
+        <span className="text-xs text-stone bg-surface px-2 py-0.5 rounded-full">
+          {displayedEmojis.length}
+        </span>
       </div>
 
       {/* Emoji Grid */}
-      <div className="emoji-grid-container">
+      <div className="flex-1 overflow-y-auto p-4">
         {isLoading ? (
-          <div className="loading-state">{t('loading')}</div>
+          <div className="flex flex-col items-center justify-center h-full gap-3 text-mute py-6">
+            {t('loading')}
+          </div>
         ) : displayedEmojis.length === 0 ? (
-          <div className="empty-state">
-            <div className="empty-icon">🔍</div>
-            <div className="empty-message">{t('view.noEmojis')}</div>
-            <div className="empty-hint">{t('view.tryDifferent')}</div>
+          <div className="flex flex-col items-center justify-center h-full gap-3 text-mute py-6">
+            <div className="text-[56px] opacity-40 animate-pulse">🔍</div>
+            <div className="text-base font-medium text-body">{t('view.noEmojis')}</div>
+            <div className="text-sm text-stone">{t('view.tryDifferent')}</div>
           </div>
         ) : (
-          <div className="emoji-grid">
+          <div className="grid grid-cols-7 gap-2">
             {displayedEmojis.map((emoji, index) => {
               const displayEmoji = applyPreferredSkinTone(emoji);
               const isSelected = index === selectedIndex;
@@ -265,11 +278,16 @@ export const EmojiPickerView: React.FC<EmojiPickerViewProps> = ({
               return (
                 <button
                   key={`${emoji.hexcode}-${index}`}
-                  className={`emoji-grid-item ${isSelected ? 'selected' : ''}`}
+                  className={cn(
+                    'emoji-grid-item aspect-square flex items-center justify-center rounded-md cursor-pointer transition-colors p-2 border-2',
+                    isSelected
+                      ? 'selected bg-surface-elevated border-hairline-strong shadow-[0_0_0_2px_rgba(99,102,241,0.3)]'
+                      : 'border-transparent hover:bg-surface-elevated hover:border-hairline'
+                  )}
                   onClick={() => handleSelectEmoji(emoji)}
                   title={emoji.label}
                 >
-                  <span className="emoji-char">{displayEmoji}</span>
+                  <span className="text-[28px] leading-none select-none">{displayEmoji}</span>
                 </button>
               );
             })}
@@ -278,16 +296,35 @@ export const EmojiPickerView: React.FC<EmojiPickerViewProps> = ({
       </div>
 
       {/* Footer */}
-      <div className="emoji-picker-footer">
-        <div className="footer-left">
+      <div className="flex items-center justify-between px-4 py-3 border-t border-hairline shrink-0">
+        <div className="flex-1 min-w-0">
           {displayedEmojis[selectedIndex] && (
-            <span className="selected-emoji-label">{displayedEmojis[selectedIndex].label}</span>
+            <span className="text-sm text-ink truncate">{displayedEmojis[selectedIndex].label}</span>
           )}
         </div>
-        <div className="footer-right">
-          <span className="footer-hint">
-            <kbd>↑</kbd> <kbd>↓</kbd> <kbd>←</kbd> <kbd>→</kbd> Navigate • <kbd>↵</kbd> Select •{' '}
-            <kbd>Esc</kbd> Close
+        <div className="flex items-center gap-3">
+          <span className="text-xs text-stone flex items-center gap-1">
+            <kbd className="inline-flex items-center justify-center min-w-5 px-1.5 py-0.5 bg-surface border border-hairline rounded-xs font-mono text-xs text-mute leading-none">
+              ↑
+            </kbd>
+            <kbd className="inline-flex items-center justify-center min-w-5 px-1.5 py-0.5 bg-surface border border-hairline rounded-xs font-mono text-xs text-mute leading-none">
+              ↓
+            </kbd>
+            <kbd className="inline-flex items-center justify-center min-w-5 px-1.5 py-0.5 bg-surface border border-hairline rounded-xs font-mono text-xs text-mute leading-none">
+              ←
+            </kbd>
+            <kbd className="inline-flex items-center justify-center min-w-5 px-1.5 py-0.5 bg-surface border border-hairline rounded-xs font-mono text-xs text-mute leading-none">
+              →
+            </kbd>
+            {' '}Navigate •{' '}
+            <kbd className="inline-flex items-center justify-center min-w-5 px-1.5 py-0.5 bg-surface border border-hairline rounded-xs font-mono text-xs text-mute leading-none">
+              ↵
+            </kbd>
+            {' '}Select •{' '}
+            <kbd className="inline-flex items-center justify-center min-w-5 px-1.5 py-0.5 bg-surface border border-hairline rounded-xs font-mono text-xs text-mute leading-none">
+              Esc
+            </kbd>
+            {' '}Close
           </span>
         </div>
       </div>

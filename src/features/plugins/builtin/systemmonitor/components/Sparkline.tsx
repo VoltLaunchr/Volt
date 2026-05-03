@@ -1,5 +1,4 @@
 import React from 'react';
-import './Sparkline.css';
 
 interface SparklineProps {
   data: number[];
@@ -34,7 +33,7 @@ export const Sparkline: React.FC<SparklineProps> = ({
   if (data.length < 2) {
     return (
       <svg
-        className="volt-sparkline"
+        className="inline-flex items-center block overflow-visible"
         width={width}
         height={height}
         viewBox={`0 0 ${width} ${height}`}
@@ -42,11 +41,12 @@ export const Sparkline: React.FC<SparklineProps> = ({
         aria-label={ariaLabel}
       >
         <line
-          className="volt-sparkline__empty"
           x1={0}
           y1={height / 2}
           x2={width}
           y2={height / 2}
+          stroke="var(--color-border, #242728)"
+          strokeDasharray="3 3"
         />
       </svg>
     );
@@ -70,7 +70,7 @@ export const Sparkline: React.FC<SparklineProps> = ({
 
   return (
     <svg
-      className="volt-sparkline"
+      className="inline-flex items-center block overflow-visible"
       width={width}
       height={height}
       viewBox={`0 0 ${width} ${height}`}
@@ -78,8 +78,15 @@ export const Sparkline: React.FC<SparklineProps> = ({
       aria-label={ariaLabel}
       preserveAspectRatio="none"
     >
-      <polyline className="volt-sparkline__area" points={areaPoints} fill={color} />
-      <polyline className="volt-sparkline__line" points={linePoints} stroke={color} />
+      <polyline points={areaPoints} fill={color} opacity={0.18} />
+      <polyline
+        points={linePoints}
+        stroke={color}
+        fill="none"
+        strokeWidth={1.5}
+        strokeLinejoin="round"
+        strokeLinecap="round"
+      />
     </svg>
   );
 };

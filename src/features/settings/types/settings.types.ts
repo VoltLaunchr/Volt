@@ -146,8 +146,38 @@ export const DEFAULT_SETTINGS: Settings = {
   },
   indexing: {
     folders: [],
-    excludedPaths: [],
-    fileExtensions: [], // Empty = index all file types
+    excludedPaths: [
+      // JS / Python ecosystem noise
+      'node_modules',
+      '.git',
+      '.svn',
+      '__pycache__',
+      '.venv',
+      'venv',
+      // Build outputs
+      'target',
+      'dist',
+      'build',
+      '.next',
+      '.nuxt',
+      // Temp & cache
+      'tmp',
+      'temp',
+      'Temp',
+      'Cache',
+      'cache',
+      'Caches',
+      'caches',
+      '.cache',
+      // Windows system
+      '$Recycle.Bin',
+      'System Volume Information',
+      'AppData',
+      'Windows',
+      // macOS system
+      'Library',
+    ],
+    fileExtensions: ['pdf', 'docx', 'doc', 'txt', 'xlsx', 'xls', 'pptx', 'ppt', 'md', 'csv'],
     indexOnStartup: true,
   },
   plugins: {

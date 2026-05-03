@@ -22,20 +22,27 @@ Search apps, files, do math, convert units, set timers, and run commands — wit
 - **Instant fuzzy search** — finds your apps and files as you type
 - **Keyboard-first** — global hotkey + arrow keys + Enter, no mouse needed
 - **Built-in calculator** — math expressions, unit conversions, date math, timezone conversions, all inline
-- **Game launcher** — auto-detects Steam, Epic, GOG, Xbox, EA, Ubisoft, Riot games
+- **Game launcher** — auto-detects 10 platforms: Steam, Epic, GOG, Xbox, EA, Ubisoft, Riot, Amazon, Battle.net, Rockstar
 - **Clipboard history** — search and paste anything you copied recently
 - **Emoji picker** — type `:` to start, fuzzy search, recently used, skin tones
-- **Timers** — `timer 5m` and forget
+- **Timers & Pomodoro** — `timer 5m`, focus mode, auto-cycle with desktop notifications
 - **Web search** — `?` prefix to query Google/Bing/DuckDuckGo
+- **Shell commands** — `>` prefix for inline shell execution with streaming output, ANSI colors, and history
 - **Plugin system** — extend Volt with TypeScript plugins (built-in plugins use the same API)
+- **Extensions marketplace** — community extensions with sandboxed Web Worker execution and permission consent
 - **Frecency-based ranking** — most used apps appear first, with exponential time decay
 - **Preview panel** — press `Ctrl+P` to preview files, images, folders, and app metadata
 - **Text snippets** — reusable text blocks with variable expansion (`{date}`, `{time}`, etc.)
-- **Power-user search operators** — filter by `ext:`, `size:`, `modified:` in file search
+- **Quicklinks** — `ql:` prefix for URL/folder/command shortcuts
+- **Power-user search operators** — filter by `ext:`, `size:`, `modified:`, `in:` in file search
 - **Windows Store/UWP app support** — discovers apps via Shell AppsFolder and Registry
 - **Results grouped by type** — Applications, Commands, Games, Files shown in distinct sections
+- **System monitor** — per-core CPU, per-disk, network throughput, top processes, temperatures
+- **Third-party integrations** — GitHub, Notion OAuth with encrypted credential storage
+- **i18n** — English and French, auto-detected from OS locale
 - **Glassmorphism UI** — minimal, transparent, always on top, themable
 - **Native performance** — Rust backend, ~15 MB binary, instant startup
+- **Hardened security** — CSRF-protected auth deep links, HMAC-signed keyring, sandboxed extensions, shell blocklist
 
 ## Download
 
@@ -75,8 +82,8 @@ bun run dev
 
 Run tests:
 ```bash
-bun run test                                                  # frontend (vitest, 166 tests)
-cd src-tauri && cargo test --lib                              # backend (cargo, 138 tests)
+bun run test                                                  # frontend (vitest, 166+ tests)
+cd src-tauri && cargo test --lib                              # backend (cargo, 143+ tests)
 cd src-tauri && cargo clippy --all-features --all-targets -- -D warnings   # lint
 ```
 

@@ -115,10 +115,22 @@ impl SearchEngine {
                 }
 
                 // Directory filter (e.g., in:~/Documents)
-                if let Some(ref dir) = options.dir_filter
-                    && !file.path.starts_with(dir.as_str())
-                {
-                    return false;
+                if let Some(ref dir) = options.dir_filter {
+                    // Expand ~/... to the user's home directory before comparing.
+                    // Use strip_prefix("~/") so that bare `~` or multi-byte chars
+                    // at index 1 never cause a panic or wrong byte-boundary slice.
+                    let expanded = if let Some(rest) = dir.strip_prefix("~/") {
+                        if let Some(home) = dirs::home_dir() {
+                            home.join(rest).to_string_lossy().into_owned()
+                        } else {
+                            dir.clone()
+                        }
+                    } else {
+                        dir.clone()
+                    };
+                    if !file.path.starts_with(expanded.as_str()) {
+                        return false;
+                    }
                 }
 
                 // Size filters
@@ -159,8 +171,13 @@ impl SearchEngine {
                 let haystack_utf32: Vec<char> = haystack.chars().collect();
                 let haystack_str = Utf32Str::Unicode(&haystack_utf32);
 
-                // Get the base score from nucleo matcher
-                let base_score = pattern.score(haystack_str, &mut self.matcher)?;
+                // Get the base score from nucleo matcher.
+                // Some(0) means characters exist as a subsequence but are so
+                // spread apart the match is meaningless — treat the same as None.
+                let base_score = match pattern.score(haystack_str, &mut self.matcher) {
+                    Some(s) if s > 0 => s,
+                    _ => return None,
+                };
 
                 // Apply category-specific boosts
                 let category_boost = self.get_category_boost(&file.category);
@@ -254,9 +271,12 @@ impl SearchEngine {
                 let haystack_utf32: Vec<char> = haystack.chars().collect();
                 let haystack_str = Utf32Str::Unicode(&haystack_utf32);
 
-                // Get score with indices
+                // Get score with indices — discard Some(0) weak subsequence matches.
                 let mut indices = Vec::new();
-                let base_score = pattern.indices(haystack_str, &mut self.matcher, &mut indices)?;
+                let base_score = match pattern.indices(haystack_str, &mut self.matcher, &mut indices) {
+                    Some(s) if s > 0 => s,
+                    _ => return None,
+                };
 
                 let category_boost = self.get_category_boost(&file.category);
                 let final_score = ((base_score as f32) * category_boost) as u32;

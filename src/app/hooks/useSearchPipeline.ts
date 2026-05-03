@@ -12,6 +12,7 @@ import {
 import type { SearchSensitivity } from '../../features/settings/types/settings.types';
 import { logger } from '../../shared/utils/logger';
 import { parseQuery } from '../../shared/utils/queryParser';
+import { detectUrl } from '../../shared/utils/urlDetector';
 import { useAppStore } from '../../stores/appStore';
 import { useSearchStore } from '../../stores/searchStore';
 
@@ -221,7 +222,6 @@ export function useSearchPipeline({
   suspended = false,
 }: UseSearchPipelineOptions): void {
   const allApps = useAppStore((s) => s.allApps);
-  const isLoading = useAppStore((s) => s.isLoading);
   const searchSensitivity: SearchSensitivity =
     useAppStore((s) => s.settings?.general.searchSensitivity) ?? 'medium';
   const searchQuery = useSearchStore((s) => s.searchQuery);
@@ -235,8 +235,12 @@ export function useSearchPipeline({
 
   const performSearch = useCallback(
     async (query: string) => {
+      // Read isLoading from the store at call-time to avoid stale closures
+      // (captured isLoading would reflect the value at callback creation time,
+      // potentially skipping searches when apps finish loading between renders)
+      const { isLoading: currentIsLoading } = useAppStore.getState();
       // If apps aren't loaded yet, still allow plugin-only search
-      const appsReady = !isLoading && allApps.length > 0;
+      const appsReady = !currentIsLoading && allApps.length > 0;
 
       if (!query.trim()) {
         // Predictive results: show top frecency suggestions.
@@ -416,29 +420,57 @@ export function useSearchPipeline({
         // Final merge with all sources
         const allResults = mergeResults(streamedApps, streamedFiles, streamedPlugins);
 
-        // Fallback: show a "Search the web" result when no results found
-        if (allResults.length === 0 && effectiveQuery.trim()) {
-          const fallbackId = `websearch-fallback-${Date.now()}`;
-          const googleUrl =
-            'https://www.google.com/search?q=' + encodeURIComponent(effectiveQuery);
-          allResults.push({
-            id: fallbackId,
-            type: SearchResultType.WebSearch,
-            title: `Search "${effectiveQuery}" on Google`,
-            subtitle: 'Press Enter to search the web',
-            score: 1,
+        // URL auto-detection: inject an "Open URL" result at the top when the
+        // query looks like a navigable URL, with no prefix required.
+        const detectedUrl = detectUrl(query);
+        if (detectedUrl) {
+          const urlResultId = `open-url-${detectedUrl}`;
+          const urlResult: SearchResult = {
+            id: urlResultId,
+            type: SearchResultType.Url,
+            title: `Open ${detectedUrl}`,
+            subtitle: 'Press Enter to open in browser',
+            score: SEARCH_SCORING.PLUGIN_KEYWORD_BOOST + 200,
             data: {
+              id: urlResultId,
+              type: 'url',
+              title: `Open ${detectedUrl}`,
+              subtitle: 'Press Enter to open in browser',
+              score: SEARCH_SCORING.PLUGIN_KEYWORD_BOOST + 200,
+              data: { url: detectedUrl },
+            } as import('../../shared/types/common.types').PluginResultData,
+          };
+          allResults.unshift(urlResult);
+          // Re-sort so score ordering is respected
+          allResults.sort((a, b) => b.score - a.score);
+        }
+
+        // Fallback: show web search options when no results found
+        if (allResults.length === 0 && effectiveQuery.trim()) {
+          const encoded = encodeURIComponent(effectiveQuery);
+          const fallbackEngines = [
+            { engine: 'google', label: 'Google', url: `https://www.google.com/search?q=${encoded}` },
+            { engine: 'duckduckgo', label: 'DuckDuckGo', url: `https://duckduckgo.com/?q=${encoded}` },
+            { engine: 'youtube', label: 'YouTube', url: `https://www.youtube.com/results?search_query=${encoded}` },
+          ];
+          fallbackEngines.forEach(({ engine, label, url }) => {
+            const fallbackId = `websearch-fallback-${engine}-${Date.now()}`;
+            allResults.push({
               id: fallbackId,
-              type: 'websearch',
-              title: `Search "${effectiveQuery}" on Google`,
-              subtitle: 'Press Enter to search the web',
-              score: 90,
+              type: SearchResultType.WebSearch,
+              title: `Search "${effectiveQuery}" on ${label}`,
+              subtitle: 'Press Enter to open in browser',
+              score: 1,
+              badge: 'Fallback',
               data: {
-                query: effectiveQuery,
-                engine: 'google',
-                url: googleUrl,
-              },
-            } as PluginResultData,
+                id: fallbackId,
+                type: 'websearch',
+                title: `Search "${effectiveQuery}" on ${label}`,
+                subtitle: 'Press Enter to open in browser',
+                score: 90,
+                data: { query: effectiveQuery, engine, url },
+              } as PluginResultData,
+            });
           });
         }
 
@@ -450,7 +482,7 @@ export function useSearchPipeline({
         setSearchError(`Search failed: ${errorMessage}`);
       }
     },
-    [allApps, isLoading, maxResults, searchSensitivity, setResults, setSearchError, setShowSnowEffect]
+    [allApps, maxResults, searchSensitivity, setResults, setSearchError, setShowSnowEffect]
   );
 
   // Debounced search effect — adaptive: 150ms for short queries, 80ms for longer ones

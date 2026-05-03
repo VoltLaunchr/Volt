@@ -1,21 +1,54 @@
 {
-  "welcome": "Bienvenue sur Volt",
-  "subtitle": "Votre lanceur d'applications au clavier",
-  "steps": {
-    "hotkey": {
-      "title": "Raccourci global",
-      "description": "Appuyez sur Ctrl+Espace n'importe où pour invoquer Volt. Vous pouvez changer ce raccourci dans Paramètres > Raccourcis."
+  "welcome": {
+    "title": "Bienvenue sur Volt",
+    "subtitle": "Votre lanceur au clavier pour Windows, macOS et Linux. Mettons-vous rapidement en route.",
+    "cta": "Commencer"
+  },
+  "features": {
+    "eyebrow": "Fonctionnalités",
+    "title": "Prêt à l'emploi",
+    "subtitle": "Volt est livré avec tout ce qu'il faut pour aller plus vite. Lancez vos apps, cherchez n'importe quoi et exécutez des actions instantanément depuis votre clavier.",
+    "browseExtensions": "Voir les extensions",
+    "previewLabels": {
+      "favourites": "Favoris",
+      "recentFiles": "Fichiers récents"
     },
-    "indexing": {
-      "title": "Indexation de fichiers",
-      "description": "Volt indexe vos fichiers pour une recherche instantanée. Configurez les dossiers à indexer dans Paramètres > Indexation."
-    },
-    "plugins": {
-      "title": "Plugins intégrés",
-      "description": "Calculatrice, emojis, recherche web, minuteur, moniteur système et plus — commencez à taper pour les utiliser."
+    "cards": {
+      "appLauncher": { "label": "Lanceur d'apps", "desc": "Lancez n'importe quelle app en un instant." },
+      "fileSearch": { "label": "Recherche de fichiers", "desc": "Trouvez tout fichier par nom ou contenu." },
+      "calculator": { "label": "Calculatrice", "desc": "Évaluez vos expressions à la volée." },
+      "emoji": { "label": "Emojis & symboles", "desc": "Cherchez et copiez n'importe quel emoji." },
+      "clipboard": { "label": "Presse-papiers", "desc": "Ne perdez plus jamais un copier-coller." },
+      "systemMonitor": { "label": "Moniteur système", "desc": "CPU, RAM et disque d'un coup d'œil." }
     }
   },
-  "getStarted": "Commencer",
-  "next": "Suivant",
-  "skip": "Passer"
+  "extensions": {
+    "eyebrow": "Extensions",
+    "title": "Extensible par nature.",
+    "subtitle": "Installez des extensions communautaires pour ajouter commandes, intégrations et workflows. API simple — créez la vôtre en quelques minutes.",
+    "enable": "Activer les extensions",
+    "items": {
+      "github": { "name": "GitHub", "desc": "Cherchez repos, issues, PRs." },
+      "notion": { "name": "Notion", "desc": "Cherchez pages et bases de données." },
+      "pomodoro": { "name": "Minuteur Pomodoro", "desc": "Sessions de focus, depuis Volt." },
+      "webSearch": { "name": "Recherche web", "desc": "Cherchez sur le web instantanément." },
+      "systemMonitor": { "name": "Moniteur système", "desc": "CPU, RAM et disque d'un coup d'œil." },
+      "shell": { "name": "Commandes Shell", "desc": "Exécutez des commandes terminal." }
+    }
+  },
+  "hotkey": {
+    "title": "Vous êtes prêt à filer",
+    "titleSaved": "C'est prêt.",
+    "changeButton": "Modifier le raccourci",
+    "saved": "Enregistré",
+    "errorInvalid": "Utilisez au moins un modificateur (Ctrl, Alt, Shift, Super) avec une autre touche.",
+    "footerHit": "Appuyez sur ",
+    "footerToOpen": " pour ouvrir Volt ou modifier votre raccourci."
+  },
+  "nav": {
+    "back": "Retour",
+    "continue": "Continuer",
+    "launch": "Lancer Volt",
+    "skip": "Passer"
+  }
 }

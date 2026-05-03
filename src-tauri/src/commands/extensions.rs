@@ -1428,6 +1428,80 @@ pub async fn refresh_dev_extension(
     link_dev_extension(app, ext.path.clone()).await
 }
 
+// ============================================================================
+// DOWNLOAD TRACKING - Supabase-backed counters
+// ============================================================================
+
+const SUPABASE_URL: &str = env!("SUPABASE_URL");
+const SUPABASE_ANON_KEY: &str = env!("SUPABASE_ANON_KEY");
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DownloadCount {
+    pub extension_id: String,
+    pub count: u64,
+}
+
+/// Fetch download counts for all extensions from Supabase.
+#[tauri::command]
+pub async fn fetch_extension_downloads() -> VoltResult<Vec<DownloadCount>> {
+    if SUPABASE_URL.is_empty() || SUPABASE_ANON_KEY.is_empty() {
+        return Ok(vec![]);
+    }
+
+    let url = format!(
+        "{}/rest/v1/extension_downloads?select=extension_id,count",
+        SUPABASE_URL.trim_end_matches('/')
+    );
+
+    let client = reqwest::Client::new();
+    let resp = client
+        .get(&url)
+        .header("apikey", SUPABASE_ANON_KEY)
+        .header("Authorization", format!("Bearer {}", SUPABASE_ANON_KEY))
+        .send()
+        .await
+        .map_err(|e| VoltError::Unknown(format!("fetch_extension_downloads: {}", e)))?;
+
+    if !resp.status().is_success() {
+        return Ok(vec![]);
+    }
+
+    let counts: Vec<DownloadCount> = resp
+        .json()
+        .await
+        .map_err(|e| VoltError::Serialization(format!("fetch_extension_downloads parse: {}", e)))?;
+
+    Ok(counts)
+}
+
+/// Increment the download counter for an extension in Supabase (fire-and-forget).
+#[tauri::command]
+pub async fn increment_extension_download(extension_id: String) -> VoltResult<()> {
+    validate_extension_id(&extension_id)?;
+
+    if SUPABASE_URL.is_empty() || SUPABASE_ANON_KEY.is_empty() {
+        return Ok(());
+    }
+
+    let url = format!(
+        "{}/rest/v1/rpc/increment_extension_download",
+        SUPABASE_URL.trim_end_matches('/')
+    );
+
+    let client = reqwest::Client::new();
+    let _ = client
+        .post(&url)
+        .header("apikey", SUPABASE_ANON_KEY)
+        .header("Authorization", format!("Bearer {}", SUPABASE_ANON_KEY))
+        .header("Content-Type", "application/json")
+        .body(format!(r#"{{"p_extension_id":"{}"}}"#, extension_id))
+        .send()
+        .await;
+
+    Ok(())
+}
+
 /// Return whether the extension-state HMAC key was forcibly rotated during
 /// this process run (i.e. the keyring entry was malformed at startup, which
 /// can only happen from external tampering or data corruption). The

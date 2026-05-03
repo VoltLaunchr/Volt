@@ -47,6 +47,12 @@ static AUTH_STATE: Lazy<Mutex<HashMap<String, PendingAuthFlow>>> =
 /// will accept).
 const AUTH_STATE_TTL: Duration = Duration::from_secs(5 * 60);
 
+/// Hard cap on concurrent pending auth flows. A single user can only have
+/// a handful in flight; anything beyond this is either a bug or a memory
+/// DoS via repeated `auth_start_login` calls. When the cap is reached we
+/// drop the oldest entries first.
+const AUTH_STATE_MAX_ENTRIES: usize = 64;
+
 /// Maximum allowed `expires_in` from a refresh response (24h). Prevents the
 /// upstream from claiming an absurdly long-lived access token.
 const MAX_EXPIRES_IN_SECS: i64 = 86_400;
@@ -62,8 +68,20 @@ static JWKS_CACHE: Lazy<RwLock<Option<(JwkSet, Instant)>>> = Lazy::new(|| RwLock
 const JWKS_CACHE_TTL: Duration = Duration::from_secs(600);
 
 /// Network timeout for `/auth/v1/.well-known/jwks.json` fetches. The endpoint
-/// is small (~200 bytes) so anything over a few seconds means trouble.
-const JWKS_FETCH_TIMEOUT: Duration = Duration::from_secs(10);
+/// is small (~200 bytes) so anything over a few seconds usually means a
+/// connectivity blip; we retry once before failing the login flow. 15s
+/// is comfortably above typical TLS handshake + cold-cache fetch on a
+/// flaky network without being so long it noticeably stalls the UI.
+const JWKS_FETCH_TIMEOUT: Duration = Duration::from_secs(15);
+
+/// Number of retry attempts on transient JWKS fetch errors (TCP/TLS/timeout).
+/// We do not retry on HTTP 4xx/5xx — those are deliberate responses, not
+/// blips, and retrying would just hammer the upstream.
+const JWKS_FETCH_MAX_ATTEMPTS: u32 = 2;
+
+/// Backoff between JWKS retry attempts. Short on purpose — the user is
+/// blocked on the auth flow completing.
+const JWKS_RETRY_BACKOFF: Duration = Duration::from_millis(500);
 
 fn auth_state_lock()
 -> Result<std::sync::MutexGuard<'static, HashMap<String, PendingAuthFlow>>, String> {
@@ -74,6 +92,24 @@ fn auth_state_lock()
 fn prune_expired_auth_states(map: &mut HashMap<String, PendingAuthFlow>) {
     let now = Instant::now();
     map.retain(|_, flow| now.duration_since(flow.initiated) <= AUTH_STATE_TTL);
+}
+
+/// Enforce `AUTH_STATE_MAX_ENTRIES` by evicting the oldest entries first.
+/// Should be called after `prune_expired_auth_states` so we only need to
+/// trim if recent (non-expired) flows exceed the cap.
+fn cap_auth_states(map: &mut HashMap<String, PendingAuthFlow>) {
+    if map.len() <= AUTH_STATE_MAX_ENTRIES {
+        return;
+    }
+    let mut by_age: Vec<(String, Instant)> = map
+        .iter()
+        .map(|(k, v)| (k.clone(), v.initiated))
+        .collect();
+    by_age.sort_by_key(|(_, t)| *t);
+    let to_remove = map.len() - AUTH_STATE_MAX_ENTRIES;
+    for (k, _) in by_age.into_iter().take(to_remove) {
+        map.remove(&k);
+    }
 }
 
 /// Generate a fresh PKCE pair: a 32-byte random verifier and its
@@ -201,6 +237,7 @@ pub async fn auth_start_login() -> Result<String, String> {
     {
         let mut map = auth_state_lock()?;
         prune_expired_auth_states(&mut map);
+        cap_auth_states(&mut map);
         map.insert(
             state.clone(),
             PendingAuthFlow {
@@ -283,8 +320,15 @@ pub async fn auth_get_profile() -> Result<Option<UserProfile>, String> {
 
     if !resp.status().is_success() {
         let status = resp.status();
-        let body = resp.text().await.unwrap_or_default();
-        error!("Supabase profile request failed: {} — {}", status, body);
+        error!("Supabase profile request failed: {}", status);
+        // Body is gated to debug — Supabase error JSON shouldn't contain
+        // tokens today, but logging an upstream response body verbatim is
+        // a leak vector if the shape ever changes (e.g. a future endpoint
+        // echoes the bearer back in `details`). Operators who want the
+        // body re-run with RUST_LOG=debug.
+        if let Ok(body) = resp.text().await {
+            debug!("Profile error response body: {}", body);
+        }
         return Err(format!("Profile request failed with status {}", status));
     }
 
@@ -321,8 +365,14 @@ pub async fn auth_refresh_token() -> Result<AuthSession, String> {
 
     if !resp.status().is_success() {
         let status = resp.status();
-        let body = resp.text().await.unwrap_or_default();
-        error!("Token refresh failed: {} — {}", status, body);
+        error!("Token refresh failed: {}", status);
+        // Body is gated to debug — Supabase has historically embedded
+        // request fragments in `error_description` strings, and we don't
+        // want a future upstream change to start echoing the refresh
+        // token (or anything resembling it) into prod log files.
+        if let Ok(body) = resp.text().await {
+            debug!("Token refresh error response body: {}", body);
+        }
         return Err(format!("Token refresh failed with status {}", status));
     }
 
@@ -507,8 +557,15 @@ async fn exchange_code_for_session(
 
     if !resp.status().is_success() {
         let status = resp.status();
-        let body = resp.text().await.unwrap_or_default();
-        warn!("Auth code exchange returned {}: {}", status, body);
+        warn!("Auth code exchange returned {}", status);
+        // Body is gated to debug — the success path of /api/auth/exchange-code
+        // returns access_token + refresh_token, so even though the error
+        // path shouldn't echo those, a misconfigured deploy returning an
+        // unexpected 4xx with the request fields included would be a
+        // disaster if logged at warn level. Keep it opt-in.
+        if let Ok(body) = resp.text().await {
+            debug!("Auth code exchange error response body: {}", body);
+        }
         return Err(format!("Auth code exchange failed with status {}", status));
     }
 
@@ -586,25 +643,43 @@ pub struct AccessTokenClaims {
 }
 
 /// Fetch the Supabase project JWKS document. Performed once per cache miss.
+///
+/// Retries on transient network errors (TCP/TLS/timeout) up to
+/// `JWKS_FETCH_MAX_ATTEMPTS` total attempts. HTTP 4xx/5xx responses are
+/// not retried — those signal a misconfigured project / upstream outage,
+/// and hammering with retries doesn't help.
 async fn fetch_jwks() -> Result<JwkSet, String> {
     let base = SUPABASE_URL.trim_end_matches('/');
     let url = format!("{}/auth/v1/.well-known/jwks.json", base);
-    let resp = reqwest::Client::builder()
+    let client = reqwest::Client::builder()
         .timeout(JWKS_FETCH_TIMEOUT)
         .build()
-        .map_err(|e| format!("Failed to build JWKS HTTP client: {}", e))?
-        .get(&url)
-        .send()
-        .await
-        .map_err(|e| format!("JWKS fetch failed: {}", e))?;
+        .map_err(|e| format!("Failed to build JWKS HTTP client: {}", e))?;
 
-    if !resp.status().is_success() {
-        return Err(format!("JWKS endpoint returned {}", resp.status()));
+    let mut last_err: Option<String> = None;
+    for attempt in 1..=JWKS_FETCH_MAX_ATTEMPTS {
+        match client.get(&url).send().await {
+            Ok(resp) => {
+                if !resp.status().is_success() {
+                    // Non-2xx is deterministic — bubble up immediately.
+                    return Err(format!("JWKS endpoint returned {}", resp.status()));
+                }
+                return resp
+                    .json::<JwkSet>()
+                    .await
+                    .map_err(|e| format!("Failed to parse JWKS response: {}", e));
+            }
+            Err(e) => {
+                let msg = format!("JWKS fetch attempt {} failed: {}", attempt, e);
+                if attempt < JWKS_FETCH_MAX_ATTEMPTS {
+                    warn!("{} — retrying", msg);
+                    tokio::time::sleep(JWKS_RETRY_BACKOFF).await;
+                }
+                last_err = Some(msg);
+            }
+        }
     }
-
-    resp.json::<JwkSet>()
-        .await
-        .map_err(|e| format!("Failed to parse JWKS response: {}", e))
+    Err(last_err.unwrap_or_else(|| "JWKS fetch failed".into()))
 }
 
 /// Read the JWKS through the cache. With `force_refresh = true` the cached

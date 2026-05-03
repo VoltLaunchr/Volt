@@ -27,6 +27,7 @@ interface IntegrationConfig {
   id: 'github' | 'notion';
   name: string;
   icon: LucideIcon;
+  iconSrc?: string;
   descriptionKey: string;
   setupUrl: string;
   docUrl: string;
@@ -47,6 +48,7 @@ const INTEGRATIONS: IntegrationConfig[] = [
     id: 'notion',
     name: 'Notion',
     icon: Database,
+    iconSrc: '/extension-icons/notion.svg',
     descriptionKey: 'integrations.notion.description',
     setupUrl: 'https://voltlaunchr.com/api/oauth/notion',
     docUrl: 'https://github.com/VoltLaunchr/volt-extensions/blob/main/plugins/notion/README.md',
@@ -162,12 +164,12 @@ export function IntegrationsPanel() {
   };
 
   return (
-    <div className="settings-panel">
-      <div className="settings-panel-header">
-        <h2 className="settings-panel-title">{t('integrations.title')}</h2>
+    <div className="flex-1 flex flex-col overflow-hidden">
+      <div className="flex items-center justify-between h-14 px-6 border-b border-hairline shrink-0">
+        <h2 className="text-sm font-medium text-ink m-0">{t('integrations.title')}</h2>
       </div>
-      <div className="settings-panel-content">
-        <p style={{ fontSize: 13, color: 'var(--color-text-tertiary)', marginBottom: 20 }}>
+      <div className="flex-1 overflow-y-auto p-6">
+        <p className="text-[13px] text-mute mb-5 mt-0">
           {t('integrations.description')}
         </p>
 
@@ -322,7 +324,11 @@ function IntegrationCard({
       {/* Header */}
       <div style={cardHeaderStyle}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <Icon size={20} style={{ color: 'var(--color-text-secondary)' }} />
+          {integration.iconSrc ? (
+            <img src={integration.iconSrc} alt={integration.name} style={{ width: 20, height: 20, objectFit: 'contain' }} />
+          ) : (
+            <Icon size={20} style={{ color: 'var(--color-text-secondary)' }} />
+          )}
           <div>
             <div style={{ fontWeight: 600, fontSize: 14, color: 'var(--color-text-primary)' }}>
               {integration.name}

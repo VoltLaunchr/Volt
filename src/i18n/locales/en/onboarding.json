@@ -1,21 +1,54 @@
 {
-  "welcome": "Welcome to Volt",
-  "subtitle": "Your keyboard-driven app launcher",
-  "steps": {
-    "hotkey": {
-      "title": "Global Hotkey",
-      "description": "Press Ctrl+Space anywhere to summon Volt instantly. You can change this shortcut in Settings > Hotkeys."
+  "welcome": {
+    "title": "Welcome to Volt",
+    "subtitle": "Your keyboard-driven launcher for Windows, macOS, and Linux. Let's get you up to speed.",
+    "cta": "Get started"
+  },
+  "features": {
+    "eyebrow": "Core Features",
+    "title": "Out of the box",
+    "subtitle": "Volt comes ready with everything you need to move faster. Launch apps, search anything, and run actions instantly all from your keyboard.",
+    "browseExtensions": "See extensions",
+    "previewLabels": {
+      "favourites": "Favourites",
+      "recentFiles": "Recent Files"
     },
-    "indexing": {
-      "title": "File Indexing",
-      "description": "Volt indexes your files for instant search. Configure which folders to index in Settings > Indexing."
-    },
-    "plugins": {
-      "title": "Built-in Plugins",
-      "description": "Calculator, emoji picker, web search, timer, system monitor and more — just start typing to use them."
+    "cards": {
+      "appLauncher": { "label": "App Launcher", "desc": "Launch any app in milliseconds." },
+      "fileSearch": { "label": "File Search", "desc": "Find any file by name or content." },
+      "calculator": { "label": "Calculator", "desc": "Evaluate expressions on the fly." },
+      "emoji": { "label": "Emoji & Symbols", "desc": "Search and copy any emoji instantly." },
+      "clipboard": { "label": "Clipboard History", "desc": "Never lose a copied item again." },
+      "systemMonitor": { "label": "System Monitor", "desc": "CPU, RAM and disk at a glance." }
     }
   },
-  "getStarted": "Get Started",
-  "next": "Next",
-  "skip": "Skip"
+  "extensions": {
+    "eyebrow": "Extensions",
+    "title": "Extensible by design.",
+    "subtitle": "Install community extensions to add new commands, integrations, and workflows. Built with a simple API — ship your own in minutes.",
+    "enable": "Enable Extensions",
+    "items": {
+      "github": { "name": "GitHub", "desc": "Search repos, issues, PRs." },
+      "notion": { "name": "Notion", "desc": "Search pages and databases." },
+      "pomodoro": { "name": "Pomodoro Timer", "desc": "Focus sessions, right in Volt." },
+      "webSearch": { "name": "Web Search", "desc": "Search the web instantly." },
+      "systemMonitor": { "name": "System Monitor", "desc": "CPU, RAM and disk at a glance." },
+      "shell": { "name": "Shell Commands", "desc": "Run terminal commands inline." }
+    }
+  },
+  "hotkey": {
+    "title": "You're ready to flow",
+    "titleSaved": "All set.",
+    "changeButton": "Record New Hotkey",
+    "saved": "Saved",
+    "errorInvalid": "Use at least one modifier (Ctrl, Alt, Shift, Super) plus another key.",
+    "footerHit": "Hit ",
+    "footerToOpen": " to open Volt or change your hotkey."
+  },
+  "nav": {
+    "back": "Back",
+    "continue": "Continue",
+    "launch": "Launch Volt",
+    "skip": "Skip"
+  }
 }

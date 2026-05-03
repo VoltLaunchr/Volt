@@ -35,21 +35,26 @@ pub async fn search_windows_index(query: &str, limit: usize) -> Result<Vec<FileI
 
 /// Inner synchronous implementation — runs inside `spawn_blocking`.
 fn search_windows_index_blocking(query: &str, limit: usize) -> Result<Vec<FileInfo>, String> {
-    // Escape single quotes and double quotes for the OLE DB CONTAINS clause.
-    // Single quotes are doubled per SQL convention; double quotes inside the
-    // CONTAINS phrase literal are also doubled so the WQL parser sees them as
-    // escaped delimiters rather than closing the phrase.
+    // SQL escape: single quotes doubled (SQL convention); double quotes doubled
+    // so the WQL CONTAINS phrase parser sees them as escaped delimiters rather
+    // than closing the phrase.
     let safe_query = query.replace('\'', "''").replace('"', "\"\"");
 
-    // Build a PowerShell script that queries Windows Search via OLE DB
+    // The query is passed via an environment variable, NEVER interpolated into
+    // the PowerShell source. PS variable expansion does not recursively parse
+    // substituted values, so an attacker cannot smuggle `$(...)`, backticks,
+    // or `;` separators through the query parameter to achieve command
+    // injection inside the inlined script.
     let ps_script = format!(
         r#"
+$q = $env:VOLT_QUERY
+if ([string]::IsNullOrEmpty($q)) {{ return }}
 $conn = New-Object System.Data.OleDb.OleDbConnection
 $conn.ConnectionString = "Provider=Search.CollatorDSO;Extended Properties='Application=Windows';"
 try {{
     $conn.Open()
     $cmd = $conn.CreateCommand()
-    $cmd.CommandText = "SELECT TOP {limit} System.ItemPathDisplay, System.ItemNameDisplay, System.Size, System.DateModified, System.ItemType FROM SystemIndex WHERE SCOPE='file:' AND CONTAINS(System.ItemNameDisplay,'\""{safe_query}*""') ORDER BY System.Search.Rank DESC"
+    $cmd.CommandText = "SELECT TOP {limit} System.ItemPathDisplay, System.ItemNameDisplay, System.Size, System.DateModified, System.ItemType FROM SystemIndex WHERE SCOPE='file:' AND CONTAINS(System.ItemNameDisplay,'""$($q)*""') ORDER BY System.Search.Rank DESC"
     $reader = $cmd.ExecuteReader()
     while ($reader.Read()) {{
         $path = $reader["System.ItemPathDisplay"]
@@ -74,6 +79,7 @@ try {{
 
     let output = Command::new("powershell")
         .args(["-NoProfile", "-NonInteractive", "-Command", &ps_script])
+        .env("VOLT_QUERY", &safe_query)
         .output()
         .map_err(|e| format!("Failed to run PowerShell: {}", e))?;
 

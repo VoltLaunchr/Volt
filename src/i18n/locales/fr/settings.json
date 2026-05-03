@@ -13,7 +13,9 @@
     "clipboard": "Historique du presse-papiers",
     "integrations": "Intégrations",
     "account": "Compte",
-    "builtIn": "INTÉGRÉ"
+    "sync": "Synchronisation",
+    "builtIn": "INTÉGRÉ",
+    "shell": "Commandes Shell"
   },
   "general": {
     "title": "Général",
@@ -32,7 +34,9 @@
     "sensitivityMedium": "Moyenne",
     "sensitivityHigh": "Élevée (permissive)",
     "voltHotkey": "Raccourci Volt",
-    "hotkeyDesc": "Appuyez sur une combinaison de touches pour définir votre raccourci global"
+    "hotkeyDesc": "Appuyez sur une combinaison de touches pour définir votre raccourci global",
+    "restartOnboarding": "Relancer l'onboarding",
+    "restartOnboardingDesc": "Relancer l'assistant de configuration initial"
   },
   "shortcuts": {
     "title": "Raccourcis",
@@ -166,7 +170,31 @@
     "infoText": "Volt analyse automatiquement les applications installées sur votre système. Les applications sont actualisées à chaque démarrage de Volt.",
     "scanApps": "Analyser les applications",
     "scanAppsDesc": "Déclencher manuellement une analyse des applications installées",
-    "scanNow": "Analyser maintenant"
+    "scanNow": "Analyser maintenant",
+    "scanning": "Analyse en cours...",
+    "scanResult": "{{count}} applications trouvées",
+    "scanError": "Erreur : {{error}}"
+  },
+  "shell": {
+    "title": "Commandes Shell",
+    "infoText": "Exécutez des commandes shell depuis Volt avec le préfixe",
+    "infoTextSuffix": ". La sortie est diffusée en temps réel avec prise en charge des couleurs ANSI.",
+    "enabled": "Activer les commandes Shell",
+    "enabledDesc": "Autoriser l'exécution de commandes avec le préfixe >",
+    "defaultShell": "Shell par défaut",
+    "defaultShellDesc": "Remplacer le shell système (laisser vide pour le défaut : cmd sous Windows, sh sous Unix)",
+    "defaultShellPlaceholder": "Défaut système",
+    "workingDir": "Répertoire de travail",
+    "workingDirDesc": "Répertoire par défaut pour les commandes (laisser vide pour le répertoire personnel)",
+    "workingDirPlaceholder": "Répertoire personnel",
+    "timeout": "Délai d'expiration (ms)",
+    "timeoutDesc": "Durée maximale avant qu'une commande soit arrêtée",
+    "historySize": "Taille de l'historique",
+    "historySizeDesc": "Nombre maximum de commandes à mémoriser",
+    "clearHistory": "Effacer l'historique des commandes",
+    "clearHistoryDesc": "Supprimer tout l'historique des commandes shell",
+    "clear": "Effacer",
+    "clearFailed": "Impossible d'effacer l'historique shell"
   },
   "integrations": {
     "title": "Intégrations",
@@ -229,5 +257,34 @@
   "errors": {
     "loadFailed": "Impossible de charger les paramètres",
     "saveFailed": "Impossible d'enregistrer les paramètres"
+  },
+  "sync": {
+    "title": "Synchronisation cloud",
+    "comingSoon": "À venir",
+    "loading": "Chargement…",
+    "description": "Synchronisez vos snippets et quicklinks sur toutes vos machines.",
+    "lastSynced": "Dernière synchro",
+    "premiumBanner": {
+      "title": "Fonctionnalité Premium",
+      "upgradeHint": "Passez à Premium pour débloquer la synchronisation cloud.",
+      "loginHint": "Connectez-vous et passez à Premium pour utiliser la synchronisation cloud."
+    },
+    "push": {
+      "title": "Envoyer vers le cloud",
+      "description": "Envoie vos snippets et quicklinks locaux vers le cloud. Les données distantes seront écrasées.",
+      "action": "Envoyer"
+    },
+    "pull": {
+      "title": "Récupérer depuis le cloud",
+      "description": "Télécharge les données du cloud et les fusionne avec vos snippets locaux. Les quicklinks seront remplacés.",
+      "action": "Récupérer"
+    },
+    "feedback": {
+      "pushSuccess": "Données envoyées vers le cloud.",
+      "pullSuccess": "Données récupérées depuis le cloud.",
+      "premiumRequired": "Passez à Premium pour utiliser la synchronisation cloud.",
+      "notLoggedIn": "Vous devez vous connecter d'abord.",
+      "failed": "Échec de la synchronisation"
+    }
   }
 }

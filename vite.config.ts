@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import tailwindcss from '@tailwindcss/vite';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
@@ -8,17 +9,16 @@ const host = process.env.TAURI_DEV_HOST;
 
 // https://vite.dev/config/
 export default defineConfig(async () => ({
-  plugins: [react()],
+  plugins: [tailwindcss(), react()],
 
-  // Multi-page build for separate windows
+  resolve: {
+    alias: { '@': resolve(__dirname, 'src') },
+  },
+
   build: {
     // Increase chunk size warning limit for desktop apps (local loading, no network impact)
     chunkSizeWarningLimit: 1000, // 1 MB
     rollupOptions: {
-      input: {
-        main: resolve(__dirname, 'index.html'),
-        settings: resolve(__dirname, 'settings.html'),
-      },
       output: {
         // Manual chunks for better code splitting
         manualChunks: (id) => {

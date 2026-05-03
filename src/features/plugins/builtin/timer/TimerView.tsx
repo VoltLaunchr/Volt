@@ -15,10 +15,10 @@ import {
   Trash2,
   X,
 } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import { parseDurationFlexible, MAX_DURATION_MS } from './index';
 import { timerStore } from './timerStore';
 import { tasksStore, type PomodoroTask } from './tasksStore';
-import './TimerView.css';
 
 // ── Modes ────────────────────────────────────────────────────────────────
 
@@ -296,7 +296,7 @@ export const TimerView: React.FC<TimerViewProps> = ({ onClose }) => {
     }
     const ms = parseDurationFlexible(trimmed);
     if (ms === null) {
-      setCustomError("Try “25m”, “1h 30m”, “90”, or “1:30”");
+      setCustomError('Try “25m”, “1h 30m”, “90”, or “1:30”');
       return;
     }
     if (ms < 1000 || ms > MAX_DURATION_MS) {
@@ -333,25 +333,31 @@ export const TimerView: React.FC<TimerViewProps> = ({ onClose }) => {
   // ── Render ─────────────────────────────────────────────────────────────
 
   return (
-    <div className="timer-view" style={{ ['--mode-color' as string]: currentMode.color }}>
+    <div
+      className="w-full h-full flex flex-col bg-canvas text-ink animate-[tv-fade-in_220ms_cubic-bezier(0.4,0,0.2,1)]"
+      style={{ ['--mode-color' as string]: currentMode.color }}
+    >
       {/* Header */}
-      <header className="tv-header">
+      <header className="flex items-center gap-3 px-4 py-3 border-b border-hairline bg-surface shrink-0">
         <button
           type="button"
-          className="tv-back"
+          className="inline-flex items-center justify-center w-[30px] h-[30px] rounded-md border border-hairline bg-surface-elevated text-mute cursor-pointer transition-colors hover:text-ink hover:bg-surface"
           onClick={onClose}
           aria-label="Back to search"
         >
           <ArrowLeft size={16} strokeWidth={2} />
         </button>
-        <div className="tv-header-title">
-          <span className="tv-header-emoji" aria-hidden="true">
+        <div className="flex-1 flex items-center gap-2 min-w-0">
+          <span className="text-base leading-none" aria-hidden="true" style={{ filter: 'saturate(1.1)' }}>
             {currentMode.emoji}
           </span>
-          <span className="tv-header-name">Focus Timer</span>
+          <span className="text-sm font-semibold tracking-[-0.2px] text-ink">Focus Timer</span>
         </div>
         {session.mode !== 'custom' ? (
-          <div className="tv-session-pill" title="Pomodoro sessions completed">
+          <div
+            className="text-[11px] font-medium tracking-[0.2px] px-2.5 py-1 rounded-full text-mute bg-surface-elevated border border-hairline"
+            title="Pomodoro sessions completed"
+          >
             Session{' '}
             {Math.min(
               session.sessionsDone + (session.mode === 'focus' ? 1 : 0),
@@ -360,23 +366,38 @@ export const TimerView: React.FC<TimerViewProps> = ({ onClose }) => {
             / {MAX_SESSIONS}
           </div>
         ) : (
-          <div className="tv-session-pill" title="Custom duration">
+          <div
+            className="text-[11px] font-medium tracking-[0.2px] px-2.5 py-1 rounded-full text-mute bg-surface-elevated border border-hairline"
+            title="Custom duration"
+          >
             {fmt(session.customMs)}
           </div>
         )}
       </header>
 
-      <div className="tv-body">
+      {/* Body: two-column layout */}
+      <div className="flex-1 grid min-h-0" style={{ gridTemplateColumns: 'minmax(0,1.1fr) minmax(260px,0.9fr)' }}>
         {/* LEFT — timer column */}
-        <section className="tv-timer-col" aria-label="Pomodoro timer">
-          <div className="tv-tabs" role="tablist" aria-label="Timer mode">
+        <section
+          className="flex flex-col items-center gap-4 px-6 py-[18px] border-r border-hairline overflow-visible"
+          aria-label="Pomodoro timer"
+        >
+          {/* Mode tabs */}
+          <div
+            className="inline-flex gap-0.5 p-[3px] rounded-lg bg-surface border border-hairline"
+            role="tablist"
+            aria-label="Timer mode"
+          >
             {(Object.values(MODES) as ModeCfg[]).map((m) => (
               <button
                 key={m.key}
                 type="button"
                 role="tab"
                 aria-selected={session.mode === m.key}
-                className={`tv-tab${session.mode === m.key ? ' is-active' : ''}`}
+                className={cn(
+                  'relative px-3.5 py-[5px] text-xs font-medium tracking-[-0.1px] border-0 bg-transparent text-mute cursor-pointer rounded-[7px] transition-colors hover:text-ink',
+                  session.mode === m.key && 'bg-canvas text-ink shadow-sm border border-hairline'
+                )}
                 onClick={() => switchMode(m.key)}
                 style={session.mode === m.key ? { color: m.color } : undefined}
               >
@@ -385,12 +406,16 @@ export const TimerView: React.FC<TimerViewProps> = ({ onClose }) => {
             ))}
           </div>
 
+          {/* Custom duration input */}
           {session.mode === 'custom' && !activeTimer && (
-            <div className="tv-custom-row">
+            <div className="flex gap-1.5 w-[min(320px,100%)] animate-[tv-fade-in_180ms_ease-out]">
               <input
                 ref={customInputRef}
                 type="text"
-                className={`tv-custom-input${customError ? ' is-invalid' : ''}`}
+                className={cn(
+                  'flex-1 min-w-0 h-8 px-3 text-[13px] tabular-nums rounded-md border bg-surface text-ink outline-none transition-colors',
+                  customError ? 'border-accent-red' : 'border-hairline focus:border-hairline-strong'
+                )}
                 placeholder="e.g. 10m, 1h30m, 90, 1:30"
                 value={customInput}
                 onChange={(e) => {
@@ -415,7 +440,8 @@ export const TimerView: React.FC<TimerViewProps> = ({ onClose }) => {
               />
               <button
                 type="button"
-                className="tv-custom-set"
+                className="h-8 px-3.5 text-xs font-semibold tracking-[0.1px] rounded-md border-0 text-white cursor-pointer transition-opacity hover:opacity-90 active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
+                style={{ background: currentMode.color }}
                 onClick={commitCustomDuration}
                 disabled={!customInput.trim()}
               >
@@ -424,64 +450,93 @@ export const TimerView: React.FC<TimerViewProps> = ({ onClose }) => {
             </div>
           )}
           {session.mode === 'custom' && customError && (
-            <div id="tv-custom-error" className="tv-custom-error" role="alert">
+            <div
+              id="tv-custom-error"
+              className="text-[11.5px] text-accent-red tracking-[-0.1px] -mt-1.5 animate-[tv-fade-in_160ms_ease-out]"
+              role="alert"
+            >
               {customError}
             </div>
           )}
 
-          <div className="tv-ring-wrap">
+          {/* Ring */}
+          <div className="relative w-60 h-60 grid place-items-center shrink-0">
             <svg
-              className="tv-ring"
+              className="absolute -inset-2.5 -rotate-90 overflow-visible"
               width={RING_SIZE}
               height={RING_SIZE}
               viewBox={`0 0 ${RING_SIZE} ${RING_SIZE}`}
               aria-hidden="true"
             >
               <circle
-                className="tv-ring-track"
                 cx={RING_SIZE / 2}
                 cy={RING_SIZE / 2}
                 r={RING_RADIUS}
+                fill="none"
+                strokeWidth={8}
+                stroke="rgba(36,39,40,0.8)"
               />
               <circle
-                className={`tv-ring-progress${paused ? ' is-paused' : ''}`}
                 cx={RING_SIZE / 2}
                 cy={RING_SIZE / 2}
                 r={RING_RADIUS}
+                fill="none"
+                strokeWidth={10}
+                strokeLinecap="round"
+                stroke={currentMode.color}
                 strokeDasharray={RING_CIRCUM}
                 strokeDashoffset={dashOffset}
+                opacity={paused ? 0.55 : 1}
+                style={{
+                  filter: `drop-shadow(0 0 6px ${currentMode.color}72)`,
+                  transition: 'stroke-dashoffset 1s linear',
+                }}
               />
             </svg>
-            <div className="tv-ring-center">
-              <span className="tv-time" aria-live="polite">
+            <div className="relative flex flex-col items-center justify-center gap-1">
+              <span
+                className="font-mono tabular-nums font-extralight leading-none text-ink"
+                style={{ fontSize: '58px', letterSpacing: '-3.5px' }}
+                aria-live="polite"
+              >
                 {fmt(remaining)}
               </span>
-              <span className="tv-time-label">
+              <span className="text-[11px] font-medium tracking-[2px] uppercase text-mute">
                 {paused ? 'Paused' : currentMode.label}
               </span>
             </div>
           </div>
 
+          {/* Session dots */}
           {session.mode !== 'custom' ? (
             <div
-              className="tv-dots"
+              className="flex gap-2 items-center"
               aria-label={`${session.sessionsDone} of ${MAX_SESSIONS} sessions completed`}
             >
               {Array.from({ length: MAX_SESSIONS }).map((_, i) => (
                 <span
                   key={i}
-                  className={`tv-dot${i < session.sessionsDone ? ' is-filled' : ''}`}
+                  className={cn(
+                    'w-[7px] h-[7px] rounded-full border border-hairline bg-transparent transition-all',
+                    i < session.sessionsDone && 'bg-[var(--mode-color)] border-[var(--mode-color)]'
+                  )}
+                  style={
+                    i < session.sessionsDone
+                      ? { boxShadow: `0 0 0 3px ${currentMode.color}26` }
+                      : undefined
+                  }
                 />
               ))}
             </div>
           ) : (
-            <div className="tv-dots tv-dots-placeholder" aria-hidden="true" />
+            <div className="h-[10px]" aria-hidden="true" />
           )}
 
-          <div className="tv-controls">
+          {/* Controls */}
+          <div className="flex items-center gap-[18px] mt-auto pt-1">
             <button
               type="button"
-              className="tv-ctrl"
+              className="inline-flex items-center justify-center w-10 h-10 rounded-full border border-hairline bg-surface text-mute cursor-pointer transition-colors hover:text-ink hover:bg-surface-elevated active:scale-95"
               onClick={resetCurrent}
               title="Reset current timer"
               aria-label="Reset"
@@ -490,7 +545,11 @@ export const TimerView: React.FC<TimerViewProps> = ({ onClose }) => {
             </button>
             <button
               type="button"
-              className="tv-play"
+              className="inline-flex items-center justify-center w-16 h-16 rounded-full border-0 text-white cursor-pointer pl-[3px] transition-transform active:scale-95"
+              style={{
+                background: currentMode.color,
+                boxShadow: `0 4px 14px ${currentMode.color}72, 0 1px 2px rgba(0,0,0,0.15)`,
+              }}
               onClick={togglePlay}
               aria-label={running ? 'Pause' : 'Start'}
             >
@@ -502,7 +561,7 @@ export const TimerView: React.FC<TimerViewProps> = ({ onClose }) => {
             </button>
             <button
               type="button"
-              className="tv-ctrl"
+              className="inline-flex items-center justify-center w-10 h-10 rounded-full border border-hairline bg-surface text-mute cursor-pointer transition-colors hover:text-ink hover:bg-surface-elevated active:scale-95"
               onClick={skipToNext}
               title="Skip to next phase"
               aria-label="Skip"
@@ -513,17 +572,25 @@ export const TimerView: React.FC<TimerViewProps> = ({ onClose }) => {
         </section>
 
         {/* RIGHT — tasks column */}
-        <section className="tv-tasks-col" aria-label="Task list">
-          <div className="tv-tasks-header">
-            <div className="tv-tasks-title">
-              <span className="tv-tasks-eyebrow">Tasks</span>
+        <section
+          className="flex flex-col gap-2.5 px-5 py-[18px] min-w-0 overflow-hidden"
+          aria-label="Task list"
+        >
+          {/* Tasks header */}
+          <div className="flex items-baseline justify-between gap-2">
+            <div className="flex items-baseline gap-2 min-w-0">
+              <span className="text-[11px] font-semibold tracking-[1.2px] uppercase text-mute">
+                Tasks
+              </span>
               {tasks.length > 0 && (
-                <span className="tv-tasks-count">{remainingTasks} open</span>
+                <span className="text-[11px] text-ash tabular-nums">
+                  {remainingTasks} open
+                </span>
               )}
             </div>
             <button
               type="button"
-              className="tv-add-btn"
+              className="inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-[7px] border border-hairline bg-surface text-mute cursor-pointer transition-colors hover:text-ink hover:bg-surface-elevated"
               onClick={() => setAdding((v) => !v)}
               aria-expanded={adding}
             >
@@ -532,11 +599,12 @@ export const TimerView: React.FC<TimerViewProps> = ({ onClose }) => {
             </button>
           </div>
 
+          {/* Add task input */}
           {adding && (
-            <div className="tv-task-input-row">
+            <div className="flex gap-1.5 animate-[tv-fade-in_160ms_ease-out]">
               <input
                 ref={addInputRef}
-                className="tv-task-input"
+                className="flex-1 min-w-0 h-8 px-2.5 text-[13px] rounded-md border border-hairline bg-canvas text-ink outline-none focus:border-hairline-strong transition-colors"
                 type="text"
                 placeholder="What are you working on?"
                 value={newLabel}
@@ -549,38 +617,58 @@ export const TimerView: React.FC<TimerViewProps> = ({ onClose }) => {
                   }
                 }}
               />
-              <button type="button" className="tv-task-save" onClick={submitTask}>
+              <button
+                type="button"
+                className="h-8 px-3 text-xs font-medium rounded-md border-0 text-white cursor-pointer transition-opacity hover:opacity-[0.88]"
+                style={{ background: currentMode.color }}
+                onClick={submitTask}
+              >
                 Add
               </button>
             </div>
           )}
 
+          {/* Empty state or task list */}
           {tasks.length === 0 && !adding ? (
-            <div className="tv-tasks-empty">
-              <div className="tv-tasks-empty-title">No tasks yet</div>
-              <div className="tv-tasks-empty-hint">
+            <div className="flex-1 flex flex-col items-center justify-center gap-1 p-5 text-center text-ash border border-dashed border-hairline rounded-lg bg-surface/50">
+              <div className="text-[13px] font-medium text-mute">No tasks yet</div>
+              <div className="text-[11.5px] leading-[1.4] max-w-[26ch]">
                 Add what you'll focus on during this session.
               </div>
             </div>
           ) : (
-            <ul className="tv-task-list">
+            <ul className="list-none m-0 p-0 flex flex-col gap-[5px] overflow-y-auto flex-1 min-h-0 pr-0.5">
               {tasks.map((task) => (
                 <li
                   key={task.id}
-                  className={`tv-task${task.done ? ' is-done' : ''}`}
+                  className={cn(
+                    'flex items-center gap-[9px] px-2.5 py-2 rounded-md bg-surface border border-hairline transition-colors group',
+                    'hover:bg-surface-elevated',
+                    task.done && 'opacity-80'
+                  )}
                 >
                   <button
                     type="button"
-                    className="tv-task-check"
+                    className={cn(
+                      'inline-flex items-center justify-center w-[18px] h-[18px] rounded-full border border-hairline bg-transparent text-transparent cursor-pointer shrink-0 transition-colors',
+                      task.done && 'bg-[#34c759] border-[#34c759] text-white'
+                    )}
                     onClick={() => tasksStore.toggle(task.id)}
                     aria-label={task.done ? 'Mark as not done' : 'Mark as done'}
                   >
                     {task.done && <Check size={10} strokeWidth={3} />}
                   </button>
-                  <span className="tv-task-label">{task.label}</span>
+                  <span
+                    className={cn(
+                      'flex-1 text-[13px] text-ink tracking-[-0.1px] whitespace-nowrap overflow-hidden text-ellipsis transition-colors',
+                      task.done && 'text-ash line-through decoration-ash'
+                    )}
+                  >
+                    {task.label}
+                  </span>
                   <button
                     type="button"
-                    className="tv-task-remove"
+                    className="inline-flex items-center justify-center w-[22px] h-[22px] rounded-full border-0 bg-transparent text-ash cursor-pointer opacity-0 scale-90 group-hover:opacity-100 group-hover:scale-100 transition-all hover:text-white hover:bg-accent-red-soft"
                     onClick={() => tasksStore.remove(task.id)}
                     aria-label="Delete task"
                   >
@@ -591,10 +679,11 @@ export const TimerView: React.FC<TimerViewProps> = ({ onClose }) => {
             </ul>
           )}
 
+          {/* Clear completed */}
           {tasks.some((t) => t.done) && (
             <button
               type="button"
-              className="tv-clear-done"
+              className="self-start inline-flex items-center gap-[5px] mt-auto px-2 py-[5px] text-[11px] font-medium rounded-md border-0 bg-transparent text-ash cursor-pointer transition-colors hover:text-accent-red"
               onClick={() => tasksStore.clearCompleted()}
             >
               <Trash2 size={11} strokeWidth={2} />

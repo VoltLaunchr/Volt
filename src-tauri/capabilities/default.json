@@ -2,7 +2,7 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Capability for all windows",
-  "windows": ["main", "settings"],
+  "windows": ["main", "settings", "system-monitor", "onboarding"],
   "permissions": [
     "core:default",
     "core:window:default",

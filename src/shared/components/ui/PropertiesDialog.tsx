@@ -1,7 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { AppInfo, FileInfo, SearchResult, SearchResultType } from '../../types/common.types';
 import { Modal } from './Modal';
-import './PropertiesDialog.css';
 
 export interface PropertiesDialogProps {
   isOpen: boolean;
@@ -78,13 +77,18 @@ export function PropertiesDialog({ isOpen, onClose, result }: PropertiesDialogPr
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} size="medium">
-      <div className="properties-dialog">
-        <div className="properties-header">
-          {result.icon && <div className="properties-icon">{result.icon}</div>}
-          <h2 className="properties-title">{getTitle()}</h2>
+      <div className="flex flex-col gap-6 p-4">
+        {/* Header */}
+        <div className="flex items-center gap-4 pb-4 border-b border-hairline">
+          {result.icon && (
+            <div className="text-[2.5rem] min-w-[3rem] text-center">{result.icon}</div>
+          )}
+          <h2 className="text-xl font-semibold m-0 text-on-dark break-words">{getTitle()}</h2>
         </div>
-        <div className="properties-body">
-          <table className="properties-table">{renderProperties()}</table>
+
+        {/* Body */}
+        <div className="overflow-y-auto max-h-[60vh]">
+          <table className="w-full border-collapse">{renderProperties()}</table>
         </div>
       </div>
     </Modal>
@@ -104,22 +108,26 @@ function PropertyRow({ label, value, copyable, copyLabel }: PropertyRowProps) {
   };
 
   return (
-    <tr className="property-row">
-      <td className="property-label">{label}</td>
-      <td className="property-value">
-        <span className="property-value-text" title={value}>
-          {value}
-        </span>
-        {copyable && (
-          <button
-            className="property-copy-btn"
-            onClick={handleCopy}
-            aria-label={copyLabel}
-            title={copyLabel}
-          >
-            📋
-          </button>
-        )}
+    <tr className="border-b border-hairline last:border-0 group">
+      <td className="py-3 px-2 font-semibold text-mute w-[30%] align-top text-left text-sm">
+        {label}
+      </td>
+      <td className="py-3 px-2 text-on-dark break-all text-sm">
+        <div className="flex items-center gap-2">
+          <span className="flex-1" title={value}>
+            {value}
+          </span>
+          {copyable && (
+            <button
+              className="bg-transparent border border-hairline rounded-xs px-2 py-1 cursor-pointer text-sm opacity-0 group-hover:opacity-100 transition-all text-mute shrink-0 min-w-[2rem] hover:bg-surface-elevated hover:border-hairline-strong hover:scale-105 active:scale-95"
+              onClick={handleCopy}
+              aria-label={copyLabel}
+              title={copyLabel}
+            >
+              📋
+            </button>
+          )}
+        </div>
       </td>
     </tr>
   );

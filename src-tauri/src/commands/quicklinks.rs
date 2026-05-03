@@ -65,6 +65,19 @@ impl QuicklinkState {
         fs::write(&self.file_path, json).map_err(|e| e.to_string())?;
         Ok(())
     }
+
+    pub fn get_all(&self) -> Result<Vec<Quicklink>, String> {
+        let quicklinks = self.quicklinks.lock().map_err(|e| e.to_string())?;
+        Ok(quicklinks.values().cloned().collect())
+    }
+
+    pub fn replace_all(&self, new_quicklinks: HashMap<String, Quicklink>) -> Result<(), String> {
+        {
+            let mut quicklinks = self.quicklinks.lock().map_err(|e| e.to_string())?;
+            *quicklinks = new_quicklinks;
+        }
+        self.save()
+    }
 }
 
 /// Get all quicklinks

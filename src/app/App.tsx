@@ -3,17 +3,17 @@ import Snowfall from 'react-snowfall';
 import { useTranslation } from 'react-i18next';
 import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow, LogicalSize } from '@tauri-apps/api/window';
-import { SystemMonitorDetail, TimerDisplay } from '../features/plugins/builtin';
+import { TimerDisplay } from '../features/plugins/builtin';
 import { PermissionDialog } from '../features/extensions/components/PermissionDialog';
 import { SearchBar } from '../features/search/components/SearchBar';
 import { useWindowState } from '../features/window';
 import { Footer } from '../shared/components/layout';
-import { HelpDialog, OnboardingModal, PreviewPanel, PropertiesDialog, ToastContainer } from '../shared/components/ui';
-import { settingsService } from '../features/settings';
+import { HelpDialog, PreviewPanel, PropertiesDialog, ToastContainer } from '../shared/components/ui';
 import { SearchResult } from '../shared/types/common.types';
 import { useAppStore } from '../stores/appStore';
 import { useSearchStore } from '../stores/searchStore';
 import { useUiStore } from '../stores/uiStore';
+import { ActionsMenu } from './components/ActionsMenu';
 import { ResultContextMenu } from './components/ResultContextMenu';
 import { ViewRouter } from './components/ViewRouter';
 import { useAppLifecycle } from './hooks/useAppLifecycle';
@@ -21,9 +21,8 @@ import { useGlobalHotkey } from './hooks/useGlobalHotkey';
 import { useResultActions } from './hooks/useResultActions';
 import { useSearchPipeline } from './hooks/useSearchPipeline';
 import { openSettingsWindow } from './utils';
+import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
 import i18n from '../i18n';
-import '../styles/accessibility.css';
-import './App.css';
 
 const WINDOW_WIDTH_DEFAULT = 800;
 const WINDOW_WIDTH_PREVIEW = 1100;
@@ -52,23 +51,24 @@ function App() {
   const isHelpOpen = useUiStore((s) => s.isHelpOpen);
   const isPreviewOpen = useUiStore((s) => s.isPreviewOpen);
   const permissionRequest = useUiStore((s) => s.permissionRequest);
-  const { setActiveView, closeContextMenu, openProperties, closeProperties, toggleHelp, togglePreview, setPermissionRequest } =
+  const isActionsMenuOpen = useUiStore((s) => s.isActionsMenuOpen);
+  const actionsMenuResult = useUiStore((s) => s.actionsMenuResult);
+  const { setActiveView, closeContextMenu, openProperties, closeProperties, toggleHelp, togglePreview, openActionsMenu, closeActionsMenu, setPermissionRequest } =
     useUiStore.getState();
 
   // Get selected result for preview panel
   const selectedIndex = useSearchStore((s) => s.selectedIndex);
   const selectedResult = results[selectedIndex] ?? null;
 
-  // Resize window when preview panel opens/closes
+  // Resize window when preview panel opens/closes (skip while onboarding is active)
+  const hasSeenOnboarding = settings?.general.hasSeenOnboarding ?? false;
   useEffect(() => {
+    if (!hasSeenOnboarding) return; // OnboardingModal owns the window size
     const width = isPreviewOpen ? WINDOW_WIDTH_PREVIEW : WINDOW_WIDTH_DEFAULT;
     getCurrentWindow()
       .setSize(new LogicalSize(width, WINDOW_HEIGHT))
-      .catch(() => {
-        // Logger would be imported for proper error tracking
-        // For now, Tauri window API failures are tolerable
-      });
-  }, [isPreviewOpen]);
+      .catch(() => {});
+  }, [isPreviewOpen, hasSeenOnboarding]);
 
   useSearchPipeline({
     maxResults: settings?.general.maxResults ?? 8,
@@ -90,6 +90,45 @@ function App() {
     let unlisten: (() => void) | undefined;
     listen<{ language: string }>('volt://language-changed', ({ payload }) => {
       i18n.changeLanguage(payload.language);
+    }).then((fn) => { unlisten = fn; });
+    return () => { unlisten?.(); };
+  }, []);
+
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    listen('volt://restart-onboarding', () => {
+      const current = useAppStore.getState().settings;
+      if (current) {
+        useAppStore.getState().setSettings({
+          ...current,
+          general: { ...current.general, hasSeenOnboarding: false },
+        });
+      }
+    }).then((fn) => { unlisten = fn; });
+    return () => { unlisten?.(); };
+  }, []);
+
+  // Open the dedicated onboarding window for first-time users (or after restart-onboarding).
+  // The window is pre-configured at 1300×800 in tauri.conf.json — no JS resize needed.
+  const rawHasSeenOnboarding = settings?.general.hasSeenOnboarding;
+  useEffect(() => {
+    if (rawHasSeenOnboarding !== false) return;
+    WebviewWindow.getByLabel('onboarding').then((win) => {
+      if (win) { win.show(); win.setFocus(); }
+    }).catch(() => {});
+  }, [rawHasSeenOnboarding]);
+
+  // When the onboarding window closes, mark onboarding as done in this window's store.
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    listen('volt://onboarding-complete', () => {
+      const current = useAppStore.getState().settings;
+      if (current) {
+        useAppStore.getState().setSettings({
+          ...current,
+          general: { ...current.general, hasSeenOnboarding: true },
+        });
+      }
     }).then((fn) => { unlisten = fn; });
     return () => { unlisten?.(); };
   }, []);
@@ -142,21 +181,8 @@ function App() {
     onOpenCalculator: handleOpenCalculatorView,
     onOpenHelp: handleOpenHelp,
     onTogglePreview: togglePreview,
+    onOpenActionsMenu: openActionsMenu,
   });
-
-  const handleOnboardingComplete = useCallback(async () => {
-    if (!settings) return;
-    const updated = {
-      ...settings,
-      general: { ...settings.general, hasSeenOnboarding: true },
-    };
-    try {
-      await settingsService.updateGeneralSettings(updated.general);
-    } catch {
-      // Log onboarding completion failure
-    }
-    useAppStore.getState().setSettings(updated);
-  }, [settings]);
 
   const handleSelectEmoji = useCallback(
     async (emoji: string) => {
@@ -172,7 +198,7 @@ function App() {
   );
 
   return (
-    <div className="app-container glass">
+    <div className="w-full h-full flex flex-col min-h-0 overflow-hidden isolate glass">
       <a href="#search-input" className="skip-link">
         {t('accessibility.skipToSearch')}
       </a>
@@ -192,11 +218,13 @@ function App() {
         </>
       )}
 
-      <div className={`search-content${isPreviewOpen ? ' with-preview' : ''}`}>
-        <ViewRouter
-          onSelectEmoji={handleSelectEmoji}
-          onLaunchResult={handleLaunch}
-        />
+      <div className="flex flex-row flex-1 min-h-0 overflow-hidden">
+        <div className="flex flex-col flex-1 min-h-0 min-w-0">
+          <ViewRouter
+            onSelectEmoji={handleSelectEmoji}
+            onLaunchResult={handleLaunch}
+          />
+        </div>
         <PreviewPanel result={selectedResult} isOpen={isPreviewOpen} />
       </div>
 
@@ -214,6 +242,14 @@ function App() {
         onClose={closeContextMenu}
       />
 
+      <ActionsMenu
+        isOpen={isActionsMenuOpen}
+        result={actionsMenuResult}
+        onLaunch={handleLaunch}
+        onShowProperties={handleShowProperties}
+        onClose={closeActionsMenu}
+      />
+
       <PropertiesDialog
         isOpen={isPropertiesOpen}
         onClose={closeProperties}
@@ -222,13 +258,7 @@ function App() {
 
       <HelpDialog isOpen={isHelpOpen} onClose={toggleHelp} />
 
-      <SystemMonitorDetail />
-
       <ToastContainer />
-
-      {settings && !settings.general.hasSeenOnboarding && (
-        <OnboardingModal isOpen={true} onComplete={handleOnboardingComplete} />
-      )}
 
       {permissionRequest && (
         <PermissionDialog

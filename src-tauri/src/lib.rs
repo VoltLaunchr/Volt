@@ -522,6 +522,7 @@ pub fn run() {
                                 match commands::auth::handle_auth_deep_link(&url_owned).await {
                                     Ok(_session) => {
                                         info!("Auth session saved from deep link");
+                                        // Broadcast to every webview that's listening.
                                         if let Err(e) =
                                             emitter.emit("auth:session-updated", ())
                                         {
@@ -529,6 +530,28 @@ pub fn run() {
                                                 "Failed to emit auth:session-updated event: {}",
                                                 e
                                             );
+                                        }
+                                        // Defence-in-depth: also dispatch
+                                        // explicitly to the named windows we
+                                        // know host the auth UI. Tauri's
+                                        // global emit *should* reach every
+                                        // webview, but in practice we've seen
+                                        // the Settings window miss the event
+                                        // (likely a listener-timing issue
+                                        // when its React tree hadn't yet
+                                        // attached the listener). Dispatching
+                                        // by label closes that gap.
+                                        for label in ["main", "settings"] {
+                                            if let Err(e) = emitter.emit_to(
+                                                label,
+                                                "auth:session-updated",
+                                                (),
+                                            ) {
+                                                debug!(
+                                                    "auth:session-updated emit_to({}) failed: {}",
+                                                    label, e
+                                                );
+                                            }
                                         }
                                     }
                                     Err(e) => {

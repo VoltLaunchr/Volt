@@ -94,6 +94,7 @@ export enum SearchResultType {
   SystemMonitor = 'systemmonitor',
   Game = 'game',
   ShellCommand = 'shellcommand',
+  Url = 'url',
 }
 
 /**

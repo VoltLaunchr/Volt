@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import './ContextMenu.css';
+import { cn } from '@/lib/utils';
 
 export interface ContextMenuAction {
   id: string;
@@ -51,7 +51,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ isOpen, position, acti
   return (
     <div
       ref={menuRef}
-      className="context-menu"
+      className="fixed z-[1000] min-w-[180px] bg-surface-card border border-hairline-strong rounded-md py-1 shadow-2xl outline-none"
       role="menu"
       style={{
         left: `${position.x}px`,
@@ -60,13 +60,18 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ isOpen, position, acti
     >
       {actions.map((action) => {
         if (action.separator) {
-          return <div key={action.id} className="context-menu-separator" role="separator" />;
+          return <div key={action.id} className="my-1 mx-2 h-px bg-hairline" role="separator" />;
         }
 
         return (
           <button
             key={action.id}
-            className="context-menu-item"
+            className={cn(
+              'flex items-center gap-2.5 px-3 py-2 text-sm rounded-sm mx-1 w-[calc(100%-8px)]',
+              action.disabled
+                ? 'text-mute cursor-not-allowed'
+                : 'text-body hover:bg-surface-elevated hover:text-on-dark cursor-pointer transition-colors'
+            )}
             role="menuitem"
             onClick={() => {
               if (!action.disabled) {
@@ -76,9 +81,9 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ isOpen, position, acti
             }}
             disabled={action.disabled}
           >
-            {action.icon && <span className="context-menu-icon">{action.icon}</span>}
-            <span className="context-menu-label">{action.label}</span>
-            {action.shortcut && <span className="context-menu-shortcut">{action.shortcut}</span>}
+            {action.icon && <span className="text-base">{action.icon}</span>}
+            <span className="flex-1">{action.label}</span>
+            {action.shortcut && <span className="text-xs text-mute ml-auto">{action.shortcut}</span>}
           </button>
         );
       })}

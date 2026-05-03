@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { invoke, convertFileSrc } from '@tauri-apps/api/core';
 import { SearchResult, SearchResultType } from '../../types/common.types';
 import type { ShellOutputData } from '../../../features/plugins/builtin/shell';
-import './PreviewPanel.css';
 
 interface FilePreview {
   path: string;
@@ -78,8 +77,10 @@ export function PreviewPanel({ result, isOpen }: PreviewPanelProps) {
 
   if (!result) {
     return (
-      <div className="preview-panel">
-        <div className="preview-empty">Select a result to preview</div>
+      <div className="flex flex-col bg-surface border-l border-hairline h-full overflow-hidden w-[300px] shrink-0">
+        <div className="flex items-center justify-center h-full text-mute text-xs">
+          Select a result to preview
+        </div>
       </div>
     );
   }
@@ -87,24 +88,36 @@ export function PreviewPanel({ result, isOpen }: PreviewPanelProps) {
   if (result.type === SearchResultType.ShellCommand) {
     const shellData = result.data as unknown as ShellOutputData | undefined;
     return (
-      <div className="preview-panel" role="region" aria-label="Shell command preview">
-        <div className="preview-panel-header">
-          <span className="preview-title">{'> ' + (shellData?.command || '')}</span>
+      <div
+        className="flex flex-col bg-surface border-l border-hairline h-full overflow-hidden w-[300px] shrink-0"
+        role="region"
+        aria-label="Shell command preview"
+      >
+        <div className="flex items-center justify-between px-4 py-3 border-b border-hairline shrink-0">
+          <span className="text-sm font-medium text-ink truncate">
+            {'> ' + (shellData?.command || '')}
+          </span>
           {shellData?.executionTimeMs !== undefined && (
-            <span className="preview-meta-value">{shellData.executionTimeMs}ms</span>
+            <span className="text-sm text-body shrink-0 ml-2">{shellData.executionTimeMs}ms</span>
           )}
         </div>
-        <div className="preview-panel-content">
+        <div className="flex-1 overflow-y-auto p-4">
           {shellData?.status === 'done' ? (
-            <pre className="preview-text">
+            <pre className="font-mono text-xs text-body bg-surface-card rounded-md p-3 overflow-auto whitespace-pre-wrap break-words m-0">
               {shellData.stdout || shellData.stderr || 'No output'}
             </pre>
           ) : shellData?.status === 'running' ? (
-            <pre className="preview-text">{(shellData.stdout || '') + '\n...'}</pre>
+            <pre className="font-mono text-xs text-body bg-surface-card rounded-md p-3 overflow-auto whitespace-pre-wrap break-words m-0">
+              {(shellData.stdout || '') + '\n...'}
+            </pre>
           ) : shellData?.status === 'error' ? (
-            <pre className="preview-text">{shellData.errorMessage || 'Unknown error'}</pre>
+            <pre className="font-mono text-xs text-body bg-surface-card rounded-md p-3 overflow-auto whitespace-pre-wrap break-words m-0">
+              {shellData.errorMessage || 'Unknown error'}
+            </pre>
           ) : (
-            <div className="preview-empty">Press Enter to run command</div>
+            <div className="flex items-center justify-center h-full text-mute text-xs">
+              Press Enter to run command
+            </div>
           )}
         </div>
       </div>
@@ -113,35 +126,47 @@ export function PreviewPanel({ result, isOpen }: PreviewPanelProps) {
 
   if (loading) {
     return (
-      <div className="preview-panel">
-        <div className="preview-empty">Loading...</div>
+      <div className="flex flex-col bg-surface border-l border-hairline h-full overflow-hidden w-[300px] shrink-0">
+        <div className="flex items-center justify-center h-full text-mute text-xs">
+          Loading...
+        </div>
       </div>
     );
   }
 
   if (!preview) {
     return (
-      <div className="preview-panel">
-        <div className="preview-empty">No preview available</div>
+      <div className="flex flex-col bg-surface border-l border-hairline h-full overflow-hidden w-[300px] shrink-0">
+        <div className="flex items-center justify-center h-full text-mute text-xs">
+          No preview available
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="preview-panel" role="region" aria-label="File preview">
-      <div className="preview-panel-header">
+    <div
+      className="flex flex-col bg-surface border-l border-hairline h-full overflow-hidden w-[300px] shrink-0"
+      role="region"
+      aria-label="File preview"
+    >
+      {/* Header */}
+      <div className="flex items-center gap-2 px-4 py-3 border-b border-hairline shrink-0">
         {result.icon && (
-          <img className="preview-icon" src={result.icon} alt="" />
+          <img className="w-6 h-6 shrink-0 rounded-sm object-contain" src={result.icon} alt="" />
         )}
-        <span className="preview-title">{preview.name}</span>
+        <span className="text-sm font-medium text-ink truncate">{preview.name}</span>
       </div>
 
-      <div className="preview-panel-content">
+      {/* Content */}
+      <div className="flex-1 overflow-y-auto p-4">
         {preview.previewType === 'text' && preview.content && (
           <>
-            <pre className="preview-text">{preview.content}</pre>
+            <pre className="font-mono text-xs text-body bg-surface-card rounded-md p-3 overflow-auto whitespace-pre-wrap break-words m-0">
+              {preview.content}
+            </pre>
             {preview.metadata.truncated === 'true' && (
-              <div className="preview-truncated">
+              <div className="mt-2 pt-2 border-t border-hairline text-[11px] text-mute italic">
                 Content truncated ({preview.metadata.line_count} lines shown)
               </div>
             )}
@@ -150,18 +175,18 @@ export function PreviewPanel({ result, isOpen }: PreviewPanelProps) {
 
         {preview.previewType === 'image' && preview.metadata.image_path && (
           <img
-            className="preview-image"
+            className="rounded-md overflow-hidden max-h-48 w-full object-contain block mx-auto"
             src={convertFileSrc(preview.metadata.image_path)}
             alt={preview.name}
           />
         )}
 
         {preview.previewType === 'folder' && preview.children && (
-          <ul className="preview-folder-list">
+          <ul className="list-none p-0 m-0">
             {preview.children.map((child) => (
               <li
                 key={child}
-                className={child.endsWith('/') ? 'is-dir' : ''}
+                className={`py-1 text-xs flex items-center gap-1 ${child.endsWith('/') ? 'text-accent-blue font-medium' : 'text-body'}`}
               >
                 {child.endsWith('/') ? '📁' : '📄'} {child}
               </li>
@@ -169,12 +194,11 @@ export function PreviewPanel({ result, isOpen }: PreviewPanelProps) {
           </ul>
         )}
 
-        {(preview.previewType === 'application' ||
-          preview.previewType === 'binary') && (
-          <div className="preview-meta">
-            <div className="preview-meta-row">
-              <span className="preview-meta-label">Type</span>
-              <span className="preview-meta-value">
+        {(preview.previewType === 'application' || preview.previewType === 'binary') && (
+          <div className="space-y-3 mt-4">
+            <div className="flex flex-col gap-0.5">
+              <span className="text-[11px] text-ash uppercase tracking-wide font-medium">Type</span>
+              <span className="text-sm text-body">
                 {preview.metadata.extension?.toUpperCase() || preview.previewType}
               </span>
             </div>
@@ -182,22 +206,18 @@ export function PreviewPanel({ result, isOpen }: PreviewPanelProps) {
         )}
 
         {/* Always show metadata */}
-        <div className="preview-meta">
-          <div className="preview-meta-row">
-            <span className="preview-meta-label">Size</span>
-            <span className="preview-meta-value">
-              {preview.metadata.size_formatted}
-            </span>
+        <div className="space-y-3 mt-4">
+          <div className="flex flex-col gap-0.5">
+            <span className="text-[11px] text-ash uppercase tracking-wide font-medium">Size</span>
+            <span className="text-sm text-body">{preview.metadata.size_formatted}</span>
           </div>
-          <div className="preview-meta-row">
-            <span className="preview-meta-label">Modified</span>
-            <span className="preview-meta-value">
-              {formatDate(preview.modified)}
-            </span>
+          <div className="flex flex-col gap-0.5">
+            <span className="text-[11px] text-ash uppercase tracking-wide font-medium">Modified</span>
+            <span className="text-sm text-body">{formatDate(preview.modified)}</span>
           </div>
-          <div className="preview-meta-row">
-            <span className="preview-meta-label">Path</span>
-            <span className="preview-meta-value" title={preview.path}>
+          <div className="flex flex-col gap-0.5">
+            <span className="text-[11px] text-ash uppercase tracking-wide font-medium">Path</span>
+            <span className="text-sm text-body break-all" title={preview.path}>
               {preview.path}
             </span>
           </div>

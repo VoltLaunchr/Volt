@@ -1,7 +1,7 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { Modal } from './Modal';
-import './HelpDialog.css';
+import { Keycap } from './Keycap';
 
 interface ShortcutEntry {
   keys: string[];
@@ -67,32 +67,40 @@ export const HelpDialog: React.FC<HelpDialogProps> = ({ isOpen, onClose }) => {
   const shortcutGroups = getShortcutGroups(t);
   return (
     <Modal isOpen={isOpen} onClose={onClose} title={t('title')} size="medium">
-      <div className="help-dialog-content">
+      <div className="flex flex-col gap-6">
         {shortcutGroups.map((group) => (
-          <section key={group.title} className="help-group">
-            <h3 className="help-group-title">{group.title}</h3>
-            <ul className="help-shortcut-list" role="list">
+          <section key={group.title} className="flex flex-col gap-2">
+            <h3 className="text-sm font-semibold text-accent-blue uppercase tracking-wide m-0">
+              {group.title}
+            </h3>
+            <ul className="list-none p-0 m-0 flex flex-col gap-0.5" role="list">
               {group.shortcuts.map((entry) => (
-                <li key={entry.description} className="help-shortcut-item">
-                  <div className="help-shortcut-keys" aria-label={entry.keys.join(', ')}>
+                <li
+                  key={entry.description}
+                  className="flex items-center justify-between gap-4 px-2 py-1.5 rounded-sm transition-colors hover:bg-surface-elevated"
+                >
+                  <div
+                    className="flex items-center gap-1 shrink-0 min-w-[140px]"
+                    aria-label={entry.keys.join(', ')}
+                  >
                     {entry.keys.map((key, i) => (
                       <React.Fragment key={key}>
-                        <kbd className="help-key">{key}</kbd>
+                        <Keycap>{key}</Keycap>
                         {i < entry.keys.length - 1 && (
-                          <span className="help-key-separator" aria-hidden="true">
+                          <span className="text-mute text-xs mx-px" aria-hidden="true">
                             /
                           </span>
                         )}
                       </React.Fragment>
                     ))}
                   </div>
-                  <span className="help-shortcut-desc">{entry.description}</span>
+                  <span className="text-sm text-body text-right flex-1">{entry.description}</span>
                 </li>
               ))}
             </ul>
           </section>
         ))}
-        <p className="help-dialog-footer">
+        <p className="text-xs text-mute text-center pt-2 border-t border-hairline m-0">
           {t('closeHint', { key: 'Esc' })}
         </p>
       </div>
