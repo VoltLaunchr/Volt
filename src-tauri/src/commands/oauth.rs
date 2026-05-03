@@ -82,8 +82,15 @@ pub fn get_github_oauth_url() -> Result<String, String> {
         },
     );
 
-    // Return OAuth endpoint URL with state parameter - frontend will open it
-    info!("GitHub OAuth URL requested, request_id: {}", request_id);
+    // Return OAuth endpoint URL with state parameter - frontend will open it.
+    // Log only an 8-char hint of the state at info; the full request_id
+    // stays at debug so a leaked log file can't be used to replay the
+    // CSRF nonce.
+    debug!("GitHub OAuth URL issued, request_id: {}", request_id);
+    info!(
+        "GitHub OAuth URL requested, state_hint: {:.8}",
+        request_id
+    );
     Ok(format!(
         "https://voltlaunchr.com/api/oauth/github?state={}",
         request_id
@@ -114,8 +121,13 @@ pub fn get_notion_oauth_url() -> Result<String, String> {
         },
     );
 
-    // Return OAuth endpoint URL with state parameter - frontend will open it
-    info!("Notion OAuth URL requested, request_id: {}", request_id);
+    // Return OAuth endpoint URL with state parameter - frontend will open it.
+    // See comment on GitHub equivalent: full request_id is debug-only.
+    debug!("Notion OAuth URL issued, request_id: {}", request_id);
+    info!(
+        "Notion OAuth URL requested, state_hint: {:.8}",
+        request_id
+    );
     Ok(format!(
         "https://voltlaunchr.com/api/oauth/notion?state={}",
         request_id
@@ -151,7 +163,12 @@ pub fn handle_oauth_callback(
         let mut oauth_state = lock_state()?;
 
         let pending_request = oauth_state.pending_requests.remove(&state).ok_or_else(|| {
-            warn!("OAuth callback with unknown state: {}", state);
+            // Avoid logging the raw state at warn — leaked log files
+            // shouldn't carry a usable CSRF nonce. Keep only a hint.
+            warn!(
+                "OAuth callback with unknown state (hint: {:.8})",
+                state
+            );
             "Invalid or expired OAuth state parameter".to_string()
         })?;
 
@@ -226,6 +243,15 @@ pub fn clear_oauth_pending(service: String) -> Result<(), String> {
 pub fn handle_oauth_deep_link(url_str: &str) -> Result<OAuthResult, String> {
     let parsed =
         url::Url::parse(url_str).map_err(|e| format!("Failed to parse OAuth deep link: {}", e))?;
+
+    // Reject any deep link that isn't actually targeted at our oauth callback
+    // host. Without this check, a `volt://something-else?token=...&service=...`
+    // URL would be silently accepted by the query-param parser below.
+    if parsed.host_str() != Some("oauth-callback") {
+        let redacted = url_str.split('?').next().unwrap_or(url_str);
+        warn!("Rejecting deep link with unexpected host: {}", redacted);
+        return Err("Unexpected deep-link host for OAuth callback".to_string());
+    }
 
     // Extract query parameters
     let params: std::collections::HashMap<String, String> =
