@@ -73,7 +73,7 @@ fn deeplink_rate_limited() -> bool {
     if times.len() >= DEEPLINK_BURST_LIMIT {
         // Was the previous arrival also above the limit? If so, suppress
         // the warn to avoid log spam — we only fire on the transition.
-        let already_alerting = times.len() >= DEEPLINK_BURST_LIMIT + 1;
+        let already_alerting = times.len() > DEEPLINK_BURST_LIMIT;
         times.push_back(now);
         // Cap the queue so a sustained flood doesn't grow unboundedly.
         if times.len() > DEEPLINK_BURST_LIMIT * 4 {

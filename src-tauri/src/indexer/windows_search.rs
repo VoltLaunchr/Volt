@@ -143,7 +143,7 @@ try {{
             .any(|c| {
                 c.as_os_str()
                     .to_str()
-                    .map_or(false, |s| excluded_components.contains(&s))
+                    .is_some_and(|s| excluded_components.contains(&s))
             })
     });
 

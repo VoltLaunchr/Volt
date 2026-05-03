@@ -348,20 +348,19 @@ pub async fn open_path(path: String) -> VoltResult<()> {
     if !p.exists() {
         return Err(VoltError::NotFound(format!("Path not found: {}", path)));
     }
-    if p.is_file() {
-        if let Some(ext) = p.extension().and_then(|e| e.to_str()) {
-            const BLOCKED_OPEN_EXT: &[&str] = &[
-                "exe", "msi", "scr", "com", "bat", "cmd", "ps1", "psm1", "vbs", "vbe", "js",
-                "jse", "wsf", "wsh", "cpl", "lnk", "msc", "jar", "reg", "hta", "appref-ms",
-                "url",
-            ];
-            let lower = ext.to_ascii_lowercase();
-            if BLOCKED_OPEN_EXT.iter().any(|b| *b == lower.as_str()) {
-                return Err(VoltError::PermissionDenied(format!(
-                    "open_path refuses executable type '.{}'; use launch_app instead",
-                    ext
-                )));
-            }
+    if p.is_file()
+        && let Some(ext) = p.extension().and_then(|e| e.to_str())
+    {
+        const BLOCKED_OPEN_EXT: &[&str] = &[
+            "exe", "msi", "scr", "com", "bat", "cmd", "ps1", "psm1", "vbs", "vbe", "js", "jse",
+            "wsf", "wsh", "cpl", "lnk", "msc", "jar", "reg", "hta", "appref-ms", "url",
+        ];
+        let lower = ext.to_ascii_lowercase();
+        if BLOCKED_OPEN_EXT.contains(&lower.as_str()) {
+            return Err(VoltError::PermissionDenied(format!(
+                "open_path refuses executable type '.{}'; use launch_app instead",
+                ext
+            )));
         }
     }
     tauri_plugin_opener::open_path(&path, None::<&str>)
