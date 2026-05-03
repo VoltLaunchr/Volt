@@ -102,12 +102,18 @@ pub fn save_auth_session(session: &AuthSession) -> Result<(), String> {
     keyring_store::migrate_from_json_if_needed();
     let json = serde_json::to_string(session)
         .map_err(|e| format!("Failed to serialize auth session: {}", e))?;
-    keyring_store::store(AUTH_ACCOUNT, &json)
+    // store_signed attaches a domain-tagged HMAC so a peer-process attacker
+    // (DPAPI on Windows is per-user, not per-app) can't silently swap the
+    // session for an attacker-controlled JWT without recomputing the tag. (M10)
+    keyring_store::store_signed(AUTH_ACCOUNT, &json)
 }
 
 fn load_auth_session() -> Result<Option<AuthSession>, String> {
     keyring_store::migrate_from_json_if_needed();
-    match keyring_store::retrieve(AUTH_ACCOUNT)? {
+    // retrieve_signed verifies the HMAC tag and silently drops + returns
+    // None on mismatch — the user observes a logged-out state and is forced
+    // to re-authenticate, which is the desired tamper response.
+    match keyring_store::retrieve_signed(AUTH_ACCOUNT)? {
         None => Ok(None),
         Some(json) => {
             let session: AuthSession = serde_json::from_str(&json)
@@ -119,7 +125,7 @@ fn load_auth_session() -> Result<Option<AuthSession>, String> {
 
 fn delete_auth_session() -> Result<(), String> {
     keyring_store::migrate_from_json_if_needed();
-    keyring_store::remove(AUTH_ACCOUNT)
+    keyring_store::remove_signed(AUTH_ACCOUNT)
 }
 
 // ---------------------------------------------------------------------------

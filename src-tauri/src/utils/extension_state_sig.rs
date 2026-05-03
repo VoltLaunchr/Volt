@@ -213,6 +213,61 @@ fn compute_signature(contents: &[u8]) -> Option<String> {
     Some(hex::encode(mac.finalize().into_bytes()))
 }
 
+/// Compute a domain-tagged HMAC-SHA256 of `payload` with the shared keyring
+/// HMAC key. The `domain` string is mixed into the MAC input as a prefix +
+/// length-tag so a signature produced for one domain cannot be replayed in
+/// another (e.g. an extension-state signature can't be presented as a valid
+/// credential signature, even though both use the same underlying key).
+///
+/// Returns `None` if the keyring is unavailable.
+///
+/// Used by `keyring_store::store_signed` / `retrieve_signed` to detect
+/// tampering of stored credentials by other user-mode processes that share
+/// access to the OS keyring (DPAPI on Windows is per-user; the secret is
+/// reachable to any process running as the same user). The HMAC won't stop
+/// such an attacker — they can read the key too — but it forces them to
+/// compute a fresh signature whenever they swap the secret, which (a)
+/// raises the bar for casual tampering and (b) gives forensic evidence
+/// when the attacker forgets. (M10)
+pub fn hmac_sign_domain(domain: &str, payload: &[u8]) -> Option<String> {
+    let key = load_or_create_key()?;
+    let mut mac = HmacSha256::new_from_slice(&key).ok()?;
+    // Length-prefix the domain so e.g. domain="credential" + payload="x:secret"
+    // cannot collide with domain="credentialx" + payload=":secret".
+    let dom = domain.as_bytes();
+    mac.update(&(dom.len() as u32).to_be_bytes());
+    mac.update(dom);
+    mac.update(payload);
+    Some(hex::encode(mac.finalize().into_bytes()))
+}
+
+/// Constant-time verification of a hex-encoded domain-tagged HMAC produced
+/// by [`hmac_sign_domain`]. Returns `false` on any of: keyring unavailable,
+/// hex-decode failure, length mismatch, or signature mismatch.
+pub fn hmac_verify_domain(domain: &str, payload: &[u8], expected_hex: &str) -> bool {
+    let Some(actual_hex) = hmac_sign_domain(domain, payload) else {
+        return false;
+    };
+    // Compare on raw bytes to make the timing comparison constant-time. The
+    // hex encoding is deterministic so a mismatch in raw bytes also means a
+    // mismatch in hex, but constant-time matters when the expected value
+    // could have been chosen by an attacker observing timings.
+    let Ok(actual) = hex::decode(&actual_hex) else {
+        return false;
+    };
+    let Ok(expected) = hex::decode(expected_hex.trim()) else {
+        return false;
+    };
+    if actual.len() != expected.len() {
+        return false;
+    }
+    let mut diff = 0u8;
+    for (a, b) in actual.iter().zip(expected.iter()) {
+        diff |= a ^ b;
+    }
+    diff == 0
+}
+
 /// Path of the detached signature file for a given state file.
 fn sig_path(state_path: &Path) -> PathBuf {
     let mut file_name = state_path

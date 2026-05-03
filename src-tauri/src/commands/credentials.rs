@@ -60,7 +60,9 @@ pub fn save_credential(service: String, token: String) -> Result<(), String> {
 
     keyring_store::migrate_from_json_if_needed();
 
-    keyring_store::store(&token_account(&service), &token)?;
+    // store_signed attaches a domain-tagged HMAC so retrieve_signed can
+    // detect cross-process tampering of the keyring entry. (M10)
+    keyring_store::store_signed(&token_account(&service), &token)?;
 
     let meta = CredentialMeta {
         saved_at: chrono::Local::now().to_rfc3339(),
@@ -68,18 +70,22 @@ pub fn save_credential(service: String, token: String) -> Result<(), String> {
     };
     let meta_json = serde_json::to_string(&meta)
         .map_err(|e| format!("Failed to serialize credential metadata: {}", e))?;
-    keyring_store::store(&meta_account(&service), &meta_json)?;
+    keyring_store::store_signed(&meta_account(&service), &meta_json)?;
 
     info!("Credential saved for service: {}", service);
     Ok(())
 }
 
 /// Load an API token from the OS keyring.
+///
+/// `retrieve_signed` validates the companion HMAC tag and silently drops
+/// the entry on mismatch (returning `None`); the caller observes a missing
+/// credential and triggers re-auth, which is the desired tamper response.
 #[tauri::command]
 pub fn load_credential(service: String) -> Result<Option<String>, String> {
     debug!("Loading credential for service: {}", service);
     keyring_store::migrate_from_json_if_needed();
-    let token = keyring_store::retrieve(&token_account(&service))?;
+    let token = keyring_store::retrieve_signed(&token_account(&service))?;
     if token.is_some() {
         debug!("Credential loaded for service: {}", service);
     } else {
@@ -92,7 +98,7 @@ pub fn load_credential(service: String) -> Result<Option<String>, String> {
 #[tauri::command]
 pub fn has_credential(service: String) -> Result<bool, String> {
     keyring_store::migrate_from_json_if_needed();
-    let result = keyring_store::retrieve(&token_account(&service))?;
+    let result = keyring_store::retrieve_signed(&token_account(&service))?;
     Ok(result.is_some())
 }
 
@@ -101,8 +107,9 @@ pub fn has_credential(service: String) -> Result<bool, String> {
 pub fn delete_credential(service: String) -> Result<(), String> {
     debug!("Deleting credential for service: {}", service);
     keyring_store::migrate_from_json_if_needed();
-    keyring_store::remove(&token_account(&service))?;
-    keyring_store::remove(&meta_account(&service))?;
+    // remove_signed clears both the value and its HMAC tag entry.
+    keyring_store::remove_signed(&token_account(&service))?;
+    keyring_store::remove_signed(&meta_account(&service))?;
     info!("Credential deleted for service: {}", service);
     Ok(())
 }
@@ -166,11 +173,11 @@ pub fn get_credential_info(service: String) -> Result<Option<StoredCredential>, 
     debug!("Getting credential info for service: {}", service);
     keyring_store::migrate_from_json_if_needed();
 
-    if keyring_store::retrieve(&token_account(&service))?.is_none() {
+    if keyring_store::retrieve_signed(&token_account(&service))?.is_none() {
         return Ok(None);
     }
 
-    match keyring_store::retrieve(&meta_account(&service))? {
+    match keyring_store::retrieve_signed(&meta_account(&service))? {
         Some(meta_json) => {
             let meta: CredentialMeta = serde_json::from_str(&meta_json).unwrap_or(CredentialMeta {
                 saved_at: "Unknown".to_string(),
