@@ -4,3 +4,4 @@
 - [Auth/OAuth/Credentials/Deep-link Audit](audit_auth_oauth.md) -- Deep-link unauth, missing CSRF on auth callback, JWT trust, 2026-05-03
 - [Shell v2 Re-audit](audit_shell_v2.md) -- Streaming-path 50KB gap, PS wipe bypass, working_dir uncanonicalized, 2026-05-03
 - [dev-branch second-pass audit](audit_dev_branch_v2.md) -- May-03 hardening verified landed; new PS-heredoc RCE in windows_search; sync.rs authz/data issues; multi-window token-theft surface
+- [Release-readiness audit v0.1.2](audit_release_readiness_2026-05-03.md) -- devtools-on-by-default in release; single shared capability across 4 windows; load_credential renderer exposure; sync re-validation still missing

@@ -1,72 +1,137 @@
 <div align="center">
 
-# Volt
+<img src="public/logo.png" alt="Volt — open source keyboard launcher" width="160" />
 
-**Lightning-fast, keyboard-driven launcher for Windows, macOS, and Linux**
+# Volt — Open Source Keyboard Launcher for Windows, macOS & Linux
 
-[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
-[![Built with Tauri](https://img.shields.io/badge/built%20with-Tauri%202-orange)](https://tauri.app)
-[![CI](https://github.com/VoltLaunchr/Volt/actions/workflows/check.yml/badge.svg)](https://github.com/VoltLaunchr/Volt/actions/workflows/check.yml)
-[![Latest Release](https://img.shields.io/github/v/release/VoltLaunchr/Volt)](https://github.com/VoltLaunchr/Volt/releases/latest)
+**A free, native Alfred / Raycast / Spotlight alternative built with Rust and Tauri.**
 
-Search apps, files, do math, convert units, set timers, and run commands — without ever leaving your keyboard.
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg "Apache 2.0 license")](./LICENSE)
+[![CI status](https://github.com/VoltLaunchr/Volt/actions/workflows/check.yml/badge.svg "Continuous integration status")](https://github.com/VoltLaunchr/Volt/actions/workflows/check.yml)
+[![Latest release](https://img.shields.io/github/v/release/VoltLaunchr/Volt?label=release "Latest release version")](https://github.com/VoltLaunchr/Volt/releases/latest)
+[![Platform: Windows · macOS · Linux](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey "Cross-platform: Windows, macOS, Linux")](https://github.com/VoltLaunchr/Volt/releases/latest)
+[![Built with Tauri 2](https://img.shields.io/badge/built%20with-Tauri%202-orange "Built with Tauri 2")](https://tauri.app)
+[![Stars](https://img.shields.io/github/stars/VoltLaunchr/Volt?style=social "GitHub stars")](https://github.com/VoltLaunchr/Volt/stargazers)
 
-[Download](#-download) | [Features](#-features) | [Quick Start](#-quick-start) | [Contributing](CONTRIBUTING.md) | [Roadmap](docs/build-release/ROADMAP.md)
+<img src="docs/assets/demo.gif" alt="Volt keyboard launcher demo — fuzzy search, calculator, clipboard history" width="720" />
+
+### [🌐 voltlaunchr.com](https://voltlaunchr.com) · [⬇ Download](#-download) · [✨ Features](#-features) · [🚀 Quick Start](#-quick-start) · [📚 Docs](https://voltlaunchr.com/en/docs) · [🤝 Contributing](./CONTRIBUTING.md)
 
 </div>
 
 ---
 
-## Features
+## Why Volt?
 
-- **Instant fuzzy search** — finds your apps and files as you type
-- **Keyboard-first** — global hotkey + arrow keys + Enter, no mouse needed
-- **Built-in calculator** — math expressions, unit conversions, date math, timezone conversions, all inline
-- **Game launcher** — auto-detects 10 platforms: Steam, Epic, GOG, Xbox, EA, Ubisoft, Riot, Amazon, Battle.net, Rockstar
-- **Clipboard history** — search and paste anything you copied recently
-- **Emoji picker** — type `:` to start, fuzzy search, recently used, skin tones
-- **Timers & Pomodoro** — `timer 5m`, focus mode, auto-cycle with desktop notifications
-- **Web search** — `?` prefix to query Google/Bing/DuckDuckGo
-- **Shell commands** — `>` prefix for inline shell execution with streaming output, ANSI colors, and history
-- **Plugin system** — extend Volt with TypeScript plugins (built-in plugins use the same API)
-- **Extensions marketplace** — community extensions with sandboxed Web Worker execution and permission consent
-- **Frecency-based ranking** — most used apps appear first, with exponential time decay
-- **Preview panel** — press `Ctrl+P` to preview files, images, folders, and app metadata
-- **Text snippets** — reusable text blocks with variable expansion (`{date}`, `{time}`, etc.)
-- **Quicklinks** — `ql:` prefix for URL/folder/command shortcuts
-- **Power-user search operators** — filter by `ext:`, `size:`, `modified:`, `in:` in file search
-- **Windows Store/UWP app support** — discovers apps via Shell AppsFolder and Registry
-- **Results grouped by type** — Applications, Commands, Games, Files shown in distinct sections
-- **System monitor** — per-core CPU, per-disk, network throughput, top processes, temperatures
-- **Third-party integrations** — GitHub, Notion OAuth with encrypted credential storage
-- **i18n** — English and French, auto-detected from OS locale
-- **Glassmorphism UI** — minimal, transparent, always on top, themable
-- **Native performance** — Rust backend, ~15 MB binary, instant startup
-- **Hardened security** — CSRF-protected auth deep links, HMAC-signed keyring, sandboxed extensions, shell blocklist
+Volt is a **free, open-source keyboard launcher** built with **Rust** and **Tauri** for **Windows, macOS, and Linux** — search apps, files, and run commands at the speed of thought. The binary is **~15 MB**, starts instantly, and ships **zero Electron**. Alfred is paid and macOS-only. Raycast is free but closed source and macOS-first. Spotlight ships nothing on Linux. Volt is the answer to all three: **Apache 2.0**, native, identical UX on every desktop OS.
 
-## Download
+## 📊 Volt vs Alfred vs Raycast vs Spotlight
 
-Grab the latest release for your platform from the [Releases page](https://github.com/VoltLaunchr/Volt/releases/latest).
+| Feature                       | **Volt**                              | Alfred                  | Raycast               | Spotlight        |
+| ----------------------------- | ------------------------------------- | ----------------------- | --------------------- | ---------------- |
+| Price                         | **Free**                              | Free + £34 Powerpack    | Free + paid Pro/Teams | Free (built-in)  |
+| Platforms                     | **Windows, macOS, Linux**             | macOS only              | macOS, Windows (beta) | macOS only       |
+| Open source                   | ✅ **Apache 2.0**                     | ❌                      | ❌                    | ❌               |
+| Binary size                   | **~15 MB**                            | ~30 MB                  | ~250 MB+              | OS bundled       |
+| Plugin API                    | ✅ **TypeScript, sandboxed**          | ⚠️ AppleScript / shell  | ✅ TypeScript          | ❌               |
+| Game launcher (10 platforms)  | ✅ **Steam, Epic, GOG, Xbox, +6**     | ❌                      | ⚠️ Steam only          | ❌               |
+| Clipboard history             | ✅                                    | 💷 Powerpack            | ✅                     | ❌               |
+| Snippets with variables       | ✅ `{date}`, `{time}`, `{cursor}`, …  | 💷 Powerpack            | ✅                     | ❌               |
+| Sandboxed extensions          | ✅ **Web Worker + permission consent**| ❌                      | ⚠️ Node, less strict   | ❌               |
+| Telemetry / cloud-required    | **None**                              | None                    | Account + telemetry   | None             |
+| Built with                    | Rust + Tauri 2 + React 19             | Objective-C / Swift     | Swift / TypeScript    | Apple internal   |
 
-| Platform | File |
-|----------|------|
-| **Windows** | `volt_x.x.x_x64-setup.exe` (NSIS) or `volt_x.x.x_x64_en-US.msi` |
-| **macOS (Intel)** | `volt_x.x.x_x64.dmg` |
-| **macOS (Apple Silicon)** | `volt_x.x.x_aarch64.dmg` |
-| **Linux (Debian/Ubuntu)** | `volt_x.x.x_amd64.deb` |
-| **Linux (Fedora/RHEL)** | `volt-x.x.x-1.x86_64.rpm` |
-| **Linux (any)** | `volt_x.x.x_amd64.AppImage` |
+> Comparison reflects publicly available info as of 2026-05. Corrections welcome via [issue](https://github.com/VoltLaunchr/Volt/issues).
 
-> **Windows users**: until we obtain code signing (tracked in [ROADMAP M1.3](docs/build-release/ROADMAP.md)), SmartScreen will warn on first install. Click **More info > Run anyway**. The binary is reproducible from the source in this repo.
+---
+
+## ✨ Features
+
+### 🔍 Search & Launch
+
+- **Fuzzy search across apps, files, and commands** — `nucleo-matcher` powered, scored exact / startsWith / contains / fuzzy.
+- **Frecency ranking** — `launch_count × exponential time decay`, your most-used apps surface first; empty query shows top picks.
+- **Power-user file operators** — `ext:pdf`, `in:downloads`, `size:>10mb`, `modified:<7d` parsed inline by `queryParser.ts`.
+- **Cross-platform app discovery** — Windows Shell `AppsFolder` + Registry + Start Menu, macOS `.app` bundles + Spotlight metadata, Linux `.desktop` files.
+- **Background file indexer** — SQLite-backed, `notify` filesystem watcher, incremental updates, `max_depth=10`, 100 MB cap per file.
+- **Results grouped by section** — Applications · Commands · Games · Files, sorted by score.
+
+### 🧩 Built-in Plugins
+
+- **Calculator** — math, units, dates, timezones inline (`5km in mi`, `10:00 NYC in Tokyo`).
+- **Game launcher** — 10 platforms detected: Steam, Epic, GOG, Xbox/Microsoft Store, EA, Ubisoft Connect, Riot, Amazon Games, Battle.net, Rockstar.
+- **Clipboard history** — last N entries, fuzzy searchable, paste with one keystroke.
+- **Snippets** — reusable text blocks, `{date}` / `{time}` / `{cursor}` / `{clipboard}` variables, JSON import/export.
+- **Quicklinks** — `ql:` prefix for URL / folder / command shortcuts.
+- **Shell** — `>` prefix runs commands with streaming output, ANSI colors, frecency-ranked history (500 entries).
+- **Web search** — `?` prefix queries Google / Bing / DuckDuckGo / Kagi.
+- **Emoji picker** — `:` prefix, fuzzy search, recently used, skin tones, 1800+ emoji.
+- **Timers & Pomodoro** — `timer 5m`, focus mode, auto-cycle, desktop notifications.
+- **System monitor** — per-core CPU, per-disk, network throughput, top processes, temperatures.
+- **Window management** — snap, center, half-screens, multi-monitor.
+
+### 🔒 Security
+
+- **Sandboxed extensions** — Web Worker isolation; `eval`, `Function`, `WebSocket`, `XMLHttpRequest`, `importScripts` all disabled.
+- **Permission consent** — first-load consent dialog; `clipboard`, `network`, `notifications` granted explicitly per extension.
+- **Tamper detection** — HMAC-SHA256 signatures (`.sig`) on `installed.json` and `dev-extensions.json`; key in OS keyring; mismatch → fail-closed (all permissions reset).
+- **SSRF prevention in extension proxy** — private IPs blocked, IPv4-mapped IPv6 rejected, redirect SSRF blocked, `Cookie` / `Authorization` stripped, 10 MB body cap.
+- **Hardened auth** — Supabase JWT verified against project JWKS (ES256); CSRF state nonce with 5 min TTL; refresh token user_id check.
+- **Encrypted credential storage** — OS keyring-backed (Keychain / Credential Manager / Secret Service); domain-tagged HMAC.
+- **Launch validation** — LOLBIN denylist, NTFS path normalization, executable extension validation, UNC working_dir rejected.
+- **Hardened shell** — NFKC normalization + 9+ blocklist patterns + extended secret redactors in logs.
+
+### ⚙️ Developer
+
+- **Tests** — 166 frontend (Vitest) + 143 backend (`cargo test`), CI on every PR.
+- **CI gates** — `cargo fmt --check`, `cargo clippy -D warnings`, `eslint`, `tsc --noEmit`, full Vitest suite.
+- **Plugin API in TypeScript** — same API for builtins and extensions; `keywords` / `prefix` declarative matching; 500 ms timeout.
+- **Tauri 2 IPC** — typed `invoke` bridge, capability scopes per-window (`main`, `settings`, `onboarding`, `system-monitor`).
+- **Search pipeline** — 150 ms debounce + `latestSearchId` stale-response protection.
+- **i18n** — English + French, 9 namespaces, OS-locale auto-detect via i18next.
+- **Auto-updater** — minisign-signed manifest, GitHub Releases backed, end-to-end.
+- **Structured logging** — `tracing` + rotating daily files; frontend `logger.ts` mirrors levels.
+
+---
+
+## ⬇ Download
+
+Grab the latest signed build from the [Releases page](https://github.com/VoltLaunchr/Volt/releases/latest#assets).
+
+| Platform                        | Asset                                   | Checksum / Signature                            |
+| ------------------------------- | --------------------------------------- | ----------------------------------------------- |
+| **Windows 10/11** (NSIS)        | `volt_x.x.x_x64-setup.exe`              | `.sig` minisign + SHA256 in release notes       |
+| **Windows 10/11** (MSI)         | `volt_x.x.x_x64_en-US.msi`              | `.sig` minisign + SHA256                        |
+| **macOS Intel**                 | `volt_x.x.x_x64.dmg`                    | `.sig` minisign + SHA256                        |
+| **macOS Apple Silicon**         | `volt_x.x.x_aarch64.dmg`                | `.sig` minisign + SHA256                        |
+| **Debian / Ubuntu**             | `volt_x.x.x_amd64.deb`                  | `.sig` minisign + SHA256                        |
+| **Fedora / RHEL**               | `volt-x.x.x-1.x86_64.rpm`               | `.sig` minisign + SHA256                        |
+| **Linux (any)**                 | `volt_x.x.x_amd64.AppImage`             | `.sig` minisign + SHA256                        |
+
+**Windows package manager:**
+
+```powershell
+winget install VoltLaunchr.Volt
+```
+
+> ⚠️ **Windows SmartScreen warning** — until we obtain a code-signing certificate (tracked in [ROADMAP M1.3](./docs/build-release/ROADMAP.md)), Windows will warn on first install. Click **More info → Run anyway**. Builds are reproducible from the source in this repo and verifiable against the published SHA256.
 
 After install, press **`Ctrl+Space`** (configurable) to open Volt.
 
-## Quick Start (development)
+---
 
-You will need:
-- [**Bun**](https://bun.sh) (latest)
-- [**Rust**](https://rustup.rs/) (stable)
-- Tauri prerequisites for your OS — see [Tauri docs](https://tauri.app/start/prerequisites/)
+## 🚀 Quick Start
+
+### Prerequisites
+
+| Tool                                          | Minimum version | Why                              |
+| --------------------------------------------- | --------------- | -------------------------------- |
+| [Bun](https://bun.sh)                         | 1.1+            | Frontend package manager + tests |
+| [Rust toolchain](https://rustup.rs/)          | stable (1.80+)  | Tauri backend                    |
+| [Tauri prerequisites](https://tauri.app/start/prerequisites/) | per-OS | WebView2 / WebKit / system libs |
+| [Git](https://git-scm.com/)                   | any             | Cloning + hooks                  |
+
+### Clone, install, run
 
 ```bash
 git clone https://github.com/VoltLaunchr/Volt.git
@@ -75,38 +140,157 @@ bun install
 bun tauri dev
 ```
 
-For frontend-only iteration (without rebuilding the Rust backend):
+### Frontend-only iteration (no Rust rebuild)
+
 ```bash
 bun run dev
 ```
 
-Run tests:
+### Validate before committing
+
 ```bash
-bun run test                                                  # frontend (vitest, 166+ tests)
-cd src-tauri && cargo test --lib                              # backend (cargo, 143+ tests)
-cd src-tauri && cargo clippy --all-features --all-targets -- -D warnings   # lint
+bun run lint       # ESLint, no warnings tolerated
+bun run test       # 166 Vitest tests
+cd src-tauri && cargo check && cargo clippy --all-features --all-targets -- -D warnings
+cd src-tauri && cargo test --lib   # 143 backend tests
 ```
 
-## Architecture
+### Production build
 
-Volt is a [Tauri 2](https://tauri.app) application:
-- **Frontend**: React 19 + Vite + TypeScript, lives in `src/`
-- **Backend**: Rust, lives in `src-tauri/src/`
-- **Communication**: Tauri's typed `invoke` IPC bridge
+```bash
+bun tauri build   # platform installer in src-tauri/target/release/bundle/
+```
 
-See [`docs/architecture/ARCHITECTURE.md`](docs/architecture/ARCHITECTURE.md) for the full picture, [`docs/plugins/DEVELOPMENT.md`](docs/plugins/DEVELOPMENT.md) for the plugin API, and [`docs/build-release/ROADMAP.md`](docs/build-release/ROADMAP.md) for what is planned.
+---
 
-## Contributing
+## 🏗 Architecture
 
-Contributions are very welcome! Check out [`CONTRIBUTING.md`](CONTRIBUTING.md) for the dev workflow, branch conventions, and PR process.
+```
+┌────────────────────────────────────────────────────────┐
+│                  Frontend  (src/)                       │
+│  React 19 · Vite 7 · TypeScript 5.8 · Zustand           │
+│  ┌────────────────────────────────────────────────┐    │
+│  │ SearchBar  →  useSearchPipeline  →  ResultsList │    │
+│  │            ↑      150 ms debounce              │    │
+│  │            ↑      latestSearchId guard          │    │
+│  └────────────────────────────────────────────────┘    │
+│  Plugin Registry (500 ms timeout)                      │
+│  Extension Loader (Sucrase) → Web Worker sandbox        │
+└──────────────────────────┬─────────────────────────────┘
+                           │  Tauri IPC (typed invoke)
+┌──────────────────────────▼─────────────────────────────┐
+│                 Backend  (src-tauri/src/)               │
+│  Rust 2024 · Tauri 2 · Tokio · rusqlite · nucleo        │
+│  core/        → types, traits, errors                   │
+│  indexer/     → SQLite + notify file watcher            │
+│  launcher/    → cross-platform launch + LOLBIN denylist │
+│  plugins/     → registry, builtin (clipboard, monitor…) │
+│  commands/    → 14+ Tauri command modules               │
+│  hotkey/      → global shortcut manager                 │
+│  utils/       → icon extraction, HMAC sigs, NFKC        │
+└────────────────────────────────────────────────────────┘
+```
 
-For bug reports and feature requests: open an [issue](https://github.com/VoltLaunchr/Volt/issues). For questions and discussion: [Discussions](https://github.com/VoltLaunchr/Volt/discussions).
+Full diagrams and module breakdown: [`docs/architecture/ARCHITECTURE.md`](./docs/architecture/ARCHITECTURE.md) · [`src-tauri/MODULES.md`](./src-tauri/MODULES.md).
 
-Found a security vulnerability? See [`SECURITY.md`](SECURITY.md).
+---
 
-## License
+## 📚 Documentation
 
-Volt is open source under the [Apache License 2.0](LICENSE).
+The full user-facing documentation lives at **[voltlaunchr.com/en/docs](https://voltlaunchr.com/en/docs)** (français disponible via le sélecteur de langue). Source files live in [`./docs/`](./docs/) for contributors who want to edit them.
+
+| Topic                  | Online (recommended)                                                            | In-repo source                                                                  |
+| ---------------------- | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| Documentation home     | [voltlaunchr.com/en/docs](https://voltlaunchr.com/en/docs)                      | [`docs/README.md`](./docs/README.md)                                            |
+| Architecture overview  | [voltlaunchr.com/en/docs](https://voltlaunchr.com/en/docs)                      | [`docs/architecture/ARCHITECTURE.md`](./docs/architecture/ARCHITECTURE.md)      |
+| Feature catalog        | [voltlaunchr.com/en/docs](https://voltlaunchr.com/en/docs)                      | [`docs/architecture/FEATURES.md`](./docs/architecture/FEATURES.md)              |
+| Plugin development     | [voltlaunchr.com/en/docs](https://voltlaunchr.com/en/docs)                      | [`docs/plugins/DEVELOPMENT.md`](./docs/plugins/DEVELOPMENT.md)                  |
+| Plugin API reference   | [voltlaunchr.com/en/docs](https://voltlaunchr.com/en/docs)                      | [`docs/plugins/API_REFERENCE.md`](./docs/plugins/API_REFERENCE.md)              |
+| Extension publishing   | [voltlaunchr.com/en/docs](https://voltlaunchr.com/en/docs)                      | [`docs/plugins/PUBLISHING_GUIDE.md`](./docs/plugins/PUBLISHING_GUIDE.md)        |
+| Keyboard shortcuts     | [voltlaunchr.com/en/docs](https://voltlaunchr.com/en/docs)                      | [`docs/user-guide/SHORTCUTS.md`](./docs/user-guide/SHORTCUTS.md)                |
+| Roadmap                | —                                                                               | [`docs/build-release/ROADMAP.md`](./docs/build-release/ROADMAP.md)              |
+| Distribution & signing | —                                                                               | [`docs/build-release/DISTRIBUTION.md`](./docs/build-release/DISTRIBUTION.md)    |
+| Changelog              | —                                                                               | [`docs/changelog/CHANGELOG.md`](./docs/changelog/CHANGELOG.md)                  |
+| Contributor agent docs | —                                                                               | [`AGENTS.md`](./AGENTS.md)                                                      |
+
+---
+
+## 🧩 Plugin & Extension Development
+
+Volt has **two extensibility surfaces**:
+
+| Surface              | Lives in                                                                                       | When to use                                     |
+| -------------------- | ---------------------------------------------------------------------------------------------- | ----------------------------------------------- |
+| **Built-in plugins** | This repo — `src/features/plugins/builtin/`                                                    | Core functionality shipped with every install.  |
+| **Extensions**       | Separate repo — [VoltLaunchr/volt-extensions](https://github.com/VoltLaunchr/volt-extensions)  | Community-contributed, sandboxed, install-time. |
+
+### Minimal plugin example
+
+```typescript
+// src/features/plugins/builtin/myplugin/index.ts
+import type { Plugin, PluginContext } from '@/features/plugins/types';
+
+export const myPlugin: Plugin = {
+  id: 'my-plugin',
+  name: 'My Plugin',
+  prefix: '!',                                  // user types "!hello"
+  async query({ query }: PluginContext) {
+    return [{
+      id: `my-plugin:${query}`,
+      title: `Echo: ${query}`,
+      subtitle: 'Press Enter to copy',
+      icon: '✨',
+      action: { type: 'clipboard', text: query },
+    }];
+  },
+};
+```
+
+Register it in `src/app/App.tsx` via `pluginRegistry.register(myPlugin)`. Full guide and API reference: **[voltlaunchr.com/en/docs](https://voltlaunchr.com/en/docs)** (source: [`docs/plugins/`](./docs/plugins/)).
+
+For sandboxed community extensions, see the publishing guide on [voltlaunchr.com/en/docs](https://voltlaunchr.com/en/docs) and the [volt-extensions](https://github.com/VoltLaunchr/volt-extensions) repo.
+
+---
+
+## 🤝 Contributing
+
+Volt is community-driven. PRs of any size are welcome — typo fixes, bug reports, new plugins, full features.
+
+1. **Fork** the repo and create a feature branch:
+   ```bash
+   git checkout -b feat/my-feature
+   ```
+2. **Install** deps and set up hooks:
+   ```bash
+   bun install && bun run setup-hooks
+   ```
+3. **Code** following the existing patterns. Read [`AGENTS.md`](./AGENTS.md) and [`CONTRIBUTING.md`](./CONTRIBUTING.md) for conventions.
+4. **Validate** before pushing — this is mandatory:
+   ```bash
+   bun run lint && bun run test && \
+   (cd src-tauri && cargo clippy --all-features --all-targets -- -D warnings && cargo test --lib)
+   ```
+5. **Commit** with [Conventional Commits](https://www.conventionalcommits.org/) (`feat:`, `fix:`, `docs:`, `chore:`, `refactor:`, `test:`) and **open a PR**.
+
+Bug reports and feature requests: [Issues](https://github.com/VoltLaunchr/Volt/issues). Questions and discussion: [Discussions](https://github.com/VoltLaunchr/Volt/discussions). Security vulnerabilities: see [`SECURITY.md`](./SECURITY.md) — please **do not** open public issues for security reports.
+
+---
+
+## 🗺 Roadmap
+
+| Milestone | Focus                                                  | Status                  |
+| --------- | ------------------------------------------------------ | ----------------------- |
+| **M1**    | 1.0 stabilization · Windows Authenticode · macOS notarization | 🟡 in progress (cert blocker) |
+| **M2**    | Public Extension Store with curation + autoupdate        | 🟢 planned              |
+| **M3**    | Cloud Sync (settings, snippets, quicklinks) — preview shipped | 🟢 in preview           |
+
+Full roadmap with tasks, files, and acceptance criteria: [`docs/build-release/ROADMAP.md`](./docs/build-release/ROADMAP.md).
+
+---
+
+## 📜 License
+
+Volt is open source under the [Apache License 2.0](./LICENSE).
 
 ```
 Copyright 2026 VoltLaunchr Contributors
@@ -118,6 +302,18 @@ You may obtain a copy of the License at
     http://www.apache.org/licenses/LICENSE-2.0
 ```
 
-## Acknowledgments
+## 🙏 Acknowledgments
 
-Built with [Tauri](https://tauri.app), [React](https://react.dev), [Vite](https://vitejs.dev), and [Rust](https://www.rust-lang.org). Inspired by [Spotlight](https://support.apple.com/guide/mac-help/spotlight-mchlp1008/mac), [Alfred](https://www.alfredapp.com), and [Raycast](https://raycast.com).
+**Inspirations** — [Spotlight](https://support.apple.com/guide/mac-help/spotlight-mchlp1008/mac), [Alfred](https://www.alfredapp.com), [Raycast](https://raycast.com). Volt would not exist without the trail they blazed.
+
+**Stack** — [Tauri 2](https://tauri.app) · [React 19](https://react.dev) · [Vite 7](https://vitejs.dev) · [Rust](https://www.rust-lang.org) · [nucleo-matcher](https://github.com/helix-editor/nucleo) · [rusqlite](https://github.com/rusqlite/rusqlite) · [Zustand](https://zustand-demo.pmnd.rs/) · [shadcn/ui](https://ui.shadcn.com/) primitives.
+
+---
+
+<div align="center">
+
+**If Volt saves you time, [give it a ⭐ on GitHub](https://github.com/VoltLaunchr/Volt) — it actually helps.**
+
+[Website](https://voltlaunchr.com) · [Releases](https://github.com/VoltLaunchr/Volt/releases) · [Issues](https://github.com/VoltLaunchr/Volt/issues) · [Discussions](https://github.com/VoltLaunchr/Volt/discussions)
+
+</div>
