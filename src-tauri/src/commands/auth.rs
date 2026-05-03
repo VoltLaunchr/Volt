@@ -410,21 +410,28 @@ struct ExchangeResponse {
     user_id: String,
 }
 
-/// Parse a `volt://auth/callback?state=&code=` URL, swap the code for a
-/// session over HTTPS using the stored PKCE verifier, then persist it.
+/// Parse a `volt://auth/callback?...` URL and persist the session.
 ///
-/// Validation layers:
+/// Accepts two callback shapes for forward/backward compatibility during
+/// the PKCE rollout:
+///
+/// * **PKCE** — `?state=&code=`. The desktop submits {code, verifier} to
+///   `/api/auth/exchange-code` and gets tokens back over HTTPS; tokens
+///   never travel through the URL / browser history.
+/// * **Implicit (legacy)** — `?state=&access_token=&refresh_token=`. The
+///   tokens come through the deep link directly. We still verify the JWT
+///   signature against the project JWKS before persisting, so a forged
+///   URL can't seed a session even on this path.
+///
+/// Validation layers (both shapes):
 /// 1. URL host/path must match the expected callback shape.
 /// 2. `state` MUST match a pending flow stored by `auth_start_login`
 ///    (CSRF binding); the entry is removed on use so the nonce can't be
 ///    replayed.
-/// 3. The auth code is exchanged at `/api/auth/exchange-code`; the website
-///    cross-checks `SHA256(code_verifier) == stored_challenge` server-side
-///    before releasing the tokens.
-/// 4. The returned access token's signature is verified against the
-///    project JWKS (ES256), and `iss` / `aud` / `exp` are validated.
-///    `user_id` / `expires_at` come from the verified claims, never from
-///    the deep-link URL or the website body.
+/// 3. The access token's signature is verified against the project JWKS
+///    (ES256), and `iss` / `aud` / `exp` are validated. `user_id` /
+///    `expires_at` come from the verified claims, never from the URL or
+///    the website body.
 pub async fn handle_auth_deep_link(url_str: &str) -> Result<AuthSession, String> {
     let parsed =
         url::Url::parse(url_str).map_err(|e| format!("Failed to parse deep link URL: {}", e))?;
@@ -457,13 +464,32 @@ pub async fn handle_auth_deep_link(url_str: &str) -> Result<AuthSession, String>
         flow.code_verifier
     };
 
-    let code = params
-        .get("code")
-        .ok_or("Missing PKCE code in callback URL")?
-        .clone();
+    // 2. Pick the path: PKCE (preferred) or legacy implicit (fallback).
+    if let Some(code) = params.get("code") {
+        info!("Auth callback: PKCE path (exchanging code)");
+        return exchange_code_for_session(code.clone(), verifier).await;
+    }
 
-    // 2. Exchange the code for tokens. The verifier proves to the website
-    //    that we are the same client that initiated the flow.
+    if let (Some(access_token), Some(refresh_token)) =
+        (params.get("access_token"), params.get("refresh_token"))
+    {
+        warn!(
+            "Auth callback: legacy implicit path (tokens in URL). \
+             This path is supported for backward compatibility but new \
+             flows should use PKCE."
+        );
+        return persist_implicit_session(access_token.clone(), refresh_token.clone()).await;
+    }
+
+    Err("Auth callback URL missing both `code` and `access_token`/`refresh_token`".into())
+}
+
+/// PKCE path — exchange the auth code for tokens via the website, then
+/// verify the JWT signature before persisting.
+async fn exchange_code_for_session(
+    code: String,
+    verifier: String,
+) -> Result<AuthSession, String> {
     let client = reqwest::Client::builder()
         .timeout(EXCHANGE_TIMEOUT)
         .build()
@@ -491,9 +517,6 @@ pub async fn handle_auth_deep_link(url_str: &str) -> Result<AuthSession, String>
         .await
         .map_err(|e| format!("Failed to parse exchange response: {}", e))?;
 
-    // 3. Cryptographically verify the access token before trusting any
-    //    field of the response. `claims.sub` is the authoritative user id;
-    //    cross-check the body's `user_id` against it as defence-in-depth.
     let claims = validate_access_token(&exchange.access_token).await?;
     if claims.sub != exchange.user_id {
         warn!(
@@ -503,9 +526,6 @@ pub async fn handle_auth_deep_link(url_str: &str) -> Result<AuthSession, String>
         return Err("Exchange response user_id mismatch".into());
     }
 
-    // Use the JWT's `exp` as the lower bound for session expiry. The body
-    // can advertise `expires_at` for convenience but we always trust the
-    // signed value when it disagrees.
     let expires_at = std::cmp::min(claims.exp, exchange.expires_at);
 
     let session = AuthSession {
@@ -517,6 +537,29 @@ pub async fn handle_auth_deep_link(url_str: &str) -> Result<AuthSession, String>
 
     save_auth_session(&session)?;
     info!("Auth session saved via PKCE code exchange");
+
+    Ok(session)
+}
+
+/// Legacy implicit path — tokens already came through the deep link.
+/// We still cryptographically verify the access token before persisting,
+/// so this path is no weaker than PKCE for tampering detection — it just
+/// loses the privacy benefit of keeping tokens out of the URL.
+async fn persist_implicit_session(
+    access_token: String,
+    refresh_token: String,
+) -> Result<AuthSession, String> {
+    let claims = validate_access_token(&access_token).await?;
+
+    let session = AuthSession {
+        access_token,
+        refresh_token,
+        expires_at: claims.exp,
+        user_id: claims.sub,
+    };
+
+    save_auth_session(&session)?;
+    info!("Auth session saved via implicit deep-link callback");
 
     Ok(session)
 }
@@ -737,10 +780,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_handle_deep_link_rejects_missing_code() {
-        // State accepted (we plant one), but `code` absent → must be
-        // rejected before any HTTP call.
-        let state = "test-pkce-missing-code";
+    async fn test_handle_deep_link_rejects_missing_payload() {
+        // State accepted (we plant one), but neither `code` nor
+        // `access_token` present → must be rejected before any HTTP call.
+        let state = "test-missing-payload";
         {
             let mut map = auth_state_lock().unwrap();
             map.insert(
@@ -754,10 +797,11 @@ mod tests {
         let url = format!("volt://auth/callback?state={}", state);
         let err = handle_auth_deep_link(&url)
             .await
-            .expect_err("missing code should be rejected");
+            .expect_err("missing payload should be rejected");
+        let lower = err.to_lowercase();
         assert!(
-            err.to_lowercase().contains("code"),
-            "expected code error, got: {}",
+            lower.contains("code") || lower.contains("access_token"),
+            "expected payload error, got: {}",
             err
         );
     }
