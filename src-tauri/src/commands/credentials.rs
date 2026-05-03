@@ -7,7 +7,8 @@
  * - Linux   : D-Bus Secret Service (GNOME Keyring / KWallet)
  */
 use serde::{Deserialize, Serialize};
-use tracing::{debug, info};
+use std::time::Duration;
+use tracing::{debug, info, warn};
 
 use super::keyring_store;
 
@@ -104,6 +105,59 @@ pub fn delete_credential(service: String) -> Result<(), String> {
     keyring_store::remove(&meta_account(&service))?;
     info!("Credential deleted for service: {}", service);
     Ok(())
+}
+
+/// Test that an API token is valid by making a single read-only request to
+/// the upstream service. The token never leaves the Rust process — moving
+/// this off the renderer prevents XSS in the settings UI from exfiltrating
+/// the bare token via window.fetch.
+#[tauri::command]
+pub async fn test_credential(service: String, token: String) -> Result<bool, String> {
+    debug!("Testing credential for service: {}", service);
+    validate_service(&service)?;
+
+    if token.trim().is_empty() {
+        return Err("Token cannot be empty".to_string());
+    }
+
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(10))
+        .build()
+        .map_err(|e| format!("Failed to build HTTP client: {}", e))?;
+
+    let request = match service.as_str() {
+        "github" => client
+            .get("https://api.github.com/user")
+            .header("Authorization", format!("Bearer {}", token.trim()))
+            .header("Accept", "application/vnd.github.v3+json")
+            .header("User-Agent", "Volt"),
+        "notion" => client
+            .get("https://api.notion.com/v1/users/me")
+            .header("Authorization", format!("Bearer {}", token.trim()))
+            .header("Notion-Version", "2022-06-28"),
+        // validate_service already rejects everything else, but keep this
+        // arm to make the match exhaustive without an `_` that could
+        // silently accept new services.
+        other => return Err(format!("Unsupported service for test: {}", other)),
+    };
+
+    match request.send().await {
+        Ok(resp) => {
+            let ok = resp.status().is_success();
+            if !ok {
+                warn!(
+                    "Credential test for {} failed with status {}",
+                    service,
+                    resp.status()
+                );
+            }
+            Ok(ok)
+        }
+        Err(e) => {
+            warn!("Credential test for {} errored: {}", service, e);
+            Ok(false)
+        }
+    }
 }
 
 /// Return credential metadata (saved_at, enabled) without exposing the token.

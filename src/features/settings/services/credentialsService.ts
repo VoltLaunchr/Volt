@@ -85,37 +85,14 @@ class CredentialsService {
   }
 
   /**
-   * Test token validity
+   * Test token validity. The token is sent over IPC to the Rust backend,
+   * which makes the upstream API call — the renderer no longer holds or
+   * transmits bare tokens via window.fetch, so XSS in the settings UI
+   * cannot exfiltrate them through this code path.
    */
   async testToken(service: 'github' | 'notion', token: string): Promise<boolean> {
     try {
-      if (service === 'github') {
-        // Test GitHub API
-        const response = await globalThis.fetch('https://api.github.com/user', {
-          headers: {
-            Authorization: `token ${token}`,
-            'Accept': 'application/vnd.github.v3+json',
-            'User-Agent': 'Volt',
-          },
-        });
-        return response.status === 200;
-      }
-
-      if (service === 'notion') {
-        // Test Notion API
-        const response = await globalThis.fetch('https://api.notion.com/v1/search', {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'Notion-Version': '2024-02-15',
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ query: '', page_size: 1 }),
-        });
-        return response.status === 200;
-      }
-
-      return false;
+      return await invoke<boolean>('test_credential', { service, token });
     } catch (error) {
       logger.error(`Token test failed for ${service}:`, error);
       return false;

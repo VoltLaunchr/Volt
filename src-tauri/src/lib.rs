@@ -595,6 +595,7 @@ pub fn run() {
             has_credential,
             delete_credential,
             get_credential_info,
+            test_credential,
             // Auth commands (Supabase)
             auth_login,
             auth_start_login,
