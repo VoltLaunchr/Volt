@@ -12,6 +12,7 @@ use commands::clipboard::ClipboardManagerState;
 use commands::files::{FileHistoryState, FileIndexState, WatcherState};
 use commands::launcher::LaunchHistoryState;
 use commands::shell::ShellExecutionState;
+use commands::sync::SyncState;
 use commands::system_monitor::SystemMonitorState;
 use commands::*;
 use hotkey::HotkeyState;
@@ -380,6 +381,9 @@ pub fn run() {
             // Initialize quicklink state
             app.manage(QuicklinkState::new(data_dir.clone()));
 
+            // Initialize sync state
+            app.manage(SyncState::default());
+
             // Initialize plugin system
             let plugin_api = Arc::new(VoltPluginAPI::new(data_dir));
             let plugin_registry = PluginRegistry::new();
@@ -506,18 +510,32 @@ pub fn run() {
 
                         info!("Deep link received: {}", redacted_url);
                         if url_str.starts_with("volt://auth/callback") {
-                            match commands::auth::handle_auth_deep_link(url_str) {
-                                Ok(_session) => {
-                                    info!("Auth session saved from deep link");
-                                    if let Err(e) = emitter_handle.emit("auth:session-updated", ())
-                                    {
-                                        error!("Failed to emit auth:session-updated event: {}", e);
+                            // `handle_auth_deep_link` is async because it
+                            // hits the project JWKS endpoint to verify the
+                            // ES256 signature of the access token. The
+                            // listener closure is sync, so spawn the work
+                            // on Tauri's async runtime and emit the
+                            // session-updated event from there.
+                            let url_owned = url_str.clone();
+                            let emitter = emitter_handle.clone();
+                            tauri::async_runtime::spawn(async move {
+                                match commands::auth::handle_auth_deep_link(&url_owned).await {
+                                    Ok(_session) => {
+                                        info!("Auth session saved from deep link");
+                                        if let Err(e) =
+                                            emitter.emit("auth:session-updated", ())
+                                        {
+                                            error!(
+                                                "Failed to emit auth:session-updated event: {}",
+                                                e
+                                            );
+                                        }
+                                    }
+                                    Err(e) => {
+                                        error!("Failed to handle auth deep link: {}", e);
                                     }
                                 }
-                                Err(e) => {
-                                    error!("Failed to handle auth deep link: {}", e);
-                                }
-                            }
+                            });
                         } else if url_str.starts_with("volt://oauth-callback") {
                             match commands::oauth::handle_oauth_deep_link(url_str) {
                                 Ok(result) => {
@@ -688,6 +706,8 @@ pub fn run() {
             get_enabled_extensions_sources,
             get_extension_tamper_alert,
             acknowledge_extension_tamper_alert,
+            fetch_extension_downloads,
+            increment_extension_download,
             // Dev extensions commands
             get_dev_extensions,
             link_dev_extension,
@@ -723,6 +743,10 @@ pub fn run() {
             save_quicklink,
             delete_quicklink,
             open_quicklink,
+            // Sync commands (premium)
+            sync_push,
+            sync_pull,
+            get_sync_status,
             // Snippet commands
             get_snippets,
             create_snippet,

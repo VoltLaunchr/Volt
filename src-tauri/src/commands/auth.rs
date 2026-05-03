@@ -9,11 +9,12 @@
  *
  * Auth session is stored in the OS keyring under "supabase_auth".
  */
-use base64::Engine as _;
+use jsonwebtoken::jwk::JwkSet;
+use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode, decode_header};
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::sync::Mutex;
+use std::sync::{Mutex, RwLock};
 use std::time::{Duration, Instant};
 use tracing::{debug, error, info, warn};
 
@@ -32,6 +33,20 @@ const AUTH_STATE_TTL: Duration = Duration::from_secs(5 * 60);
 /// Maximum allowed `expires_in` from a refresh response (24h). Prevents the
 /// upstream from claiming an absurdly long-lived access token.
 const MAX_EXPIRES_IN_SECS: i64 = 86_400;
+
+/// JWKS cache: stores the parsed Supabase Auth JSON Web Key Set together
+/// with the time it was fetched. Refreshed every `JWKS_CACHE_TTL` or on
+/// demand when an unknown `kid` is encountered (which signals a key
+/// rotation upstream).
+static JWKS_CACHE: Lazy<RwLock<Option<(JwkSet, Instant)>>> = Lazy::new(|| RwLock::new(None));
+
+/// JWKS cache TTL — matches Supabase's edge cache window so we don't keep
+/// stale public keys after a rotation, while avoiding a fetch per token.
+const JWKS_CACHE_TTL: Duration = Duration::from_secs(600);
+
+/// Network timeout for `/auth/v1/.well-known/jwks.json` fetches. The endpoint
+/// is small (~200 bytes) so anything over a few seconds means trouble.
+const JWKS_FETCH_TIMEOUT: Duration = Duration::from_secs(10);
 
 fn auth_state_lock() -> Result<std::sync::MutexGuard<'static, HashMap<String, Instant>>, String> {
     Ok(AUTH_STATE.lock().unwrap_or_else(|e| e.into_inner()))
@@ -280,8 +295,23 @@ pub async fn auth_refresh_token() -> Result<AuthSession, String> {
         return Err("Refresh response user_id does not match stored session".into());
     }
 
-    // Cap expires_in to MAX_EXPIRES_IN_SECS (24h) to avoid trusting an
-    // upstream that hands us an absurd lifetime.
+    // Verify the freshly-issued access token's signature + claims against
+    // JWKS. Body-level user_id check above is belt-and-braces — this is
+    // the cryptographic binding.
+    let claims = validate_access_token(&refresh_resp.access_token).await?;
+    if claims.sub != session.user_id {
+        warn!(
+            "Refresh JWT sub mismatch: stored {}, JWT {}",
+            session.user_id, claims.sub
+        );
+        return Err("Refreshed JWT sub does not match stored session".into());
+    }
+
+    // Cap expires_in to MAX_EXPIRES_IN_SECS (24h) as a defense against an
+    // upstream handing us an absurd lifetime in the refresh body. The JWT's
+    // `exp` is preferred as the authoritative bound, but we still cap relative
+    // to `now` so that even a forged `exp` (impossible past signature check,
+    // but we layer regardless) cannot extend a session indefinitely.
     let capped_expires_in = refresh_resp.expires_in.clamp(0, MAX_EXPIRES_IN_SECS);
     if capped_expires_in != refresh_resp.expires_in {
         warn!(
@@ -289,13 +319,15 @@ pub async fn auth_refresh_token() -> Result<AuthSession, String> {
             refresh_resp.expires_in, capped_expires_in
         );
     }
-
     let now = chrono::Utc::now().timestamp();
+    let body_expires_at = now + capped_expires_in;
+    let expires_at = std::cmp::min(claims.exp, body_expires_at);
+
     let new_session = AuthSession {
         access_token: refresh_resp.access_token,
         refresh_token: refresh_resp.refresh_token,
-        expires_at: now + capped_expires_in,
-        user_id: refresh_resp.user.id,
+        expires_at,
+        user_id: claims.sub,
     };
 
     save_auth_session(&new_session)?;
@@ -322,10 +354,12 @@ pub async fn auth_logout() -> Result<(), String> {
 /// 2. The `state` query param MUST match a pending nonce stored by
 ///    `auth_start_login` (CSRF binding) — prevents drive-by deep links
 ///    from injecting a session into the victim's keyring.
-/// 3. The JWT claims (`exp`, `iss`, `sub`) must validate against the
-///    configured `SUPABASE_URL`. `user_id` and `expires_at` are taken from
-///    the verified claims, NEVER from the URL query params.
-pub fn handle_auth_deep_link(url_str: &str) -> Result<AuthSession, String> {
+/// 3. The JWT signature is verified against the project JWKS (ES256 by
+///    default since Supabase's 2025-10 asymmetric migration), and the
+///    `iss` / `aud` / `exp` claims are validated. `user_id` and
+///    `expires_at` are taken from the verified claims, NEVER from the URL
+///    query params.
+pub async fn handle_auth_deep_link(url_str: &str) -> Result<AuthSession, String> {
     let parsed =
         url::Url::parse(url_str).map_err(|e| format!("Failed to parse deep link URL: {}", e))?;
 
@@ -366,9 +400,10 @@ pub fn handle_auth_deep_link(url_str: &str) -> Result<AuthSession, String> {
         .ok_or("Missing refresh_token in callback URL")?
         .clone();
 
-    // 2. Validate JWT claims and pull authoritative user_id / expires_at
-    //    from them rather than trusting the URL query params.
-    let claims = validate_access_token_claims(&access_token)?;
+    // 2. Verify JWT signature against the project JWKS and validate
+    //    `iss`/`aud`/`exp`. Pull authoritative user_id / expires_at from
+    //    the cryptographically verified claims rather than the URL.
+    let claims = validate_access_token(&access_token).await?;
 
     let session = AuthSession {
         access_token,
@@ -384,84 +419,159 @@ pub fn handle_auth_deep_link(url_str: &str) -> Result<AuthSession, String> {
 }
 
 // ---------------------------------------------------------------------------
-// JWT claim validation
+// JWT signature + claim validation (ES256/RS256/EdDSA via JWKS)
 // ---------------------------------------------------------------------------
 
 /// Subset of Supabase JWT claims we validate.
 ///
-/// NOTE: We intentionally do NOT verify the JWT signature client-side.
-/// Supabase signs access tokens with HS256 using a project-level JWT secret
-/// that is NOT exposed to clients (no JWKS endpoint for symmetric keys).
-/// Without that secret, signature verification is impossible. We instead
-/// rely on the deep-link state binding (CSRF) plus claim validation
-/// (`exp`/`iss`/`sub`) to detect obvious tampering, and let the Supabase
-/// REST API reject any forged tokens on the next authenticated call.
+/// `iss` / `aud` / `exp` are checked by `jsonwebtoken::Validation` directly
+/// against the JSON, so they don't all need to live in this struct — only
+/// the fields we want to *use* once the token is verified.
 #[derive(Debug, Deserialize)]
-struct AccessTokenClaims {
-    /// Subject (user id).
-    sub: String,
+pub struct AccessTokenClaims {
+    /// Subject (user id) — pulled from the verified token after signature check.
+    pub sub: String,
     /// Expiration unix timestamp.
-    exp: i64,
-    /// Issuer — must equal `{SUPABASE_URL}/auth/v1`.
-    iss: String,
+    pub exp: i64,
+    /// Issuer — kept for diagnostics; the value is also independently asserted
+    /// by `Validation::set_issuer` during decode.
+    #[allow(dead_code)]
+    pub iss: String,
 }
 
-/// Decode the access token's claims (without signature verification — see
-/// `AccessTokenClaims` doc comment for why) and validate `exp`, `iss`, `sub`.
-fn validate_access_token_claims(access_token: &str) -> Result<AccessTokenClaims, String> {
-    let parts: Vec<&str> = access_token.split('.').collect();
-    if parts.len() != 3 {
-        return Err("Access token is not a valid JWT (expected 3 segments)".into());
+/// Fetch the Supabase project JWKS document. Performed once per cache miss.
+async fn fetch_jwks() -> Result<JwkSet, String> {
+    let base = SUPABASE_URL.trim_end_matches('/');
+    let url = format!("{}/auth/v1/.well-known/jwks.json", base);
+    let resp = reqwest::Client::builder()
+        .timeout(JWKS_FETCH_TIMEOUT)
+        .build()
+        .map_err(|e| format!("Failed to build JWKS HTTP client: {}", e))?
+        .get(&url)
+        .send()
+        .await
+        .map_err(|e| format!("JWKS fetch failed: {}", e))?;
+
+    if !resp.status().is_success() {
+        return Err(format!("JWKS endpoint returned {}", resp.status()));
     }
 
-    let payload_b64 = parts[1];
-    let decoded = base64::engine::general_purpose::URL_SAFE_NO_PAD
-        .decode(payload_b64)
-        .map_err(|e| format!("Failed to base64-decode JWT payload: {}", e))?;
+    resp.json::<JwkSet>()
+        .await
+        .map_err(|e| format!("Failed to parse JWKS response: {}", e))
+}
 
-    let claims: AccessTokenClaims = serde_json::from_slice(&decoded)
-        .map_err(|e| format!("Failed to parse JWT claims: {}", e))?;
-
-    let now = chrono::Utc::now().timestamp();
-    if claims.exp <= now {
-        return Err("Access token is expired".into());
+/// Read the JWKS through the cache. With `force_refresh = true` the cached
+/// entry is bypassed — used when an unknown `kid` is encountered, which
+/// indicates the upstream rotated keys.
+async fn get_jwks(force_refresh: bool) -> Result<JwkSet, String> {
+    if !force_refresh
+        && let Ok(guard) = JWKS_CACHE.read()
+        && let Some((jwks, fetched_at)) = guard.as_ref()
+        && fetched_at.elapsed() < JWKS_CACHE_TTL
+    {
+        return Ok(jwks.clone());
     }
 
-    if claims.sub.trim().is_empty() {
-        return Err("Access token has empty subject".into());
+    let jwks = fetch_jwks().await?;
+    if let Ok(mut guard) = JWKS_CACHE.write() {
+        *guard = Some((jwks.clone(), Instant::now()));
     }
+    Ok(jwks)
+}
 
-    let expected_iss = format!("{}/auth/v1", SUPABASE_URL.trim_end_matches('/'));
-    if claims.iss != expected_iss {
+/// Map a JWK's `alg` advertisement to a `jsonwebtoken::Algorithm`.
+/// We only accept algorithms Supabase actually uses for asymmetric signing
+/// (ES256 since the 2025-10 default migration; RS256 / EdDSA for projects
+/// that opted into other curves).
+fn jwk_to_algorithm(jwk: &jsonwebtoken::jwk::Jwk) -> Result<Algorithm, String> {
+    use jsonwebtoken::jwk::KeyAlgorithm;
+    match jwk.common.key_algorithm {
+        Some(KeyAlgorithm::ES256) => Ok(Algorithm::ES256),
+        Some(KeyAlgorithm::RS256) => Ok(Algorithm::RS256),
+        Some(KeyAlgorithm::EdDSA) => Ok(Algorithm::EdDSA),
+        Some(other) => Err(format!("Unsupported JWT algorithm in JWKS: {:?}", other)),
+        None => Err("JWK is missing the `alg` field".into()),
+    }
+}
+
+/// Verify a Supabase access token end-to-end:
+/// signature against the project JWKS, plus `iss` / `aud` / `exp` claim
+/// checks. Returns the verified claims so the caller can use `sub` and
+/// `exp` as authoritative values.
+///
+/// Algorithm-confusion defense: the JWT header's `alg` MUST match the
+/// algorithm advertised by the JWK matched via `kid`. This rejects tokens
+/// that try to swap an HS256 header onto a key that was issued for ES256.
+pub async fn validate_access_token(access_token: &str) -> Result<AccessTokenClaims, String> {
+    let header = decode_header(access_token)
+        .map_err(|e| format!("JWT header parse failed: {}", e))?;
+
+    let kid = header
+        .kid
+        .clone()
+        .ok_or_else(|| "JWT is missing the `kid` header".to_string())?;
+
+    // Try cache, then refresh once on unknown kid (key rotation case).
+    let mut jwks = get_jwks(false).await?;
+    if jwks.find(&kid).is_none() {
+        warn!("JWT kid '{}' not in cached JWKS; forcing refresh", kid);
+        jwks = get_jwks(true).await?;
+    }
+    let jwk = jwks
+        .find(&kid)
+        .ok_or_else(|| format!("Unknown JWT kid '{}' even after JWKS refresh", kid))?;
+
+    let alg = jwk_to_algorithm(jwk)?;
+    if header.alg != alg {
         warn!(
-            "Auth token rejected: issuer mismatch (expected {}, got {})",
-            expected_iss, claims.iss
+            "JWT alg mismatch rejected: header={:?} JWK={:?}",
+            header.alg, alg
         );
-        return Err("Access token issuer does not match configured Supabase URL".into());
+        return Err(format!(
+            "JWT alg mismatch: header advertises {:?} but JWK is {:?}",
+            header.alg, alg
+        ));
     }
 
-    Ok(claims)
+    let key = DecodingKey::from_jwk(jwk)
+        .map_err(|e| format!("Failed to load decoding key from JWK: {}", e))?;
+
+    let mut validation = Validation::new(alg);
+    let expected_iss = format!("{}/auth/v1", SUPABASE_URL.trim_end_matches('/'));
+    validation.set_issuer(&[&expected_iss]);
+    validation.set_audience(&["authenticated"]);
+    validation.validate_exp = true;
+
+    let data = decode::<AccessTokenClaims>(access_token, &key, &validation)
+        .map_err(|e| format!("JWT signature/claims verification failed: {}", e))?;
+
+    if data.claims.sub.trim().is_empty() {
+        return Err("Access token has empty `sub`".into());
+    }
+
+    Ok(data.claims)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_parse_auth_deep_link_missing_state_rejected() {
+    #[tokio::test]
+    async fn test_parse_auth_deep_link_missing_state_rejected() {
         // Without `state`, the callback must be rejected even if other
         // tokens look valid — this is the CSRF protection check.
         let url = "volt://auth/callback?access_token=abc&refresh_token=def&expires_at=1700000000&user_id=uid123";
-        let result = handle_auth_deep_link(url);
+        let result = handle_auth_deep_link(url).await;
         assert!(result.is_err());
         assert!(result.unwrap_err().to_lowercase().contains("state"));
     }
 
-    #[test]
-    fn test_parse_auth_deep_link_unknown_state_rejected() {
+    #[tokio::test]
+    async fn test_parse_auth_deep_link_unknown_state_rejected() {
         // A state that was never issued by `auth_start_login` must be rejected.
         let url = "volt://auth/callback?state=not-a-real-state&access_token=abc&refresh_token=def";
-        let result = handle_auth_deep_link(url);
+        let result = handle_auth_deep_link(url).await;
         assert!(result.is_err());
         assert!(
             result
@@ -471,29 +581,34 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_parse_wrong_path() {
+    #[tokio::test]
+    async fn test_parse_wrong_path() {
         let url = "volt://other/path?access_token=abc";
-        let result = handle_auth_deep_link(url);
+        let result = handle_auth_deep_link(url).await;
         assert!(result.is_err());
     }
 
-    #[test]
-    fn test_validate_jwt_claims_rejects_non_jwt() {
-        let result = validate_access_token_claims("not-a-jwt");
+    #[tokio::test]
+    async fn test_validate_access_token_rejects_non_jwt() {
+        // A bare string is not a JWT — header parse fails before any
+        // network round-trip, so this test stays offline-safe.
+        let result = validate_access_token("not-a-jwt").await;
         assert!(result.is_err());
     }
 
-    #[test]
-    fn test_validate_jwt_claims_rejects_expired() {
-        // Header.payload.signature with exp=1 (epoch second 1)
-        // Payload: {"sub":"u","exp":1,"iss":"https://example.com/auth/v1"}
-        let payload = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(
-            br#"{"sub":"u","exp":1,"iss":"https://example.com/auth/v1"}"#,
-        );
-        let token = format!("aaa.{}.bbb", payload);
-        let result = validate_access_token_claims(&token);
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_lowercase().contains("expired"));
+    #[tokio::test]
+    async fn test_validate_access_token_rejects_jwt_without_kid() {
+        // Header `{"alg":"ES256","typ":"JWT"}` (no kid) → must be rejected
+        // before any JWKS fetch. Verifies the kid check is evaluated first.
+        use base64::Engine as _;
+        let header = base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .encode(br#"{"alg":"ES256","typ":"JWT"}"#);
+        let payload = base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .encode(br#"{"sub":"u","exp":99999999999,"iss":"x","aud":"authenticated"}"#);
+        let token = format!("{}.{}.sig", header, payload);
+        let err = validate_access_token(&token)
+            .await
+            .expect_err("token without kid should be rejected");
+        assert!(err.to_lowercase().contains("kid"), "got: {}", err);
     }
 }
