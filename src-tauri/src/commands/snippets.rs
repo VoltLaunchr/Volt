@@ -207,11 +207,33 @@ pub async fn expand_snippet(
     Ok(snippet.map(|s| resolve_variables(&s.content, clipboard.as_deref())))
 }
 
-/// Import snippets from JSON string
+/// Import snippets from JSON string.
+///
+/// Caps the input JSON size and the number of imported snippets to prevent
+/// unbounded memory blowup from a malicious or accidentally huge file.
 #[tauri::command]
 pub async fn import_snippets(state: State<'_, SnippetState>, json: String) -> VoltResult<usize> {
+    const MAX_SNIPPETS_JSON_BYTES: usize = 5 * 1024 * 1024; // 5 MB
+    const MAX_SNIPPET_COUNT: usize = 10_000;
+
+    if json.len() > MAX_SNIPPETS_JSON_BYTES {
+        return Err(VoltError::InvalidConfig(format!(
+            "snippets JSON too large: {} bytes (max {})",
+            json.len(),
+            MAX_SNIPPETS_JSON_BYTES
+        )));
+    }
+
     let imported: Vec<Snippet> =
         serde_json::from_str(&json).map_err(|e| VoltError::Unknown(e.to_string()))?;
+
+    if imported.len() > MAX_SNIPPET_COUNT {
+        return Err(VoltError::InvalidConfig(format!(
+            "too many snippets in import: {} (max {})",
+            imported.len(),
+            MAX_SNIPPET_COUNT
+        )));
+    }
 
     let count = imported.len();
     {
