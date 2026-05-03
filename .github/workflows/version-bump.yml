@@ -76,7 +76,11 @@ jobs:
           "
 
       - name: Refresh bun.lock
-        run: bun install --frozen-lockfile=false
+        # Note: we deliberately omit --frozen-lockfile so bun is allowed to
+        # update the lockfile after the version bump in package.json. Recent
+        # bun versions reject the `--frozen-lockfile=false` syntax (the flag
+        # is now a boolean toggle), so we just call `bun install` plain.
+        run: bun install
 
       - name: Propagate version to all manifests
         run: bun run sync-version
