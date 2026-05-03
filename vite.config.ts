@@ -20,39 +20,53 @@ export default defineConfig(async () => ({
     chunkSizeWarningLimit: 1000, // 1 MB
     rollupOptions: {
       output: {
-        // Manual chunks for better code splitting
+        // Manual chunks for better code splitting.
+        // IMPORTANT: anchor matches to /node_modules/<pkg>/ to avoid substring
+        // collisions (e.g. 'react' would otherwise match 'react-snowfall',
+        // 'react-i18next', 'unreact-foo', etc.).
         manualChunks: (id) => {
+          // Normalize Windows backslashes so '/node_modules/<pkg>/' matches.
+          const nid = id.replace(/\\/g, '/');
+
           // Vendor libraries in separate chunks
-          if (id.includes('node_modules')) {
-            // React ecosystem + deps that cause circular chunk imports at init
+          if (nid.includes('/node_modules/')) {
+            // React ecosystem + deps that cause circular chunk imports at init.
+            // Each match is anchored to the package directory boundary.
             if (
-              id.includes('react') ||
-              id.includes('react-dom') ||
-              id.includes('scheduler') ||
-              id.includes('i18next') ||
-              id.includes('zustand') ||
-              id.includes('use-sync-external-store')
+              nid.includes('/node_modules/react/') ||
+              nid.includes('/node_modules/react-dom/') ||
+              nid.includes('/node_modules/scheduler/') ||
+              nid.includes('/node_modules/i18next/') ||
+              nid.includes('/node_modules/react-i18next/') ||
+              nid.includes('/node_modules/zustand/') ||
+              nid.includes('/node_modules/use-sync-external-store/')
             ) {
               return 'vendor-react';
             }
-            // Tauri APIs
-            if (id.includes('@tauri-apps')) {
+            // Tauri APIs (scoped @tauri-apps/*)
+            if (nid.includes('/node_modules/@tauri-apps/')) {
               return 'vendor-tauri';
             }
             // Heavy icon library - separate chunk
-            if (id.includes('lucide-react')) {
+            if (nid.includes('/node_modules/lucide-react/')) {
               return 'vendor-icons';
             }
-            // Emoji data - large static data
-            if (id.includes('emojibase')) {
+            // Emoji data - large static data (emojibase, emojibase-data)
+            if (
+              nid.includes('/node_modules/emojibase/') ||
+              nid.includes('/node_modules/emojibase-data/')
+            ) {
               return 'vendor-emoji';
             }
             // Date utilities
-            if (id.includes('date-fns')) {
+            if (
+              nid.includes('/node_modules/date-fns/') ||
+              nid.includes('/node_modules/date-fns-tz/')
+            ) {
               return 'vendor-date';
             }
             // Sucrase transpiler (for extensions)
-            if (id.includes('sucrase')) {
+            if (nid.includes('/node_modules/sucrase/')) {
               return 'vendor-sucrase';
             }
             // Other smaller vendor libs
