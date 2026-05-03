@@ -11,23 +11,50 @@ use tracing::{info, warn};
 /// Query the Windows Search Index for files matching a query.
 /// Uses PowerShell + OLE DB to query the SystemIndex catalog.
 /// Returns up to `limit` results.
-pub fn search_windows_index(query: &str, limit: usize) -> Result<Vec<FileInfo>, String> {
+///
+/// The blocking PowerShell process is executed on a dedicated thread via
+/// `tokio::task::spawn_blocking` so the async executor is never stalled.
+pub async fn search_windows_index(query: &str, limit: usize) -> Result<Vec<FileInfo>, String> {
+    const MAX_QUERY_LEN: usize = 256;
+
     if query.trim().is_empty() {
         return Ok(Vec::new());
     }
+    // Reject pathologically long queries and any control characters: both
+    // protect the embedded PowerShell script from injection attempts and
+    // resource exhaustion.
+    if query.len() > MAX_QUERY_LEN || query.chars().any(|c| c.is_control()) {
+        return Ok(Vec::new());
+    }
 
-    // Escape single quotes in query
-    let safe_query = query.replace('\'', "''");
+    let query_owned = query.to_string();
+    tokio::task::spawn_blocking(move || search_windows_index_blocking(&query_owned, limit))
+        .await
+        .unwrap_or_else(|e| Err(format!("spawn_blocking panicked: {e}")))
+}
 
-    // Build a PowerShell script that queries Windows Search via OLE DB
+/// Inner synchronous implementation — runs inside `spawn_blocking`.
+fn search_windows_index_blocking(query: &str, limit: usize) -> Result<Vec<FileInfo>, String> {
+    // SQL escape: single quotes doubled (SQL convention); double quotes doubled
+    // so the WQL CONTAINS phrase parser sees them as escaped delimiters rather
+    // than closing the phrase.
+    let safe_query = query.replace('\'', "''").replace('"', "\"\"");
+
+    // The query is passed via an environment variable, NEVER interpolated into
+    // the PowerShell source. PS variable expansion does not recursively parse
+    // substituted values, so an attacker cannot smuggle `$(...)`, backticks,
+    // or `;` separators through the query parameter to achieve command
+    // injection inside the inlined script.
     let ps_script = format!(
         r#"
+$q = $env:VOLT_QUERY
+if ([string]::IsNullOrEmpty($q)) {{ return }}
 $conn = New-Object System.Data.OleDb.OleDbConnection
 $conn.ConnectionString = "Provider=Search.CollatorDSO;Extended Properties='Application=Windows';"
 try {{
     $conn.Open()
     $cmd = $conn.CreateCommand()
-    $cmd.CommandText = "SELECT TOP {limit} System.ItemPathDisplay, System.ItemNameDisplay, System.Size, System.DateModified, System.ItemType FROM SystemIndex WHERE SCOPE='file:' AND CONTAINS(*,'\""{safe_query}*""') ORDER BY System.Search.Rank DESC"
+    $cmd.CommandText = "SELECT TOP {limit} System.ItemPathDisplay, System.ItemNameDisplay, System.Size, System.DateModified, System.ItemType FROM SystemIndex WHERE SCOPE='file:' AND CONTAINS(System.ItemNameDisplay,'""$($q)*""') ORDER BY System.Search.Rank DESC"
     $reader = $cmd.ExecuteReader()
     while ($reader.Read()) {{
         $path = $reader["System.ItemPathDisplay"]
@@ -52,6 +79,7 @@ try {{
 
     let output = Command::new("powershell")
         .args(["-NoProfile", "-NonInteractive", "-Command", &ps_script])
+        .env("VOLT_QUERY", &safe_query)
         .output()
         .map_err(|e| format!("Failed to run PowerShell: {}", e))?;
 
@@ -99,6 +127,51 @@ try {{
             category,
         });
     }
+
+    // Post-filter 1: only keep results whose filename actually contains the query.
+    // CONTAINS() in WQL can still match via content indexing.
+    let query_lower = query.to_lowercase();
+    results.retain(|r| r.name.to_lowercase().contains(&query_lower));
+
+    // Post-filter 2: exclude results from noisy directories.
+    // Mirrors the component-based exclusions used by the Volt scanner.
+    let excluded_components: &[&str] = &[
+        "node_modules",
+        ".git",
+        ".svn",
+        "__pycache__",
+        ".venv",
+        "venv",
+        "target",
+        "dist",
+        "build",
+        ".next",
+        ".nuxt",
+        "tmp",
+        "temp",
+        "Temp",
+        "Cache",
+        "cache",
+        "Caches",
+        "caches",
+        ".cache",
+        "$Recycle.Bin",
+        "System Volume Information",
+        "AppData",
+        "Windows",
+        "Library",
+    ];
+    results.retain(|r| {
+        !std::path::Path::new(&r.path).components().any(|c| {
+            c.as_os_str()
+                .to_str()
+                .is_some_and(|s| excluded_components.contains(&s))
+        })
+    });
+
+    // Post-filter 3: drop temp/junk file extensions (*.tmp, *.temp).
+    let excluded_exts: &[&str] = &["tmp", "temp", "bak", "log"];
+    results.retain(|r| !excluded_exts.contains(&r.extension.as_str()));
 
     if !results.is_empty() {
         info!(

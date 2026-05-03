@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-increment-extension-download"
+description = "Enables the increment_extension_download command without any pre-configured scope."
+commands.allow = ["increment_extension_download"]
+
+[[permission]]
+identifier = "deny-increment-extension-download"
+description = "Denies the increment_extension_download command without any pre-configured scope."
+commands.deny = ["increment_extension_download"]

@@ -7,6 +7,16 @@ use tracing::info;
 /// Enable autostart on system boot
 #[tauri::command]
 pub async fn enable_autostart(app_handle: AppHandle) -> VoltResult<()> {
+    // The dev binary requires the Vite dev server (localhost:1420) which is not
+    // running at boot, so registering it for autostart causes ERR_CONNECTION_REFUSED
+    // on every system start. Block this in dev builds; use a release build instead.
+    if cfg!(debug_assertions) {
+        return Err(VoltError::InvalidConfig(
+            "Autostart is not supported in development mode. Build a release binary first."
+                .to_string(),
+        ));
+    }
+
     app_handle
         .autolaunch()
         .enable()
@@ -31,6 +41,10 @@ pub async fn disable_autostart(app_handle: AppHandle) -> VoltResult<()> {
 /// Check if autostart is currently enabled
 #[tauri::command]
 pub async fn is_autostart_enabled(app_handle: AppHandle) -> VoltResult<bool> {
+    if cfg!(debug_assertions) {
+        return Ok(false);
+    }
+
     app_handle
         .autolaunch()
         .is_enabled()

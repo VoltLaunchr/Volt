@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-link-dev-extension"
+description = "Enables the link_dev_extension command without any pre-configured scope."
+commands.allow = ["link_dev_extension"]
+
+[[permission]]
+identifier = "deny-link-dev-extension"
+description = "Denies the link_dev_extension command without any pre-configured scope."
+commands.deny = ["link_dev_extension"]

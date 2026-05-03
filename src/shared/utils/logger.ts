@@ -41,7 +41,7 @@ const forwardToBackend = (level: LogLevel, message: string, args: unknown[]): vo
       } catch {
         serializedArgs = '[]';
       }
-      await invoke('log_from_frontend', {
+      await invoke<void>('log_from_frontend', {
         level,
         message,
         args: serializedArgs,

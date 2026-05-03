@@ -7,7 +7,12 @@ use once_cell::sync::Lazy;
  */
 use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
-use tracing::{debug, info, warn};
+use tracing::{debug, info, trace, warn};
+
+/// Hard cap on concurrent pending OAuth requests. Mirrors auth.rs's
+/// `AUTH_STATE_MAX_ENTRIES` — anything beyond a small handful in-flight is
+/// either a bug or a memory-DoS via repeated `get_*_oauth_url` calls.
+const MAX_PENDING_OAUTH_REQUESTS: usize = 32;
 
 static OAUTH_STATE: Lazy<Mutex<OAuthState>> = Lazy::new(|| Mutex::new(OAuthState::new()));
 
@@ -48,6 +53,62 @@ impl OAuthState {
             }
         });
     }
+
+    /// Enforce `MAX_PENDING_OAUTH_REQUESTS` by evicting the oldest entry
+    /// first. Should be called after `prune_stale` so we only trim if recent
+    /// (non-expired) flows exceed the cap. Mirrors the same pattern used in
+    /// auth.rs for pending PKCE flows.
+    fn cap_entries(&mut self) {
+        if self.pending_requests.len() < MAX_PENDING_OAUTH_REQUESTS {
+            return;
+        }
+        // Find the oldest by parsed initiated_at and remove it.
+        let oldest_key = self
+            .pending_requests
+            .iter()
+            .filter_map(|(k, v)| {
+                chrono::DateTime::parse_from_rfc3339(&v.initiated_at)
+                    .ok()
+                    .map(|t| (k.clone(), t))
+            })
+            .min_by_key(|(_, t)| *t)
+            .map(|(k, _)| k);
+        if let Some(k) = oldest_key {
+            warn!("OAuth pending map at cap; evicting oldest entry");
+            self.pending_requests.remove(&k);
+        }
+    }
+}
+
+/// Validate a freshly-received OAuth access token before it's persisted.
+/// Catches obviously-bogus payloads (truncated, oversized, wrong scheme)
+/// before they hit the keyring. Format prefixes mirror what the upstream
+/// providers actually issue today — unknown but shape-compatible variants
+/// are accepted.
+fn validate_token_format(service: &str, token: &str) -> Result<(), String> {
+    let len = token.len();
+    if len < 20 {
+        return Err(format!("token too short: {}", len));
+    }
+    if len > 512 {
+        return Err(format!("token too long: {}", len));
+    }
+    match service {
+        "github"
+            if !token.starts_with("ghp_")
+                && !token.starts_with("gho_")
+                && !token.starts_with("ghu_")
+                && !token.starts_with("ghs_")
+                && !token.starts_with("github_pat_") =>
+        {
+            return Err("github token has unexpected prefix".into());
+        }
+        "notion" if !token.starts_with("secret_") && !token.starts_with("ntn_") => {
+            return Err("notion token has unexpected prefix".into());
+        }
+        _ => {}
+    }
+    Ok(())
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -71,8 +132,11 @@ pub fn get_github_oauth_url() -> Result<String, String> {
 
     let mut state = lock_state()?;
 
-    // Prune stale entries (older than 15 minutes) before inserting
+    // Prune stale entries (older than 15 minutes) before inserting, then
+    // enforce the in-flight cap so a malicious caller can't exhaust memory
+    // by repeatedly invoking this command without ever completing the flow.
     state.prune_stale();
+    state.cap_entries();
 
     state.pending_requests.insert(
         request_id.clone(),
@@ -82,10 +146,18 @@ pub fn get_github_oauth_url() -> Result<String, String> {
         },
     );
 
-    // Return OAuth endpoint URL with state parameter - frontend will open it
-    info!("GitHub OAuth URL requested, request_id: {}", request_id);
+    // Open the website's `/start` route in the user's browser. That route
+    // mints its own CSRF nonce, sets an HttpOnly cookie pairing it with our
+    // `desktop_state`, and 302-redirects to GitHub's authorize endpoint.
+    // After GitHub redirects back, the site forwards the access token to
+    // `volt://oauth-callback?token=...&state={request_id}`. We log only an
+    // 8-char hint at info; the full request_id is demoted to trace so even
+    // a verbose debug build doesn't leave a usable CSRF nonce in the log
+    // file (M10).
+    trace!("GitHub OAuth URL issued, request_id: {}", request_id);
+    info!("GitHub OAuth URL requested, state_hint: {:.8}", request_id);
     Ok(format!(
-        "https://voltlaunchr.com/api/oauth/github?state={}",
+        "https://voltlaunchr.com/api/oauth/github/start?desktop_state={}",
         request_id
     ))
 }
@@ -103,8 +175,11 @@ pub fn get_notion_oauth_url() -> Result<String, String> {
 
     let mut state = lock_state()?;
 
-    // Prune stale entries (older than 15 minutes) before inserting
+    // Prune stale entries (older than 15 minutes) before inserting, then
+    // enforce the in-flight cap so a malicious caller can't exhaust memory
+    // by repeatedly invoking this command without ever completing the flow.
     state.prune_stale();
+    state.cap_entries();
 
     state.pending_requests.insert(
         request_id.clone(),
@@ -114,10 +189,13 @@ pub fn get_notion_oauth_url() -> Result<String, String> {
         },
     );
 
-    // Return OAuth endpoint URL with state parameter - frontend will open it
-    info!("Notion OAuth URL requested, request_id: {}", request_id);
+    // See `get_github_oauth_url` for why we open `/start` rather than the
+    // bare callback URL. The full request_id is at trace so a verbose log
+    // file never carries a usable CSRF nonce.
+    trace!("Notion OAuth URL issued, request_id: {}", request_id);
+    info!("Notion OAuth URL requested, state_hint: {:.8}", request_id);
     Ok(format!(
-        "https://voltlaunchr.com/api/oauth/notion?state={}",
+        "https://voltlaunchr.com/api/oauth/notion/start?desktop_state={}",
         request_id
     ))
 }
@@ -151,7 +229,9 @@ pub fn handle_oauth_callback(
         let mut oauth_state = lock_state()?;
 
         let pending_request = oauth_state.pending_requests.remove(&state).ok_or_else(|| {
-            warn!("OAuth callback with unknown state: {}", state);
+            // Avoid logging the raw state at warn — leaked log files
+            // shouldn't carry a usable CSRF nonce. Keep only a hint.
+            warn!("OAuth callback with unknown state (hint: {:.8})", state);
             "Invalid or expired OAuth state parameter".to_string()
         })?;
 
@@ -167,6 +247,15 @@ pub fn handle_oauth_callback(
             ));
         }
     }
+
+    // Token format sanity check before we hand it to the keyring. Catches
+    // truncated / oversized / wrong-scheme payloads that survived the
+    // upstream hop. Invalid tokens are surfaced to the renderer as an error
+    // rather than silently saved (M10).
+    validate_token_format(&service, &token).map_err(|e| {
+        warn!("OAuth token rejected for service {}: {}", service, e);
+        format!("Invalid OAuth token for {}: {}", service, e)
+    })?;
 
     // Save token via credentials command
     super::credentials::save_credential(service.clone(), token)?;
@@ -226,6 +315,15 @@ pub fn clear_oauth_pending(service: String) -> Result<(), String> {
 pub fn handle_oauth_deep_link(url_str: &str) -> Result<OAuthResult, String> {
     let parsed =
         url::Url::parse(url_str).map_err(|e| format!("Failed to parse OAuth deep link: {}", e))?;
+
+    // Reject any deep link that isn't actually targeted at our oauth callback
+    // host. Without this check, a `volt://something-else?token=...&service=...`
+    // URL would be silently accepted by the query-param parser below.
+    if parsed.host_str() != Some("oauth-callback") {
+        let redacted = url_str.split('?').next().unwrap_or(url_str);
+        warn!("Rejecting deep link with unexpected host: {}", redacted);
+        return Err("Unexpected deep-link host for OAuth callback".to_string());
+    }
 
     // Extract query parameters
     let params: std::collections::HashMap<String, String> =
@@ -291,12 +389,20 @@ mod tests {
     #[test]
     fn test_state_included_in_github_url() {
         let url = get_github_oauth_url().unwrap();
-        assert!(url.starts_with("https://voltlaunchr.com/api/oauth/github?state="));
+        assert!(
+            url.starts_with("https://voltlaunchr.com/api/oauth/github/start?desktop_state="),
+            "got: {}",
+            url
+        );
     }
 
     #[test]
     fn test_state_included_in_notion_url() {
         let url = get_notion_oauth_url().unwrap();
-        assert!(url.starts_with("https://voltlaunchr.com/api/oauth/notion?state="));
+        assert!(
+            url.starts_with("https://voltlaunchr.com/api/oauth/notion/start?desktop_state="),
+            "got: {}",
+            url
+        );
     }
 }

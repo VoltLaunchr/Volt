@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-get-frequent-apps"
+description = "Enables the get_frequent_apps command without any pre-configured scope."
+commands.allow = ["get_frequent_apps"]
+
+[[permission]]
+identifier = "deny-get-frequent-apps"
+description = "Denies the get_frequent_apps command without any pre-configured scope."
+commands.deny = ["get_frequent_apps"]

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-auth-get-profile"
+description = "Enables the auth_get_profile command without any pre-configured scope."
+commands.allow = ["auth_get_profile"]
+
+[[permission]]
+identifier = "deny-auth-get-profile"
+description = "Denies the auth_get_profile command without any pre-configured scope."
+commands.deny = ["auth_get_profile"]

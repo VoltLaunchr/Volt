@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-get-file-preview"
+description = "Enables the get_file_preview command without any pre-configured scope."
+commands.allow = ["get_file_preview"]
+
+[[permission]]
+identifier = "deny-get-file-preview"
+description = "Denies the get_file_preview command without any pre-configured scope."
+commands.deny = ["get_file_preview"]

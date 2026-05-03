@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-fetch-extension-downloads"
+description = "Enables the fetch_extension_downloads command without any pre-configured scope."
+commands.allow = ["fetch_extension_downloads"]
+
+[[permission]]
+identifier = "deny-fetch-extension-downloads"
+description = "Denies the fetch_extension_downloads command without any pre-configured scope."
+commands.deny = ["fetch_extension_downloads"]

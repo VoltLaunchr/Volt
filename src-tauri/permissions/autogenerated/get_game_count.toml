@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-get-game-count"
+description = "Enables the get_game_count command without any pre-configured scope."
+commands.allow = ["get_game_count"]
+
+[[permission]]
+identifier = "deny-get-game-count"
+description = "Denies the get_game_count command without any pre-configured scope."
+commands.deny = ["get_game_count"]

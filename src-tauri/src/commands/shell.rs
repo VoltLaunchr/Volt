@@ -12,12 +12,18 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Child;
 use tokio::task::{AbortHandle, JoinHandle};
 use tracing::{info, warn};
+use unicode_normalization::UnicodeNormalization;
 
 use crate::commands::settings::{ShellSettings, load_settings};
 use crate::commands::shell_history::{self, ShellHistoryState};
 
 /// Maximum output size per stream (stdout/stderr) in bytes.
 const MAX_OUTPUT_BYTES: usize = 50_000;
+
+/// Per-stream byte cap for the streaming command path. Mirrors `MAX_OUTPUT_BYTES`
+/// for the non-streaming path so a runaway producer can't flood the renderer
+/// via line-by-line IPC events.
+const STREAM_OUTPUT_CAP: usize = 50 * 1024;
 
 /// Default command timeout in milliseconds when no setting is available.
 const DEFAULT_TIMEOUT_MS: u64 = 30_000;
@@ -62,6 +68,30 @@ static BLOCKED_PATTERNS: Lazy<Vec<Regex>> = Lazy::new(|| {
         // Windows registry / event log wipe
         r"(?i)\breg\s+delete\s+hk",
         r"(?i)\bwevtutil\s+cl\b",
+        // PowerShell destructive cmdlets
+        r"(?i)\bstop-computer\b",
+        r"(?i)\brestart-computer\b",
+        r"(?i)\bformat-volume\b",
+        r"(?i)\bclear-disk\b",
+        r"(?i)\bdiskpart\b",
+        // Remove-Item -Recurse -Force on a drive root.
+        // NOTE: `\b` does not match between a space and `-` (both are non-word
+        // characters), so we anchor the switches with `\s-` instead.
+        r"(?i)\bremove-item\b.*\s-recurse\b.*\s-force\b.*[a-z]:\\",
+        // SysV-style runlevel switches: 0 = halt, 6 = reboot
+        r"(?i)\binit\s+[06]\b",
+        r"(?i)\btelinit\s+[06]\b",
+        // Unceremonious logoff
+        r"(?i)\blogoff\b",
+        // PowerShell -EncodedCommand bypass (covers powershell, pwsh, .exe variants;
+        // -enc / -encodedcommand / -e short form). The switch may appear as the
+        // first arg or buried later; `\s+(?:.*\s)?` permits both.
+        r"(?i)\b(?:powershell|pwsh)(?:\.exe)?\s+(?:.*\s)?-(?:enc|encodedcommand|e)\b",
+        // reg.exe variant — the existing `reg\s+delete` pattern misses `reg.exe`
+        // because `\b` does not appear between `g` and `.`
+        r"(?i)\breg(?:\.exe)?\s+delete\s+hk",
+        // find -delete: deletes files matching the find criteria
+        r"(?i)\bfind\b.*\s-delete\b",
     ]
     .iter()
     .map(|p| Regex::new(p).expect("valid regex"))
@@ -90,6 +120,21 @@ static REDACTORS: Lazy<Vec<(Regex, &'static str)>> = Lazy::new(|| {
             r"(?i)(\b[A-Z][A-Z0-9_]*_(?:TOKEN|KEY|SECRET|PASSWORD|PWD|APIKEY)\s*=)\S+",
             "${1}***",
         ),
+        // GitHub tokens: ghp_, gho_, ghu_, ghs_, ghr_ + 36+ alphanumerics
+        (r"\b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{36,}\b", "***"),
+        // AWS access key id (IAM user / root): AKIA + 16 alphanumerics
+        (r"\bAKIA[A-Z0-9]{16}\b", "AKIA***"),
+        // Stripe live/test secret keys
+        (r"\bsk_(?:live|test)_[A-Za-z0-9]{20,}\b", "sk_***"),
+        // Slack tokens: xoxa-, xoxb-, xoxp-, xoxr-, xoxs- + payload
+        (r"\bxox[abprs]-[A-Za-z0-9-]{10,}\b", "xox***"),
+        // JSON Web Tokens: 3 base64url segments separated by '.'
+        (
+            r"\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b",
+            "<jwt-redacted>",
+        ),
+        // curl basic auth: -u user:pass (note: \B before -u so it doesn't fire on "--u")
+        (r"\B-u\s+[^\s:]+:[^\s]+", "-u ***:***"),
     ]
     .iter()
     .map(|(p, r)| (Regex::new(p).expect("valid redactor"), *r))
@@ -119,10 +164,39 @@ fn truncate_for_log(s: &str, max_len: usize) -> String {
     format!("{}… [truncated]", &s[..cutoff])
 }
 
+/// Normalize a command string for blocklist matching:
+///
+/// - **NFKC** compatibility decomposition + canonical composition collapses
+///   homoglyphs and compatibility characters into their canonical ASCII form
+///   where one exists. (Cyrillic-r `\u{0440}` does NOT decompose to ASCII `r`,
+///   but many fullwidth/compatibility forms do.)
+/// - Lowercase to neutralise case games on top of the `(?i)` regex flag.
+/// - Strip surrounding quotes from each whitespace-separated token so a
+///   fully-quoted command like `"rm" -rf /` lines up with the unquoted regex
+///   (Rust's `\b` does not match between `"` and `r`).
+fn normalize_for_blocklist(cmd: &str) -> String {
+    cmd.nfkc()
+        .collect::<String>()
+        .to_lowercase()
+        .split_whitespace()
+        .map(|tok| tok.trim_matches(['"', '\''].as_ref()).to_string())
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 /// Check whether `command` matches any of the hard-blocked patterns.
+///
+/// Defense-in-depth: we test BOTH the raw trimmed command and a normalized
+/// (NFKC + lowercase + quote-stripped) variant. This stops bypasses such as
+/// `"rm" -rf /` and the various fullwidth/compatibility forms of common
+/// destructive verbs.
 pub fn is_command_blocked(command: &str) -> bool {
-    let normalized = command.trim();
-    BLOCKED_PATTERNS.iter().any(|re| re.is_match(normalized))
+    let raw = command.trim();
+    if BLOCKED_PATTERNS.iter().any(|re| re.is_match(raw)) {
+        return true;
+    }
+    let normalized = normalize_for_blocklist(raw);
+    BLOCKED_PATTERNS.iter().any(|re| re.is_match(&normalized))
 }
 
 /// Result of a shell command execution.
@@ -233,6 +307,45 @@ fn truncate_output(s: &str, max_bytes: usize) -> String {
     truncated
 }
 
+/// Validate and canonicalize an optional `working_dir` before it's handed to
+/// `tokio::process::Command::current_dir`.
+///
+/// Rejects:
+/// - UNC paths (`\\server\share`, `//server/share`) — these trigger SMB auth
+///   round-trips and can be used to leak NTLM hashes to attacker-controlled hosts.
+/// - Non-existent paths.
+/// - Paths that resolve to a non-directory.
+fn validate_working_dir(
+    working_dir: Option<&str>,
+) -> Result<Option<std::path::PathBuf>, VoltError> {
+    match working_dir {
+        None => Ok(None),
+        Some(d) => {
+            let trimmed = d.trim();
+            if trimmed.is_empty() {
+                return Ok(None);
+            }
+            if trimmed.starts_with("\\\\") || trimmed.starts_with("//") {
+                return Err(VoltError::PermissionDenied(
+                    "UNC working_dir not allowed".into(),
+                ));
+            }
+            // Generic error message — surfacing the raw OS error leaks
+            // path-existence info (e.g. "not found" vs "permission denied"
+            // vs "name too long") which is a minor enumeration oracle.
+            let canon = std::path::Path::new(trimmed)
+                .canonicalize()
+                .map_err(|_| VoltError::FileSystem("working_dir is invalid".into()))?;
+            if !canon.is_dir() {
+                return Err(VoltError::FileSystem(
+                    "working_dir is not a directory".into(),
+                ));
+            }
+            Ok(Some(canon))
+        }
+    }
+}
+
 /// Build a `tokio::process::Command` for the platform shell, optionally using
 /// the user-configured shell override from settings.
 fn build_shell_command(
@@ -329,6 +442,11 @@ pub async fn execute_shell_command(
         .clone()
         .or_else(|| shell_settings.working_dir.clone());
 
+    // Reject UNC paths and resolve symlinks BEFORE spawning. Falls back to
+    // the canonicalized form so the child uses the same path the validator saw.
+    let canon_working_dir =
+        validate_working_dir(working_dir.as_deref())?.map(|p| p.to_string_lossy().into_owned());
+
     info!(
         "Executing shell command: {} (timeout={}ms, id={})",
         truncate_for_log(&redact_command(&command), LOG_COMMAND_MAX_LEN),
@@ -339,7 +457,7 @@ pub async fn execute_shell_command(
     // Spawn the child first so spawn errors surface directly to the caller.
     let mut process = build_shell_command(
         &command,
-        working_dir.as_deref(),
+        canon_working_dir.as_deref(),
         shell_settings.default_shell.as_deref(),
     );
     process.stdout(Stdio::piped()).stderr(Stdio::piped());
@@ -572,6 +690,10 @@ pub async fn execute_shell_command_streaming(
         .unwrap_or(DEFAULT_TIMEOUT_MS);
     let effective_working_dir = working_dir.or_else(|| shell_settings.working_dir.clone());
 
+    // Reject UNC paths and resolve symlinks BEFORE spawning.
+    let canon_working_dir = validate_working_dir(effective_working_dir.as_deref())?
+        .map(|p| p.to_string_lossy().into_owned());
+
     info!(
         "Executing streaming shell command: {} (timeout={}ms, id={})",
         truncate_for_log(&redact_command(&command), LOG_COMMAND_MAX_LEN),
@@ -585,7 +707,7 @@ pub async fn execute_shell_command_streaming(
     // Spawn the child outside the task so spawn errors surface directly.
     let mut process = build_shell_command(
         &command,
-        effective_working_dir.as_deref(),
+        canon_working_dir.as_deref(),
         shell_settings.default_shell.as_deref(),
     );
     process.stdout(Stdio::piped()).stderr(Stdio::piped());
@@ -608,15 +730,32 @@ pub async fn execute_shell_command_streaming(
 
     // Reader tasks are created outside the driving task so we can register
     // their abort handles BEFORE the driving task starts.
+    //
+    // Per-stream byte cap mirrors the non-streaming path: a runaway producer
+    // (e.g. `>yes A`) would otherwise overwhelm the renderer because each
+    // line is forwarded as its own IPC event with no upstream throttle.
     let stdout_event = on_event_clone.clone();
     let kill_stdout = Arc::clone(&kill_flag);
     let stdout_task: JoinHandle<()> = tokio::spawn(async move {
         if let Some(stdout) = stdout {
             let mut reader = BufReader::new(stdout).lines();
+            let mut bytes_sent: usize = 0;
             while let Ok(Some(line)) = reader.next_line().await {
                 if kill_stdout.load(Ordering::Relaxed) {
                     break;
                 }
+                // +1 accounts for the newline that the `lines()` iterator stripped.
+                let next = bytes_sent.saturating_add(line.len() + 1);
+                if next > STREAM_OUTPUT_CAP {
+                    let _ = stdout_event.send(ShellOutputEvent::Stdout {
+                        line: format!("[output truncated at {} bytes]", STREAM_OUTPUT_CAP),
+                    });
+                    // Trip the kill flag so the driving task tears down the
+                    // child process and stops wasting CPU on a runaway producer.
+                    kill_stdout.store(true, Ordering::Relaxed);
+                    break;
+                }
+                bytes_sent = next;
                 let _ = stdout_event.send(ShellOutputEvent::Stdout { line });
             }
         }
@@ -627,10 +766,20 @@ pub async fn execute_shell_command_streaming(
     let stderr_task: JoinHandle<()> = tokio::spawn(async move {
         if let Some(stderr) = stderr {
             let mut reader = BufReader::new(stderr).lines();
+            let mut bytes_sent: usize = 0;
             while let Ok(Some(line)) = reader.next_line().await {
                 if kill_stderr.load(Ordering::Relaxed) {
                     break;
                 }
+                let next = bytes_sent.saturating_add(line.len() + 1);
+                if next > STREAM_OUTPUT_CAP {
+                    let _ = stderr_event.send(ShellOutputEvent::Stderr {
+                        line: format!("[output truncated at {} bytes]", STREAM_OUTPUT_CAP),
+                    });
+                    kill_stderr.store(true, Ordering::Relaxed);
+                    break;
+                }
+                bytes_sent = next;
                 let _ = stderr_event.send(ShellOutputEvent::Stderr { line });
             }
         }
@@ -925,5 +1074,157 @@ mod tests {
         assert!(!state.consume_completion("id-0"));
         assert!(!state.consume_completion("id-4"));
         assert!(state.consume_completion(&format!("id-{}", COMPLETED_TOKENS_MAX + 4)));
+    }
+
+    // ---- H7: extended blocklist patterns ---------------------------------
+
+    #[test]
+    fn test_block_powershell_destructive_cmdlets() {
+        assert!(is_command_blocked("Stop-Computer"));
+        assert!(is_command_blocked("Stop-Computer -Force"));
+        assert!(is_command_blocked("Restart-Computer"));
+        assert!(is_command_blocked("Format-Volume -DriveLetter C"));
+        assert!(is_command_blocked("Clear-Disk -Number 0"));
+        assert!(is_command_blocked("diskpart /s script.txt"));
+        assert!(is_command_blocked("Remove-Item -Recurse -Force C:\\Users"));
+        assert!(is_command_blocked("logoff"));
+    }
+
+    #[test]
+    fn test_block_init_telinit_runlevels() {
+        assert!(is_command_blocked("init 0"));
+        assert!(is_command_blocked("init 6"));
+        assert!(is_command_blocked("telinit 0"));
+        assert!(is_command_blocked("telinit 6"));
+    }
+
+    #[test]
+    fn test_block_powershell_encoded_command() {
+        assert!(is_command_blocked(
+            "powershell -EncodedCommand SQBuAHYAbwBrAGUA"
+        ));
+        assert!(is_command_blocked("pwsh -enc SQBuAHYAbwBrAGUA"));
+        assert!(is_command_blocked("powershell.exe -e SQBuAHYAbwBrAGUA"));
+        assert!(is_command_blocked("pwsh.exe -EncodedCommand foo"));
+    }
+
+    #[test]
+    fn test_block_reg_exe_variant() {
+        assert!(is_command_blocked("reg.exe delete HKLM\\Software\\Foo"));
+        assert!(is_command_blocked("REG.EXE DELETE HKCU\\Software"));
+    }
+
+    #[test]
+    fn test_block_find_delete() {
+        assert!(is_command_blocked("find / -delete"));
+        assert!(is_command_blocked("find /home -name '*.log' -delete"));
+    }
+
+    // ---- M5: unicode + quote-strip normalization -------------------------
+
+    #[test]
+    fn test_block_quoted_rm_rf_root() {
+        assert!(is_command_blocked(r#""rm" -rf /"#));
+        assert!(is_command_blocked("'rm' -rf /"));
+    }
+
+    #[test]
+    fn test_block_quoted_shutdown() {
+        assert!(is_command_blocked(r#""shutdown" -h now"#));
+    }
+
+    #[test]
+    fn test_normalize_quote_strip_idempotent_on_safe_command() {
+        // Sanity: safe commands don't get false-positive-blocked by normalisation
+        assert!(!is_command_blocked(r#"echo "hello world""#));
+        assert!(!is_command_blocked("git status"));
+    }
+
+    // ---- M7: token redactors ---------------------------------------------
+
+    #[test]
+    fn test_redact_github_token() {
+        let r = redact_command(
+            "git push https://ghp_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA@github.com/x/y",
+        );
+        assert!(!r.contains("ghp_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"));
+    }
+
+    #[test]
+    fn test_redact_github_token_bare() {
+        let r = redact_command("export TOKEN=ghs_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
+        assert!(!r.contains("ghs_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"));
+    }
+
+    #[test]
+    fn test_redact_aws_access_key_id() {
+        let r = redact_command("aws s3 ls AKIAIOSFODNN7EXAMPLE");
+        assert!(!r.contains("AKIAIOSFODNN7EXAMPLE"));
+        assert!(r.contains("AKIA***"));
+    }
+
+    #[test]
+    fn test_redact_stripe_secret_key() {
+        let r = redact_command("curl -u sk_live_4eC39HqLyjWDarjtT1zdp7dc:");
+        assert!(!r.contains("sk_live_4eC39HqLyjWDarjtT1zdp7dc"));
+    }
+
+    #[test]
+    fn test_redact_slack_token() {
+        let r = redact_command("curl -d token=xoxb-1234567890-AAAAAAAAAAA https://slack");
+        assert!(!r.contains("xoxb-1234567890-AAAAAAAAAAA"));
+    }
+
+    #[test]
+    fn test_redact_jwt() {
+        let r = redact_command(
+            "curl -H 'Cookie: t=eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjMifQ.abc-DEF_123'",
+        );
+        assert!(!r.contains("eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjMifQ.abc-DEF_123"));
+        assert!(r.contains("<jwt-redacted>"));
+    }
+
+    #[test]
+    fn test_redact_curl_basic_auth() {
+        let r = redact_command("curl -u alice:hunter2 https://api.example.com");
+        assert!(!r.contains("alice:hunter2"));
+        assert!(r.contains("-u ***:***"));
+    }
+
+    // ---- M6: working_dir validation --------------------------------------
+
+    #[test]
+    fn test_validate_working_dir_none() {
+        assert!(matches!(validate_working_dir(None), Ok(None)));
+    }
+
+    #[test]
+    fn test_validate_working_dir_empty_string() {
+        // Empty/whitespace strings are treated as "no dir set" rather than
+        // an error, since the settings layer can store an empty default.
+        assert!(matches!(validate_working_dir(Some("")), Ok(None)));
+        assert!(matches!(validate_working_dir(Some("   ")), Ok(None)));
+    }
+
+    #[test]
+    fn test_validate_working_dir_unc_rejected() {
+        let r = validate_working_dir(Some(r"\\server\share"));
+        assert!(matches!(r, Err(VoltError::PermissionDenied(_))));
+        let r = validate_working_dir(Some("//server/share"));
+        assert!(matches!(r, Err(VoltError::PermissionDenied(_))));
+    }
+
+    #[test]
+    fn test_validate_working_dir_nonexistent_rejected() {
+        let r = validate_working_dir(Some("/this/path/does/not/exist/xyz12345"));
+        assert!(matches!(r, Err(VoltError::FileSystem(_))));
+    }
+
+    #[test]
+    fn test_validate_working_dir_existing_dir_ok() {
+        // Use the OS temp dir — guaranteed to exist on every platform.
+        let tmp = std::env::temp_dir();
+        let r = validate_working_dir(Some(tmp.to_str().unwrap()));
+        assert!(matches!(r, Ok(Some(_))));
     }
 }

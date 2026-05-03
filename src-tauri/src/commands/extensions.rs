@@ -129,6 +129,16 @@ pub struct InstalledExtensionsState {
     pub extensions: Vec<InstalledExtension>,
 }
 
+/// Server-side allowlist of extension permission identifiers.
+///
+/// Mirrors the frontend `EXTENSION_PERMISSIONS` constant in
+/// `src/features/extensions/types/extension.types.ts`. Any new permission
+/// MUST be added in both places — the frontend needs the type/UI affordance,
+/// and the backend rejects anything not in this list at IPC time so a
+/// compromised frontend or replayed IPC cannot smuggle bogus / future /
+/// misspelled permissions into `granted_permissions`. (M1)
+const ALLOWED_PERMISSIONS: &[&str] = &["clipboard", "network", "notifications", "openUrl"];
+
 /// Validate extension ID to prevent path traversal attacks
 fn validate_extension_id(id: &str) -> VoltResult<()> {
     if id.is_empty() {
@@ -398,20 +408,46 @@ fn get_installed_state_path(app: &AppHandle) -> VoltResult<PathBuf> {
 /// Load installed extensions state from disk.
 ///
 /// Also verifies the detached HMAC signature (`installed.json.sig`). A
-/// missing or mismatching signature is logged but never causes load failure
-/// — see `extension_state_sig` for the rationale.
+/// missing signature is logged but never causes load failure — see
+/// `extension_state_sig` for the rationale.
+///
+/// On a `Mismatch` outcome we still load the JSON (so the launcher never
+/// bricks itself) BUT we fail-closed on permissions: every parsed
+/// extension's `granted_permissions` is reset to empty. The user is
+/// expected to re-grant deliberately. The tamper alert is set inside
+/// `read_state_with_outcome` so the UI banner surfaces. (H4)
 fn load_installed_state(app: &AppHandle) -> VoltResult<InstalledExtensionsState> {
     let state_path = get_installed_state_path(app)?;
 
-    let content = extension_state_sig::read_state_with_verification(&state_path, "installed")
+    let outcome = extension_state_sig::read_state_with_outcome(&state_path, "installed")
         .map_err(|e| VoltError::FileSystem(format!("Failed to read installed state: {}", e)))?;
 
-    let Some(content) = content else {
+    let Some((content, verify_outcome)) = outcome else {
         return Ok(InstalledExtensionsState::default());
     };
 
-    serde_json::from_str(&content)
-        .map_err(|e| VoltError::Serialization(format!("Failed to parse installed state: {}", e)))
+    let mut state: InstalledExtensionsState = serde_json::from_str(&content)
+        .map_err(|e| VoltError::Serialization(format!("Failed to parse installed state: {}", e)))?;
+
+    if matches!(verify_outcome, extension_state_sig::VerifyOutcome::Mismatch) {
+        // Fail closed: tampered file MUST NOT carry forward permissions.
+        // Other-process attackers running as the user can forge signatures
+        // (DPAPI is per-user) so the signature gate alone is insufficient.
+        // We log per-extension to leave a forensic trail of what was reset.
+        for ext in state.extensions.iter_mut() {
+            if !ext.granted_permissions.is_empty() {
+                warn!(
+                    "Extension '{}': clearing {} granted permissions due to installed-state \
+                     signature mismatch (H4 fail-closed). User must re-grant.",
+                    ext.manifest.id,
+                    ext.granted_permissions.len()
+                );
+            }
+            ext.granted_permissions = Vec::new();
+        }
+    }
+
+    Ok(state)
 }
 
 /// Save installed extensions state to disk, along with the HMAC signature.
@@ -472,7 +508,10 @@ fn validate_registry_url(url: &str) -> VoltResult<()> {
 pub async fn fetch_extension_registry(url: String) -> VoltResult<ExtensionRegistry> {
     validate_registry_url(&url)?;
 
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .map_err(|e| VoltError::Unknown(format!("HTTP client build failed: {}", e)))?;
 
     let response = client
         .get(&url)
@@ -529,7 +568,10 @@ pub async fn install_extension(
 
     // Download the extension
     info!("Downloading extension from: {}", download_url);
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .map_err(|e| VoltError::Unknown(format!("HTTP client build failed: {}", e)))?;
     let response = client
         .get(&download_url)
         .header("User-Agent", "Volt-Launcher")
@@ -597,6 +639,23 @@ pub async fn install_extension(
             "Manifest id '{}' does not match requested extension id '{}'",
             manifest.id, extension_id
         )));
+    }
+
+    // Validate every declared permission against the canonical allowlist
+    // BEFORE the install record is written. This makes registry curation
+    // possible (the store/UI knows which manifests are installable) and
+    // closes the fingerprinting oracle where an unknown-permission manifest
+    // would silently install but later fail at grant time. Reject the
+    // entire install on a single bad entry. (M3)
+    if let Some(declared) = manifest.permissions.as_ref() {
+        for perm in declared {
+            if !ALLOWED_PERMISSIONS.contains(&perm.as_str()) {
+                return Err(VoltError::InvalidConfig(format!(
+                    "Manifest declares unknown permission: '{}'. Allowed: {:?}",
+                    perm, ALLOWED_PERMISSIONS
+                )));
+            }
+        }
     }
 
     // Create installed extension record
@@ -672,7 +731,13 @@ pub async fn toggle_extension(
     }
 }
 
-/// Update granted permissions for an installed extension
+/// Update granted permissions for an installed extension.
+///
+/// Permission strings are validated against `ALLOWED_PERMISSIONS` server-side
+/// (M1). The frontend has its own type-level allowlist but the backend must
+/// not trust it: an attacker reaching this command via a compromised IPC,
+/// replay, or extension dev-tools can otherwise smuggle arbitrary strings
+/// into `granted_permissions` and persist them across signature roundtrips.
 #[tauri::command]
 pub async fn update_extension_permissions(
     app: AppHandle,
@@ -680,6 +745,19 @@ pub async fn update_extension_permissions(
     permissions: Vec<String>,
 ) -> VoltResult<()> {
     validate_extension_id(&extension_id)?;
+
+    // Reject anything not on the canonical permission list. We refuse the
+    // entire batch on a single bad entry rather than silently filtering —
+    // silently dropping would let a malicious caller probe for the exact
+    // shape of the allowlist while still partial-succeeding.
+    for perm in &permissions {
+        if !ALLOWED_PERMISSIONS.contains(&perm.as_str()) {
+            return Err(VoltError::InvalidConfig(format!(
+                "Unknown extension permission: '{}'. Allowed: {:?}",
+                perm, ALLOWED_PERMISSIONS
+            )));
+        }
+    }
 
     let mut state = load_installed_state(&app)?;
 
@@ -1368,6 +1446,117 @@ pub async fn refresh_dev_extension(
 
     // Re-link to refresh
     link_dev_extension(app, ext.path.clone()).await
+}
+
+// ============================================================================
+// DOWNLOAD TRACKING - Supabase-backed counters
+// ============================================================================
+
+const SUPABASE_URL: &str = env!("SUPABASE_URL");
+const SUPABASE_ANON_KEY: &str = env!("SUPABASE_ANON_KEY");
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DownloadCount {
+    pub extension_id: String,
+    pub count: u64,
+}
+
+/// Fetch download counts for all extensions from Supabase.
+#[tauri::command]
+pub async fn fetch_extension_downloads() -> VoltResult<Vec<DownloadCount>> {
+    if SUPABASE_URL.is_empty() || SUPABASE_ANON_KEY.is_empty() {
+        return Ok(vec![]);
+    }
+
+    let url = format!(
+        "{}/rest/v1/extension_downloads?select=extension_id,count",
+        SUPABASE_URL.trim_end_matches('/')
+    );
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .map_err(|e| VoltError::Unknown(format!("HTTP client build failed: {}", e)))?;
+    let resp = client
+        .get(&url)
+        .header("apikey", SUPABASE_ANON_KEY)
+        .header("Authorization", format!("Bearer {}", SUPABASE_ANON_KEY))
+        .send()
+        .await
+        .map_err(|e| VoltError::Unknown(format!("fetch_extension_downloads: {}", e)))?;
+
+    if !resp.status().is_success() {
+        return Ok(vec![]);
+    }
+
+    let counts: Vec<DownloadCount> = resp
+        .json()
+        .await
+        .map_err(|e| VoltError::Serialization(format!("fetch_extension_downloads parse: {}", e)))?;
+
+    Ok(counts)
+}
+
+/// Per-process leaky bucket for `increment_extension_download` calls.
+/// Prevents a misbehaving extension or compromised renderer from spamming
+/// the Supabase RPC endpoint and inflating download counts (M13). 60/hr
+/// comfortably covers normal usage (the UI calls this once per install).
+static INCREMENT_BUCKET: std::sync::Mutex<Vec<std::time::Instant>> =
+    std::sync::Mutex::new(Vec::new());
+const INCREMENT_RATE_LIMIT: usize = 60;
+const INCREMENT_WINDOW_SECS: u64 = 3600;
+
+fn check_increment_rate_limit() -> Result<(), String> {
+    let mut bucket = INCREMENT_BUCKET
+        .lock()
+        .map_err(|e| format!("lock poisoned: {}", e))?;
+    let now = std::time::Instant::now();
+    let window = std::time::Duration::from_secs(INCREMENT_WINDOW_SECS);
+    bucket.retain(|t| now.duration_since(*t) < window);
+    if bucket.len() >= INCREMENT_RATE_LIMIT {
+        return Err("download counter rate-limit exceeded".into());
+    }
+    bucket.push(now);
+    Ok(())
+}
+
+/// Increment the download counter for an extension in Supabase (fire-and-forget).
+#[tauri::command]
+pub async fn increment_extension_download(extension_id: String) -> VoltResult<()> {
+    validate_extension_id(&extension_id)?;
+
+    // Per-process rate limit before we touch the network. The RPC is
+    // fire-and-forget so we silently no-op on rate-limit hits rather than
+    // bubbling an error to the renderer (the counter is best-effort UX).
+    if let Err(e) = check_increment_rate_limit() {
+        warn!("increment_extension_download dropped: {}", e);
+        return Ok(());
+    }
+
+    if SUPABASE_URL.is_empty() || SUPABASE_ANON_KEY.is_empty() {
+        return Ok(());
+    }
+
+    let url = format!(
+        "{}/rest/v1/rpc/increment_extension_download",
+        SUPABASE_URL.trim_end_matches('/')
+    );
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .map_err(|e| VoltError::Unknown(format!("HTTP client build failed: {}", e)))?;
+    let _ = client
+        .post(&url)
+        .header("apikey", SUPABASE_ANON_KEY)
+        .header("Authorization", format!("Bearer {}", SUPABASE_ANON_KEY))
+        .header("Content-Type", "application/json")
+        .body(format!(r#"{{"p_extension_id":"{}"}}"#, extension_id))
+        .send()
+        .await;
+
+    Ok(())
 }
 
 /// Return whether the extension-state HMAC key was forcibly rotated during

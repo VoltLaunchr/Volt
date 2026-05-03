@@ -46,11 +46,11 @@ interface IconProps {
   strokeWidth?: number;
 }
 
-export const Icon: React.FC<IconProps> = ({ name, size = 24, className = '', strokeWidth = 2 }) => {
+export function Icon({ name, size = 24, className = '', strokeWidth = 2 }: IconProps): React.JSX.Element {
   const IconComponent = iconMap[name] || File;
 
   return <IconComponent size={size} strokeWidth={strokeWidth} className={className} />;
-};
+}
 
 // Export individual icons for direct use
 export {

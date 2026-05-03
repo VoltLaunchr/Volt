@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-get-builtin-plugin-metadata"
+description = "Enables the get_builtin_plugin_metadata command without any pre-configured scope."
+commands.allow = ["get_builtin_plugin_metadata"]
+
+[[permission]]
+identifier = "deny-get-builtin-plugin-metadata"
+description = "Denies the get_builtin_plugin_metadata command without any pre-configured scope."
+commands.deny = ["get_builtin_plugin_metadata"]

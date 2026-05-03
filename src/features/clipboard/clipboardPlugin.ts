@@ -102,10 +102,10 @@ export class ClipboardPlugin implements Plugin {
 
     try {
       // Copy to clipboard
-      await invoke('copy_to_clipboard', { content: item.content });
+      await invoke<void>('copy_to_clipboard', { content: item.content });
 
       // Hide window after paste
-      await invoke('hide_window');
+      await invoke<void>('hide_window');
 
       // Emit success event
       window.dispatchEvent(
@@ -179,7 +179,7 @@ export class ClipboardPlugin implements Plugin {
    */
   static async startMonitoring(): Promise<void> {
     try {
-      await invoke('start_clipboard_monitoring');
+      await invoke<void>('start_clipboard_monitoring');
       logger.info('Clipboard monitoring started');
     } catch (error) {
       logger.error('Failed to start clipboard monitoring:', error);
@@ -191,7 +191,7 @@ export class ClipboardPlugin implements Plugin {
    */
   static async stopMonitoring(): Promise<void> {
     try {
-      await invoke('stop_clipboard_monitoring');
+      await invoke<void>('stop_clipboard_monitoring');
       logger.info('Clipboard monitoring stopped');
     } catch (error) {
       logger.error('Failed to stop clipboard monitoring:', error);
@@ -215,7 +215,7 @@ export class ClipboardPlugin implements Plugin {
    */
   static async clearHistory(includePinned: boolean = false): Promise<void> {
     try {
-      await invoke('clear_clipboard_history', { includePinned });
+      await invoke<void>('clear_clipboard_history', { includePinned });
       window.dispatchEvent(new CustomEvent('volt:clipboard:cleared'));
     } catch (error) {
       logger.error('Failed to clear clipboard history:', error);

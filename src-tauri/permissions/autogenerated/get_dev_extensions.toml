@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-get-dev-extensions"
+description = "Enables the get_dev_extensions command without any pre-configured scope."
+commands.allow = ["get_dev_extensions"]
+
+[[permission]]
+identifier = "deny-get-dev-extensions"
+description = "Denies the get_dev_extensions command without any pre-configured scope."
+commands.deny = ["get_dev_extensions"]

@@ -2,9 +2,9 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import React, { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { cn } from '@/lib/utils';
 import { FileInfo } from '../../../shared/types/common.types';
 import { logger } from '../../../shared/utils';
-import './FileSearchView.css';
 
 interface FileSearchViewProps {
   onClose: () => void;
@@ -22,7 +22,7 @@ const FILE_TYPE_EXTENSIONS: Record<FileTypeFilter, string[]> = {
   other: [],
 };
 
-export const FileSearchView: React.FC<FileSearchViewProps> = ({ onClose }) => {
+export function FileSearchView({ onClose }: FileSearchViewProps): React.JSX.Element {
   const { t } = useTranslation('fileSearch');
   const [searchQuery, setSearchQuery] = useState('');
   const [files, setFiles] = useState<FileInfo[]>([]);
@@ -172,9 +172,9 @@ export const FileSearchView: React.FC<FileSearchViewProps> = ({ onClose }) => {
   // Handle file opening
   const handleOpenFile = async (file: FileInfo) => {
     try {
-      await invoke('launch_application', { path: file.path });
+      await invoke<void>('launch_application', { path: file.path });
       // Track file access for recent files
-      await invoke('track_file_access', { path: file.path, name: file.name });
+      await invoke<void>('track_file_access', { path: file.path, name: file.name });
       // Reload recent files for next time
       loadRecentFiles();
       onClose();
@@ -209,15 +209,19 @@ export const FileSearchView: React.FC<FileSearchViewProps> = ({ onClose }) => {
 
   return (
     <div
-      className="file-search-view"
+      className="flex flex-col h-full bg-canvas text-ink"
       tabIndex={0}
       onKeyDown={handleKeyDown}
       aria-label="File search view"
       style={{ outline: 'none' }}
     >
       {/* Header with search and filter */}
-      <div className="file-search-header">
-        <button className="back-button" onClick={onClose} title={t('back')}>
+      <div className="flex items-center gap-2 px-4 py-3 border-b border-hairline bg-surface shrink-0">
+        <button
+          className="flex items-center justify-center w-8 h-8 rounded-md text-mute transition-all cursor-pointer shrink-0 border-none bg-transparent hover:bg-surface-elevated hover:text-ink"
+          onClick={onClose}
+          title={t('back')}
+        >
           <svg
             width="20"
             height="20"
@@ -230,10 +234,10 @@ export const FileSearchView: React.FC<FileSearchViewProps> = ({ onClose }) => {
           </svg>
         </button>
 
-        <div className="search-input-container">
+        <div className="flex-1">
           <input
             type="text"
-            className="file-search-input"
+            className="flex-1 w-full bg-surface-elevated border border-hairline rounded-md px-3 py-1.5 text-sm text-on-dark outline-none focus:border-hairline-strong placeholder:text-ash transition-all"
             placeholder={t('searchPlaceholder')}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
@@ -241,9 +245,9 @@ export const FileSearchView: React.FC<FileSearchViewProps> = ({ onClose }) => {
           />
         </div>
 
-        <div className="type-filter-dropdown">
+        <div className="relative">
           <button
-            className="type-filter-button"
+            className="flex items-center gap-2 px-3 py-1.5 bg-canvas border border-hairline rounded-md text-ink text-sm cursor-pointer transition-all whitespace-nowrap hover:bg-surface-elevated hover:border-hairline-strong"
             onClick={() => setShowTypeDropdown(!showTypeDropdown)}
           >
             <svg
@@ -253,6 +257,7 @@ export const FileSearchView: React.FC<FileSearchViewProps> = ({ onClose }) => {
               fill="none"
               stroke="currentColor"
               strokeWidth="2"
+              className="text-mute"
             >
               <line x1="4" y1="6" x2="20" y2="6" />
               <line x1="4" y1="12" x2="20" y2="12" />
@@ -270,18 +275,24 @@ export const FileSearchView: React.FC<FileSearchViewProps> = ({ onClose }) => {
               fill="none"
               stroke="currentColor"
               strokeWidth="2"
+              className="text-ash"
             >
               <path d="m6 9 6 6 6-6" />
             </svg>
           </button>
 
           {showTypeDropdown && (
-            <div className="type-filter-menu">
+            <div className="absolute top-[calc(100%+4px)] right-0 min-w-40 bg-surface border border-hairline rounded-md shadow-[0_4px_12px_rgba(0,0,0,0.15)] overflow-hidden z-[100]">
               {(['all', 'documents', 'images', 'videos', 'audio', 'code'] as FileTypeFilter[]).map(
                 (filter) => (
                   <button
                     key={filter}
-                    className={`type-filter-option ${typeFilter === filter ? 'active' : ''}`}
+                    className={cn(
+                      'block w-full px-3.5 py-2.5 text-left text-sm cursor-pointer transition-colors border-none',
+                      typeFilter === filter
+                        ? 'bg-accent-blue/20 text-on-dark'
+                        : 'bg-transparent text-ink hover:bg-surface-elevated'
+                    )}
                     onClick={() => {
                       setTypeFilter(filter);
                       setShowTypeDropdown(false);
@@ -299,31 +310,31 @@ export const FileSearchView: React.FC<FileSearchViewProps> = ({ onClose }) => {
       </div>
 
       {/* Main content area */}
-      <div className="file-search-content">
+      <div className="flex flex-1 overflow-hidden">
         {/* Files list */}
-        <div className="file-list">
-          {!searchQuery.trim() && <div className="section-header">{t('states.recentlyUsed')}</div>}
+        <div className="w-[45%] border-r border-hairline overflow-y-auto bg-canvas">
+          {!searchQuery.trim() && (
+            <div className="px-4 py-2 text-xs font-semibold text-mute uppercase tracking-[0.5px] bg-surface sticky top-0 z-[1]">
+              {t('states.recentlyUsed')}
+            </div>
+          )}
 
           {isLoading ? (
-            <div className="loading-state">{t('states.searching')}</div>
+            <div className="flex items-center justify-center p-5 text-mute text-sm">{t('states.searching')}</div>
           ) : displayFiles.length === 0 ? (
-            <div className="empty-state">
+            <div className="flex items-center justify-center p-5 text-mute text-sm">
               {searchQuery.trim() ? (
                 t('states.noFiles')
               ) : (
-                <div style={{ textAlign: 'center', padding: '20px' }}>
+                <div className="text-center p-5">
                   {indexedCount > 0 ? (
-                    <>
-                      <div style={{ marginBottom: '12px', fontSize: '14px' }}>
-                        {indexedCount} fichiers indexés — tapez pour rechercher
-                      </div>
-                    </>
+                    <div className="mb-3 text-sm text-body">
+                      {indexedCount} fichiers indexés — tapez pour rechercher
+                    </div>
                   ) : (
                     <>
-                      <div style={{ marginBottom: '12px', fontSize: '14px' }}>{t('states.notIndexed')}</div>
-                      <div style={{ fontSize: '12px', color: 'var(--color-text-tertiary)' }}>
-                        {t('states.configureHint')}
-                      </div>
+                      <div className="mb-3 text-sm text-body">{t('states.notIndexed')}</div>
+                      <div className="text-xs text-mute">{t('states.configureHint')}</div>
                     </>
                   )}
                 </div>
@@ -336,17 +347,24 @@ export const FileSearchView: React.FC<FileSearchViewProps> = ({ onClose }) => {
               return (
                 <div
                   key={file.id}
-                  className={`file-item ${isSelected ? 'selected' : ''}`}
+                  className={cn(
+                    'flex items-center gap-3 px-4 py-2.5 cursor-pointer transition-colors relative',
+                    isSelected ? 'bg-accent-blue/20 text-on-dark' : 'hover:bg-surface-elevated'
+                  )}
                   onClick={() => {
                     setSelectedIndex(index);
                     setSelectedFile(file);
                   }}
                   onDoubleClick={() => handleOpenFile(file)}
                 >
-                  <div className="file-icon">{getFileIcon(file.name)}</div>
-                  <div className="file-info">
-                    <div className="file-name">{file.name}</div>
-                    <div className="file-path">{file.path}</div>
+                  <div className="w-8 h-8 flex items-center justify-center shrink-0 text-mute text-xl">
+                    {getFileIcon(file.name)}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm text-on-dark truncate font-medium mb-[2px]">{file.name}</div>
+                    <div className={cn('text-xs truncate', isSelected ? 'text-white/80' : 'text-ash')}>
+                      {file.path}
+                    </div>
                   </div>
                 </div>
               );
@@ -356,49 +374,54 @@ export const FileSearchView: React.FC<FileSearchViewProps> = ({ onClose }) => {
 
         {/* Details panel */}
         {selectedFile && (
-          <div className="file-details-panel">
-            <div className="details-preview">
-              <div className="preview-icon">{getFileIcon(selectedFile.name)}</div>
-              <div className="preview-name">{selectedFile.name}</div>
+          <div className="flex-1 flex flex-col bg-surface overflow-hidden">
+            {/* Preview area */}
+            <div className="flex flex-col items-center justify-center p-5 border-b border-hairline bg-canvas">
+              <div className="text-[64px] mb-3">{getFileIcon(selectedFile.name)}</div>
+              <div className="text-base font-semibold text-ink text-center break-words">
+                {selectedFile.name}
+              </div>
             </div>
 
             {/* Metadata */}
-            <div className="details-metadata">
-              <h3>{t('metadata.title')}</h3>
+            <div className="flex-1 overflow-y-auto p-4">
+              <h3 className="text-xs font-semibold text-mute mb-3 uppercase tracking-[0.5px]">
+                {t('metadata.title')}
+              </h3>
 
-              <div className="metadata-row">
-                <span className="metadata-label">{t('metadata.name')}</span>
-                <span className="metadata-value">{selectedFile.name}</span>
+              <div className="flex justify-between items-start py-2 border-b border-hairline last:border-b-0">
+                <span className="text-sm text-body shrink-0 min-w-[80px]">{t('metadata.name')}</span>
+                <span className="text-sm text-ink font-medium text-right break-all flex-1">{selectedFile.name}</span>
               </div>
 
-              <div className="metadata-row">
-                <span className="metadata-label">{t('metadata.where')}</span>
-                <span className="metadata-value">{selectedFile.path}</span>
+              <div className="flex justify-between items-start py-2 border-b border-hairline last:border-b-0">
+                <span className="text-sm text-body shrink-0 min-w-[80px]">{t('metadata.where')}</span>
+                <span className="text-sm text-ink font-medium text-right break-all flex-1">{selectedFile.path}</span>
               </div>
 
-              <div className="metadata-row">
-                <span className="metadata-label">{t('metadata.type')}</span>
-                <span className="metadata-value">
+              <div className="flex justify-between items-start py-2 border-b border-hairline last:border-b-0">
+                <span className="text-sm text-body shrink-0 min-w-[80px]">{t('metadata.type')}</span>
+                <span className="text-sm text-ink font-medium text-right break-all flex-1">
                   {selectedFile.name.split('.').pop()?.toUpperCase() || t('metadata.fileDefault')}
                 </span>
               </div>
 
               {selectedFile.size !== undefined && (
-                <div className="metadata-row">
-                  <span className="metadata-label">{t('metadata.size')}</span>
-                  <span className="metadata-value">{formatFileSize(selectedFile.size)}</span>
+                <div className="flex justify-between items-start py-2 border-b border-hairline last:border-b-0">
+                  <span className="text-sm text-body shrink-0 min-w-[80px]">{t('metadata.size')}</span>
+                  <span className="text-xs text-stone shrink-0">{formatFileSize(selectedFile.size)}</span>
                 </div>
               )}
             </div>
 
             {/* Actions footer */}
-            <div className="details-actions">
+            <div className="flex gap-2 px-4 py-3 border-t border-hairline bg-canvas">
               <button
-                className="action-button primary"
+                className="flex flex-1 items-center justify-center gap-2 px-4 py-2 text-sm font-medium rounded-md border border-hairline bg-accent-blue text-on-dark cursor-pointer transition-all hover:opacity-90"
                 onClick={() => handleOpenFile(selectedFile)}
               >
                 <span>{t('actions.open')}</span>
-                <kbd>↵</kbd>
+                <kbd className="px-1.5 py-0.5 text-xs font-mono bg-white/20 rounded-sm">↵</kbd>
               </button>
             </div>
           </div>
@@ -406,17 +429,23 @@ export const FileSearchView: React.FC<FileSearchViewProps> = ({ onClose }) => {
       </div>
 
       {/* Footer */}
-      <div className="file-search-footer">
-        <div className="footer-left">
-          <div className="footer-icon">🔍</div>
+      <div className="flex items-center justify-between px-4 py-2 border-t border-hairline bg-surface text-xs shrink-0">
+        <div className="flex items-center gap-2 text-body font-medium">
+          <div className="text-base">🔍</div>
           <span>{t('footer.title')}</span>
         </div>
-        <div className="footer-right">
-          <span className="footer-hint">
-            <kbd>↑</kbd> <kbd>↓</kbd> {t('footer.hint')} • <kbd>↵</kbd> {t('footer.hintOpen')} • <kbd>Esc</kbd> {t('footer.hintClose')}
+        <div className="text-mute">
+          <span className="flex items-center gap-2">
+            <kbd className="px-1.5 py-0.5 text-xs font-mono bg-canvas border border-hairline rounded-sm text-body">↑</kbd>
+            <kbd className="px-1.5 py-0.5 text-xs font-mono bg-canvas border border-hairline rounded-sm text-body">↓</kbd>
+            {t('footer.hint')} •{' '}
+            <kbd className="px-1.5 py-0.5 text-xs font-mono bg-canvas border border-hairline rounded-sm text-body">↵</kbd>
+            {t('footer.hintOpen')} •{' '}
+            <kbd className="px-1.5 py-0.5 text-xs font-mono bg-canvas border border-hairline rounded-sm text-body">Esc</kbd>
+            {t('footer.hintClose')}
           </span>
         </div>
       </div>
     </div>
   );
-};
+}

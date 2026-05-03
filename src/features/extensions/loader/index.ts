@@ -115,16 +115,16 @@ export class ExtensionLoader {
    */
   async loadAllExtensions(): Promise<LoadedExtension[]> {
     try {
-      console.log('[ExtensionLoader] Loading all enabled extensions...');
+      logger.debug('[ExtensionLoader] Loading all enabled extensions...');
 
       const sources = await invoke<ExtensionSource[]>('get_enabled_extensions_sources');
 
-      console.log(`[ExtensionLoader] Found ${sources.length} enabled extensions`);
+      logger.debug(`[ExtensionLoader] Found ${sources.length} enabled extensions`);
 
       if (sources.length === 0) {
-        console.log('[ExtensionLoader] No extensions found. Make sure extensions are installed and enabled.');
+        logger.debug('[ExtensionLoader] No extensions found. Make sure extensions are installed and enabled.');
       } else {
-        console.log('[ExtensionLoader] Extensions to load:', sources.map(s => s.id).join(', '));
+        logger.debug('[ExtensionLoader] Extensions to load:', sources.map(s => s.id).join(', '));
       }
 
       const loaded: LoadedExtension[] = [];
@@ -140,7 +140,7 @@ export class ExtensionLoader {
         }
       }
 
-      console.log(`[ExtensionLoader] Successfully loaded ${loaded.length} extensions`);
+      logger.debug(`[ExtensionLoader] Successfully loaded ${loaded.length} extensions`);
       return loaded;
     } catch (error) {
       logger.error('[ExtensionLoader] Failed to load extensions:', error);
@@ -206,7 +206,7 @@ export class ExtensionLoader {
         // matching installed record, so this is an intentional no-op (the IPC
         // resolves with NotFound and we swallow the error) — dev sources
         // re-prompt on every reload by design.
-        await invoke('update_extension_permissions', {
+        await invoke<void>('update_extension_permissions', {
           extensionId,
           permissions: granted,
         }).catch((err) => {
@@ -227,8 +227,8 @@ export class ExtensionLoader {
   private async loadExtension(source: ExtensionSource): Promise<LoadedExtension | null> {
     const { id, manifest } = source;
 
-    console.log(`[ExtensionLoader] Loading extension: ${manifest.name} (${id})`);
-    console.log(`[ExtensionLoader] Files available:`, Object.keys(source.files));
+    logger.debug(`[ExtensionLoader] Loading extension: ${manifest.name} (${id})`);
+    logger.debug(`[ExtensionLoader] Files available:`, Object.keys(source.files));
 
     try {
       const hasKeywords = manifest.keywords && manifest.keywords.length > 0;
@@ -249,7 +249,7 @@ export class ExtensionLoader {
 
       // If extension requires permissions but none were granted, skip it
       if (requiredPermissions.length > 0 && grantedPermissions.length === 0) {
-        console.warn(`[ExtensionLoader] Extension ${id} skipped — permissions denied`);
+        logger.warn(`[ExtensionLoader] Extension ${id} skipped — permissions denied`);
         return null;
       }
 
@@ -259,7 +259,7 @@ export class ExtensionLoader {
         // Extensions without keywords/prefix cannot be loaded safely in the Worker sandbox.
         // Inline execution (legacy mode) is disabled for security — it would run untrusted
         // code in the main renderer with full access to the DOM and Tauri IPC.
-        console.warn(
+        logger.warn(
           `[ExtensionLoader] Extension ${id} has no keywords/prefix — cannot load safely. ` +
           `Add "keywords" or "prefix" to the extension manifest to enable Worker sandbox loading.`
         );
@@ -281,7 +281,7 @@ export class ExtensionLoader {
   ): LoadedExtension | null {
     const { id, manifest } = source;
 
-    console.log(`[ExtensionLoader] Loading ${id} in Worker sandbox`);
+    logger.debug(`[ExtensionLoader] Loading ${id} in Worker sandbox`);
 
     // Bundle the extension modules (reuse existing bundling logic)
     const bundledCode = this.bundleExtension(source);
@@ -309,7 +309,7 @@ export class ExtensionLoader {
     const loaded: LoadedExtension = { id, manifest, plugin };
     this.loadedExtensions.set(id, loaded);
 
-    console.log(`[ExtensionLoader] Successfully loaded in Worker: ${manifest.name}`);
+    logger.debug(`[ExtensionLoader] Successfully loaded in Worker: ${manifest.name}`);
     return loaded;
   }
 
@@ -354,7 +354,7 @@ export class ExtensionLoader {
 
     // Sort modules by dependency order FIRST (using original code)
     const sortedPaths = this.sortModulesByDependency(sourceFiles, entryPoint);
-    console.log('[ExtensionLoader] Module order:', sortedPaths);
+    logger.debug('[ExtensionLoader] Module order:', sortedPaths);
 
     // Transform each module
     const transformedModules: Record<string, string> = {};
@@ -392,7 +392,7 @@ export class ExtensionLoader {
    * any additional text-level rewriting.
    */
   private transformModuleCode(code: string, filePath: string): string {
-    console.log(
+    logger.debug(
       `[ExtensionLoader] [${filePath}] Original code:`,
       code.substring(0, 500)
     );
@@ -403,7 +403,7 @@ export class ExtensionLoader {
         // filePath helps Sucrase produce better error messages.
         filePath,
       });
-      console.log(
+      logger.debug(
         `[ExtensionLoader] [${filePath}] After Sucrase:`,
         result.code.substring(0, 500)
       );
@@ -489,27 +489,21 @@ function __secureRandomInt__(min, max) {
 // Module registry
 const __modules__ = {};
 
-// NOTE: the renderer-side inline-execution path is currently disabled (see
-// loadExtension in index.ts — extensions without keywords/prefix are rejected),
-// so this header only ever runs stripped-down inside the Worker bootstrap,
-// which injects its own VoltAPI mock. If the renderer path is ever
-// re-enabled it MUST assign VoltAPI explicitly from window.VoltAPI and fail
-// loud when absent — do NOT re-introduce the previous
+// NOTE: the renderer-side inline-execution path is disabled (see loadExtension —
+// extensions without keywords/prefix are rejected). The Worker bootstrap
+// injects its own \`VoltAPI\` mock and stops here — it never imports this
+// header. extractModuleCode() slices from the first \`// Module:\` marker
+// onward, so everything in this preamble is dead code in the live path.
+// The previous renderer-side
+//   \`__voltApiShim__ = Object.freeze({ PluginResultType: VoltAPI.types... })\`
+// block was deleted: it referenced the global \`window.VoltAPI\` at bundle-eval
+// time, which would have been a latent sandbox-escape vector if inline
+// execution were ever re-enabled. If the renderer path is ever re-enabled it
+// MUST assign VoltAPI explicitly from window.VoltAPI and fail loud when
+// absent — do NOT re-introduce the previous
 // \`const VoltAPI = ... || VoltAPI\` self-fallback: the RHS refers to the same
 // TDZ binding and throws ReferenceError in any context where window.VoltAPI
 // is unavailable.
-
-// Shim surfaced to extension code when it does \`import { PluginResultType } from '../../api'\`.
-// Intentionally minimal: only values that extensions legitimately consume at runtime.
-const __voltApiShim__ = Object.freeze({
-  PluginResultType: VoltAPI.types.PluginResultType,
-  copyToClipboard: VoltAPI.utils.copyToClipboard,
-  openUrl: VoltAPI.utils.openUrl,
-  formatNumber: VoltAPI.utils.formatNumber,
-  fuzzyScore: VoltAPI.utils.fuzzyScore,
-  notify: VoltAPI.notify ? VoltAPI.notify.bind(VoltAPI) : function() {},
-  events: VoltAPI.events,
-});
 
 // Adapter for Node.js 'crypto' — only exposes what extensions legitimately need.
 const __cryptoShim__ = Object.freeze({
@@ -544,17 +538,38 @@ function __resolveRelativePath__(requestPath, fromPath) {
   return resolved;
 }
 
+// Explicit allowlist of specifiers that resolve to the volt-api shim.
+// Replaces the previous regex \`/(?:^|\\/)api(?:\\.(?:ts|js|tsx|jsx|mjs))?$/\`
+// which over-matched any module whose final path segment was "api"
+// (e.g. legitimate \`vendor/api.ts\` modules in an extension's own tree
+// would be shadowed by the frozen shim and break the module graph).
+// We accept only the exact specifiers extensions actually use to import
+// the Volt API: bare \`volt-api\`, plus relative \`./api\` and parent-relative
+// forms with optional .ts/.js extension.
+const __SHIM_IDS__ = {
+  'volt-api': 1,
+  './api': 1,
+  '../api': 1,
+  '../../api': 1,
+  './api.ts': 1,
+  '../api.ts': 1,
+  '../../api.ts': 1,
+  './api.js': 1,
+  '../api.js': 1,
+  '../../api.js': 1,
+};
+
 function __voltRequire__(requestPath, fromPath) {
   if (requestPath === 'crypto') return __cryptoShim__;
-  // Only exact "volt-api" or a specifier whose final path segment is "api"
-  // (optionally with a .ts/.js/.tsx/.jsx/.mjs extension) resolves to the shim.
-  // This matches the legitimate patterns \`import ... from '../../api'\` and
-  // \`import ... from './api.ts'\` while rejecting mid-path segments like
-  // '../../vendor/api/foo' — otherwise a malicious extension could shadow its
-  // own bundled 'vendor/api/foo.ts' module with the frozen shim and subvert
-  // its module graph.
-  if (requestPath === 'volt-api' || /(?:^|\\/)api(?:\\.(?:ts|js|tsx|jsx|mjs))?$/.test(requestPath)) {
-    return __voltApiShim__;
+  if (Object.prototype.hasOwnProperty.call(__SHIM_IDS__, requestPath)) {
+    // Fail loud: this branch is only reachable from the disabled renderer
+    // inline-execution path. The Worker has its own \`VoltAPI\` mock and never
+    // sees this preamble (extractModuleCode strips it). If you re-enable
+    // inline execution, build a shim from window.VoltAPI here and assert
+    // its presence — do NOT silently return undefined.
+    throw new Error(
+      'volt-api shim not initialized — inline-execution path is disabled'
+    );
   }
   var resolved = __resolveRelativePath__(requestPath, fromPath);
   var mod = __modules__[resolved];
@@ -675,7 +690,7 @@ return __defaultExport__;
     // Remove from loaded extensions
     this.loadedExtensions.delete(extensionId);
 
-    console.log(`[ExtensionLoader] Unloaded extension: ${extensionId}`);
+    logger.debug(`[ExtensionLoader] Unloaded extension: ${extensionId}`);
     return true;
   }
 

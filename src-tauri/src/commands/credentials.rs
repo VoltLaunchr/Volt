@@ -7,7 +7,8 @@
  * - Linux   : D-Bus Secret Service (GNOME Keyring / KWallet)
  */
 use serde::{Deserialize, Serialize};
-use tracing::{debug, info};
+use std::time::Duration;
+use tracing::{debug, info, warn};
 
 use super::keyring_store;
 
@@ -59,7 +60,9 @@ pub fn save_credential(service: String, token: String) -> Result<(), String> {
 
     keyring_store::migrate_from_json_if_needed();
 
-    keyring_store::store(&token_account(&service), &token)?;
+    // store_signed attaches a domain-tagged HMAC so retrieve_signed can
+    // detect cross-process tampering of the keyring entry. (M10)
+    keyring_store::store_signed(&token_account(&service), &token)?;
 
     let meta = CredentialMeta {
         saved_at: chrono::Local::now().to_rfc3339(),
@@ -67,18 +70,26 @@ pub fn save_credential(service: String, token: String) -> Result<(), String> {
     };
     let meta_json = serde_json::to_string(&meta)
         .map_err(|e| format!("Failed to serialize credential metadata: {}", e))?;
-    keyring_store::store(&meta_account(&service), &meta_json)?;
+    keyring_store::store_signed(&meta_account(&service), &meta_json)?;
 
     info!("Credential saved for service: {}", service);
     Ok(())
 }
 
 /// Load an API token from the OS keyring.
-#[tauri::command]
+///
+/// `retrieve_signed` validates the companion HMAC tag and silently drops
+/// the entry on mismatch (returning `None`); the caller observes a missing
+/// credential and triggers re-auth, which is the desired tamper response.
+///
+/// NOT exposed via IPC — bare tokens must never cross the renderer boundary
+/// (audit M2). Renderer code uses `has_credential` to check existence and
+/// `test_credential` to validate; the token is read directly from this
+/// function only by Rust callers (e.g. internal HTTP request builders).
 pub fn load_credential(service: String) -> Result<Option<String>, String> {
     debug!("Loading credential for service: {}", service);
     keyring_store::migrate_from_json_if_needed();
-    let token = keyring_store::retrieve(&token_account(&service))?;
+    let token = keyring_store::retrieve_signed(&token_account(&service))?;
     if token.is_some() {
         debug!("Credential loaded for service: {}", service);
     } else {
@@ -91,7 +102,7 @@ pub fn load_credential(service: String) -> Result<Option<String>, String> {
 #[tauri::command]
 pub fn has_credential(service: String) -> Result<bool, String> {
     keyring_store::migrate_from_json_if_needed();
-    let result = keyring_store::retrieve(&token_account(&service))?;
+    let result = keyring_store::retrieve_signed(&token_account(&service))?;
     Ok(result.is_some())
 }
 
@@ -100,10 +111,64 @@ pub fn has_credential(service: String) -> Result<bool, String> {
 pub fn delete_credential(service: String) -> Result<(), String> {
     debug!("Deleting credential for service: {}", service);
     keyring_store::migrate_from_json_if_needed();
-    keyring_store::remove(&token_account(&service))?;
-    keyring_store::remove(&meta_account(&service))?;
+    // remove_signed clears both the value and its HMAC tag entry.
+    keyring_store::remove_signed(&token_account(&service))?;
+    keyring_store::remove_signed(&meta_account(&service))?;
     info!("Credential deleted for service: {}", service);
     Ok(())
+}
+
+/// Test that an API token is valid by making a single read-only request to
+/// the upstream service. The token never leaves the Rust process — moving
+/// this off the renderer prevents XSS in the settings UI from exfiltrating
+/// the bare token via window.fetch.
+#[tauri::command]
+pub async fn test_credential(service: String, token: String) -> Result<bool, String> {
+    debug!("Testing credential for service: {}", service);
+    validate_service(&service)?;
+
+    if token.trim().is_empty() {
+        return Err("Token cannot be empty".to_string());
+    }
+
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(10))
+        .build()
+        .map_err(|e| format!("Failed to build HTTP client: {}", e))?;
+
+    let request = match service.as_str() {
+        "github" => client
+            .get("https://api.github.com/user")
+            .header("Authorization", format!("Bearer {}", token.trim()))
+            .header("Accept", "application/vnd.github.v3+json")
+            .header("User-Agent", "Volt"),
+        "notion" => client
+            .get("https://api.notion.com/v1/users/me")
+            .header("Authorization", format!("Bearer {}", token.trim()))
+            .header("Notion-Version", "2022-06-28"),
+        // validate_service already rejects everything else, but keep this
+        // arm to make the match exhaustive without an `_` that could
+        // silently accept new services.
+        other => return Err(format!("Unsupported service for test: {}", other)),
+    };
+
+    match request.send().await {
+        Ok(resp) => {
+            let ok = resp.status().is_success();
+            if !ok {
+                warn!(
+                    "Credential test for {} failed with status {}",
+                    service,
+                    resp.status()
+                );
+            }
+            Ok(ok)
+        }
+        Err(e) => {
+            warn!("Credential test for {} errored: {}", service, e);
+            Ok(false)
+        }
+    }
 }
 
 /// Return credential metadata (saved_at, enabled) without exposing the token.
@@ -112,11 +177,11 @@ pub fn get_credential_info(service: String) -> Result<Option<StoredCredential>, 
     debug!("Getting credential info for service: {}", service);
     keyring_store::migrate_from_json_if_needed();
 
-    if keyring_store::retrieve(&token_account(&service))?.is_none() {
+    if keyring_store::retrieve_signed(&token_account(&service))?.is_none() {
         return Ok(None);
     }
 
-    match keyring_store::retrieve(&meta_account(&service))? {
+    match keyring_store::retrieve_signed(&meta_account(&service))? {
         Some(meta_json) => {
             let meta: CredentialMeta = serde_json::from_str(&meta_json).unwrap_or(CredentialMeta {
                 saved_at: "Unknown".to_string(),

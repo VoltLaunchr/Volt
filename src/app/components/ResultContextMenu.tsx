@@ -90,12 +90,14 @@ export function ResultContextMenu({
         icon: '\ud83d\udccc',
         onClick: () => {
           if (command) {
-            invoke('pin_shell_command', { command }).catch(() => {});
+            invoke<void>('pin_shell_command', { command }).catch(() => {});
           }
         },
       },
     ];
   };
+
+  const isFileResult = state.result?.type === SearchResultType.File;
 
   const defaultActions = [
     {
@@ -107,6 +109,21 @@ export function ResultContextMenu({
         if (state.result) onLaunch(state.result);
       },
     },
+    ...(isFileResult
+      ? [
+          {
+            id: 'open-with',
+            label: 'Open With\u2026',
+            icon: '\ud83d\udce6',
+            onClick: () => {
+              if (state.result) {
+                invoke<void>('open_file_with_dialog', { path: pathOf(state.result) }).catch(() => {});
+                onClose();
+              }
+            },
+          },
+        ]
+      : []),
     {
       id: 'open-location',
       label: t('contextMenu.openFolder'),

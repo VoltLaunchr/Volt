@@ -1,4 +1,5 @@
-import './Toggle.css';
+import { Switch } from '@base-ui/react/switch';
+import { cn } from '@/lib/utils';
 
 export interface ToggleProps {
   checked: boolean;
@@ -9,24 +10,22 @@ export interface ToggleProps {
 }
 
 export function Toggle({ checked, onChange, label, disabled = false, id }: ToggleProps) {
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    onChange(e.target.checked);
-  };
-
   return (
-    <div className={`toggle-wrapper ${disabled ? 'toggle-disabled' : ''}`}>
-      <label className="toggle-container" htmlFor={id}>
-        <input
-          id={id}
-          type="checkbox"
-          className="toggle-input"
-          checked={checked}
-          onChange={handleChange}
-          disabled={disabled}
-        />
-        <span className="toggle-slider"></span>
-      </label>
-      {label && <span className="toggle-label">{label}</span>}
+    <div className={cn('flex items-center gap-2', disabled && 'opacity-50')}>
+      <Switch.Root
+        id={id}
+        checked={checked}
+        onCheckedChange={onChange}
+        disabled={disabled}
+        className="relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border border-hairline transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-hairline-strong data-[checked]:bg-on-dark data-[unchecked]:bg-surface-elevated disabled:cursor-not-allowed"
+      >
+        <Switch.Thumb className="pointer-events-none block h-4 w-4 rounded-full bg-surface transition-transform data-[checked]:translate-x-[18px] data-[unchecked]:translate-x-0.5" />
+      </Switch.Root>
+      {label && (
+        <label htmlFor={id} className="text-sm text-body cursor-pointer select-none">
+          {label}
+        </label>
+      )}
     </div>
   );
 }

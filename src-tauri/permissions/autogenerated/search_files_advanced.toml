@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-search-files-advanced"
+description = "Enables the search_files_advanced command without any pre-configured scope."
+commands.allow = ["search_files_advanced"]
+
+[[permission]]
+identifier = "deny-search-files-advanced"
+description = "Denies the search_files_advanced command without any pre-configured scope."
+commands.deny = ["search_files_advanced"]

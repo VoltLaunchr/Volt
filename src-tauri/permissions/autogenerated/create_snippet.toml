@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-create-snippet"
+description = "Enables the create_snippet command without any pre-configured scope."
+commands.allow = ["create_snippet"]
+
+[[permission]]
+identifier = "deny-create-snippet"
+description = "Denies the create_snippet command without any pre-configured scope."
+commands.deny = ["create_snippet"]

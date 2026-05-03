@@ -2,7 +2,7 @@ use crate::core::error::{VoltError, VoltResult};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::Mutex;
 
 /// Mutex to serialize settings read-modify-write operations and prevent race conditions
@@ -117,12 +117,60 @@ pub struct IndexingSettings {
     pub index_on_startup: bool,
 }
 
+/// Standard directory names that are always excluded from the file index.
+/// Component-based (not absolute) so they match at any depth in the tree.
+pub fn default_excluded_paths() -> Vec<String> {
+    vec![
+        // JS / Python ecosystem noise
+        "node_modules".into(),
+        ".git".into(),
+        ".svn".into(),
+        "__pycache__".into(),
+        ".venv".into(),
+        "venv".into(),
+        // Build outputs
+        "target".into(), // Rust
+        "dist".into(),
+        "build".into(),
+        ".next".into(), // Next.js
+        ".nuxt".into(), // Nuxt
+        // Temp & cache (maps to **/tmp/**, **/temp/**)
+        "tmp".into(),
+        "temp".into(),
+        "Temp".into(),
+        // Cache dirs (maps to **/{C}ache/**, **/{C}aches/**)
+        "Cache".into(),
+        "cache".into(),
+        "Caches".into(),
+        "caches".into(),
+        ".cache".into(),
+        // Windows system
+        "$Recycle.Bin".into(),
+        "System Volume Information".into(),
+        "AppData".into(),
+        "Windows".into(),
+        // macOS system
+        "Library".into(),
+    ]
+}
+
 impl Default for IndexingSettings {
     fn default() -> Self {
         Self {
             folders: vec![],
-            excluded_paths: vec![],
-            file_extensions: vec!["exe".to_string(), "lnk".to_string()],
+            excluded_paths: default_excluded_paths(),
+            file_extensions: vec![
+                "pdf".into(),
+                "docx".into(),
+                "doc".into(),
+                "txt".into(),
+                "xlsx".into(),
+                "xls".into(),
+                "pptx".into(),
+                "ppt".into(),
+                "md".into(),
+                "csv".into(),
+            ],
             index_on_startup: true,
         }
     }
@@ -266,8 +314,36 @@ pub async fn load_settings(app_handle: AppHandle) -> VoltResult<Settings> {
     let content = fs::read_to_string(&settings_path)
         .map_err(|e| VoltError::FileSystem(format!("Failed to read settings file: {}", e)))?;
 
-    let settings: Settings = serde_json::from_str(&content)
+    let mut settings: Settings = serde_json::from_str(&content)
         .map_err(|e| VoltError::Serialization(format!("Failed to parse settings: {}", e)))?;
+
+    // Migration: the old Rust default was ["exe", "lnk"] which silently blocked all
+    // document/markdown files from being indexed. The correct default is [] (all types).
+    // Since the Settings UI never exposed this field, anyone with exactly ["exe", "lnk"]
+    // got there from the old default — reset them to [].
+    let legacy_ext = &settings.indexing.file_extensions;
+    let is_legacy_default = legacy_ext.len() == 2
+        && legacy_ext.iter().any(|e| e == "exe")
+        && legacy_ext.iter().any(|e| e == "lnk");
+
+    let mut needs_save = false;
+    if is_legacy_default {
+        settings.indexing.file_extensions.clear();
+        needs_save = true;
+    }
+
+    // Additive migration: ensure the default noise exclusions are always present.
+    // Existing user exclusions are kept; we only add missing ones.
+    for p in default_excluded_paths() {
+        if !settings.indexing.excluded_paths.contains(&p) {
+            settings.indexing.excluded_paths.push(p);
+            needs_save = true;
+        }
+    }
+
+    if needs_save {
+        save_settings_to_file(&settings_path, &settings)?;
+    }
 
     Ok(settings)
 }
@@ -276,16 +352,35 @@ pub async fn load_settings(app_handle: AppHandle) -> VoltResult<Settings> {
 #[tauri::command]
 pub async fn save_settings(app_handle: AppHandle, settings: Settings) -> VoltResult<()> {
     let settings_path = get_settings_path(&app_handle)?;
-    save_settings_to_file(&settings_path, &settings)
+    save_settings_to_file(&settings_path, &settings)?;
+    // Broadcast to all windows so they can update their in-memory settings state
+    let _ = app_handle.emit("settings-changed", &settings);
+    Ok(())
 }
 
 /// Helper function to save settings to a file
+///
+/// Uses a write-to-temp-then-rename pattern so that a crash during the write
+/// never leaves a zero-byte (or partially-written) settings file behind.
 fn save_settings_to_file(path: &PathBuf, settings: &Settings) -> VoltResult<()> {
     let content = serde_json::to_string_pretty(settings)
         .map_err(|e| VoltError::Serialization(format!("Failed to serialize settings: {}", e)))?;
 
-    fs::write(path, content)
-        .map_err(|e| VoltError::FileSystem(format!("Failed to write settings file: {}", e)))?;
+    let tmp_path = path.with_extension("json.tmp");
+    fs::write(&tmp_path, &content)
+        .map_err(|e| VoltError::FileSystem(format!("Failed to write temp settings file: {}", e)))?;
+
+    if let Err(rename_err) = fs::rename(&tmp_path, path) {
+        // Rename failed (e.g. cross-device); fall back to direct write and
+        // clean up the temp file so we don't leave orphaned files behind.
+        let _ = fs::remove_file(&tmp_path);
+        fs::write(path, &content).map_err(|e| {
+            VoltError::FileSystem(format!(
+                "Failed to write settings file (rename failed: {}; fallback error: {})",
+                rename_err, e
+            ))
+        })?;
+    }
 
     Ok(())
 }
@@ -363,9 +458,9 @@ pub async fn get_theme(app_handle: AppHandle) -> VoltResult<String> {
 /// Set the theme
 #[tauri::command]
 pub async fn set_theme(app_handle: AppHandle, theme: String) -> VoltResult<()> {
-    let mut settings = load_settings(app_handle.clone()).await?;
-    settings.appearance.theme = theme;
-    save_settings(app_handle, settings).await
+    update_settings_section(app_handle, |s| s.appearance.theme = theme)
+        .await
+        .map(|_| ())
 }
 
 /// Update shortcuts settings
@@ -387,32 +482,31 @@ pub async fn get_app_shortcuts(app_handle: AppHandle) -> VoltResult<Vec<AppShort
 /// Add or update an app shortcut
 #[tauri::command]
 pub async fn save_app_shortcut(app_handle: AppHandle, shortcut: AppShortcut) -> VoltResult<()> {
-    let mut settings = load_settings(app_handle.clone()).await?;
-
-    // Find and update existing shortcut or add new one
-    if let Some(existing) = settings
-        .shortcuts
-        .app_shortcuts
-        .iter_mut()
-        .find(|s| s.id == shortcut.id)
-    {
-        *existing = shortcut;
-    } else {
-        settings.shortcuts.app_shortcuts.push(shortcut);
-    }
-
-    save_settings(app_handle, settings).await
+    update_settings_section(app_handle, |s| {
+        // Find and update existing shortcut or add new one
+        if let Some(existing) = s
+            .shortcuts
+            .app_shortcuts
+            .iter_mut()
+            .find(|e| e.id == shortcut.id)
+        {
+            *existing = shortcut;
+        } else {
+            s.shortcuts.app_shortcuts.push(shortcut);
+        }
+    })
+    .await
+    .map(|_| ())
 }
 
 /// Delete an app shortcut
 #[tauri::command]
 pub async fn delete_app_shortcut(app_handle: AppHandle, shortcut_id: String) -> VoltResult<()> {
-    let mut settings = load_settings(app_handle.clone()).await?;
-    settings
-        .shortcuts
-        .app_shortcuts
-        .retain(|s| s.id != shortcut_id);
-    save_settings(app_handle, settings).await
+    update_settings_section(app_handle, |s| {
+        s.shortcuts.app_shortcuts.retain(|e| e.id != shortcut_id);
+    })
+    .await
+    .map(|_| ())
 }
 
 /// Wrapper for exported settings with metadata
@@ -538,6 +632,58 @@ pub async fn export_settings(app_handle: AppHandle, path: String) -> VoltResult<
     Ok(validated_path.to_string_lossy().to_string())
 }
 
+/// Sanitize a list of indexing folders coming from an import file.
+///
+/// Drops entries that would let an attacker craft a settings export aimed
+/// at an unwitting victim. We reject:
+///   * empty / whitespace-only paths
+///   * any path containing a `..` component (traversal)
+///   * absolute Windows paths under known system roots
+///   * absolute Unix paths under /etc, /usr, /bin, /sbin, /var
+///
+/// Excluded-path entries can be plain directory names (matched component-
+/// wise by the indexer), so we do not require absoluteness — we only reject
+/// traversal and obvious system roots.
+fn sanitize_imported_paths(paths: Vec<String>) -> Vec<String> {
+    paths
+        .into_iter()
+        .filter(|p| {
+            let trimmed = p.trim();
+            if trimmed.is_empty() {
+                return false;
+            }
+            let pb = std::path::PathBuf::from(trimmed);
+            if pb
+                .components()
+                .any(|c| matches!(c, std::path::Component::ParentDir))
+            {
+                return false;
+            }
+            let lower = trimmed.to_lowercase();
+            #[cfg(target_os = "windows")]
+            {
+                let blocked = [
+                    "c:\\windows",
+                    "c:\\program files",
+                    "c:\\program files (x86)",
+                    "c:\\programdata",
+                ];
+                if blocked.iter().any(|b| lower.starts_with(b)) {
+                    return false;
+                }
+            }
+            #[cfg(not(target_os = "windows"))]
+            {
+                let blocked = ["/etc", "/usr", "/bin", "/sbin", "/var", "/proc", "/sys"];
+                if blocked.iter().any(|b| lower.starts_with(b)) {
+                    return false;
+                }
+            }
+            true
+        })
+        .collect()
+}
+
 /// Import settings from a JSON file at the given path
 #[tauri::command]
 pub async fn import_settings(app_handle: AppHandle, path: String) -> VoltResult<Settings> {
@@ -554,8 +700,15 @@ pub async fn import_settings(app_handle: AppHandle, path: String) -> VoltResult<
         VoltError::InvalidConfig("Invalid settings file: missing 'settings' key".to_string())
     })?;
 
-    let settings: Settings = serde_json::from_value(settings_value.clone())
+    let mut settings: Settings = serde_json::from_value(settings_value.clone())
         .map_err(|e| VoltError::InvalidConfig(format!("Invalid settings structure: {}", e)))?;
+
+    // Re-validate path-bearing fields. A crafted import could otherwise point
+    // the indexer at sensitive system roots or smuggle traversal sequences.
+    settings.indexing.folders =
+        sanitize_imported_paths(std::mem::take(&mut settings.indexing.folders));
+    settings.indexing.excluded_paths =
+        sanitize_imported_paths(std::mem::take(&mut settings.indexing.excluded_paths));
 
     // Save the imported settings
     save_settings(app_handle, settings.clone()).await?;
@@ -568,52 +721,63 @@ pub async fn import_settings(app_handle: AppHandle, path: String) -> VoltResult<
 pub async fn sync_app_shortcuts(app_handle: AppHandle) -> VoltResult<Vec<AppShortcut>> {
     use crate::commands::apps::scan_applications_fresh;
 
-    // Force fresh scan to get updated categories
+    // Perform the expensive scan *before* acquiring the settings lock so we
+    // hold the lock only for the read-modify-write cycle, not for the I/O.
     let apps = scan_applications_fresh().await?;
-    let mut settings = load_settings(app_handle.clone()).await?;
 
-    // Keep existing shortcuts data (aliases, hotkeys) but update category from fresh scan
-    let existing_shortcuts: std::collections::HashMap<String, AppShortcut> = settings
-        .shortcuts
-        .app_shortcuts
-        .iter()
-        .map(|s| (s.id.clone(), s.clone()))
-        .collect();
+    let mut new_shortcuts_out = Vec::new();
 
-    let mut new_shortcuts = Vec::new();
+    update_settings_section(app_handle, |settings| {
+        // Keep existing shortcuts data (aliases, hotkeys) but update category from fresh scan
+        let existing_shortcuts: std::collections::HashMap<String, AppShortcut> = settings
+            .shortcuts
+            .app_shortcuts
+            .iter()
+            .map(|s| (s.id.clone(), s.clone()))
+            .collect();
 
-    for app in apps {
-        let shortcut = if let Some(existing) = existing_shortcuts.get(&app.id) {
-            // Keep existing alias/hotkey but update category from fresh scan
-            AppShortcut {
-                id: existing.id.clone(),
-                name: app.name,
-                category: app.category.unwrap_or_else(|| "Applications".to_string()),
-                icon: app.icon,
-                path: app.path,
-                alias: existing.alias.clone(),
-                hotkey: existing.hotkey.clone(),
-                enabled: existing.enabled,
-            }
-        } else {
-            // Create new shortcut
-            AppShortcut {
-                id: app.id.clone(),
-                name: app.name,
-                category: app.category.unwrap_or_else(|| "Applications".to_string()),
-                icon: app.icon,
-                path: app.path,
-                alias: None,
-                hotkey: None,
-                enabled: true,
-            }
-        };
+        let mut new_shortcuts = Vec::new();
 
-        new_shortcuts.push(shortcut);
-    }
+        for app in &apps {
+            let shortcut = if let Some(existing) = existing_shortcuts.get(&app.id) {
+                // Keep existing alias/hotkey but update category from fresh scan
+                AppShortcut {
+                    id: existing.id.clone(),
+                    name: app.name.clone(),
+                    category: app
+                        .category
+                        .clone()
+                        .unwrap_or_else(|| "Applications".to_string()),
+                    icon: app.icon.clone(),
+                    path: app.path.clone(),
+                    alias: existing.alias.clone(),
+                    hotkey: existing.hotkey.clone(),
+                    enabled: existing.enabled,
+                }
+            } else {
+                // Create new shortcut
+                AppShortcut {
+                    id: app.id.clone(),
+                    name: app.name.clone(),
+                    category: app
+                        .category
+                        .clone()
+                        .unwrap_or_else(|| "Applications".to_string()),
+                    icon: app.icon.clone(),
+                    path: app.path.clone(),
+                    alias: None,
+                    hotkey: None,
+                    enabled: true,
+                }
+            };
 
-    settings.shortcuts.app_shortcuts = new_shortcuts.clone();
-    save_settings(app_handle, settings).await?;
+            new_shortcuts.push(shortcut);
+        }
 
-    Ok(new_shortcuts)
+        settings.shortcuts.app_shortcuts = new_shortcuts.clone();
+        new_shortcuts_out = new_shortcuts;
+    })
+    .await?;
+
+    Ok(new_shortcuts_out)
 }

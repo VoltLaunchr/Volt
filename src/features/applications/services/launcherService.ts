@@ -17,7 +17,7 @@ export const launcherService = {
    */
   async launchApp(path: string): Promise<void> {
     try {
-      await invoke('launch_app', { path });
+      await invoke<void>('launch_app', { path });
     } catch (error) {
       logger.error('Failed to launch app:', error);
       throw new Error(`Failed to launch application: ${error}`);
@@ -68,7 +68,7 @@ export const launcherService = {
    */
   async pinApp(path: string): Promise<void> {
     try {
-      await invoke('pin_app', { path });
+      await invoke<void>('pin_app', { path });
     } catch (error) {
       logger.error('Failed to pin app:', error);
       throw new Error(`Failed to pin application: ${error}`);
@@ -81,7 +81,7 @@ export const launcherService = {
    */
   async unpinApp(path: string): Promise<void> {
     try {
-      await invoke('unpin_app', { path });
+      await invoke<void>('unpin_app', { path });
     } catch (error) {
       logger.error('Failed to unpin app:', error);
       throw new Error(`Failed to unpin application: ${error}`);
@@ -95,7 +95,7 @@ export const launcherService = {
    */
   async addTag(path: string, tag: string): Promise<void> {
     try {
-      await invoke('add_app_tag', { path, tag });
+      await invoke<void>('add_app_tag', { path, tag });
     } catch (error) {
       logger.error('Failed to add tag:', error);
       throw new Error(`Failed to add tag: ${error}`);
@@ -109,7 +109,7 @@ export const launcherService = {
    */
   async removeTag(path: string, tag: string): Promise<void> {
     try {
-      await invoke('remove_app_tag', { path, tag });
+      await invoke<void>('remove_app_tag', { path, tag });
     } catch (error) {
       logger.error('Failed to remove tag:', error);
       throw new Error(`Failed to remove tag: ${error}`);
@@ -159,7 +159,7 @@ export const launcherService = {
    */
   async clearHistory(): Promise<void> {
     try {
-      await invoke('clear_launch_history');
+      await invoke<void>('clear_launch_history');
     } catch (error) {
       logger.error('Failed to clear history:', error);
       throw new Error(`Failed to clear history: ${error}`);
@@ -172,7 +172,7 @@ export const launcherService = {
    */
   async removeFromHistory(path: string): Promise<void> {
     try {
-      await invoke('remove_from_history', { path });
+      await invoke<void>('remove_from_history', { path });
     } catch (error) {
       logger.error('Failed to remove from history:', error);
       throw new Error(`Failed to remove from history: ${error}`);

@@ -38,10 +38,25 @@ pub fn search_applications_with_frecency(
             // Match against name first
             let mut match_score = calculate_match_score(&app.name, query);
 
-            // If name doesn't match well, also try matching against path
-            // This catches "vscode" matching "...\VS Code\Code.exe"
+            // If name doesn't match well, try matching against the last two path components
+            // (parent dir + filename). Using the full path causes false positives because
+            // common prefixes like "...\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\"
+            // contain the letters r-o-a-d-m-a-p in order, making every Start Menu app
+            // fuzzy-match the query "roadmap".
             if match_score < 50.0 {
-                let path_score = calculate_match_score(&app.path, query);
+                let path = std::path::Path::new(&app.path);
+                let filename = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
+                let parent_name = path
+                    .parent()
+                    .and_then(|p| p.file_name())
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("");
+                let short_path = if parent_name.is_empty() {
+                    filename.to_string()
+                } else {
+                    format!("{} {}", parent_name, filename)
+                };
+                let path_score = calculate_match_score(&short_path, query);
                 if path_score > match_score {
                     match_score = path_score * 0.9; // slightly lower than name match
                 }

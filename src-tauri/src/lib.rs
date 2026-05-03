@@ -12,17 +12,88 @@ use commands::clipboard::ClipboardManagerState;
 use commands::files::{FileHistoryState, FileIndexState, WatcherState};
 use commands::launcher::LaunchHistoryState;
 use commands::shell::ShellExecutionState;
+use commands::sync::SyncState;
 use commands::system_monitor::SystemMonitorState;
 use commands::*;
 use hotkey::HotkeyState;
+use once_cell::sync::Lazy;
 use plugins::api::VoltPluginAPI;
 use plugins::registry::PluginRegistry;
-use std::sync::Arc;
+use std::collections::VecDeque;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 use tauri::{Emitter, Listener, Manager};
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::{EnvFilter, Registry, fmt, layer::SubscriberExt, util::SubscriberInitExt};
 use window::*;
+
+// ---------------------------------------------------------------------------
+// Deep-link rate limiter (H9 defense-in-depth)
+// ---------------------------------------------------------------------------
+//
+// Even with state-bound auth callbacks (C1), an attacker can still spam
+// `volt://...` URLs at a victim instance — via a malicious webpage,
+// another local app, or an `xdg-open` injection. Each spurious URL goes
+// through `handle_auth_deep_link` / `handle_oauth_deep_link` and consumes
+// CPU + log file space; sufficient volume can also smother legitimate
+// callbacks under a wall of "unknown state" warns.
+//
+// We keep a sliding 60-second window of arrival times. If more than
+// `DEEPLINK_BURST_LIMIT` URLs arrive in that window we drop the rest with
+// a single warn-level log (the *first* drop fires a warn, subsequent ones
+// are silent until the window clears). Legitimate callbacks fire at most
+// twice per OAuth round-trip so this does not interfere with normal use.
+
+const DEEPLINK_BURST_LIMIT: usize = 5;
+const DEEPLINK_WINDOW: Duration = Duration::from_secs(60);
+
+static DEEPLINK_TIMES: Lazy<Mutex<VecDeque<Instant>>> =
+    Lazy::new(|| Mutex::new(VecDeque::with_capacity(DEEPLINK_BURST_LIMIT + 1)));
+
+/// Returns `true` if this deep-link should be dropped due to rate limiting.
+/// Side effect: records the arrival time and logs once when transitioning
+/// from "below" to "above" the burst threshold.
+fn deeplink_rate_limited() -> bool {
+    let now = Instant::now();
+    let mut times = match DEEPLINK_TIMES.lock() {
+        Ok(g) => g,
+        Err(p) => p.into_inner(), // poisoned — best effort, don't crash on it
+    };
+
+    // Drop entries older than the window. Times are pushed in order so we
+    // can stop scanning at the first within-window entry.
+    while let Some(front) = times.front() {
+        if now.duration_since(*front) > DEEPLINK_WINDOW {
+            times.pop_front();
+        } else {
+            break;
+        }
+    }
+
+    if times.len() >= DEEPLINK_BURST_LIMIT {
+        // Was the previous arrival also above the limit? If so, suppress
+        // the warn to avoid log spam — we only fire on the transition.
+        let already_alerting = times.len() > DEEPLINK_BURST_LIMIT;
+        times.push_back(now);
+        // Cap the queue so a sustained flood doesn't grow unboundedly.
+        if times.len() > DEEPLINK_BURST_LIMIT * 4 {
+            times.pop_front();
+        }
+        if !already_alerting {
+            warn!(
+                "Deep-link burst limit exceeded ({} in {:?}) — dropping further \
+                 callbacks until the window clears. Possible spam / probe.",
+                times.len(),
+                DEEPLINK_WINDOW
+            );
+        }
+        return true;
+    }
+
+    times.push_back(now);
+    false
+}
 
 /// State for the plugin system
 pub struct PluginState {
@@ -52,7 +123,24 @@ pub fn run() {
     // instance with the new process's argv — we use it to re-focus the window.
     #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
     {
-        builder = builder.plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
+            // H9: log every second-instance launch for forensic trail.
+            // The deep-link plugin rewrites argv into a "deep-link://new-url"
+            // event that the listener below handles, so we don't act on the
+            // URLs here — but we DO log them (with query-params redacted) so
+            // a security investigation can attribute a tampered session to
+            // its original delivery vector. Any local process can deliver
+            // these URLs (we can't attest to the source), which is precisely
+            // why C1 (state-bound callbacks) and the rate limiter below are
+            // the primary defense.
+            for arg in argv.iter().skip(1) {
+                if arg.starts_with("volt://") {
+                    let redacted = arg.split('?').next().unwrap_or(arg);
+                    info!("[single-instance] forwarded deep link: {}", redacted);
+                } else {
+                    debug!("[single-instance] forwarded argv: {}", arg);
+                }
+            }
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.show();
                 let _ = window.unminimize();
@@ -178,11 +266,18 @@ pub fn run() {
                             }
                         }
 
-                        // Apply autostart setting
-                        if settings.general.start_with_windows
-                            && let Err(e) = enable_autostart(app_handle.clone()).await
-                        {
-                            warn!("Could not enable autostart: {}", e);
+                        // Apply autostart setting — blocked in debug builds since the dev
+                        // binary requires the Vite dev server (localhost:1420) which is not
+                        // running at boot. On dev launches we also clean up any stale entry
+                        // left by a previous dev session to prevent ERR_CONNECTION_REFUSED.
+                        if !cfg!(debug_assertions) {
+                            if settings.general.start_with_windows
+                                && let Err(e) = enable_autostart(app_handle.clone()).await
+                            {
+                                warn!("Could not enable autostart: {}", e);
+                            }
+                        } else if let Err(e) = disable_autostart(app_handle.clone()).await {
+                            warn!("Could not clean up dev autostart registration: {}", e);
                         }
 
                         // Apply window position from settings
@@ -285,6 +380,9 @@ pub fn run() {
 
             // Initialize quicklink state
             app.manage(QuicklinkState::new(data_dir.clone()));
+
+            // Initialize sync state
+            app.manage(SyncState::default());
 
             // Initialize plugin system
             let plugin_api = Arc::new(VoltPluginAPI::new(data_dir));
@@ -392,20 +490,68 @@ pub fn run() {
                     for url_str in &urls {
                         // Redact query params to avoid logging sensitive tokens
                         let redacted_url = url_str.split('?').next().unwrap_or(url_str);
+
+                        // H9: cap deep-link processing rate. Legitimate flows
+                        // produce ≤2 callbacks per round-trip; anything
+                        // beyond DEEPLINK_BURST_LIMIT in DEEPLINK_WINDOW is
+                        // either a probe or unrelated noise. We drop after
+                        // the cap; the auth/oauth state nonces (C1, OAuth
+                        // state map) already prevent any single forged URL
+                        // from succeeding, but we don't want a flood to
+                        // smother legitimate callbacks under "unknown state"
+                        // warnings either.
+                        if deeplink_rate_limited() {
+                            debug!("Deep link dropped by rate limiter: {}", redacted_url);
+                            continue;
+                        }
+
                         info!("Deep link received: {}", redacted_url);
                         if url_str.starts_with("volt://auth/callback") {
-                            match commands::auth::handle_auth_deep_link(url_str) {
-                                Ok(_session) => {
-                                    info!("Auth session saved from deep link");
-                                    if let Err(e) = emitter_handle.emit("auth:session-updated", ())
-                                    {
-                                        error!("Failed to emit auth:session-updated event: {}", e);
+                            // `handle_auth_deep_link` is async because it
+                            // hits the project JWKS endpoint to verify the
+                            // ES256 signature of the access token. The
+                            // listener closure is sync, so spawn the work
+                            // on Tauri's async runtime and emit the
+                            // session-updated event from there.
+                            let url_owned = url_str.clone();
+                            let emitter = emitter_handle.clone();
+                            tauri::async_runtime::spawn(async move {
+                                match commands::auth::handle_auth_deep_link(&url_owned).await {
+                                    Ok(_session) => {
+                                        info!("Auth session saved from deep link");
+                                        // Broadcast to every webview that's listening.
+                                        if let Err(e) = emitter.emit("auth:session-updated", ()) {
+                                            error!(
+                                                "Failed to emit auth:session-updated event: {}",
+                                                e
+                                            );
+                                        }
+                                        // Defence-in-depth: also dispatch
+                                        // explicitly to the named windows we
+                                        // know host the auth UI. Tauri's
+                                        // global emit *should* reach every
+                                        // webview, but in practice we've seen
+                                        // the Settings window miss the event
+                                        // (likely a listener-timing issue
+                                        // when its React tree hadn't yet
+                                        // attached the listener). Dispatching
+                                        // by label closes that gap.
+                                        for label in ["main", "settings"] {
+                                            if let Err(e) =
+                                                emitter.emit_to(label, "auth:session-updated", ())
+                                            {
+                                                debug!(
+                                                    "auth:session-updated emit_to({}) failed: {}",
+                                                    label, e
+                                                );
+                                            }
+                                        }
+                                    }
+                                    Err(e) => {
+                                        error!("Failed to handle auth deep link: {}", e);
                                     }
                                 }
-                                Err(e) => {
-                                    error!("Failed to handle auth deep link: {}", e);
-                                }
-                            }
+                            });
                         } else if url_str.starts_with("volt://oauth-callback") {
                             match commands::oauth::handle_oauth_deep_link(url_str) {
                                 Ok(result) => {
@@ -467,6 +613,7 @@ pub fn run() {
             get_frecency_suggestions,
             record_search_selection,
             open_path,
+            open_file_with_dialog,
             // Batch search command
             search_all,
             // File indexing commands
@@ -575,6 +722,8 @@ pub fn run() {
             get_enabled_extensions_sources,
             get_extension_tamper_alert,
             acknowledge_extension_tamper_alert,
+            fetch_extension_downloads,
+            increment_extension_download,
             // Dev extensions commands
             get_dev_extensions,
             link_dev_extension,
@@ -584,10 +733,10 @@ pub fn run() {
             refresh_dev_extension,
             // Credentials commands
             save_credential,
-            load_credential,
             has_credential,
             delete_credential,
             get_credential_info,
+            test_credential,
             // Auth commands (Supabase)
             auth_login,
             auth_get_session,
@@ -608,6 +757,10 @@ pub fn run() {
             save_quicklink,
             delete_quicklink,
             open_quicklink,
+            // Sync commands (premium)
+            sync_push,
+            sync_pull,
+            get_sync_status,
             // Snippet commands
             get_snippets,
             create_snippet,

@@ -1,6 +1,6 @@
 # Volt — Roadmap
 
-**Version actuelle :** `0.0.8` &nbsp;•&nbsp; **Derniere mise a jour :** 2026-04-18 &nbsp;•&nbsp; **Statut :** P1 finalisation (M1.1 ✅ · M1.2 ✅ · M1.3 🟡 blocage certs · M1.4 ✅) | Phase 2-4 ✅ completes | Phase 4+ features continues
+**Version actuelle :** `0.1.1` &nbsp;•&nbsp; **Derniere mise a jour :** 2026-05-03 &nbsp;•&nbsp; **Statut :** P1 finalisation (M1.1 ✅ · M1.2 ✅ · M1.3 🟡 blocage certs · M1.4 ✅) | Phase 2-4 ✅ completes | Phase 4+ features continues | **Security hardening v2 ✅**
 
 > Document vivant. Les milestones sont groupes en 4 phases. Chaque milestone liste un **but**, des **taches concretes** (avec fichiers), des **criteres d'acceptation** et une **estimation**.
 >
@@ -353,6 +353,26 @@
 - [x] **Export diagnostics** : export complet depuis Settings > About
 - [x] **Tests i18n** : parity check en/fr automatise
 
+### ✅ Security hardening v2 (2026-05-03)
+
+- [x] **Auth CSRF** : state nonce HMAC lie a `volt://auth/callback` — deep-link drive-by impossible (`auth_start_login`, `handle_auth_deep_link`)
+- [x] **JWT validation** : claims `exp`, `iss`, `sub` verifies cote Rust ; `user_id` et `expires_at` jamais tires des query params
+- [x] **Token refresh** : user_id mismatch rejete + `expires_in` plafonne a 24h
+- [x] **HMAC sur keyring** : `store_signed`/`retrieve_signed` avec tag de domaine length-prefixe (M10) — force les attaquants a recalculer a chaque swap
+- [x] **Extensions fail-closed** : signature mismatch → `granted_permissions` reset a vide, forensic log par extension (H4)
+- [x] **Permission allowlist backend** : `ALLOWED_PERMISSIONS` valide cote Rust a chaque `update_extension_permissions` (M1) — lot entier refuse sur entree inconnue
+- [x] **Extension SSRF** : blocage redirections + IP numeriques IPv4/IPv6-mappees dans le proxy fetch Worker
+- [x] **Deep-link rate-limit** : `single-instance` forward avec historique forensic (H9)
+- [x] **Shell hardening** : NFKC + quote-strip avant matching blocklist ; 9+ nouveaux patterns (PowerShell destructif, diskpart, init 0/6, -EncodedCommand, find -delete)
+- [x] **Redacteurs shell** : GitHub tokens, AWS AKIA, Stripe sk_, Slack xox*, JWT, curl -u
+- [x] **UNC working_dir** : rejete dans shell (fuite NTLM) + `open_file_with_dialog` + `open_path`
+- [x] **open_file_with_dialog** : nouvelle commande Tauri — .lnk et UNC bloques, path canonicalise
+- [x] **open_path** : refus des types executables (contourne LOLBIN/extension validation)
+- [x] **windows_search** : longueur query plafonnee
+- [x] **snippets** : taille JSON import + comptage snippets plafonnes
+- [x] **test_credential** : nouvelle commande Rust — token reste cote Rust, jamais dans le renderer
+- [x] **Worker sandbox** : `clear_pending` map au timeout pour eviter les fuites
+
 ### A faire (post-2.0)
 
 - Redaction automatique clipboard
@@ -386,9 +406,10 @@
 
 | Jalon | Contenu | Bloquants | Estimation |
 |-------|---------|-----------|-----------|
-| **v1.0.0** | Phase 1-4 feature-complete + hardening securite | Code signing cert (~340 €) + CSP test | **Fin avril 2026** |
-| **v1.0.1** | Bug fixes + polish | Retours utilisateurs | **Mai 2026** |
-| **v2.0.0** | Phase 5 ecosystem | User feedback | **Juin 2026+** |
+| **v0.1.1** ✅ | Security hardening v2 (auth CSRF, HMAC keyring, extensions fail-closed, shell hardening) | — | **2026-05-03** |
+| **v1.0.0** | Phase 1-4 feature-complete + code signing | Code signing cert (~340 €) + CSP test | **Mai/Juin 2026** |
+| **v1.0.1** | Bug fixes + polish | Retours utilisateurs | **Juillet 2026** |
+| **v2.0.0** | Phase 5 ecosystem | User feedback | **2026+** |
 
 **Actions immediatement necessaires :**
 1. Acquerir Windows Authenticode + macOS Developer ID certs (~340 €/an)
@@ -420,4 +441,4 @@
 
 ---
 
-_Document vivant — mettre a jour a chaque fin de milestone. **Derniere revision :** 2026-04-18 (Extension hardening, System Monitor v2, 10 game scanners, Focus Timer, Quicklinks, Deep links, CI automation)._
+_Document vivant — mettre a jour a chaque fin de milestone. **Derniere revision :** 2026-05-03 (Security hardening v2 : auth CSRF/JWT, HMAC keyring, extensions fail-closed + permission allowlist, shell blocklist etendu + redacteurs, UNC blocking, open_file_with_dialog, snippets/windows_search caps, deep-link rate-limit)._

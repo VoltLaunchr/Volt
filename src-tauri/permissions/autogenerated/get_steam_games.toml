@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-get-steam-games"
+description = "Enables the get_steam_games command without any pre-configured scope."
+commands.allow = ["get_steam_games"]
+
+[[permission]]
+identifier = "deny-get-steam-games"
+description = "Denies the get_steam_games command without any pre-configured scope."
+commands.deny = ["get_steam_games"]

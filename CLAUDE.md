@@ -40,7 +40,7 @@ commands/      # Tauri command handlers
   files.rs     # File indexing
   launcher.rs  # Launch history & pins
   clipboard.rs # Clipboard history
-  extensions.rs# Extension management (14 cmds + security hardening + tamper alerts)
+  extensions.rs# Extension management (14 cmds + security hardening + tamper alerts + fail-closed + permission allowlist)
   games.rs     # Game scanning
   steam.rs     # Steam integration
   system_monitor.rs # CPU/RAM/disk metrics + v2 (per-core, network, temps, processes)
@@ -48,12 +48,12 @@ commands/      # Tauri command handlers
   snippets.rs  # Snippet CRUD + variable expansion
   plugins.rs   # Plugin commands
   quicklinks.rs# Quicklinks CRUD with URL/folder/command validation
-  shell.rs     # Shell command execution (streaming, blocklist, redaction, tokens)
+  shell.rs     # Shell command execution (streaming, NFKC blocklist + 9+ patterns, extended redactors, UNC working_dir rejected)
   shell_history.rs # Shell history with frecency scoring (500 entries)
-  auth.rs      # Supabase auth + deep link handling
-  oauth.rs     # OAuth flow (GitHub, Notion) + deep link callbacks
-  credentials.rs # Encrypted credential storage (OS keyring)
-  keyring_store.rs # OS keyring abstraction
+  auth.rs      # Supabase auth + deep link; CSRF state nonce (5 min TTL); JWT claim validation; refresh user_id check
+  oauth.rs     # OAuth flow (GitHub, Notion) + deep link callbacks (host check, state log demoted)
+  credentials.rs # Encrypted credential storage (OS keyring); test_credential (token never in renderer)
+  keyring_store.rs # OS keyring abstraction; store_signed/retrieve_signed (domain-tagged HMAC-SHA256)
   hotkey.rs    # Hotkey commands
   autostart.rs # Autostart management
   logging.rs   # Log management
@@ -141,8 +141,10 @@ src/
 - Network proxy: Worker fetch requests proxied via postMessage if network permission granted
 - **Security hardening**:
   - HMAC-SHA256 state signatures on `installed.json`/`dev-extensions.json` (key in OS keyring)
-  - Worker sandbox: eval/Function/WebSocket/XMLHttpRequest/importScripts disabled
-  - SSRF prevention: private IP blocking, credentials omit, Cookie/Auth headers stripped, 10MB body cap
+  - Signature mismatch → fail-closed: `granted_permissions` reset to empty for every extension (H4)
+  - Backend permission allowlist: `ALLOWED_PERMISSIONS` in `extensions.rs` — entire batch rejected on unknown entry (M1)
+  - Worker sandbox: eval/Function/WebSocket/XMLHttpRequest/importScripts disabled; pending map cleared on timeout
+  - SSRF prevention: private IP blocking, redirect SSRF blocked, numeric IPv4/IPv6-mapped hosts rejected, credentials omit, Cookie/Auth headers stripped, 10MB body cap
   - Launch validation: LOLBIN denylist, NTFS normalization, executable extension validation
   - Tamper detection: `.sig` files, UI alerts on mismatch, `get_extension_tamper_alert` command
 
@@ -221,3 +223,118 @@ Always-on-top, transparent, 800x550px, no decorations, skips taskbar (see `tauri
 - Follow existing patterns for new features
 - Builtin plugins go in-repo; community extensions go in volt-extensions repo
 - Always verify compilation after changes: `cargo check` (Rust) + `bun run build` (TS)
+
+---
+
+## Lint & Code Quality — Règles absolues
+
+### Interdictions strictes
+Tu n'as **jamais** le droit de :
+- Mettre une règle ESLint à `'off'` ou rétrograder à `'warn'` pour faire passer le lint
+- Ajouter un commentaire `// eslint-disable` ou `// eslint-disable-next-line`
+- Ajouter `// @ts-ignore` ou `// @ts-expect-error`
+- Utiliser `as any` pour contourner une erreur TypeScript
+
+**Si une règle ESLint fire → tu fixes le code, pas la règle.**
+
+### Règles ESLint actives et non-négociables
+
+Ces règles sont à `'error'` et ne doivent jamais être désactivées :
+
+| Règle | Pourquoi c'est non-négociable |
+|---|---|
+| `react-hooks/purity` | `Date.now()`, `Math.random()` en render = hydration mismatch + memoization cassée avec React Compiler |
+| `react-hooks/refs` | `ref.current` lu en render = comportement indéfini, React peut re-render plusieurs fois |
+| `react-hooks/rules-of-hooks` | Hooks dans des conditions = crash garanti |
+| `react-hooks/exhaustive-deps` | Deps manquantes = bugs de stale closure silencieux |
+| `@typescript-eslint/no-unused-vars` | Code mort = dette technique et confusion |
+| `@typescript-eslint/no-require-imports` | Le projet est ESM — `require()` est interdit |
+
+### Comment corriger chaque type de violation
+
+**`react-hooks/purity`** — fonction impure en render (`Date.now()`, `Math.random()`, `crypto.randomUUID()`) :
+```ts
+// ❌ Interdit
+function Component() {
+  const id = Date.now(); // fire en render
+}
+
+// ✅ Init unique
+const [id] = useState(() => Date.now());
+
+// ✅ Recalcul mémoïsé
+const value = useMemo(() => Math.random(), []);
+
+// ✅ Dans un effet
+useEffect(() => { setTimestamp(Date.now()); }, []);
+
+// ✅ Dans un event handler
+<button onClick={() => setId(crypto.randomUUID())}>
+```
+
+**`react-hooks/refs`** — accès à `ref.current` pendant le render :
+```ts
+// ❌ Interdit
+function Input() {
+  const inputRef = useRef(null);
+  const value = inputRef.current?.value; // lu en render
+}
+
+// ✅ Dans un useEffect
+useEffect(() => {
+  const value = inputRef.current?.value;
+}, []);
+
+// ✅ Dans un event handler
+const handleClick = () => { inputRef.current?.focus(); };
+```
+
+**`@typescript-eslint/no-unused-vars`** :
+```ts
+// ❌ Variable morte → supprimer
+const unused = 'never used';
+
+// ✅ Intentionnellement ignorée → préfixer _
+function handler(_event: MouseEvent) { ... }
+const [_state, setState] = useState(0);
+```
+
+**`@typescript-eslint/no-require-imports`** :
+```ts
+// ❌ CommonJS interdit
+const fs = require('fs');
+
+// ✅ ESM
+import fs from 'fs';
+import { readFile } from 'fs/promises';
+```
+
+### Validation obligatoire avant tout commit
+
+```bash
+bun run lint 2>&1   # 0 errors, 0 warnings non-préexistants
+bun run build       # TS compile sans erreur
+cargo check         # si fichiers Rust modifiés
+```
+
+Le critère de succès est `bun run lint` propre **sans aucune règle désactivée** qui n'était pas déjà présente avant ta tâche.
+
+### Convention `no-unused-vars` — configuration légitime
+
+La seule configuration autorisée pour ignorer des variables est le préfixe `_` :
+```js
+'@typescript-eslint/no-unused-vars': ['error', {
+  argsIgnorePattern: '^_',
+  varsIgnorePattern: '^_',
+  caughtErrorsIgnorePattern: '^_',
+  ignoreRestSiblings: true,
+}]
+```
+Ne jamais élargir ce pattern pour couvrir des variables qui ne sont pas intentionnellement ignorées.
+
+### Globals navigateur légitimes
+
+Les globals suivants sont autorisés dans `eslint.config.js` car absents de l'env ESLint par défaut mais réels dans le contexte Tauri/browser :
+`atob`, `btoa`, `location`, `history`, `confirm`, `alert`, `prompt`, `requestAnimationFrame`, `cancelAnimationFrame`, `SVGGElement`, `SVGSVGElement`
+
+Ne jamais ajouter un global pour contourner une erreur — si ESLint se plaint d'un symbole, vérifie d'abord s'il est vraiment disponible dans le contexte d'exécution.

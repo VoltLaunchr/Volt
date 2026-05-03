@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-clear-shell-history"
+description = "Enables the clear_shell_history command without any pre-configured scope."
+commands.allow = ["clear_shell_history"]
+
+[[permission]]
+identifier = "deny-clear-shell-history"
+description = "Denies the clear_shell_history command without any pre-configured scope."
+commands.deny = ["clear_shell_history"]

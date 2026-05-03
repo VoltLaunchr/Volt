@@ -7,6 +7,7 @@ import { defaultSuggestions } from '../../shared/constants/suggestions';
 import { FileInfo, SearchResult, SearchResultType } from '../../shared/types/common.types';
 import { logger } from '../../shared/utils/logger';
 import { isPluginResultData } from '../../shared/utils/typeGuards';
+import { openSystemMonitorWindow } from '../windows';
 import { useSearchStore } from '../../stores/searchStore';
 import { useUiStore } from '../../stores/uiStore';
 import type { ActiveView } from '../../stores/uiStore';
@@ -80,13 +81,17 @@ export function useResultActions({
           if (plugin) {
             await plugin.execute(pluginResult);
           }
+        } else if (result.type === SearchResultType.Url) {
+          // URL results store the normalised URL in data.data.url (PluginResultData shape)
+          const pluginData = result.data as PluginResultData;
+          const url = (pluginData?.data as Record<string, unknown>)?.url as string | undefined;
+          if (url) {
+            const { openUrl } = await import('@tauri-apps/plugin-opener');
+            await openUrl(url);
+          }
         } else if (result.type === SearchResultType.SystemMonitor) {
-          // System monitor rows carry the unwrapped inner payload (not a
-          // full PluginResult) so the generic plugin dispatch below would
-          // fail the isPluginResultData guard. Activation just opens the
-          // detail modal — a DOM event is all we need.
           shouldHideWindow = false;
-          window.dispatchEvent(new CustomEvent('volt:openSystemMonitor'));
+          await openSystemMonitorWindow();
         } else {
           // Handle other plugin results (Calculator, WebSearch, Timer, etc.)
           const pluginResult = result.data as PluginResultData;
@@ -182,7 +187,7 @@ export function useResultActions({
           setActiveView({ type: 'calculator' });
           break;
         case 'timer':
-          setSearchQuery('timer ');
+          setActiveView({ type: 'timer' });
           break;
         case 'web-search':
           setSearchQuery('? ');

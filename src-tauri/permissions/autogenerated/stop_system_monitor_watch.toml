@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-stop-system-monitor-watch"
+description = "Enables the stop_system_monitor_watch command without any pre-configured scope."
+commands.allow = ["stop_system_monitor_watch"]
+
+[[permission]]
+identifier = "deny-stop-system-monitor-watch"
+description = "Denies the stop_system_monitor_watch command without any pre-configured scope."
+commands.deny = ["stop_system_monitor_watch"]

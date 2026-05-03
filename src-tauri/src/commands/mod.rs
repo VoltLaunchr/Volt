@@ -21,6 +21,7 @@ pub mod shell;
 pub mod shell_history;
 pub mod snippets;
 pub mod steam;
+pub mod sync;
 pub mod system_monitor;
 pub mod window_management;
 
@@ -44,5 +45,6 @@ pub use shell::*;
 pub use shell_history::*;
 pub use snippets::*;
 pub use steam::*;
+pub use sync::*;
 pub use system_monitor::*;
 pub use window_management::*;

@@ -31,6 +31,8 @@ interface UiState {
   propertiesResult: SearchResult | null;
   isHelpOpen: boolean;
   isPreviewOpen: boolean;
+  isActionsMenuOpen: boolean;
+  actionsMenuResult: SearchResult | null;
   permissionRequest: PermissionRequest | null;
 }
 
@@ -42,6 +44,8 @@ interface UiActions {
   closeProperties: () => void;
   toggleHelp: () => void;
   togglePreview: () => void;
+  openActionsMenu: (result: SearchResult) => void;
+  closeActionsMenu: () => void;
   setPermissionRequest: (request: PermissionRequest | null) => void;
 }
 
@@ -52,6 +56,8 @@ export const useUiStore = create<UiState & UiActions>()((set) => ({
   propertiesResult: null,
   isHelpOpen: false,
   isPreviewOpen: false,
+  isActionsMenuOpen: false,
+  actionsMenuResult: null,
   permissionRequest: null,
 
   setActiveView: (view) => set({ activeView: view }),
@@ -63,5 +69,7 @@ export const useUiStore = create<UiState & UiActions>()((set) => ({
   closeProperties: () => set({ isPropertiesOpen: false }),
   toggleHelp: () => set((state) => ({ isHelpOpen: !state.isHelpOpen })),
   togglePreview: () => set((state) => ({ isPreviewOpen: !state.isPreviewOpen })),
+  openActionsMenu: (result) => set({ isActionsMenuOpen: true, actionsMenuResult: result }),
+  closeActionsMenu: () => set({ isActionsMenuOpen: false, actionsMenuResult: null }),
   setPermissionRequest: (request) => set({ permissionRequest: request }),
 }));

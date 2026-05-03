@@ -189,7 +189,7 @@ export class QuicklinksPlugin implements Plugin {
       case 'open': {
         if (!ql) return;
         try {
-          await invoke('open_quicklink', { quicklink: ql });
+          await invoke<void>('open_quicklink', { quicklink: ql });
           logger.info(`Opened quicklink: ${ql.name} → ${ql.target}`);
         } catch (error) {
           logger.error(`Failed to open quicklink ${ql.name}:`, error);
@@ -203,7 +203,7 @@ export class QuicklinksPlugin implements Plugin {
       case 'save': {
         if (!ql) return;
         try {
-          await invoke('save_quicklink', { quicklink: ql });
+          await invoke<void>('save_quicklink', { quicklink: ql });
           logger.info(`Saved quicklink: ${ql.shortcut} → ${ql.target}`);
           await this.refreshCache();
         } catch (error) {
@@ -214,7 +214,7 @@ export class QuicklinksPlugin implements Plugin {
       case 'delete': {
         if (!ql) return;
         try {
-          await invoke('delete_quicklink', { id: ql.id });
+          await invoke<void>('delete_quicklink', { id: ql.id });
           logger.info(`Deleted quicklink: ${ql.shortcut}`);
           await this.refreshCache();
         } catch (error) {

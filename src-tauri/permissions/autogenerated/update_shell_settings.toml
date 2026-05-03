@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-update-shell-settings"
+description = "Enables the update_shell_settings command without any pre-configured scope."
+commands.allow = ["update_shell_settings"]
+
+[[permission]]
+identifier = "deny-update-shell-settings"
+description = "Denies the update_shell_settings command without any pre-configured scope."
+commands.deny = ["update_shell_settings"]

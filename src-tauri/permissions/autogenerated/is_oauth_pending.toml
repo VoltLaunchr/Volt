@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-is-oauth-pending"
+description = "Enables the is_oauth_pending command without any pre-configured scope."
+commands.allow = ["is_oauth_pending"]
+
+[[permission]]
+identifier = "deny-is-oauth-pending"
+description = "Denies the is_oauth_pending command without any pre-configured scope."
+commands.deny = ["is_oauth_pending"]

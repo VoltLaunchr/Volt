@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-set-global-hotkey"
+description = "Enables the set_global_hotkey command without any pre-configured scope."
+commands.allow = ["set_global_hotkey"]
+
+[[permission]]
+identifier = "deny-set-global-hotkey"
+description = "Denies the set_global_hotkey command without any pre-configured scope."
+commands.deny = ["set_global_hotkey"]

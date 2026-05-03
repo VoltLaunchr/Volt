@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-track-file-access"
+description = "Enables the track_file_access command without any pre-configured scope."
+commands.allow = ["track_file_access"]
+
+[[permission]]
+identifier = "deny-track-file-access"
+description = "Denies the track_file_access command without any pre-configured scope."
+commands.deny = ["track_file_access"]

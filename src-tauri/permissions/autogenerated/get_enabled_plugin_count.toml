@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-get-enabled-plugin-count"
+description = "Enables the get_enabled_plugin_count command without any pre-configured scope."
+commands.allow = ["get_enabled_plugin_count"]
+
+[[permission]]
+identifier = "deny-get-enabled-plugin-count"
+description = "Denies the get_enabled_plugin_count command without any pre-configured scope."
+commands.deny = ["get_enabled_plugin_count"]

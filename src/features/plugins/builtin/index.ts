@@ -2,7 +2,7 @@ export { CalculatorPlugin, CalculatorView } from './calculator';
 export { WebSearchPlugin } from './websearch';
 export { SystemCommandsPlugin } from './systemcommands';
 export { TimerPlugin, TimerDisplay, TimerView, useTimers, timerStore, tasksStore } from './timer';
-export { SystemMonitorPlugin, SystemMonitorDetail } from './systemmonitor';
+export { SystemMonitorPlugin } from './systemmonitor';
 export { GamesPlugin, GameView } from './games';
 export { EmojiPickerPlugin, EmojiPickerView } from './emoji-picker';
 export { QuicklinksPlugin } from './quicklinks';

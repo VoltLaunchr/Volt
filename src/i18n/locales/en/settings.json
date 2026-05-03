@@ -13,7 +13,9 @@
     "clipboard": "Clipboard History",
     "integrations": "Integrations",
     "account": "Account",
-    "builtIn": "BUILT-IN"
+    "sync": "Sync",
+    "builtIn": "BUILT-IN",
+    "shell": "Shell Commands"
   },
   "general": {
     "title": "General",
@@ -32,7 +34,9 @@
     "sensitivityMedium": "Medium",
     "sensitivityHigh": "High (permissive)",
     "voltHotkey": "Volt Hotkey",
-    "hotkeyDesc": "Press a key combination to set your global shortcut"
+    "hotkeyDesc": "Press a key combination to set your global shortcut",
+    "restartOnboarding": "Restart Onboarding",
+    "restartOnboardingDesc": "Re-run the initial setup wizard"
   },
   "shortcuts": {
     "title": "Shortcuts",
@@ -166,7 +170,31 @@
     "infoText": "Volt automatically scans for installed applications on your system. Applications are refreshed each time Volt starts.",
     "scanApps": "Scan Applications",
     "scanAppsDesc": "Manually trigger a scan for installed applications",
-    "scanNow": "Scan Now"
+    "scanNow": "Scan Now",
+    "scanning": "Scanning...",
+    "scanResult": "{{count}} applications found",
+    "scanError": "Error: {{error}}"
+  },
+  "shell": {
+    "title": "Shell Commands",
+    "infoText": "Execute shell commands directly from Volt with the",
+    "infoTextSuffix": "prefix. Output streams in real-time with ANSI color support.",
+    "enabled": "Enable Shell Commands",
+    "enabledDesc": "Allow running commands with the > prefix",
+    "defaultShell": "Default Shell",
+    "defaultShellDesc": "Override the system shell (leave empty for default: cmd on Windows, sh on Unix)",
+    "defaultShellPlaceholder": "System default",
+    "workingDir": "Working Directory",
+    "workingDirDesc": "Default directory for commands (leave empty for home directory)",
+    "workingDirPlaceholder": "Home directory",
+    "timeout": "Timeout (ms)",
+    "timeoutDesc": "Maximum time before a command is killed",
+    "historySize": "History Size",
+    "historySizeDesc": "Maximum number of commands to remember",
+    "clearHistory": "Clear Command History",
+    "clearHistoryDesc": "Remove all saved shell command history",
+    "clear": "Clear",
+    "clearFailed": "Failed to clear shell history"
   },
   "integrations": {
     "title": "Integrations",
@@ -229,5 +257,34 @@
   "errors": {
     "loadFailed": "Failed to load settings",
     "saveFailed": "Failed to save settings"
+  },
+  "sync": {
+    "title": "Cloud Sync",
+    "comingSoon": "Coming soon",
+    "loading": "Loading…",
+    "description": "Keep your snippets and quicklinks in sync across all your machines.",
+    "lastSynced": "Last synced",
+    "premiumBanner": {
+      "title": "Premium feature",
+      "upgradeHint": "Upgrade your account to unlock cloud sync.",
+      "loginHint": "Log in and upgrade to Premium to use cloud sync."
+    },
+    "push": {
+      "title": "Push to cloud",
+      "description": "Upload your local snippets and quicklinks to the cloud. Remote data will be overwritten.",
+      "action": "Push"
+    },
+    "pull": {
+      "title": "Pull from cloud",
+      "description": "Download cloud data and merge with your local snippets. Quicklinks will be replaced.",
+      "action": "Pull"
+    },
+    "feedback": {
+      "pushSuccess": "Data pushed to cloud.",
+      "pullSuccess": "Data pulled from cloud.",
+      "premiumRequired": "Upgrade to Premium to use cloud sync.",
+      "notLoggedIn": "You need to log in first.",
+      "failed": "Sync failed"
+    }
   }
 }

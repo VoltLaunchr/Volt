@@ -106,7 +106,7 @@ export function parseAnsi(input: string): AnsiSegment[] {
 }
 
 /** Renders ANSI-escaped text with CSS-styled spans */
-export const AnsiText: React.FC<{ text: string }> = ({ text }) => {
+export function AnsiText({ text }: { text: string }): React.JSX.Element {
   const segments = useMemo(() => parseAnsi(text), [text]);
   return (
     <>
@@ -119,4 +119,4 @@ export const AnsiText: React.FC<{ text: string }> = ({ text }) => {
       )}
     </>
   );
-};
+}

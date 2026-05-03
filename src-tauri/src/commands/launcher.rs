@@ -258,16 +258,130 @@ pub async fn record_search_selection(
     Ok(())
 }
 
+/// Open a file using the OS "Open With" dialog so the user can choose which
+/// application to use. On Windows this triggers the native shell "Open With"
+/// dialog via the "openas" verb. Other platforms fall back to the default
+/// opener (same as `open_path`).
+///
+/// Rejects UNC paths (which would trigger SMB auth and leak NTLM credentials)
+/// and `.lnk` shortcuts (which `ShellExecuteW("openas", ...)` would silently
+/// resolve, defeating the dialog). Resolves the path through `canonicalize`
+/// to defeat traversal/relative-path tricks before invoking ShellExecute.
+#[tauri::command]
+pub async fn open_file_with_dialog(path: String) -> VoltResult<()> {
+    let p = std::path::Path::new(&path);
+
+    if path.starts_with("\\\\") || path.starts_with("//") {
+        return Err(VoltError::PermissionDenied(
+            "UNC paths are not allowed".into(),
+        ));
+    }
+    if p.extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.eq_ignore_ascii_case("lnk"))
+        .unwrap_or(false)
+    {
+        return Err(VoltError::PermissionDenied(
+            ".lnk shortcuts are not allowed".into(),
+        ));
+    }
+
+    let canon = p
+        .canonicalize()
+        .map_err(|e| VoltError::FileSystem(format!("canonicalize: {}", e)))?;
+
+    #[cfg(target_os = "windows")]
+    {
+        use std::ffi::OsStr;
+        use std::os::windows::ffi::OsStrExt;
+        use std::ptr;
+        use winapi::um::shellapi::ShellExecuteW;
+
+        let operation: Vec<u16> = OsStr::new("openas")
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect();
+        let file: Vec<u16> = canon
+            .as_os_str()
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect();
+
+        unsafe {
+            let result = ShellExecuteW(
+                ptr::null_mut(),
+                operation.as_ptr(),
+                file.as_ptr(),
+                ptr::null(),
+                ptr::null(),
+                1, // SW_SHOWNORMAL
+            );
+            if (result as usize) <= 32 {
+                return Err(VoltError::Launch(format!(
+                    "Open With dialog failed (code {})",
+                    result as usize
+                )));
+            }
+        }
+        Ok(())
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        tauri_plugin_opener::open_path(canon.to_string_lossy().as_ref(), None::<&str>)
+            .map_err(|e| VoltError::Launch(format!("Failed to open: {}", e)))
+    }
+}
+
 /// Open a file or folder in the system's default handler (Explorer on Windows,
 /// Finder on macOS, xdg-open on Linux).
 ///
 /// Used by the Games view's "Open Folder" button and any UI affordance that
 /// needs to reveal a path on disk.
+///
+/// Refuses executable file types so attackers cannot abuse this command to
+/// bypass `launch_app`'s LOLBIN/extension validation. Callers that need to
+/// run an executable must use `launch_app`.
 #[tauri::command]
 pub async fn open_path(path: String) -> VoltResult<()> {
     let p = std::path::Path::new(&path);
     if !p.exists() {
         return Err(VoltError::NotFound(format!("Path not found: {}", path)));
+    }
+    if p.is_file()
+        && let Some(ext) = p.extension().and_then(|e| e.to_str())
+    {
+        const BLOCKED_OPEN_EXT: &[&str] = &[
+            "exe",
+            "msi",
+            "scr",
+            "com",
+            "bat",
+            "cmd",
+            "ps1",
+            "psm1",
+            "vbs",
+            "vbe",
+            "js",
+            "jse",
+            "wsf",
+            "wsh",
+            "cpl",
+            "lnk",
+            "msc",
+            "jar",
+            "reg",
+            "hta",
+            "appref-ms",
+            "url",
+        ];
+        let lower = ext.to_ascii_lowercase();
+        if BLOCKED_OPEN_EXT.contains(&lower.as_str()) {
+            return Err(VoltError::PermissionDenied(format!(
+                "open_path refuses executable type '.{}'; use launch_app instead",
+                ext
+            )));
+        }
     }
     tauri_plugin_opener::open_path(&path, None::<&str>)
         .map_err(|e| VoltError::Launch(format!("Failed to open path: {}", e)))?;

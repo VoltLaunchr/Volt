@@ -151,10 +151,13 @@ pub async fn start_indexing(
     folders: Vec<String>,
     excluded_paths: Vec<String>,
     file_extensions: Vec<String>,
+    force: Option<bool>,
 ) -> VoltResult<()> {
-    // Check if already indexing
+    // Atomically check-and-set `is_indexing` in a single lock acquisition to
+    // prevent a TOCTOU race where two concurrent calls both pass the check
+    // before either sets the flag.
     {
-        let status = state
+        let mut status = state
             .status
             .lock()
             .map_err(|e| VoltError::Unknown(e.to_string()))?;
@@ -163,6 +166,9 @@ pub async fn start_indexing(
                 "Indexing already in progress".to_string(),
             ));
         }
+        status.is_indexing = true;
+        status.indexed_files = 0;
+        status.total_files = 0;
     }
 
     // Persist config so `invalidate_index` can re-use it.
@@ -180,21 +186,11 @@ pub async fn start_indexing(
         };
     }
 
-    // Mark as indexing
-    {
-        let mut status = state
-            .status
-            .lock()
-            .map_err(|e| VoltError::Unknown(e.to_string()))?;
-        status.is_indexing = true;
-        status.indexed_files = 0;
-        status.total_files = 0;
-    }
-
     let files_arc = state.files.clone();
     let status_arc = state.status.clone();
     let db_arc = state.db.clone();
     let app_handle = app_handle.clone();
+    let should_force = force.unwrap_or(false);
 
     // Run indexing in background
     tauri::async_runtime::spawn(async move {
@@ -206,51 +202,58 @@ pub async fn start_indexing(
             max_file_size: 100 * 1024 * 1024, // 100MB limit
         };
 
-        // --- Fast path: load from DB if it already has files ---
-        if let Some(db) = db_arc.as_ref() {
-            match db.count() {
-                Ok(n) if n > 0 => {
-                    info!("Loading {} files from SQLite cache", n);
-                    match db.get_all_files() {
-                        Ok(cached) => {
-                            let file_count = cached.len();
-                            if let Ok(mut files) = files_arc.lock() {
-                                *files = Arc::new(cached);
+        // --- Fast path: load from DB if it already has files (skipped when force=true) ---
+        if !should_force {
+            if let Some(db) = db_arc.as_ref() {
+                match db.count() {
+                    Ok(n) if n > 0 => {
+                        info!("Loading {} files from SQLite cache", n);
+                        match db.get_all_files() {
+                            Ok(cached) => {
+                                let file_count = cached.len();
+                                if let Ok(mut files) = files_arc.lock() {
+                                    *files = Arc::new(cached);
+                                }
+                                if let Ok(mut status) = status_arc.lock() {
+                                    status.is_indexing = false;
+                                    status.total_files = file_count;
+                                    status.indexed_files = file_count;
+                                    status.last_updated = chrono::Utc::now().timestamp();
+                                }
+                                info!("In-memory cache populated from DB ({} files)", file_count);
+                                let _ = app_handle.emit(
+                                    "indexing-progress",
+                                    IndexingProgress {
+                                        phase: "complete".to_string(),
+                                        indexed_files: file_count,
+                                        total_files: file_count,
+                                        is_complete: true,
+                                    },
+                                );
+                                return;
                             }
-                            if let Ok(mut status) = status_arc.lock() {
-                                status.is_indexing = false;
-                                status.total_files = file_count;
-                                status.indexed_files = file_count;
-                                status.last_updated = chrono::Utc::now().timestamp();
-                            }
-                            info!("In-memory cache populated from DB ({} files)", file_count);
-                            let _ = app_handle.emit(
-                                "indexing-progress",
-                                IndexingProgress {
-                                    phase: "complete".to_string(),
-                                    indexed_files: file_count,
-                                    total_files: file_count,
-                                    is_complete: true,
-                                },
-                            );
-                            return;
+                            Err(e) => warn!("Failed to load from DB, falling back to scan: {}", e),
                         }
-                        Err(e) => warn!("Failed to load from DB, falling back to scan: {}", e),
                     }
+                    Ok(_) => {
+                        info!("DB is empty – performing full scan");
+                        let _ = app_handle.emit(
+                            "indexing-progress",
+                            IndexingProgress {
+                                phase: "scanning".to_string(),
+                                indexed_files: 0,
+                                total_files: 0,
+                                is_complete: false,
+                            },
+                        );
+                    }
+                    Err(e) => warn!("Could not check DB count: {}", e),
                 }
-                Ok(_) => {
-                    info!("DB is empty – performing full scan");
-                    let _ = app_handle.emit(
-                        "indexing-progress",
-                        IndexingProgress {
-                            phase: "scanning".to_string(),
-                            indexed_files: 0,
-                            total_files: 0,
-                            is_complete: false,
-                        },
-                    );
-                }
-                Err(e) => warn!("Could not check DB count: {}", e),
+            }
+        } else if let Some(db) = db_arc.as_ref() {
+            // force=true: wipe stale cache so the full scan replaces it cleanly
+            if let Err(e) = db.clear_all() {
+                warn!("Failed to clear index DB for forced rescan: {}", e);
             }
         }
 
@@ -388,6 +391,7 @@ pub async fn search_files(
             modified_before,
             recency_boost: Some(1.3),
             frequency_boost: Some(1.2),
+            filename_only: true,
             ..Default::default()
         };
         let results = engine.search(&query, &files, &options);
@@ -401,6 +405,7 @@ pub async fn search_files(
             limit: Some(max_results),
             recency_boost: Some(1.3),
             frequency_boost: Some(1.2),
+            filename_only: true,
             ..Default::default()
         };
         let mut results: Vec<FileSearchResult> = engine
@@ -414,7 +419,7 @@ pub async fn search_files(
         if results.len() < max_results {
             let needed = max_results - results.len();
             if let Ok(ws_results) =
-                crate::indexer::windows_search::search_windows_index(&query, needed)
+                crate::indexer::windows_search::search_windows_index(&query, needed).await
             {
                 // Dedup by path
                 let existing_paths: std::collections::HashSet<String> =
@@ -805,11 +810,17 @@ pub async fn invalidate_index(
         .clone();
 
     // Kick off a new full scan (reuse start_indexing logic).
+    // Atomically check-and-set to guard against concurrent scans.
     {
         let mut status = state
             .status
             .lock()
             .map_err(|e| VoltError::Unknown(e.to_string()))?;
+        if status.is_indexing {
+            return Err(VoltError::InvalidConfig(
+                "Indexing already in progress".to_string(),
+            ));
+        }
         status.is_indexing = true;
         status.indexed_files = 0;
         status.total_files = 0;

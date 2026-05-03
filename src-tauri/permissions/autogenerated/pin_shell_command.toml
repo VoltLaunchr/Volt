@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-pin-shell-command"
+description = "Enables the pin_shell_command command without any pre-configured scope."
+commands.allow = ["pin_shell_command"]
+
+[[permission]]
+identifier = "deny-pin-shell-command"
+description = "Denies the pin_shell_command command without any pre-configured scope."
+commands.deny = ["pin_shell_command"]

@@ -1,8 +1,8 @@
-import React, { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { SearchResult, SearchResultType } from '../../../shared/types/common.types';
 import { ResultItem } from './ResultItem';
-import './ResultsList.css';
+import { cn } from '@/lib/utils';
 
 interface ResultsListProps {
   results: SearchResult[];
@@ -12,6 +12,7 @@ interface ResultsListProps {
 }
 
 interface ResultSection {
+  key: string;
   label: string;
   results: { result: SearchResult; globalIndex: number }[];
 }
@@ -47,31 +48,20 @@ function getSectionKey(type: SearchResultType): string {
  * scroll to see them. */
 function getSectionOrder(grouped: Map<string, unknown[]>): string[] {
   const base = ['system', 'results', 'applications', 'commands', 'games', 'shell', 'files'];
-  const gameCount = (grouped.get('games') as unknown[] | undefined)?.length ?? 0;
-  const appCount = (grouped.get('applications') as unknown[] | undefined)?.length ?? 0;
+  const gameCount = grouped.get('games')?.length ?? 0;
+  const appCount = grouped.get('applications')?.length ?? 0;
   if (gameCount > appCount) {
     return ['system', 'results', 'games', 'applications', 'commands', 'shell', 'files'];
   }
   return base;
 }
 
-/** Section labels */
-const SECTION_LABELS: Record<string, string> = {
-  system: 'System',
-  applications: 'Applications',
-  commands: 'Commands',
-  games: 'Games',
-  results: 'Results',
-  shell: 'Shell',
-  files: 'Files',
-};
-
-export const ResultsList: React.FC<ResultsListProps> = ({
+export function ResultsList({
   results,
   selectedIndex,
   onSelect,
   onLaunch,
-}) => {
+}: ResultsListProps) {
   const { t } = useTranslation('results');
   const selectedRef = useRef<HTMLDivElement>(null);
 
@@ -104,18 +94,19 @@ export const ResultsList: React.FC<ResultsListProps> = ({
       const items = grouped.get(key);
       if (items && items.length > 0) {
         ordered.push({
-          label: sectionCount > 1 ? SECTION_LABELS[key] || key : '',
+          key,
+          label: sectionCount > 1 ? t(`sections.${key}`, { defaultValue: key }) : '',
           results: items,
         });
       }
     }
 
     return ordered;
-  }, [results]);
+  }, [results, t]);
 
   if (results.length === 0) {
     return (
-      <div className="results-empty">
+      <div className={cn('flex items-center justify-center h-16 text-sm text-ash')}>
         <svg
           width="48"
           height="48"
@@ -141,44 +132,55 @@ export const ResultsList: React.FC<ResultsListProps> = ({
       : undefined;
 
   return (
-    <div
-      id="results-listbox"
-      className="results-list"
-      role="listbox"
-      aria-label="Search results"
-      aria-activedescendant={selectedItemId}
-    >
-      {sections.map((section, sectionIndex) => (
-        <div
-          key={`section-${sectionIndex}-${section.label}`}
-          className="results-section"
-          role="group"
-          aria-label={section.label || undefined}
-        >
-          {section.label && (
-            <div className="results-section-header" aria-hidden="true">{section.label}</div>
-          )}
-          {section.results.map(({ result, globalIndex }) => (
-            <div
-              key={`${result.id}-${globalIndex}`}
-              ref={globalIndex === selectedIndex ? selectedRef : null}
-              id={`result-item-${globalIndex}`}
-              role="option"
-              aria-selected={globalIndex === selectedIndex}
-              aria-label={`${result.title}${result.subtitle ? ` - ${result.subtitle}` : ''}`}
-              tabIndex={globalIndex === selectedIndex ? 0 : -1}
-            >
-              <ResultItem
-                result={result}
-                isSelected={globalIndex === selectedIndex}
-                index={globalIndex}
-                onSelect={() => onSelect(globalIndex)}
-                onLaunch={() => onLaunch(result)}
-              />
-            </div>
-          ))}
-        </div>
-      ))}
+    <div className="flex-1 overflow-y-auto min-h-0">
+      <div
+        id="results-listbox"
+        className="py-1"
+        role="listbox"
+        aria-label="Search results"
+        aria-activedescendant={selectedItemId}
+      >
+        {sections.map((section, sectionIndex) => (
+          <div
+            key={`section-${sectionIndex}-${section.key}`}
+            role="group"
+            aria-label={section.label || undefined}
+          >
+            {section.label && (
+              <div
+                className="px-3 pt-3 pb-1 text-[11px] font-medium text-stone uppercase tracking-wider"
+                aria-hidden="true"
+              >
+                {section.label}
+              </div>
+            )}
+            {section.results.map(({ result, globalIndex }) => (
+              <div
+                key={`${result.id}-${globalIndex}`}
+                ref={globalIndex === selectedIndex ? selectedRef : null}
+                id={`result-item-${globalIndex}`}
+                role="option"
+                aria-selected={globalIndex === selectedIndex}
+                aria-label={`${result.title}${result.subtitle ? ` - ${result.subtitle}` : ''}`}
+                tabIndex={globalIndex === selectedIndex ? 0 : -1}
+                onClick={() => onLaunch(result)}
+                onMouseEnter={() => onSelect(globalIndex)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    onLaunch(result);
+                  }
+                }}
+              >
+                <ResultItem
+                  result={result}
+                  isSelected={globalIndex === selectedIndex}
+                />
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
     </div>
   );
-};
+}

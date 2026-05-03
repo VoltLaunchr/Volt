@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-sync-app-shortcuts"
+description = "Enables the sync_app_shortcuts command without any pre-configured scope."
+commands.allow = ["sync_app_shortcuts"]
+
+[[permission]]
+identifier = "deny-sync-app-shortcuts"
+description = "Denies the sync_app_shortcuts command without any pre-configured scope."
+commands.deny = ["sync_app_shortcuts"]

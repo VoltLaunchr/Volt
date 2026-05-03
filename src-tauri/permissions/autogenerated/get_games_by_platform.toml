@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-get-games-by-platform"
+description = "Enables the get_games_by_platform command without any pre-configured scope."
+commands.allow = ["get_games_by_platform"]
+
+[[permission]]
+identifier = "deny-get-games-by-platform"
+description = "Denies the get_games_by_platform command without any pre-configured scope."
+commands.deny = ["get_games_by_platform"]

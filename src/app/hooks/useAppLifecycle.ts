@@ -20,9 +20,11 @@ import { SnippetsPlugin } from '../../features/plugins/builtin/snippets';
 import { pluginRegistry } from '../../features/plugins/core';
 import {
   applyTheme,
+  applyTransparency,
   settingsService,
   setupThemeListener,
 } from '../../features/settings';
+import type { Settings } from '../../features/settings/types/settings.types';
 import { updateService } from '../../features/settings/services/updateService';
 import { AppInfo } from '../../shared/types/common.types';
 import { logger } from '../../shared/utils/logger';
@@ -79,6 +81,7 @@ export function useAppLifecycle(): UseAppLifecycleResult {
         const loadedSettings = await settingsService.loadSettings();
         setSettings(loadedSettings);
         applyTheme(loadedSettings.appearance.theme);
+        applyTransparency(loadedSettings.appearance.transparency);
 
         // Register built-in plugins (only once - prevents StrictMode double-registration)
         if (!pluginRegistry.isInitialized()) {
@@ -100,7 +103,7 @@ export function useAppLifecycle(): UseAppLifecycleResult {
 
           pluginRegistry.markInitialized();
 
-          console.log(
+          logger.info(
             '✓ Built-in plugins initialized:',
             pluginRegistry
               .getAllPlugins()
@@ -124,16 +127,16 @@ export function useAppLifecycle(): UseAppLifecycleResult {
           try {
             const loadedExtensions = await extensionLoader.loadAllExtensions();
             if (loadedExtensions.length > 0) {
-              console.log(
+              logger.info(
                 '✓ External extensions loaded:',
                 loadedExtensions.map((e) => e.manifest.name).join(', ')
               );
             }
           } catch (err) {
-            console.warn('⚠ Failed to load external extensions:', err);
+            logger.warn('⚠ Failed to load external extensions:', err);
           }
 
-          console.log(
+          logger.info(
             '✓ All plugins ready:',
             pluginRegistry
               .getAllPlugins()
@@ -206,18 +209,18 @@ export function useAppLifecycle(): UseAppLifecycleResult {
       'extension-changed',
       async (event) => {
         const { action, extensionId } = event.payload;
-        console.log(`[App] Received extension event: ${action} ${extensionId}`);
+        logger.info(`[App] Received extension event: ${action} ${extensionId}`);
 
         try {
           switch (action) {
             case 'load':
             case 'reload':
               await extensionLoader.reloadExtension(extensionId);
-              console.log(`✓ Extension ${extensionId} ${action}ed in main window`);
+              logger.info(`✓ Extension ${extensionId} ${action}ed in main window`);
               break;
             case 'unload':
               extensionLoader.unloadExtension(extensionId);
-              console.log(`✓ Extension ${extensionId} unloaded from main window`);
+              logger.info(`✓ Extension ${extensionId} unloaded from main window`);
               break;
           }
         } catch (err) {
@@ -239,6 +242,52 @@ export function useAppLifecycle(): UseAppLifecycleResult {
       unlistenFn?.();
     };
   }, []);
+
+  // Listen for settings changes from settings window and sync to main window store
+  useEffect(() => {
+    let unlistenFn: (() => void) | undefined;
+    let cancelled = false;
+
+    listen<Settings>('settings-changed', async (event) => {
+      const newSettings = event.payload;
+      const currentSettings = useAppStore.getState().settings;
+
+      setSettings(newSettings);
+      applyTransparency(newSettings.appearance.transparency);
+
+      const foldersChanged =
+        currentSettings == null ||
+        JSON.stringify(newSettings.indexing.folders) !==
+          JSON.stringify(currentSettings.indexing.folders);
+      const extensionsChanged =
+        currentSettings == null ||
+        JSON.stringify(newSettings.indexing.fileExtensions) !==
+          JSON.stringify(currentSettings.indexing.fileExtensions);
+
+      if ((foldersChanged || extensionsChanged) && newSettings.indexing.folders.length > 0) {
+        try {
+          setIsIndexing(true);
+          await invoke<void>('start_indexing', {
+            folders: newSettings.indexing.folders,
+            excludedPaths: newSettings.indexing.excludedPaths,
+            fileExtensions: newSettings.indexing.fileExtensions,
+            force: true,
+          });
+        } catch (err) {
+          logger.error('Failed to restart indexing after settings change:', err);
+          setIsIndexing(false);
+        }
+      }
+    }).then((fn) => {
+      if (cancelled) fn();
+      else unlistenFn = fn;
+    });
+
+    return () => {
+      cancelled = true;
+      unlistenFn?.();
+    };
+  }, [setSettings, setIsIndexing]);
 
   // Ref to track the indexing listener for cleanup on unmount
   const indexingUnlistenRef = useRef<(() => void) | null>(null);
@@ -267,7 +316,7 @@ export function useAppLifecycle(): UseAppLifecycleResult {
               folders: defaultFolders,
             });
             foldersToIndex = defaultFolders;
-            console.log('✓ Auto-configured indexing with default folders:', defaultFolders);
+            logger.info('✓ Auto-configured indexing with default folders:', defaultFolders);
           }
         } catch (err) {
           logger.error('Failed to get default folders:', err);
@@ -279,13 +328,27 @@ export function useAppLifecycle(): UseAppLifecycleResult {
         return;
       }
 
+      // Detect if the indexing config changed since the last app session.
+      // When it changes (e.g. folders added, or file_extensions migrated from ["exe","lnk"]→[]),
+      // pass force=true to bypass the SQLite cache and do a full rescan with the new config.
+      const INDEX_CONFIG_KEY = 'volt:lastIndexConfig';
+      const currentConfigSig = JSON.stringify({
+        folders: [...foldersToIndex].sort(),
+        ext: [...settings.indexing.fileExtensions].sort(),
+      });
+      const lastConfigSig = localStorage.getItem(INDEX_CONFIG_KEY);
+      const forceRescan = lastConfigSig !== currentConfigSig;
+      if (forceRescan) {
+        localStorage.setItem(INDEX_CONFIG_KEY, currentConfigSig);
+      }
+
       try {
         setIsIndexing(true);
         const { addToast } = useToastStore.getState();
         addToast(`Indexing ${foldersToIndex.length} folder(s)...`, 'info');
 
         // Listen for progress events from backend
-        const unlistenPromise = listen<{
+        const unlisten = await listen<{
           phase: string;
           indexedFiles: number;
           totalFiles: number;
@@ -296,26 +359,26 @@ export function useAppLifecycle(): UseAppLifecycleResult {
           if (phase === 'complete') {
             setIsIndexing(false);
             addToast(`Indexing complete — ${indexedFiles} files indexed`, 'success');
-            unlistenPromise.then((fn) => fn());
+            unlisten();
             indexingUnlistenRef.current = null;
           } else if (phase === 'error') {
             setIsIndexing(false);
             addToast('Indexing failed', 'error', 0); // duration 0 = persistent
-            unlistenPromise.then((fn) => fn());
+            unlisten();
             indexingUnlistenRef.current = null;
           }
         });
 
         // Store unlisten for cleanup on unmount
-        unlistenPromise.then((fn) => {
-          indexingUnlistenRef.current = fn;
-        });
+        indexingUnlistenRef.current = unlisten;
 
-        // Start indexing (returns immediately, work happens in background)
-        await invoke('start_indexing', {
+        // Start indexing (returns immediately, work happens in background).
+        // force=true bypasses the SQLite cache when the config changed since last run.
+        await invoke<void>('start_indexing', {
           folders: foldersToIndex,
           excludedPaths: settings.indexing.excludedPaths,
           fileExtensions: settings.indexing.fileExtensions,
+          force: forceRescan || undefined,
         });
       } catch (err) {
         logger.error('Failed to start file indexing:', err);

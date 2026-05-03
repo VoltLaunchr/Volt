@@ -4,6 +4,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import { logger } from '../../../shared/utils/logger';
 import { authService } from '../services/authService';
 import type { AuthSession, UserProfile, UserTier } from '../types';
@@ -114,6 +115,30 @@ export function useAuth(): UseAuthReturn {
     }).then((fn) => {
       unlisten = fn;
     });
+
+    return () => {
+      unlisten?.();
+    };
+  }, [loadAuthState, scheduleRefresh]);
+
+  // Refetch on window focus. Defence-in-depth for the multi-window case:
+  // if the deep-link event somehow doesn't reach this webview (e.g. the
+  // Settings window's listener wasn't yet attached when the broadcast
+  // fired), the user merely needs to click back into the window — we
+  // re-read the stored session and update the UI.
+  useEffect(() => {
+    let unlisten: UnlistenFn | undefined;
+
+    getCurrentWindow()
+      .listen('tauri://focus', async () => {
+        const session = await loadAuthState();
+        if (session) {
+          scheduleRefresh(session);
+        }
+      })
+      .then((fn) => {
+        unlisten = fn;
+      });
 
     return () => {
       unlisten?.();

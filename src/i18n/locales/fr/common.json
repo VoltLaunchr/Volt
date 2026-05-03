@@ -36,7 +36,7 @@
   "suggestions": {
     "whats-new": {
       "title": "Voir les nouveautés",
-      "subtitle": "v0.0.8"
+      "subtitle": "v{{version}}"
     },
     "settings": {
       "title": "Paramètres",

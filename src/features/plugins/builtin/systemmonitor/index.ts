@@ -2,6 +2,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import i18n from 'i18next';
 import { logger } from '../../../../shared/utils/logger';
+import { openSystemMonitorWindow } from '../../../../app/windows';
 import { Plugin, PluginContext, PluginResult, PluginResultType } from '../../types';
 
 interface SystemMetrics {
@@ -129,38 +130,8 @@ export class SystemMonitorPlugin implements Plugin {
     }
   }
 
-  async execute(result: PluginResult): Promise<void> {
-    // Primary action: open the detail modal. The SystemMonitorDetail component
-    // mounted at App.tsx listens for this event and toggles its open state.
-    window.dispatchEvent(new CustomEvent('volt:openSystemMonitor'));
-
-    // Secondary: if the caller opted into the clipboard fallback via
-    // result.data.copyToClipboard, keep the old summary behaviour so power
-    // users can still script it from context menus / alternate actions.
-    if (!result.data?.copyToClipboard) return;
-
-    const metrics = result.data?.metrics as SystemMetrics | undefined;
-    if (!metrics) return;
-
-    const title = i18n.t('clipboardTitle', { ns: SYSTEMMONITOR_NS });
-    const cpuLabel = i18n.t('cpu', { ns: SYSTEMMONITOR_NS });
-    const memLabel = i18n.t('memory', { ns: SYSTEMMONITOR_NS });
-    const diskLabel = i18n.t('disk', { ns: SYSTEMMONITOR_NS });
-
-    const summary = [
-      `═══ ${title} ═══`,
-      '',
-      `${cpuLabel}:    ${metrics.cpuUsage.toFixed(1)}%`,
-      `${memLabel}: ${metrics.memoryUsedGb.toFixed(1)} / ${metrics.memoryTotalGb.toFixed(1)} GB (${metrics.memoryUsage.toFixed(1)}%)`,
-      `${diskLabel}:   ${metrics.diskUsedGb.toFixed(0)} / ${metrics.diskTotalGb.toFixed(0)} GB (${metrics.diskUsage.toFixed(1)}%)`,
-    ].join('\n');
-
-    try {
-      await navigator.clipboard.writeText(summary);
-      logger.info('System metrics copied to clipboard');
-    } catch (error) {
-      logger.error('Failed to copy to clipboard:', error);
-    }
+  async execute(_result: PluginResult): Promise<void> {
+    await openSystemMonitorWindow();
   }
 
   /**
@@ -183,5 +154,5 @@ export class SystemMonitorPlugin implements Plugin {
 }
 
 export { SystemMetricBadge } from './components/SystemMetricBadge';
-export { SystemMonitorDetail } from './components/SystemMonitorDetail';
+export { SystemMonitorApp } from './components/SystemMonitorApp';
 export { CpuIcon, MemoryIcon, DiskIcon } from './icons';

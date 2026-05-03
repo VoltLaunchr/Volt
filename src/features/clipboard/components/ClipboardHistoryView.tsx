@@ -1,9 +1,9 @@
 import { invoke } from '@tauri-apps/api/core';
 import React, { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { cn } from '@/lib/utils';
 import { ClipboardItem, ClipboardType } from '../../../shared/types/clipboard';
 import { logger } from '../../../shared/utils';
-import './ClipboardHistoryView.css';
 
 interface ClipboardHistoryViewProps {
   onClose: () => void;
@@ -11,7 +11,7 @@ interface ClipboardHistoryViewProps {
 
 type FilterType = 'all' | ClipboardType;
 
-export const ClipboardHistoryView: React.FC<ClipboardHistoryViewProps> = ({ onClose }) => {
+export function ClipboardHistoryView({ onClose }: ClipboardHistoryViewProps): React.JSX.Element {
   const { t } = useTranslation('clipboard');
   const [items, setItems] = useState<ClipboardItem[]>([]);
   const [filteredItems, setFilteredItems] = useState<ClipboardItem[]>([]);
@@ -117,7 +117,7 @@ export const ClipboardHistoryView: React.FC<ClipboardHistoryViewProps> = ({ onCl
   // Handle paste action
   const handlePaste = async (item: ClipboardItem) => {
     try {
-      await invoke('copy_to_clipboard', { content: item.content });
+      await invoke<void>('copy_to_clipboard', { content: item.content });
       onClose();
     } catch (error) {
       logger.error('Failed to paste:', error);
@@ -127,7 +127,7 @@ export const ClipboardHistoryView: React.FC<ClipboardHistoryViewProps> = ({ onCl
   // Handle delete action
   const handleDelete = async (item: ClipboardItem) => {
     try {
-      await invoke('delete_clipboard_item', { id: item.id });
+      await invoke<void>('delete_clipboard_item', { id: item.id });
       await loadHistory();
     } catch (error) {
       logger.error('Failed to delete item:', error);
@@ -137,7 +137,7 @@ export const ClipboardHistoryView: React.FC<ClipboardHistoryViewProps> = ({ onCl
   // Handle pin toggle
   const handleTogglePin = async (item: ClipboardItem) => {
     try {
-      await invoke('toggle_clipboard_pin', { id: item.id });
+      await invoke<void>('toggle_clipboard_pin', { id: item.id });
       await loadHistory();
     } catch (error) {
       logger.error('Failed to toggle pin:', error);
@@ -230,7 +230,7 @@ export const ClipboardHistoryView: React.FC<ClipboardHistoryViewProps> = ({ onCl
 
   return (
     <div
-      className="clipboard-history-view"
+      className="flex flex-col h-full bg-canvas text-ink"
       tabIndex={0}
       onKeyDown={handleKeyDown}
       aria-label="Clipboard history view"
@@ -239,8 +239,12 @@ export const ClipboardHistoryView: React.FC<ClipboardHistoryViewProps> = ({ onCl
       onBlur={(e) => (e.currentTarget.style.outline = 'none')}
     >
       {/* Header with search and filter */}
-      <div className="clipboard-header">
-        <button className="back-button" onClick={onClose} title={t('back')}>
+      <div className="flex items-center gap-2 px-4 py-3 border-b border-hairline bg-surface shrink-0">
+        <button
+          className="flex items-center justify-center w-8 h-8 rounded-md text-mute transition-all cursor-pointer shrink-0 hover:bg-surface-elevated hover:text-ink"
+          onClick={onClose}
+          title={t('back')}
+        >
           <svg
             width="20"
             height="20"
@@ -253,10 +257,10 @@ export const ClipboardHistoryView: React.FC<ClipboardHistoryViewProps> = ({ onCl
           </svg>
         </button>
 
-        <div className="search-filter-container">
+        <div className="flex-1">
           <input
             type="text"
-            className="filter-input"
+            className="flex-1 w-full bg-surface-elevated border border-hairline rounded-md px-3 py-1.5 text-sm text-on-dark outline-none focus:border-hairline-strong placeholder:text-ash transition-all"
             placeholder={t('filterPlaceholder')}
             value={filterQuery}
             onChange={(e) => setFilterQuery(e.target.value)}
@@ -264,9 +268,9 @@ export const ClipboardHistoryView: React.FC<ClipboardHistoryViewProps> = ({ onCl
           />
         </div>
 
-        <div className="type-filter-dropdown">
+        <div className="relative">
           <button
-            className="type-filter-button"
+            className="flex items-center gap-2 px-3 py-1.5 bg-canvas border border-hairline rounded-md text-ink text-sm cursor-pointer transition-all whitespace-nowrap hover:bg-surface-elevated hover:border-hairline-strong"
             onClick={() => setShowTypeDropdown(!showTypeDropdown)}
           >
             <svg
@@ -276,6 +280,7 @@ export const ClipboardHistoryView: React.FC<ClipboardHistoryViewProps> = ({ onCl
               fill="none"
               stroke="currentColor"
               strokeWidth="2"
+              className="text-mute"
             >
               <line x1="4" y1="6" x2="20" y2="6" />
               <line x1="4" y1="12" x2="20" y2="12" />
@@ -293,15 +298,19 @@ export const ClipboardHistoryView: React.FC<ClipboardHistoryViewProps> = ({ onCl
               fill="none"
               stroke="currentColor"
               strokeWidth="2"
+              className="text-ash"
             >
               <path d="m6 9 6 6 6-6" />
             </svg>
           </button>
 
           {showTypeDropdown && (
-            <div className="type-filter-menu">
+            <div className="absolute top-[calc(100%+4px)] right-0 min-w-40 bg-surface border border-hairline rounded-md shadow-[0_4px_12px_rgba(0,0,0,0.15)] overflow-hidden z-[100]">
               <button
-                className={`type-filter-option ${typeFilter === 'all' ? 'active' : ''}`}
+                className={cn(
+                  'flex items-center gap-2 w-full px-3.5 py-2.5 text-left text-sm cursor-pointer transition-colors border-none',
+                  typeFilter === 'all' ? 'bg-accent-blue/20 text-on-dark' : 'bg-transparent text-ink hover:bg-surface-elevated'
+                )}
                 onClick={() => {
                   setTypeFilter('all');
                   setShowTypeDropdown(false);
@@ -310,7 +319,10 @@ export const ClipboardHistoryView: React.FC<ClipboardHistoryViewProps> = ({ onCl
                 {t('filters.all')}
               </button>
               <button
-                className={`type-filter-option ${typeFilter === 'text' ? 'active' : ''}`}
+                className={cn(
+                  'flex items-center gap-2 w-full px-3.5 py-2.5 text-left text-sm cursor-pointer transition-colors border-none',
+                  typeFilter === 'text' ? 'bg-accent-blue/20 text-on-dark' : 'bg-transparent text-ink hover:bg-surface-elevated'
+                )}
                 onClick={() => {
                   setTypeFilter('text');
                   setShowTypeDropdown(false);
@@ -321,21 +333,34 @@ export const ClipboardHistoryView: React.FC<ClipboardHistoryViewProps> = ({ onCl
                   alt={t('filters.text')}
                   width="16"
                   height="16"
+                  className={typeFilter === 'text' ? 'brightness-0 saturate-100 invert' : 'brightness-0 saturate-100 invert-[60%]'}
                 />
                 {t('filters.text')}
               </button>
               <button
-                className={`type-filter-option ${typeFilter === 'image' ? 'active' : ''}`}
+                className={cn(
+                  'flex items-center gap-2 w-full px-3.5 py-2.5 text-left text-sm cursor-pointer transition-colors border-none',
+                  typeFilter === 'image' ? 'bg-accent-blue/20 text-on-dark' : 'bg-transparent text-ink hover:bg-surface-elevated'
+                )}
                 onClick={() => {
                   setTypeFilter('image');
                   setShowTypeDropdown(false);
                 }}
               >
-                <img src="/icons/image-03-stroke-rounded.svg" alt={t('filters.image')} width="16" height="16" />
+                <img
+                  src="/icons/image-03-stroke-rounded.svg"
+                  alt={t('filters.image')}
+                  width="16"
+                  height="16"
+                  className={typeFilter === 'image' ? 'brightness-0 saturate-100 invert' : 'brightness-0 saturate-100 invert-[60%]'}
+                />
                 {t('filters.image')}
               </button>
               <button
-                className={`type-filter-option ${typeFilter === 'files' ? 'active' : ''}`}
+                className={cn(
+                  'flex items-center gap-2 w-full px-3.5 py-2.5 text-left text-sm cursor-pointer transition-colors border-none',
+                  typeFilter === 'files' ? 'bg-accent-blue/20 text-on-dark' : 'bg-transparent text-ink hover:bg-surface-elevated'
+                )}
                 onClick={() => {
                   setTypeFilter('files');
                   setShowTypeDropdown(false);
@@ -346,6 +371,7 @@ export const ClipboardHistoryView: React.FC<ClipboardHistoryViewProps> = ({ onCl
                   alt={t('filters.files')}
                   width="16"
                   height="16"
+                  className={typeFilter === 'files' ? 'brightness-0 saturate-100 invert' : 'brightness-0 saturate-100 invert-[60%]'}
                 />
                 {t('filters.files')}
               </button>
@@ -355,17 +381,19 @@ export const ClipboardHistoryView: React.FC<ClipboardHistoryViewProps> = ({ onCl
       </div>
 
       {/* Main content area */}
-      <div className="clipboard-content">
+      <div className="flex flex-1 overflow-hidden">
         {/* Items list */}
-        <div className="clipboard-items-list">
+        <div className="w-[45%] border-r border-hairline overflow-y-auto bg-canvas">
           {isLoading ? (
-            <div className="loading-state">{t('states.loading')}</div>
+            <div className="flex items-center justify-center p-5 text-mute text-sm">{t('states.loading')}</div>
           ) : filteredItems.length === 0 ? (
-            <div className="empty-state">{t('states.empty')}</div>
+            <div className="flex items-center justify-center p-5 text-mute text-sm">{t('states.empty')}</div>
           ) : (
             Object.entries(groupedItems).map(([groupName, groupItems]) => (
-              <div key={groupName} className="clipboard-group">
-                <div className="group-header">{groupName}</div>
+              <div key={groupName} className="mb-3">
+                <div className="px-4 py-2 text-xs font-semibold text-mute uppercase tracking-[0.5px] bg-surface sticky top-0 z-[1]">
+                  {groupName}
+                </div>
                 {groupItems.map((item) => {
                   const globalIndex = filteredItems.indexOf(item);
                   const isSelected = globalIndex === selectedIndex;
@@ -373,19 +401,30 @@ export const ClipboardHistoryView: React.FC<ClipboardHistoryViewProps> = ({ onCl
                   return (
                     <div
                       key={item.id}
-                      className={`clipboard-item ${isSelected ? 'selected' : ''}`}
+                      className={cn(
+                        'flex items-center gap-3 px-4 py-2.5 cursor-pointer transition-colors relative',
+                        isSelected ? 'bg-accent-blue/20 text-on-dark' : 'hover:bg-surface-elevated'
+                      )}
                       onClick={() => {
                         setSelectedIndex(globalIndex);
                         setSelectedItem(item);
                       }}
                       onDoubleClick={() => handlePaste(item)}
                     >
-                      <div className="item-icon">{getTypeIcon(item.contentType)}</div>
-                      <div className="item-content">
-                        <div className="item-preview">{item.preview}</div>
-                        <div className="item-timestamp">{formatTimestamp(item.timestamp)}</div>
+                      <div className="text-xl shrink-0 w-6 text-center flex items-center justify-center">
+                        <span className={cn(isSelected ? '[&_img]:brightness-0 [&_img]:saturate-100 [&_img]:invert' : '[&_img]:brightness-0 [&_img]:saturate-100 [&_img]:invert-[60%] [&_img]:opacity-80')}>
+                          {getTypeIcon(item.contentType)}
+                        </span>
                       </div>
-                      {item.pinned && <div className="item-pin">📌</div>}
+                      <div className="flex-1 min-w-0">
+                        <div className="font-mono text-xs text-body truncate mb-[2px]">
+                          {item.preview}
+                        </div>
+                        <div className={cn('text-[11px] shrink-0', isSelected ? 'text-white/80' : 'text-ash')}>
+                          {formatTimestamp(item.timestamp)}
+                        </div>
+                      </div>
+                      {item.pinned && <div className="shrink-0 text-sm">📌</div>}
                     </div>
                   );
                 })}
@@ -396,37 +435,42 @@ export const ClipboardHistoryView: React.FC<ClipboardHistoryViewProps> = ({ onCl
 
         {/* Details panel */}
         {selectedItem && (
-          <div className="clipboard-details-panel">
-            <div className="details-content">
+          <div className="flex-1 flex flex-col bg-surface overflow-hidden">
+            <div className="flex-1 overflow-y-auto p-4">
               {/* Preview area */}
               {selectedItem.contentType === 'image' ? (
-                <div className="image-preview">
+                <div className="w-full max-h-[300px] bg-canvas border border-hairline rounded-md overflow-hidden flex items-center justify-center mb-4">
                   <img
                     src={`data:image/png;base64,${selectedItem.content}`}
                     alt="Clipboard image"
+                    className="max-w-full max-h-[300px] object-contain"
                   />
                 </div>
               ) : (
-                <div className="text-preview">
-                  <pre>{selectedItem.content}</pre>
+                <div className="w-full max-h-[300px] bg-canvas border border-hairline rounded-md overflow-auto mb-4 p-3">
+                  <pre className="m-0 text-sm font-mono text-ink whitespace-pre-wrap break-words">
+                    {selectedItem.content}
+                  </pre>
                 </div>
               )}
 
               {/* Metadata */}
-              <div className="details-metadata">
-                <div className="metadata-section">
-                  <h3>{t('metadata.title')}</h3>
+              <div className="mt-3">
+                <div>
+                  <h3 className="text-xs font-semibold text-mute mb-3 uppercase tracking-[0.5px]">
+                    {t('metadata.title')}
+                  </h3>
 
                   {selectedItem.source && (
-                    <div className="metadata-row">
-                      <span className="metadata-label">{t('metadata.source')}</span>
-                      <span className="metadata-value">{selectedItem.source}</span>
+                    <div className="flex justify-between items-center py-2 border-b border-hairline last:border-b-0">
+                      <span className="text-sm text-body">{t('metadata.source')}</span>
+                      <span className="text-sm text-ink font-medium">{selectedItem.source}</span>
                     </div>
                   )}
 
-                  <div className="metadata-row">
-                    <span className="metadata-label">{t('metadata.type')}</span>
-                    <span className="metadata-value">
+                  <div className="flex justify-between items-center py-2 border-b border-hairline last:border-b-0">
+                    <span className="text-sm text-body">{t('metadata.type')}</span>
+                    <span className="text-sm text-ink font-medium">
                       {selectedItem.contentType.charAt(0).toUpperCase() +
                         selectedItem.contentType.slice(1)}
                     </span>
@@ -435,17 +479,17 @@ export const ClipboardHistoryView: React.FC<ClipboardHistoryViewProps> = ({ onCl
                   {selectedItem.contentType === 'text' && (
                     <>
                       {selectedItem.charCount !== undefined && (
-                        <div className="metadata-row">
-                          <span className="metadata-label">{t('metadata.characters')}</span>
-                          <span className="metadata-value">
+                        <div className="flex justify-between items-center py-2 border-b border-hairline last:border-b-0">
+                          <span className="text-sm text-body">{t('metadata.characters')}</span>
+                          <span className="text-sm text-ink font-medium">
                             {selectedItem.charCount.toLocaleString()}
                           </span>
                         </div>
                       )}
                       {selectedItem.wordCount !== undefined && (
-                        <div className="metadata-row">
-                          <span className="metadata-label">{t('metadata.words')}</span>
-                          <span className="metadata-value">
+                        <div className="flex justify-between items-center py-2 border-b border-hairline last:border-b-0">
+                          <span className="text-sm text-body">{t('metadata.words')}</span>
+                          <span className="text-sm text-ink font-medium">
                             {selectedItem.wordCount.toLocaleString()}
                           </span>
                         </div>
@@ -457,17 +501,17 @@ export const ClipboardHistoryView: React.FC<ClipboardHistoryViewProps> = ({ onCl
                     <>
                       {selectedItem.imageWidth !== undefined &&
                         selectedItem.imageHeight !== undefined && (
-                          <div className="metadata-row">
-                            <span className="metadata-label">{t('metadata.dimensions')}</span>
-                            <span className="metadata-value">
+                          <div className="flex justify-between items-center py-2 border-b border-hairline last:border-b-0">
+                            <span className="text-sm text-body">{t('metadata.dimensions')}</span>
+                            <span className="text-sm text-ink font-medium">
                               {selectedItem.imageWidth}×{selectedItem.imageHeight}
                             </span>
                           </div>
                         )}
                       {selectedItem.fileSize !== undefined && (
-                        <div className="metadata-row">
-                          <span className="metadata-label">{t('metadata.size')}</span>
-                          <span className="metadata-value">
+                        <div className="flex justify-between items-center py-2 border-b border-hairline last:border-b-0">
+                          <span className="text-sm text-body">{t('metadata.size')}</span>
+                          <span className="text-sm text-ink font-medium">
                             {formatFileSize(selectedItem.fileSize)}
                           </span>
                         </div>
@@ -475,9 +519,9 @@ export const ClipboardHistoryView: React.FC<ClipboardHistoryViewProps> = ({ onCl
                     </>
                   )}
 
-                  <div className="metadata-row">
-                    <span className="metadata-label">{t('metadata.copied')}</span>
-                    <span className="metadata-value">
+                  <div className="flex justify-between items-center py-2 border-b border-hairline last:border-b-0">
+                    <span className="text-sm text-body">{t('metadata.copied')}</span>
+                    <span className="text-sm text-ink font-medium">
                       {formatTimestamp(selectedItem.timestamp)}
                     </span>
                   </div>
@@ -486,15 +530,24 @@ export const ClipboardHistoryView: React.FC<ClipboardHistoryViewProps> = ({ onCl
             </div>
 
             {/* Actions footer */}
-            <div className="details-actions">
-              <button className="action-button primary" onClick={() => handlePaste(selectedItem)}>
+            <div className="flex gap-2 px-4 py-3 border-t border-hairline bg-canvas">
+              <button
+                className="flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium rounded-md border border-hairline bg-accent-blue text-on-dark cursor-pointer transition-all hover:opacity-90"
+                onClick={() => handlePaste(selectedItem)}
+              >
                 <span>{t('actions.paste')}</span>
-                <kbd>↵</kbd>
+                <kbd className="px-1.5 py-0.5 text-xs font-mono bg-white/20 rounded-sm">↵</kbd>
               </button>
-              <button className="action-button" onClick={() => handleTogglePin(selectedItem)}>
+              <button
+                className="flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium rounded-md border border-hairline bg-surface text-ink cursor-pointer transition-all hover:bg-surface-elevated hover:border-hairline-strong"
+                onClick={() => handleTogglePin(selectedItem)}
+              >
                 {selectedItem.pinned ? t('actions.unpin') : t('actions.pin')}
               </button>
-              <button className="action-button danger" onClick={() => handleDelete(selectedItem)}>
+              <button
+                className="flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium rounded-md border border-accent-red bg-transparent text-accent-red cursor-pointer transition-all hover:bg-accent-red hover:text-on-dark"
+                onClick={() => handleDelete(selectedItem)}
+              >
                 {t('actions.delete')}
               </button>
             </div>
@@ -503,17 +556,23 @@ export const ClipboardHistoryView: React.FC<ClipboardHistoryViewProps> = ({ onCl
       </div>
 
       {/* Footer */}
-      <div className="clipboard-footer">
-        <div className="footer-left">
-          <div className="footer-icon">📋</div>
+      <div className="flex items-center justify-between px-4 py-2 border-t border-hairline bg-surface text-xs shrink-0">
+        <div className="flex items-center gap-2 text-body font-medium">
+          <div className="text-base">📋</div>
           <span>{t('footer.title')}</span>
         </div>
-        <div className="footer-right">
-          <span className="footer-hint">
-            <kbd>↑</kbd> <kbd>↓</kbd> {t('footer.hint')} • <kbd>↵</kbd> {t('footer.hintPaste')} • <kbd>Esc</kbd> {t('footer.hintClose')}
+        <div className="text-mute">
+          <span className="flex items-center gap-2">
+            <kbd className="px-1.5 py-0.5 text-xs font-mono bg-canvas border border-hairline rounded-sm text-body">↑</kbd>
+            <kbd className="px-1.5 py-0.5 text-xs font-mono bg-canvas border border-hairline rounded-sm text-body">↓</kbd>
+            {t('footer.hint')} •{' '}
+            <kbd className="px-1.5 py-0.5 text-xs font-mono bg-canvas border border-hairline rounded-sm text-body">↵</kbd>
+            {t('footer.hintPaste')} •{' '}
+            <kbd className="px-1.5 py-0.5 text-xs font-mono bg-canvas border border-hairline rounded-sm text-body">Esc</kbd>
+            {t('footer.hintClose')}
           </span>
         </div>
       </div>
     </div>
   );
-};
+}

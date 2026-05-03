@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-search-applications-frecency"
+description = "Enables the search_applications_frecency command without any pre-configured scope."
+commands.allow = ["search_applications_frecency"]
+
+[[permission]]
+identifier = "deny-search-applications-frecency"
+description = "Denies the search_applications_frecency command without any pre-configured scope."
+commands.deny = ["search_applications_frecency"]

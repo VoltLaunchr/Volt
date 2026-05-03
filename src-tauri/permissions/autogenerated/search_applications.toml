@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-search-applications"
+description = "Enables the search_applications command without any pre-configured scope."
+commands.allow = ["search_applications"]
+
+[[permission]]
+identifier = "deny-search-applications"
+description = "Denies the search_applications command without any pre-configured scope."
+commands.deny = ["search_applications"]

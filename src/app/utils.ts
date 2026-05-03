@@ -16,7 +16,7 @@ export const openSettingsWindow = async (): Promise<void> => {
     return;
   }
   const settingsWindow = new WebviewWindow('settings', {
-    url: 'settings.html',
+    url: 'index.html',
     title: 'Volt Settings',
     width: 900,
     height: 600,

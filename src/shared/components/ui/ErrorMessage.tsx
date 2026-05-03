@@ -1,4 +1,4 @@
-import './ErrorMessage.css';
+import { cn } from '@/lib/utils';
 
 export interface ErrorMessageProps {
   message: string;
@@ -16,8 +16,17 @@ export function ErrorMessage({
   onRetry,
 }: ErrorMessageProps) {
   return (
-    <div className={`error-message error-message-${variant}`} role="alert">
-      <div className="error-message-icon">
+    <div
+      className={cn(
+        'flex items-start gap-3 p-4 rounded-md bg-accent-red-soft border border-red-500/30 text-accent-red',
+        variant === 'inline' && 'w-full',
+        variant === 'toast' &&
+          'fixed bottom-6 right-6 max-w-[400px] shadow-lg z-50 animate-[error-slide-in_0.2s_ease]',
+        variant === 'banner' && 'rounded-none border-x-0'
+      )}
+      role="alert"
+    >
+      <div className="shrink-0 flex items-center justify-center text-accent-red">
         <svg
           width="20"
           height="20"
@@ -33,15 +42,17 @@ export function ErrorMessage({
           <line x1="12" y1="16" x2="12.01" y2="16" />
         </svg>
       </div>
-      <div className="error-message-content">
-        {title && <h4 className="error-message-title">{title}</h4>}
-        <p className="error-message-text">{message}</p>
+      <div className="flex-1 min-w-0">
+        {title && (
+          <h4 className="text-sm font-semibold mb-1 text-accent-red">{title}</h4>
+        )}
+        <p className="text-sm text-body leading-normal break-words m-0">{message}</p>
       </div>
-      <div className="error-message-actions">
+      <div className="flex items-center gap-1 shrink-0">
         {onRetry && (
           <button
             type="button"
-            className="error-message-retry"
+            className="flex items-center justify-center w-7 h-7 rounded-sm bg-transparent border-0 text-body cursor-pointer transition-colors hover:bg-white/10 hover:text-on-dark active:scale-95"
             onClick={onRetry}
             aria-label="Retry"
           >
@@ -63,7 +74,7 @@ export function ErrorMessage({
         {onDismiss && (
           <button
             type="button"
-            className="error-message-dismiss"
+            className="flex items-center justify-center w-7 h-7 rounded-sm bg-transparent border-0 text-body cursor-pointer transition-colors hover:bg-white/10 hover:text-on-dark active:scale-95"
             onClick={onDismiss}
             aria-label="Dismiss error"
           >

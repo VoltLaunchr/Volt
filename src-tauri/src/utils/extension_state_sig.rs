@@ -213,6 +213,61 @@ fn compute_signature(contents: &[u8]) -> Option<String> {
     Some(hex::encode(mac.finalize().into_bytes()))
 }
 
+/// Compute a domain-tagged HMAC-SHA256 of `payload` with the shared keyring
+/// HMAC key. The `domain` string is mixed into the MAC input as a prefix +
+/// length-tag so a signature produced for one domain cannot be replayed in
+/// another (e.g. an extension-state signature can't be presented as a valid
+/// credential signature, even though both use the same underlying key).
+///
+/// Returns `None` if the keyring is unavailable.
+///
+/// Used by `keyring_store::store_signed` / `retrieve_signed` to detect
+/// tampering of stored credentials by other user-mode processes that share
+/// access to the OS keyring (DPAPI on Windows is per-user; the secret is
+/// reachable to any process running as the same user). The HMAC won't stop
+/// such an attacker — they can read the key too — but it forces them to
+/// compute a fresh signature whenever they swap the secret, which (a)
+/// raises the bar for casual tampering and (b) gives forensic evidence
+/// when the attacker forgets. (M10)
+pub fn hmac_sign_domain(domain: &str, payload: &[u8]) -> Option<String> {
+    let key = load_or_create_key()?;
+    let mut mac = HmacSha256::new_from_slice(&key).ok()?;
+    // Length-prefix the domain so e.g. domain="credential" + payload="x:secret"
+    // cannot collide with domain="credentialx" + payload=":secret".
+    let dom = domain.as_bytes();
+    mac.update(&(dom.len() as u32).to_be_bytes());
+    mac.update(dom);
+    mac.update(payload);
+    Some(hex::encode(mac.finalize().into_bytes()))
+}
+
+/// Constant-time verification of a hex-encoded domain-tagged HMAC produced
+/// by [`hmac_sign_domain`]. Returns `false` on any of: keyring unavailable,
+/// hex-decode failure, length mismatch, or signature mismatch.
+pub fn hmac_verify_domain(domain: &str, payload: &[u8], expected_hex: &str) -> bool {
+    let Some(actual_hex) = hmac_sign_domain(domain, payload) else {
+        return false;
+    };
+    // Compare on raw bytes to make the timing comparison constant-time. The
+    // hex encoding is deterministic so a mismatch in raw bytes also means a
+    // mismatch in hex, but constant-time matters when the expected value
+    // could have been chosen by an attacker observing timings.
+    let Ok(actual) = hex::decode(&actual_hex) else {
+        return false;
+    };
+    let Ok(expected) = hex::decode(expected_hex.trim()) else {
+        return false;
+    };
+    if actual.len() != expected.len() {
+        return false;
+    }
+    let mut diff = 0u8;
+    for (a, b) in actual.iter().zip(expected.iter()) {
+        diff |= a ^ b;
+    }
+    diff == 0
+}
+
 /// Path of the detached signature file for a given state file.
 fn sig_path(state_path: &Path) -> PathBuf {
     let mut file_name = state_path
@@ -405,13 +460,29 @@ pub fn read_state_with_verification(
     state_path: &Path,
     label: &str,
 ) -> std::io::Result<Option<String>> {
+    Ok(read_state_with_outcome(state_path, label)?.map(|(c, _)| c))
+}
+
+/// Same as [`read_state_with_verification`] but also returns the
+/// [`VerifyOutcome`] so callers can apply policy on a `Mismatch` (e.g.
+/// fail-closed reset of `granted_permissions`).
+///
+/// The outcome reflects the verification result; the contents are always
+/// returned as read from disk. Callers that wish to fail-closed must
+/// post-process the deserialized struct themselves — see `commands/
+/// extensions.rs::load_installed_state` for the H4 implementation.
+pub fn read_state_with_outcome(
+    state_path: &Path,
+    label: &str,
+) -> std::io::Result<Option<(String, VerifyOutcome)>> {
     if !state_path.exists() {
         return Ok(None);
     }
 
     let contents = std::fs::read_to_string(state_path)?;
+    let outcome = verify_state_signature(state_path, &contents);
 
-    match verify_state_signature(state_path, &contents) {
+    match outcome {
         VerifyOutcome::Ok => {
             debug!("{} state signature verified", label);
         }
@@ -425,23 +496,25 @@ pub fn read_state_with_verification(
             );
         }
         VerifyOutcome::Mismatch => {
-            // Proceed WITH the state on disk. Resetting it would be worse
-            // than trusting it, because legitimate edits (rare) shouldn't
-            // brick the launcher and an attacker who flipped a permission
-            // bit has already won at the file-system level anyway — we're
-            // only trying to detect & log.
+            // Surface the warning AND set the process-wide tamper flag so
+            // the UI banner shows up. The caller (commands/extensions.rs)
+            // is expected to fail-closed by clearing `granted_permissions`
+            // for every entry it parses out of these contents — we never
+            // refuse to load (that would brick the launcher), but a
+            // tampered file MUST NOT carry forward permissions.
             warn!(
                 "{} state signature MISMATCH for {:?} — file may have been modified externally. \
-                 Loading as-is; consider reviewing granted permissions.",
+                 Granted permissions will be reset; reviewing extensions is recommended.",
                 label, state_path
             );
+            mark_tamper_detected();
         }
         VerifyOutcome::KeyUnavailable => {
             // One-time warning already emitted from `load_or_create_key`.
         }
     }
 
-    Ok(Some(contents))
+    Ok(Some((contents, outcome)))
 }
 
 #[cfg(test)]
@@ -476,6 +549,44 @@ mod tests {
             tmp_path(sig),
             PathBuf::from("/tmp/extensions/installed.json.sig.tmp")
         );
+    }
+
+    /// `read_state_with_outcome` must surface the underlying VerifyOutcome
+    /// so commands can implement fail-closed policy (H4). For a state file
+    /// that has no `.sig` companion the outcome is `NoSignature` and the
+    /// contents are returned as read.
+    #[test]
+    fn read_state_with_outcome_returns_no_signature_when_sig_missing() {
+        use std::env;
+        use std::fs;
+
+        let dir = env::temp_dir().join(format!(
+            "volt_state_outcome_test_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        fs::create_dir_all(&dir).unwrap();
+        let json = dir.join("installed.json");
+        fs::write(&json, "{\"extensions\":[]}").unwrap();
+
+        let result = read_state_with_outcome(&json, "installed").unwrap();
+        let (contents, outcome) = result.expect("contents present");
+        assert_eq!(contents, "{\"extensions\":[]}");
+        // Without a `.sig` and depending on keyring availability we get
+        // either NoSignature or KeyUnavailable — both are benign and both
+        // are NOT Mismatch, which is what callers care about for H4.
+        assert!(
+            matches!(
+                outcome,
+                VerifyOutcome::NoSignature | VerifyOutcome::KeyUnavailable
+            ),
+            "expected NoSignature or KeyUnavailable, got {:?}",
+            outcome
+        );
+        let _ = fs::remove_dir_all(&dir);
     }
 
     /// Validates the atomic-write contract by checking the final on-disk

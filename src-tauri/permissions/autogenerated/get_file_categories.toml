@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-get-file-categories"
+description = "Enables the get_file_categories command without any pre-configured scope."
+commands.allow = ["get_file_categories"]
+
+[[permission]]
+identifier = "deny-get-file-categories"
+description = "Denies the get_file_categories command without any pre-configured scope."
+commands.deny = ["get_file_categories"]

@@ -6,6 +6,22 @@
 use std::path::Path;
 use tracing::warn;
 
+#[cfg(target_os = "windows")]
+use once_cell::sync::Lazy;
+#[cfg(target_os = "windows")]
+use regex::Regex;
+
+/// Strict regex for UWP AppsFolder identifiers.
+///
+/// Format: `<PackageFamilyName>!<AppId>` where the PackageFamilyName is
+/// `<PackageName>_<PublisherHash>`. Example:
+/// `Microsoft.WindowsCalculator_8wekyb3d8bbwe!App`.
+///
+/// Anchored on both ends to prevent injection of arbitrary characters.
+#[cfg(target_os = "windows")]
+static UWP_APP_RE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"^[A-Za-z0-9.\-]+_[A-Za-z0-9]{8,}![A-Za-z0-9.\-]+$").unwrap());
+
 /// Executable file names (case-insensitive) that should never be launched
 /// directly because they are commonly abused as LOLBIN (Living Off The Land
 /// Binaries).  Launching them through .lnk shortcuts is fine because the
@@ -21,6 +37,18 @@ const BLOCKED_EXECUTABLES: &[&str] = &[
     "rundll32.exe",
     "certutil.exe",
     "bitsadmin.exe",
+    // Additional LOLBINs (M12). All from the LOLBAS project's known-abuse
+    // list — none are useful as user-launched applications.
+    "installutil.exe",
+    "msbuild.exe",
+    "cmstp.exe",
+    "wmic.exe",
+    "ngen.exe",
+    "presentationhost.exe",
+    "msxsl.exe",
+    "forfiles.exe",
+    "expand.exe",
+    "extexport.exe",
 ];
 
 /// File extensions considered valid application launch targets on Windows.
@@ -76,10 +104,44 @@ pub fn validate_launch_path(path: &str) -> Result<(), String> {
 /// Windows-specific launch path validation.
 #[cfg(target_os = "windows")]
 fn validate_windows_path(path: &str, p: &Path) -> Result<(), String> {
-    // Shell:AppsFolder identifiers (UWP/Store apps) are not file paths; allow them through.
-    // They look like "Microsoft.WindowsCalculator_8wekyb3d8bbwe!App"
+    // Shell:AppsFolder identifiers (UWP/Store apps) are not file paths.
+    // They look like "Microsoft.WindowsCalculator_8wekyb3d8bbwe!App".
+    //
+    // Previous behaviour permitted ANY string containing '!' and no path
+    // separators, which let attackers slip past the LOLBIN denylist with
+    // identifiers like `cmd.exe!whatever`. Tighten by:
+    //   1. Running the LOLBIN denylist on the leftmost `!`-split token.
+    //   2. Requiring the full identifier match the strict UWP regex.
     if !path.contains('\\') && !path.contains('/') && path.contains('!') {
-        return Ok(());
+        // The portion before the first '!' must not be a denylisted base name.
+        if let Some(first_token) = path.split('!').next() {
+            let token_lower = first_token.to_lowercase();
+            // Compare against denylist names with .exe stripped to catch both
+            // `cmd!x` and `cmd.exe!x` shapes.
+            let token_stripped = token_lower
+                .strip_suffix(".exe")
+                .unwrap_or(&token_lower)
+                .trim();
+            if BLOCKED_EXECUTABLES.iter().any(|b| {
+                let b_lower = b.to_lowercase();
+                let b_stripped = b_lower.strip_suffix(".exe").unwrap_or(&b_lower);
+                b_stripped == token_stripped
+            }) {
+                warn!(
+                    "Blocked UWP-style identifier with denylisted prefix: {}",
+                    path
+                );
+                return Err(format!(
+                    "Direct execution of '{}' is not allowed for security reasons.",
+                    first_token
+                ));
+            }
+        }
+
+        if UWP_APP_RE.is_match(path) {
+            return Ok(());
+        }
+        return Err(format!("Invalid UWP identifier format: {}", path));
     }
 
     // The path must exist on disk
@@ -161,5 +223,36 @@ mod tests {
     fn test_uwp_shell_identifier_allowed() {
         // UWP apps use shell:AppsFolder identifiers, not file paths
         assert!(validate_launch_path("Microsoft.WindowsCalculator_8wekyb3d8bbwe!App").is_ok());
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_uwp_lolbin_prefix_blocked() {
+        // `cmd.exe!x` previously slipped past validation because the early-
+        // return granted any string with '!' and no slashes. The denylist
+        // now runs on the first split token before the regex check.
+        assert!(validate_launch_path("cmd.exe!x").is_err());
+        assert!(validate_launch_path("cmd!whatever").is_err());
+        assert!(validate_launch_path("PowerShell.exe!Run").is_err());
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_uwp_invalid_format_rejected() {
+        // Strings with '!' but not matching the strict UWP shape are rejected.
+        assert!(validate_launch_path("Foo!Bar").is_err());
+        assert!(validate_launch_path("App_short!Foo").is_err()); // hash too short
+        assert!(validate_launch_path("!App").is_err());
+        assert!(validate_launch_path("App!").is_err());
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_uwp_valid_identifiers_accepted() {
+        // Real Microsoft Store package family names always have an
+        // 8+ character publisher hash and a '.'/alphanumeric package name.
+        assert!(validate_launch_path("Microsoft.WindowsCalculator_8wekyb3d8bbwe!App").is_ok());
+        assert!(validate_launch_path("Microsoft.Paint_8wekyb3d8bbwe!App").is_ok());
+        assert!(validate_launch_path("Spotify.Music_zpdnekdrzrea0!Spotify").is_ok());
     }
 }

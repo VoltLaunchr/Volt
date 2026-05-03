@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-is-plugin-registered"
+description = "Enables the is_plugin_registered command without any pre-configured scope."
+commands.allow = ["is_plugin_registered"]
+
+[[permission]]
+identifier = "deny-is-plugin-registered"
+description = "Denies the is_plugin_registered command without any pre-configured scope."
+commands.deny = ["is_plugin_registered"]

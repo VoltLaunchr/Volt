@@ -1,6 +1,163 @@
 {
   "versions": [
     {
+      "version": "0.1.2",
+      "date": "2026-05-03",
+      "title": "V0.1.2 — Cloud Sync preview, onboarding, system monitor, UI migration & more",
+      "description": "Volt v0.1.2 brings 27 new features, 33 bug fixes, security improvements, performance optimizations.",
+      "sections": [
+        {
+          "type": "features",
+          "title": "New Features",
+          "icon": "sparkles",
+          "items": [
+            "V0.1.2 — Cloud Sync preview, onboarding, system monitor, UI migration",
+            "Shell execution, system monitor v2, extension hardening, CI tooling",
+            "Desktop auth + extension installer hardening + Cargo.lock resync (#58)",
+            "Auth deep-link, extension hardening, watcher fix, plus misc upgrades",
+            "V0.0.5 — auth, OAuth, quicklinks, window management, security hardening",
+            "Add streaming search via Tauri Channels for incremental results",
+            "Add match highlighting, web search fallback, deferred rendering, adaptive debounce",
+            "Add query-result binding for learned search preferences",
+            "Unify scoring with nucleo matcher for apps and propagate file scores",
+            "Add professional Integrations settings panel",
+            "Add full internationalization support with English and French",
+            "Wire permission consent flow into ExtensionLoader",
+            "Enforce permissions in Worker + add network proxy",
+            "Add permission storage and update command",
+            "Add permission consent dialog component",
+            "Wire Worker sandbox into ExtensionLoader with fallback",
+            "Add WorkerPlugin proxy for Worker sandbox",
+            "Add Worker bootstrap code generator",
+            "Add prefix field to ExtensionManifest for Worker sandbox",
+            "Listen to Tauri events for progress, make error toast persistent",
+            "Sync allApps/isLoading/appError into appStore",
+            "Emit indexing-progress Tauri events during scan",
+            "Add aria-describedby to hotkey, folder picker, and extensions fields",
+            "Add allApps, isLoading, appError to appStore",
+            "Add onboarding modal, skip link, and contrast fix",
+            "Add toast notification system with indexing progress",
+            "Add zustand stores (search, UI, app)"
+          ]
+        },
+        {
+          "type": "security",
+          "title": "Security",
+          "icon": "shield",
+          "items": [
+            "Security hardening and improvements"
+          ]
+        },
+        {
+          "type": "fixes",
+          "title": "Bug Fixes",
+          "icon": "shield",
+          "items": [
+            "Point GitHub/Notion init at new /start route on the website",
+            "Clear -D warnings on launcher/windows_search/lib",
+            "Rate-limit + log forensic trail on single-instance forwards (H9)",
+            "HMAC integrity tag on keyring entries (M10)",
+            "Harden execution surface (H6, H7, M5, M6, M7)",
+            "Fail-closed on signature mismatch + permission allowlist",
+            "Block redirect SSRF in worker fetch proxy",
+            "Reject numeric IPv4/IPv6-mapped hosts in isUrlSafe",
+            "Clear pending map on worker timeout",
+            "Demote state log to debug, host check on deep-link",
+            "Cap windows_search query length",
+            "Cap import JSON size and snippet count",
+            "Reject UNC and .lnk in open_file_with_dialog",
+            "Refuse executable types in open_path",
+            "Tighten UWP regex, apply LOLBIN check before split",
+            "Drop unneeded return in open_task_manager macOS branch",
+            "Silence cross-platform unused-code lints (CI Linux/macOS)",
+            "Satisfy Rust 1.95 clippy lints (CI)",
+            "Use &Path for persist_blocking signature",
+            "Add missing browser globals to eslint + sync e2e with new calculator UI",
+            "Bump rand to 0.9 to close Dependabot alert",
+            "Align Tauri npm packages with Rust crate versions",
+            "Prevent blank window on startup + add in-app update UI",
+            "Disable macOS codesign env vars until valid certs are configured",
+            "Resolve CI clippy errors on all platforms",
+            "Correct icns crate API and flaky word-boundary test",
+            "Gate platform-specific imports and suppress cross-platform dead code",
+            "Resolve all clippy warnings across codebase",
+            "Resolve all ESLint errors for CI",
+            "Implement 3 outstanding TODOs in codebase",
+            "Add type assertion for result.data in timezone check",
+            "Translate suggestions view titles, subtitles and badges",
+            "Use draft releases to avoid upload race condition"
+          ]
+        },
+        {
+          "type": "performance",
+          "title": "Performance",
+          "icon": "zap",
+          "items": [
+            "Batch IPC, O(1) file clone, and sync watcher cache"
+          ]
+        },
+        {
+          "type": "refactor",
+          "title": "Under the Hood",
+          "icon": "cpu",
+          "items": [
+            "Lint compliance + extension i18n bridge + typed IPC",
+            "Read stores directly, reduce from 13 to 2 props",
+            "Read search/UI state from stores instead of props",
+            "Read allApps/isLoading from appStore instead of props",
+            "Migrate state management to zustand stores"
+          ]
+        },
+        {
+          "type": "ci",
+          "title": "CI & Build",
+          "icon": "settings",
+          "items": [
+            "Fix macOS ad-hoc signing when Apple certificate is not configured",
+            "Fix macOS ad-hoc signing and immutable release issue",
+            "Fix secrets in if-conditions for workflow_dispatch compatibility",
+            "Add workflow_dispatch trigger to release workflow",
+            "Enterprise-grade release flow (#31)",
+            "Enterprise-grade release flow",
+            "Use v0.0.5.1 tag to bypass orphaned tag object blocking v0.0.5",
+            "Add workflow_dispatch with version input to bypass tag restriction",
+            "Add SignPath code signing step for Windows artifacts"
+          ]
+        },
+        {
+          "type": "testing",
+          "title": "Testing",
+          "icon": "shield",
+          "items": [
+            "Gate LOLBIN denylist tests to Windows"
+          ]
+        },
+        {
+          "type": "docs",
+          "title": "Documentation",
+          "icon": "package",
+          "items": [
+            "Lint guardrails in CLAUDE.md, README polish, updater key custody, audit notes",
+            "Add Integrations UI/UX showcase and design documentation",
+            "Add GitHub and Notion extension integration status",
+            "Update project documentation and CHANGELOG with phase 3-4 features",
+            "Add Web Worker sandbox design spec for extensions",
+            "Add Phase 2 implementation plan (12 tasks)",
+            "Add Phase 2 design spec and product roadmap"
+          ]
+        }
+      ],
+      "footer": {
+        "gettingStarted": "Press Ctrl+Space to open Volt anytime. Check out what's new in v0.1.2!",
+        "feedback": "Have feedback or found a bug? Visit our GitHub repository to report issues or request features.",
+        "links": {
+          "github": "https://github.com/VoltLaunchr/Volt",
+          "releases": "https://github.com/VoltLaunchr/Volt/releases",
+          "docs": "https://voltlaunchr.com/docs"
+        }
+      }
+    },
+    {
       "version": "0.0.8",
       "date": "2026-04-16",
       "title": "Auth Deep-Link, Extension Hardening & Watcher Stability",

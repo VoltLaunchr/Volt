@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-clear-file-history"
+description = "Enables the clear_file_history command without any pre-configured scope."
+commands.allow = ["clear_file_history"]
+
+[[permission]]
+identifier = "deny-clear-file-history"
+description = "Denies the clear_file_history command without any pre-configured scope."
+commands.deny = ["clear_file_history"]

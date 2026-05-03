@@ -38,7 +38,7 @@ export const SEARCH_SCORING = {
 
   // Result type priority scores
   APPLICATION: 200,
-  FILE: 80,
+  FILE: 160, // boosted from 80 so strong filename matches (160+50=210) can beat weak app matches
   PLUGIN_BASE: 100,
 
   // Boost factors

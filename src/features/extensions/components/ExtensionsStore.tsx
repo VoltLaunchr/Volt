@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 import { open } from '@tauri-apps/plugin-dialog';
 import { emit } from '@tauri-apps/api/event';
+import { cn } from '@/lib/utils';
 import { logger } from '../../../shared/utils/logger';
 import { extensionService } from '../services/extensionService';
 import type {
@@ -34,7 +35,11 @@ import type {
   ExtensionCategory,
 } from '../types/extension.types';
 import { EXTENSION_CATEGORIES } from '../types/extension.types';
-import './ExtensionsStore.css';
+
+const LOCAL_EXTENSION_ICONS: Record<string, string> = {
+  github: '/extension-icons/github.svg',
+  notion: '/extension-icons/notion.svg',
+};
 
 /**
  * Notify the main window to reload extensions
@@ -56,8 +61,7 @@ interface ExtensionsStoreProps {
   onRefresh?: () => void;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-export const ExtensionsStore: React.FC<ExtensionsStoreProps> = (_props) => {
+export function ExtensionsStore(_props: ExtensionsStoreProps): React.JSX.Element {
   const { t } = useTranslation('extensions');
   const [availableExtensions, setAvailableExtensions] = useState<ExtensionInfo[]>([]);
   const [installedExtensions, setInstalledExtensions] = useState<InstalledExtension[]>([]);
@@ -76,15 +80,21 @@ export const ExtensionsStore: React.FC<ExtensionsStoreProps> = (_props) => {
     setError(null);
 
     try {
-      const [registry, installed, devExts] = await Promise.all([
+      const [registry, installed, devExts, downloadCounts] = await Promise.all([
         extensionService
           .fetchRegistry()
           .catch(() => ({ extensions: [] as ExtensionInfo[], version: '0', lastUpdated: '' })),
         extensionService.getInstalledExtensions().catch(() => [] as InstalledExtension[]),
         extensionService.getDevExtensions().catch(() => [] as DevExtension[]),
+        extensionService.fetchDownloadCounts().catch(() => ({}) as Record<string, number>),
       ]);
 
-      setAvailableExtensions(registry.extensions);
+      const extensions = registry.extensions.map((ext) => {
+        const live = downloadCounts[ext.manifest.id];
+        return live !== undefined ? { ...ext, downloads: live } : ext;
+      });
+
+      setAvailableExtensions(extensions);
       setInstalledExtensions(installed);
       setDevExtensions(devExts);
     } catch (err) {
@@ -115,6 +125,16 @@ export const ExtensionsStore: React.FC<ExtensionsStoreProps> = (_props) => {
       if (installed.enabled) {
         await notifyMainWindowToReloadExtensions('load', extensionId);
       }
+
+      // Increment download counter in Supabase (fire-and-forget)
+      extensionService.incrementDownload(extensionId);
+
+      // Optimistically bump the local counter
+      setAvailableExtensions((prev) =>
+        prev.map((ext) =>
+          ext.manifest.id === extensionId ? { ...ext, downloads: ext.downloads + 1 } : ext
+        )
+      );
     } catch (err) {
       logger.error('Failed to install extension:', err);
       const errorMessage = err instanceof Error ? err.message : String(err);
@@ -282,45 +302,64 @@ export const ExtensionsStore: React.FC<ExtensionsStoreProps> = (_props) => {
 
   if (loading) {
     return (
-      <div className="extensions-loading">
-        <Loader2 className="spin" size={32} />
-        <p>{t('loading')}</p>
+      <div className="flex flex-col items-center justify-center h-full gap-4 text-body">
+        <Loader2 className="animate-spin" size={32} />
+        <p className="text-sm font-medium">{t('loading')}</p>
       </div>
     );
   }
 
   return (
-    <div className="extensions-store">
+    <div className="flex flex-col h-full overflow-hidden">
       {/* Header */}
-      <div className="extensions-header">
-        <h2>
-          <Package size={24} />
+      <div className="flex items-center justify-between px-6 py-4 border-b border-hairline shrink-0">
+        <h2 className="flex items-center gap-2.5 m-0 text-lg font-semibold text-on-dark">
+          <Package size={24} className="text-accent-blue" />
           {t('header.title')}
         </h2>
-        <button className="refresh-btn" onClick={loadExtensions} title={t('header.refresh')}>
+        <button
+          className="w-7 h-7 rounded-sm bg-transparent border-0 text-mute cursor-pointer flex items-center justify-center transition-colors hover:bg-white/10 hover:text-on-dark"
+          onClick={loadExtensions}
+          title={t('header.refresh')}
+        >
           <RefreshCw size={18} />
         </button>
       </div>
 
       {/* Error message */}
       {error && (
-        <div className="extensions-error">
-          <AlertCircle size={18} />
-          <span>{error}</span>
-          <button onClick={() => setError(null)}>×</button>
+        <div className="flex items-center gap-2.5 px-3.5 py-2.5 mx-6 mb-4 bg-accent-red-soft border border-red-500/20 rounded-md text-accent-red text-sm">
+          <AlertCircle size={18} className="shrink-0" />
+          <span className="flex-1">{error}</span>
+          <button
+            onClick={() => setError(null)}
+            className="ml-auto bg-transparent border-0 text-inherit cursor-pointer text-lg p-0 opacity-70 leading-none hover:opacity-100"
+          >
+            ×
+          </button>
         </div>
       )}
 
       {/* Tabs */}
-      <div className="extensions-tabs">
+      <div className="flex gap-1 px-6 mb-4">
         <button
-          className={`tab ${activeTab === 'browse' ? 'active' : ''}`}
+          className={cn(
+            'px-4 py-2 bg-transparent border-0 rounded-sm text-sm font-medium cursor-pointer transition-colors',
+            activeTab === 'browse'
+              ? 'bg-accent-blue-soft text-accent-blue'
+              : 'text-body hover:bg-white/[0.06] hover:text-on-dark'
+          )}
           onClick={() => setActiveTab('browse')}
         >
           {t('tabs.browse')} ({availableExtensions.length})
         </button>
         <button
-          className={`tab ${activeTab === 'installed' ? 'active' : ''}`}
+          className={cn(
+            'px-4 py-2 bg-transparent border-0 rounded-sm text-sm font-medium cursor-pointer transition-colors',
+            activeTab === 'installed'
+              ? 'bg-accent-blue-soft text-accent-blue'
+              : 'text-body hover:bg-white/[0.06] hover:text-on-dark'
+          )}
           onClick={() => setActiveTab('installed')}
         >
           {t('tabs.installed')} ({totalInstalledCount})
@@ -328,29 +367,35 @@ export const ExtensionsStore: React.FC<ExtensionsStoreProps> = (_props) => {
       </div>
 
       {/* Search and filters */}
-      <div className="extensions-filters">
-        <div className="extensions-search">
-          <Search size={18} />
+      <div className="flex flex-col gap-3 px-6 mb-4">
+        <div className="flex items-center gap-2.5 px-3 py-2 bg-white/[0.06] border border-white/10 rounded-md transition-colors focus-within:border-accent-blue focus-within:bg-white/[0.08]">
+          <Search size={18} className="text-mute shrink-0" />
           <input
             type="text"
             placeholder={t('searchPlaceholder')}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
+            className="flex-1 bg-transparent border-0 outline-none text-on-dark text-sm placeholder:text-mute"
           />
         </div>
 
         {activeTab === 'browse' && (
-          <div className="category-filters">
+          <div className="flex flex-wrap gap-1.5">
             {EXTENSION_CATEGORIES.map((cat) => {
               const IconComponent = cat.icon;
               return (
                 <button
                   key={cat.id}
-                  className={`category-btn ${categoryFilter === cat.id ? 'active' : ''}`}
+                  className={cn(
+                    'inline-flex items-center gap-1.5 px-2.5 py-1.5 border-0 rounded-sm text-xs font-medium cursor-pointer transition-colors',
+                    categoryFilter === cat.id
+                      ? 'bg-accent-blue-soft text-accent-blue'
+                      : 'bg-white/[0.03] text-body hover:bg-white/[0.06] hover:text-on-dark'
+                  )}
                   onClick={() => setCategoryFilter(cat.id)}
                 >
-                  <IconComponent size={14} className="category-icon" />
-                  <span className="category-label">{cat.label}</span>
+                  <IconComponent size={14} className="shrink-0" />
+                  <span>{cat.label}</span>
                 </button>
               );
             })}
@@ -359,13 +404,15 @@ export const ExtensionsStore: React.FC<ExtensionsStoreProps> = (_props) => {
       </div>
 
       {/* Extension list */}
-      <div className="extensions-list">
+      <div className="flex-1 overflow-y-auto px-6 pb-6 flex flex-col gap-2 [scrollbar-width:thin] [scrollbar-color:rgba(255,255,255,0.1)_transparent]">
         {activeTab === 'browse' ? (
           filteredExtensions.length === 0 ? (
-            <div className="no-extensions">
-              <Package size={48} />
-              <p>{t('empty.noExtensions')}</p>
-              {searchQuery && <p className="hint">{t('empty.tryDifferent')}</p>}
+            <div className="flex flex-col items-center justify-center py-12 text-center">
+              <Package size={48} className="opacity-20 text-mute mb-4" />
+              <p className="m-0 text-sm font-medium text-body">{t('empty.noExtensions')}</p>
+              {searchQuery && (
+                <p className="text-xs text-mute mt-1">{t('empty.tryDifferent')}</p>
+              )}
             </div>
           ) : (
             filteredExtensions.map((ext) => (
@@ -383,15 +430,15 @@ export const ExtensionsStore: React.FC<ExtensionsStoreProps> = (_props) => {
         ) : (
           <>
             {/* Link Dev Extension button */}
-            <div className="dev-extensions-section">
+            <div className="mb-4">
               <button
-                className="btn link-dev-btn"
+                className="flex items-center justify-center gap-2 w-full px-3 py-3 bg-transparent border border-dashed border-accent-blue/30 rounded-md text-accent-blue text-sm font-medium cursor-pointer transition-colors hover:bg-accent-blue-soft hover:border-accent-blue disabled:opacity-50 disabled:cursor-not-allowed"
                 onClick={handleLinkDevExtension}
                 disabled={linkingDev}
               >
                 {linkingDev ? (
                   <>
-                    <Loader2 className="spin" size={16} />
+                    <Loader2 className="animate-spin" size={16} />
                     {t('dev.linking')}
                   </>
                 ) : (
@@ -405,8 +452,8 @@ export const ExtensionsStore: React.FC<ExtensionsStoreProps> = (_props) => {
 
             {/* Dev Extensions */}
             {filteredDevExtensions.length > 0 && (
-              <div className="dev-extensions-list">
-                <h4 className="section-title">
+              <div className="mb-6">
+                <h4 className="flex items-center gap-2 m-0 mb-3 pb-2 border-b border-hairline text-[11px] font-semibold text-mute uppercase tracking-wide">
                   <Code size={16} />
                   {t('dev.sectionTitle')} ({filteredDevExtensions.length})
                 </h4>
@@ -424,9 +471,9 @@ export const ExtensionsStore: React.FC<ExtensionsStoreProps> = (_props) => {
 
             {/* Installed Extensions */}
             {filteredInstalled.length > 0 && (
-              <div className="installed-extensions-list">
+              <div className="mb-2">
                 {filteredDevExtensions.length > 0 && (
-                  <h4 className="section-title">
+                  <h4 className="flex items-center gap-2 m-0 mb-3 pb-2 border-b border-hairline text-[11px] font-semibold text-mute uppercase tracking-wide">
                     <Package size={16} />
                     {t('sections.installed')} ({filteredInstalled.length})
                   </h4>
@@ -445,10 +492,10 @@ export const ExtensionsStore: React.FC<ExtensionsStoreProps> = (_props) => {
 
             {/* Empty state when no extensions */}
             {filteredInstalled.length === 0 && filteredDevExtensions.length === 0 && (
-              <div className="no-extensions">
-                <Package size={48} />
-                <p>{t('empty.noneInstalled')}</p>
-                <p className="hint">{t('empty.browseOrLink')}</p>
+              <div className="flex flex-col items-center justify-center py-12 text-center">
+                <Package size={48} className="opacity-20 text-mute mb-4" />
+                <p className="m-0 text-sm font-medium text-body">{t('empty.noneInstalled')}</p>
+                <p className="text-xs text-mute mt-1">{t('empty.browseOrLink')}</p>
               </div>
             )}
           </>
@@ -456,7 +503,7 @@ export const ExtensionsStore: React.FC<ExtensionsStoreProps> = (_props) => {
       </div>
     </div>
   );
-};
+}
 
 // Extension card for browse tab
 interface ExtensionCardProps {
@@ -468,61 +515,76 @@ interface ExtensionCardProps {
   onUninstall: () => void;
 }
 
-const ExtensionCard: React.FC<ExtensionCardProps> = ({
+function ExtensionCard({
   extension,
   installed,
   installing,
   uninstalling,
   onInstall,
   onUninstall,
-}) => {
+}: ExtensionCardProps): React.JSX.Element {
   const { t } = useTranslation('extensions');
   const { manifest } = extension;
 
   return (
-    <div className="extension-card">
-      <div className="extension-icon">
-        {manifest.icon ? <img src={manifest.icon} alt={manifest.name} /> : <Package size={32} />}
+    <div className="flex items-start gap-3 px-4 py-3 bg-white/[0.03] rounded-lg transition-colors hover:bg-white/[0.05]">
+      {/* Icon */}
+      <div className="shrink-0 w-10 h-10 flex items-center justify-center bg-white/[0.06] rounded-md text-mute">
+        {(manifest.icon || LOCAL_EXTENSION_ICONS[manifest.id]) ? (
+          <img src={manifest.icon || LOCAL_EXTENSION_ICONS[manifest.id]} alt={manifest.name} className="w-6 h-6 object-contain" />
+        ) : (
+          <Package size={32} />
+        )}
       </div>
 
-      <div className="extension-info">
-        <div className="extension-header">
-          <h3>{manifest.name}</h3>
-          <span className="version">v{manifest.version}</span>
+      {/* Info */}
+      <div className="flex-1 min-w-0 flex flex-col gap-1">
+        <div className="flex items-center gap-2 flex-wrap">
+          <h3 className="m-0 text-sm font-medium text-on-dark">{manifest.name}</h3>
+          <span className="text-[11px] text-mute font-mono">v{manifest.version}</span>
           {extension.verified && (
-            <span className="badge verified" title="Verified by Volt team">
+            <span className="inline-flex items-center justify-center text-accent-green" title="Verified by Volt team">
               <Shield size={14} />
             </span>
           )}
           {extension.featured && (
-            <span className="badge featured" title="Featured">
+            <span className="inline-flex items-center justify-center text-yellow-400" title="Featured">
               <Star size={14} />
             </span>
           )}
         </div>
 
-        <p className="description">{manifest.description}</p>
+        <p className="m-0 text-xs text-mute line-clamp-2 leading-snug">{manifest.description}</p>
 
-        <div className="extension-meta">
-          <span className="author">by {manifest.author.name}</span>
-          {manifest.category && <span className="category">{manifest.category}</span>}
-          <span className="downloads">
+        <div className="flex flex-wrap items-center gap-2 text-[11px] text-mute mt-0.5">
+          <span className="font-medium">by {manifest.author.name}</span>
+          {manifest.category && (
+            <span className="px-1.5 py-0.5 bg-white/[0.06] rounded-xs capitalize">
+              {manifest.category}
+            </span>
+          )}
+          <span className="inline-flex items-center gap-1">
             <Download size={12} /> {extension.downloads.toLocaleString()}
           </span>
         </div>
       </div>
 
-      <div className="extension-actions">
+      {/* Actions */}
+      <div className="flex items-center gap-1.5 shrink-0">
         {installed ? (
-          <span className="installed-badge">
+          <span className="inline-flex items-center gap-1 px-2 py-1 bg-accent-green-soft text-accent-green rounded-sm text-[11px] font-medium">
             <CheckCircle size={14} />
             {t('actions.installed')}
           </span>
         ) : (
-          <button className="btn install" onClick={onInstall} disabled={installing}>
+          <button
+            className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 bg-accent-blue text-white border-0 rounded-sm text-xs font-medium cursor-pointer transition-opacity hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
+            onClick={onInstall}
+            disabled={installing}
+          >
             {installing ? (
               <>
-                <Loader2 className="spin" size={16} />
+                <Loader2 className="animate-spin" size={16} />
                 {t('actions.installing')}
               </>
             ) : (
@@ -534,15 +596,15 @@ const ExtensionCard: React.FC<ExtensionCardProps> = ({
           </button>
         )}
 
-        <div className="action-row">
+        <div className="flex gap-1">
           {installed && (
             <button
-              className="btn uninstall"
+              className="w-7 h-7 p-0 flex items-center justify-center rounded-sm bg-transparent border-0 text-mute cursor-pointer transition-colors hover:bg-red-500/15 hover:text-red-400 disabled:opacity-50 disabled:cursor-not-allowed"
               onClick={onUninstall}
               disabled={uninstalling}
               title="Uninstall"
             >
-              {uninstalling ? <Loader2 className="spin" size={16} /> : <Trash2 size={16} />}
+              {uninstalling ? <Loader2 className="animate-spin" size={16} /> : <Trash2 size={16} />}
             </button>
           )}
           {manifest.repository && (
@@ -550,7 +612,7 @@ const ExtensionCard: React.FC<ExtensionCardProps> = ({
               href={manifest.repository}
               target="_blank"
               rel="noopener noreferrer"
-              className="btn link"
+              className="w-7 h-7 p-0 flex items-center justify-center rounded-sm bg-transparent text-mute no-underline transition-colors hover:bg-white/10 hover:text-on-dark"
               title="View source"
             >
               <ExternalLink size={16} />
@@ -560,7 +622,7 @@ const ExtensionCard: React.FC<ExtensionCardProps> = ({
       </div>
     </div>
   );
-};
+}
 
 // Installed extension card
 interface InstalledExtensionCardProps {
@@ -570,40 +632,55 @@ interface InstalledExtensionCardProps {
   onUninstall: () => void;
 }
 
-const InstalledExtensionCard: React.FC<InstalledExtensionCardProps> = ({
+function InstalledExtensionCard({
   extension,
   uninstalling,
   onToggle,
   onUninstall,
-}) => {
+}: InstalledExtensionCardProps): React.JSX.Element {
   const { t } = useTranslation('extensions');
   const { manifest, enabled, installedAt } = extension;
 
   return (
-    <div className={`extension-card installed-card ${!enabled ? 'disabled' : ''}`}>
-      <div className="extension-icon">
-        {manifest.icon ? <img src={manifest.icon} alt={manifest.name} /> : <Package size={32} />}
+    <div
+      className={cn(
+        'flex items-start gap-3 px-4 py-3 bg-white/[0.03] rounded-lg transition-colors hover:bg-white/[0.05]',
+        !enabled && 'opacity-50'
+      )}
+    >
+      {/* Icon */}
+      <div className="shrink-0 w-10 h-10 flex items-center justify-center bg-white/[0.06] rounded-md text-mute">
+        {(manifest.icon || LOCAL_EXTENSION_ICONS[manifest.id]) ? (
+          <img src={manifest.icon || LOCAL_EXTENSION_ICONS[manifest.id]} alt={manifest.name} className="w-6 h-6 object-contain" />
+        ) : (
+          <Package size={32} />
+        )}
       </div>
 
-      <div className="extension-info">
-        <div className="extension-header">
-          <h3>{manifest.name}</h3>
-          <span className="version">v{manifest.version}</span>
+      {/* Info */}
+      <div className="flex-1 min-w-0 flex flex-col gap-1">
+        <div className="flex items-center gap-2 flex-wrap">
+          <h3 className="m-0 text-sm font-medium text-on-dark">{manifest.name}</h3>
+          <span className="text-[11px] text-mute font-mono">v{manifest.version}</span>
         </div>
 
-        <p className="description">{manifest.description}</p>
+        <p className="m-0 text-xs text-mute line-clamp-2 leading-snug">{manifest.description}</p>
 
-        <div className="extension-meta">
-          <span className="author">by {manifest.author.name}</span>
-          <span className="installed-date">
-            Installed {new Date(installedAt).toLocaleDateString()}
-          </span>
+        <div className="flex flex-wrap items-center gap-2 text-[11px] text-mute mt-0.5">
+          <span className="font-medium">by {manifest.author.name}</span>
+          <span>Installed {new Date(installedAt).toLocaleDateString()}</span>
         </div>
       </div>
 
-      <div className="extension-actions">
+      {/* Actions */}
+      <div className="flex items-center gap-1.5 shrink-0">
         <button
-          className={`btn toggle ${enabled ? 'enabled' : ''}`}
+          className={cn(
+            'w-7 h-7 p-0 flex items-center justify-center rounded-sm bg-transparent border-0 cursor-pointer transition-colors',
+            enabled
+              ? 'text-accent-blue hover:bg-accent-blue-soft'
+              : 'text-mute hover:bg-white/10 hover:text-body'
+          )}
           onClick={() => onToggle(!enabled)}
           title={enabled ? t('actions.disable') : t('actions.enable')}
         >
@@ -611,17 +688,17 @@ const InstalledExtensionCard: React.FC<InstalledExtensionCardProps> = ({
         </button>
 
         <button
-          className="btn uninstall"
+          className="w-7 h-7 p-0 flex items-center justify-center rounded-sm bg-transparent border-0 text-mute cursor-pointer transition-colors hover:bg-red-500/15 hover:text-red-400 disabled:opacity-50 disabled:cursor-not-allowed"
           onClick={onUninstall}
           disabled={uninstalling}
           title={t('actions.uninstall')}
         >
-          {uninstalling ? <Loader2 className="spin" size={16} /> : <Trash2 size={16} />}
+          {uninstalling ? <Loader2 className="animate-spin" size={16} /> : <Trash2 size={16} />}
         </button>
       </div>
     </div>
   );
-};
+}
 
 // Dev extension card with DEV badge
 interface DevExtensionCardProps {
@@ -631,59 +708,87 @@ interface DevExtensionCardProps {
   onRefresh: () => void;
 }
 
-const DevExtensionCard: React.FC<DevExtensionCardProps> = ({
+function DevExtensionCard({
   extension,
   onToggle,
   onUnlink,
   onRefresh,
-}) => {
+}: DevExtensionCardProps): React.JSX.Element {
   const { t } = useTranslation('extensions');
   const { manifest, enabled, path } = extension;
 
   return (
-    <div className={`extension-card dev-card ${!enabled ? 'disabled' : ''}`}>
-      <div className="extension-icon">
-        {manifest.icon ? <img src={manifest.icon} alt={manifest.name} /> : <Code size={32} />}
+    <div
+      className={cn(
+        'flex items-start gap-3 px-4 py-3 border border-dashed border-accent-blue/30 bg-accent-blue/[0.03] rounded-lg transition-colors hover:bg-accent-blue/[0.06] hover:border-accent-blue/40',
+        !enabled && 'opacity-50'
+      )}
+    >
+      {/* Icon */}
+      <div className="shrink-0 w-10 h-10 flex items-center justify-center bg-accent-blue/10 rounded-md text-accent-blue">
+        {(manifest.icon || LOCAL_EXTENSION_ICONS[manifest.id]) ? (
+          <img src={manifest.icon || LOCAL_EXTENSION_ICONS[manifest.id]} alt={manifest.name} className="w-6 h-6 object-contain" />
+        ) : (
+          <Code size={32} />
+        )}
       </div>
 
-      <div className="extension-info">
-        <div className="extension-header">
-          <h3>{manifest.name}</h3>
-          <span className="version">v{manifest.version}</span>
-          <span className="badge dev" title="Development Extension">
+      {/* Info */}
+      <div className="flex-1 min-w-0 flex flex-col gap-1">
+        <div className="flex items-center gap-2 flex-wrap">
+          <h3 className="m-0 text-sm font-medium text-on-dark">{manifest.name}</h3>
+          <span className="text-[11px] text-mute font-mono">v{manifest.version}</span>
+          <span className="bg-accent-blue-soft text-accent-blue px-1.5 py-0.5 rounded-xs text-[10px] font-semibold uppercase">
             {t('dev.badge')}
           </span>
         </div>
 
-        <p className="description">{manifest.description}</p>
+        <p className="m-0 text-xs text-mute line-clamp-2 leading-snug">{manifest.description}</p>
 
-        <div className="extension-meta">
-          <span className="author">by {manifest.author.name}</span>
-          <span className="path" title={path}>
+        <div className="flex flex-wrap items-center gap-2 text-[11px] text-mute mt-0.5">
+          <span className="font-medium">by {manifest.author.name}</span>
+          <span
+            className="font-mono text-[10px] px-1.5 py-0.5 bg-white/[0.06] rounded-xs max-w-[200px] overflow-hidden text-ellipsis whitespace-nowrap"
+            title={path}
+          >
             {path.length > 40 ? '...' + path.slice(-37) : path}
           </span>
         </div>
       </div>
 
-      <div className="extension-actions">
+      {/* Actions */}
+      <div className="flex items-center gap-1.5 shrink-0">
         <button
-          className={`btn toggle ${enabled ? 'enabled' : ''}`}
+          className={cn(
+            'w-7 h-7 p-0 flex items-center justify-center rounded-sm bg-transparent border-0 cursor-pointer transition-colors',
+            enabled
+              ? 'text-accent-blue hover:bg-accent-blue-soft'
+              : 'text-mute hover:bg-white/10 hover:text-body'
+          )}
           onClick={() => onToggle(!enabled)}
           title={enabled ? t('actions.disable') : t('actions.enable')}
         >
           {enabled ? <ToggleRight size={20} /> : <ToggleLeft size={20} />}
         </button>
 
-        <button className="btn refresh" onClick={onRefresh} title="Refresh from disk">
+        <button
+          className="w-7 h-7 p-0 flex items-center justify-center rounded-sm bg-transparent border-0 text-mute cursor-pointer transition-colors hover:bg-white/10 hover:text-on-dark"
+          onClick={onRefresh}
+          title="Refresh from disk"
+        >
           <RefreshCw size={16} />
         </button>
 
-        <button className="btn unlink" onClick={onUnlink} title="Unlink">
+        <button
+          className="w-7 h-7 p-0 flex items-center justify-center rounded-sm bg-transparent border-0 text-mute cursor-pointer transition-colors hover:bg-red-500/15 hover:text-red-400"
+          onClick={onUnlink}
+          title="Unlink"
+        >
           <Unlink size={16} />
         </button>
       </div>
     </div>
   );
-};
+}
 
 export default ExtensionsStore;

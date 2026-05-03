@@ -1,4 +1,5 @@
 import { getCurrentWindow } from '@tauri-apps/api/window';
+import { getVersion } from '@tauri-apps/api/app';
 import { invoke } from '@tauri-apps/api/core';
 import { emit } from '@tauri-apps/api/event';
 import React, { useCallback, useEffect, useState } from 'react';
@@ -44,9 +45,10 @@ import {
 import { SETTINGS_CATEGORIES, type SettingsCategory } from './constants/settingsCategories';
 import { ExtensionsStore } from '../extensions';
 import { IntegrationsPanel } from './components/IntegrationsPanel';
+import { SyncPanel } from './components/SyncPanel';
 import { AccountSection } from '../auth';
 import logo from '../../assets/icons/logo.svg';
-import './SettingsApp.css';
+import { cn } from '@/lib/utils';
 
 export function SettingsApp() {
   const { t } = useTranslation('settings');
@@ -56,6 +58,7 @@ export function SettingsApp() {
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hasChanges, setHasChanges] = useState(false);
+  const [isRestartingOnboarding, setIsRestartingOnboarding] = useState(false);
   const [hotkeyError, setHotkeyError] = useState<string | null>(null);
   const [appShortcuts, setAppShortcuts] = useState<AppShortcut[]>([]);
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(
@@ -77,7 +80,21 @@ export function SettingsApp() {
   const [updateProgress, setUpdateProgress] = useState(0);
   const [updateChecked, setUpdateChecked] = useState(false);
   const [updateError, setUpdateError] = useState<string | null>(null);
-  const appVersion = '0.0.8';
+  const [appVersion, setAppVersion] = useState<string>('');
+
+  useEffect(() => {
+    let cancelled = false;
+    getVersion()
+      .then((v) => {
+        if (!cancelled) setAppVersion(v);
+      })
+      .catch(() => {
+        // best-effort; leave appVersion empty if Tauri runtime is unavailable.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Indexing stats for the File Search panel
   const [indexStats, setIndexStats] = useState<{
@@ -176,7 +193,7 @@ export function SettingsApp() {
 
   const saveAppShortcut = async (shortcut: AppShortcut) => {
     try {
-      await invoke('save_app_shortcut', { shortcut });
+      await invoke<void>('save_app_shortcut', { shortcut });
       await loadAppShortcuts();
     } catch (err) {
       logger.error('Failed to save app shortcut:', err);
@@ -277,9 +294,9 @@ export function SettingsApp() {
   const handleAutostartChange = async (checked: boolean) => {
     try {
       if (checked) {
-        await invoke('enable_autostart');
+        await invoke<void>('enable_autostart');
       } else {
-        await invoke('disable_autostart');
+        await invoke<void>('disable_autostart');
       }
       updateSettings('general', 'startWithWindows', checked);
     } catch (err) {
@@ -290,10 +307,25 @@ export function SettingsApp() {
     }
   };
 
+  const handleRestartOnboarding = async () => {
+    setIsRestartingOnboarding(true);
+    try {
+      const updated = { ...settings.general, hasSeenOnboarding: false };
+      await settingsService.updateGeneralSettings(updated);
+      await emit('volt://restart-onboarding', {});
+      const currentWindow = getCurrentWindow();
+      await currentWindow.close();
+    } catch (err) {
+      logger.error('Failed to restart onboarding:', err);
+      setError(t('errors.saveFailed'));
+      setIsRestartingOnboarding(false);
+    }
+  };
+
   const handleToggleWindowHotkeyChange = async (hotkey: string) => {
     setHotkeyError(null);
     try {
-      await invoke('set_global_hotkey', { newHotkey: hotkey });
+      await invoke<void>('set_global_hotkey', { newHotkey: hotkey });
       updateSettings('hotkeys', 'toggleWindow', hotkey);
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
@@ -313,9 +345,9 @@ export function SettingsApp() {
   const handleClipboardMonitoringToggle = async (enabled: boolean) => {
     try {
       if (enabled) {
-        await invoke('start_clipboard_monitoring');
+        await invoke<void>('start_clipboard_monitoring');
       } else {
-        await invoke('stop_clipboard_monitoring');
+        await invoke<void>('stop_clipboard_monitoring');
       }
       updateSettings('plugins', 'clipboardMonitoring', enabled);
     } catch (error) {
@@ -329,20 +361,20 @@ export function SettingsApp() {
     let currentSection = '';
 
     return (
-      <nav className="settings-sidebar">
-        <div className="settings-sidebar-header">
-          <div className="settings-user-section">
-            <div className="settings-user-avatar">
-              <img src={logo} alt="Volt Logo" className="settings-logo" />
+      <nav className="w-52 flex flex-col bg-surface border-r border-hairline py-3 shrink-0">
+        <div className="px-4 pb-3 border-b border-hairline mb-2">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg flex items-center justify-center bg-transparent text-[22px]">
+              <img src={logo} alt="Volt Logo" className="w-full h-full object-contain" />
             </div>
-            <div className="settings-user-info">
-              <span className="settings-app-name">Volt</span>
-              <span className="settings-app-version">v{appVersion}</span>
+            <div className="flex flex-col">
+              <span className="text-sm font-semibold text-ink">Volt</span>
+              <span className="text-xs text-ash">v{appVersion}</span>
             </div>
           </div>
         </div>
 
-        <div className="settings-nav-list">
+        <div className="flex-1 overflow-y-auto px-2">
           {SETTINGS_CATEGORIES.map((category) => {
             const showSection = category.section && category.section !== currentSection;
             if (category.section) currentSection = category.section;
@@ -350,14 +382,29 @@ export function SettingsApp() {
             return (
               <div key={category.id}>
                 {showSection && (
-                  <div className="settings-nav-section">{t('sections.builtIn')}</div>
+                  <div className="px-3 py-1 mt-3 text-[10px] font-medium text-ash uppercase tracking-widest">
+                    {t('sections.builtIn')}
+                  </div>
                 )}
                 <button
-                  className={`settings-nav-item ${activeCategory === category.id ? 'active' : ''}`}
+                  className={cn(
+                    'flex items-center gap-2.5 px-3 py-2 mx-0 w-full rounded-sm text-sm cursor-pointer transition-colors border-none text-left',
+                    activeCategory === category.id
+                      ? 'text-on-dark bg-surface-elevated'
+                      : 'text-body hover:bg-surface-elevated hover:text-on-dark'
+                  )}
                   onClick={() => setActiveCategory(category.id)}
                 >
-                  <category.icon size={18} className="settings-nav-icon" />
-                  <span className="settings-nav-label">
+                  {category.iconSrc ? (
+                    <img
+                      src={category.iconSrc}
+                      alt=""
+                      className="w-[18px] h-[18px] shrink-0 rounded-[4px] object-contain"
+                    />
+                  ) : (
+                    <category.icon size={18} className="shrink-0" />
+                  )}
+                  <span className="flex-1">
                     {t(`sections.${category.id === 'file-search' ? 'fileSearch' : category.id === 'clipboard' ? 'clipboard' : category.id}`)}
                   </span>
                 </button>
@@ -371,18 +418,18 @@ export function SettingsApp() {
 
   // Render General section
   const renderGeneralSection = () => (
-    <div className="settings-panel">
-      <div className="settings-panel-header">
-        <h2 className="settings-panel-title">{t('general.title')}</h2>
+    <div className="flex-1 flex flex-col overflow-hidden">
+      <div className="flex items-center justify-between h-14 px-6 border-b border-hairline shrink-0">
+        <h2 className="text-sm font-medium text-ink m-0">{t('general.title')}</h2>
       </div>
 
-      <div className="settings-panel-content">
-        <div className="settings-row">
-          <div className="settings-row-info">
-            <span className="settings-row-label">{t('general.language')}</span>
+      <div className="flex-1 overflow-y-auto p-6">
+        <div className="flex items-center justify-between py-3 border-b border-hairline last:border-0">
+          <div className="flex flex-col gap-0.5">
+            <span className="text-sm text-body">{t('general.language')}</span>
           </div>
           <select
-            className="settings-select"
+            className="bg-surface-elevated border border-hairline rounded-md px-3 py-1.5 text-sm text-on-dark outline-none focus:border-hairline-strong cursor-pointer"
             value={settings.general.language}
             onChange={(e) => handleLanguageChange(e.target.value as 'auto' | 'en' | 'fr')}
           >
@@ -392,9 +439,9 @@ export function SettingsApp() {
           </select>
         </div>
 
-        <div className="settings-row">
-          <div className="settings-row-info">
-            <span className="settings-row-label">{t('general.followSystemAppearance')}</span>
+        <div className="flex items-center justify-between py-3 border-b border-hairline last:border-0">
+          <div className="flex flex-col gap-0.5">
+            <span className="text-sm text-body">{t('general.followSystemAppearance')}</span>
           </div>
           <Toggle
             checked={settings.appearance.theme === 'auto'}
@@ -402,16 +449,16 @@ export function SettingsApp() {
           />
         </div>
 
-        <div className="settings-row">
-          <div className="settings-row-info">
-            <span className="settings-row-label">{t('general.openAtLogin')}</span>
+        <div className="flex items-center justify-between py-3 border-b border-hairline last:border-0">
+          <div className="flex flex-col gap-0.5">
+            <span className="text-sm text-body">{t('general.openAtLogin')}</span>
           </div>
           <Toggle checked={settings.general.startWithWindows} onChange={handleAutostartChange} />
         </div>
 
-        <div className="settings-row">
-          <div className="settings-row-info">
-            <span className="settings-row-label">{t('general.closeOnLaunch')}</span>
+        <div className="flex items-center justify-between py-3 border-b border-hairline last:border-0">
+          <div className="flex flex-col gap-0.5">
+            <span className="text-sm text-body">{t('general.closeOnLaunch')}</span>
           </div>
           <Toggle
             checked={settings.general.closeOnLaunch}
@@ -419,10 +466,10 @@ export function SettingsApp() {
           />
         </div>
 
-        <div className="settings-row">
-          <div className="settings-row-info">
-            <span className="settings-row-label">{t('general.featurePreview')}</span>
-            <span className="settings-row-desc">{t('general.featurePreviewDesc')}</span>
+        <div className="flex items-center justify-between py-3 border-b border-hairline last:border-0">
+          <div className="flex flex-col gap-0.5">
+            <span className="text-sm text-body">{t('general.featurePreview')}</span>
+            <span className="text-xs text-mute mt-0.5">{t('general.featurePreviewDesc')}</span>
           </div>
           <Toggle
             checked={settings.general.featurePreview}
@@ -430,13 +477,13 @@ export function SettingsApp() {
           />
         </div>
 
-        <div className="settings-row">
-          <div className="settings-row-info">
-            <span className="settings-row-label">{t('general.searchSensitivity')}</span>
-            <span className="settings-row-desc">{t('general.searchSensitivityDesc')}</span>
+        <div className="flex items-center justify-between py-3 border-b border-hairline last:border-0">
+          <div className="flex flex-col gap-0.5">
+            <span className="text-sm text-body">{t('general.searchSensitivity')}</span>
+            <span className="text-xs text-mute mt-0.5">{t('general.searchSensitivityDesc')}</span>
           </div>
           <select
-            className="settings-select"
+            className="bg-surface-elevated border border-hairline rounded-md px-3 py-1.5 text-sm text-on-dark outline-none focus:border-hairline-strong cursor-pointer"
             value={settings.general.searchSensitivity ?? 'medium'}
             onChange={(e) =>
               updateSettings(
@@ -452,14 +499,14 @@ export function SettingsApp() {
           </select>
         </div>
 
-        <div className="settings-row">
-          <div className="settings-row-info">
-            <span className="settings-row-label" id="hotkey-label">{t('general.voltHotkey')}</span>
-            <span className="settings-row-desc" id="hotkey-desc">
+        <div className="flex items-center justify-between py-3 border-b border-hairline last:border-0">
+          <div className="flex flex-col gap-0.5">
+            <span className="text-sm text-body" id="hotkey-label">{t('general.voltHotkey')}</span>
+            <span className="text-xs text-mute mt-0.5" id="hotkey-desc">
               {t('general.hotkeyDesc')}
             </span>
           </div>
-          <div className="settings-row-action">
+          <div className="shrink-0">
             <HotkeyCapture
               value={settings.hotkeys.toggleWindow}
               onChange={handleToggleWindowHotkeyChange}
@@ -471,11 +518,26 @@ export function SettingsApp() {
         </div>
 
         {hotkeyError && (
-          <div className="settings-error-inline">
+          <div className="flex items-center gap-2 px-3.5 py-2.5 bg-accent-red/10 border border-accent-red/20 rounded-md text-accent-red text-[13px] mb-4">
             <AlertCircle size={16} />
             <span>{hotkeyError}</span>
           </div>
         )}
+
+        <div className="flex items-center justify-between py-3 border-b border-hairline last:border-0">
+          <div className="flex flex-col gap-0.5">
+            <span className="text-sm text-body">{t('general.restartOnboarding')}</span>
+            <span className="text-xs text-mute mt-0.5">{t('general.restartOnboardingDesc')}</span>
+          </div>
+          <Button
+            variant="secondary"
+            disabled={isRestartingOnboarding}
+            onClick={handleRestartOnboarding}
+          >
+            {isRestartingOnboarding ? <Spinner size="small" /> : <RefreshCw size={14} />}
+            {t('general.restartOnboarding')}
+          </Button>
+        </div>
       </div>
     </div>
   );
@@ -540,19 +602,19 @@ export function SettingsApp() {
     };
 
     return (
-      <div className="settings-panel">
-        <div className="settings-panel-header">
-          <h2 className="settings-panel-title">{t('shortcuts.title')}</h2>
-          <div className="settings-panel-actions">
+      <div className="flex-1 flex flex-col overflow-hidden">
+        <div className="flex items-center justify-between h-14 px-6 border-b border-hairline shrink-0">
+          <h2 className="text-sm font-medium text-ink m-0">{t('shortcuts.title')}</h2>
+          <div className="flex items-center gap-2.5 flex-wrap">
             <input
               type="text"
-              className="settings-search-input"
+              className="w-52 bg-surface-elevated border border-hairline rounded-md px-3 py-1.5 text-sm text-on-dark outline-none focus:border-hairline-strong placeholder:text-ash"
               placeholder={t('shortcuts.searchPlaceholder')}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
             />
             <select
-              className="settings-filter-select"
+              className="bg-surface-elevated border border-hairline rounded-md px-3 py-1.5 text-sm text-on-dark outline-none focus:border-hairline-strong cursor-pointer"
               value={categoryFilter}
               onChange={(e) => setCategoryFilter(e.target.value)}
             >
@@ -569,58 +631,63 @@ export function SettingsApp() {
           </div>
         </div>
 
-        <div className="settings-panel-content">
+        <div className="flex-1 overflow-y-auto p-6">
           {Object.entries(filteredShortcuts).map(([category, shortcuts]) => {
             const isExpanded = expandedCategories.has(category);
 
             return (
-              <div key={category} className="shortcuts-category">
+              <div key={category} className="mb-6">
                 <div
-                  className="shortcuts-category-header"
+                  className="flex items-center gap-2.5 px-4 py-3 cursor-pointer bg-surface-elevated/30 rounded-md mb-2 transition-colors hover:bg-surface-elevated/50 select-none"
                   onClick={() => toggleCategory(category)}
-                  style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}
                 >
                   {isExpanded ? (
-                    <ChevronDown size={20} className="shortcuts-category-icon" />
+                    <ChevronDown size={20} className="text-ash" />
                   ) : (
-                    <ChevronRight size={20} className="shortcuts-category-icon" />
+                    <ChevronRight size={20} className="text-ash" />
                   )}
-                  <Package size={20} className="shortcuts-category-icon" />
-                  <span className="shortcuts-category-name">
+                  <Package size={20} className="text-ash" />
+                  <span className="flex-1 text-sm font-semibold text-ink">
                     {category} ({shortcuts.length})
                   </span>
                 </div>
 
                 {isExpanded && (
-                  <div className="shortcuts-table">
-                    <div className="shortcuts-table-header">
-                      <span className="shortcuts-col-name">{t('shortcuts.tableHeaders.name')}</span>
-                      <span className="shortcuts-col-alias">{t('shortcuts.tableHeaders.alias')}</span>
-                      <span className="shortcuts-col-hotkey">{t('shortcuts.tableHeaders.hotkey')}</span>
-                      <span className="shortcuts-col-enabled"></span>
+                  <div className="bg-surface-elevated/20 rounded-lg overflow-hidden">
+                    <div className="grid gap-4 px-4 py-2.5 bg-black/20 text-[12px] font-semibold text-mute uppercase tracking-[0.5px]"
+                      style={{ gridTemplateColumns: '1fr 120px 160px 60px' }}
+                    >
+                      <span>{t('shortcuts.tableHeaders.name')}</span>
+                      <span>{t('shortcuts.tableHeaders.alias')}</span>
+                      <span>{t('shortcuts.tableHeaders.hotkey')}</span>
+                      <span></span>
                     </div>
 
-                    <div className="shortcuts-table-body">
+                    <div className="max-h-[400px] overflow-y-auto">
                       {shortcuts.map((shortcut) => (
-                        <div key={shortcut.id} className="shortcuts-row">
-                          <span className="shortcuts-name">
+                        <div
+                          key={shortcut.id}
+                          className="grid gap-4 px-4 py-3 items-center border-b border-hairline/40 last:border-0 transition-colors hover:bg-white/[0.03]"
+                          style={{ gridTemplateColumns: '1fr 120px 160px 60px' }}
+                        >
+                          <span className="flex items-center gap-2.5 text-[13px] text-ink">
                             {shortcut.icon ? (
                               <img
                                 src={`data:image/png;base64,${shortcut.icon}`}
                                 alt=""
-                                className="shortcuts-app-icon"
+                                className="shrink-0"
                                 style={{ width: 16, height: 16 }}
                               />
                             ) : (
-                              <Package size={16} className="shortcuts-app-icon" />
+                              <Package size={16} className="text-ash shrink-0" />
                             )}
                             {shortcut.name}
                           </span>
-                          <span className="shortcuts-alias">
+                          <span className="flex items-center pointer-events-auto">
                             {editingAliasId === shortcut.id ? (
                               <input
                                 type="text"
-                                className="shortcuts-alias-input"
+                                className="w-full bg-surface-elevated border border-hairline rounded-md px-2 py-1 text-sm text-on-dark outline-none focus:border-hairline-strong"
                                 defaultValue={shortcut.alias || ''}
                                 autoFocus
                                 onBlur={(e) => handleAliasChange(shortcut, e.target.value)}
@@ -631,32 +698,24 @@ export function SettingsApp() {
                                     setEditingAliasId(null);
                                   }
                                 }}
-                                style={{
-                                  padding: '4px 8px',
-                                  borderRadius: '4px',
-                                  border: '1px solid var(--border-color)',
-                                  background: 'var(--input-bg)',
-                                  color: 'var(--text-primary)',
-                                  width: '100%',
-                                }}
                               />
                             ) : (
                               <button
-                                className="shortcuts-add-alias"
+                                className="px-3 py-1.5 rounded-sm bg-transparent border border-dashed border-white/20 text-mute text-xs cursor-pointer transition-all hover:border-accent-blue hover:text-accent-blue whitespace-nowrap"
                                 onClick={() => handleAliasClick(shortcut.id)}
                               >
                                 {shortcut.alias || t('shortcuts.addAlias')}
                               </button>
                             )}
                           </span>
-                          <span className="shortcuts-hotkey">
+                          <span className="flex items-center pointer-events-auto">
                             <HotkeyCapture
                               value={shortcut.hotkey || ''}
                               onChange={(hotkey) => handleHotkeyChange(shortcut, hotkey)}
                               onError={setHotkeyError}
                             />
                           </span>
-                          <span className="shortcuts-enabled">
+                          <span className="flex items-center justify-center pointer-events-auto">
                             <Toggle
                               checked={shortcut.enabled}
                               onChange={() => handleToggleEnabled(shortcut)}
@@ -672,7 +731,7 @@ export function SettingsApp() {
           })}
 
           {Object.keys(filteredShortcuts).length === 0 && (
-            <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-secondary)' }}>
+            <div className="text-center py-10 text-mute">
               {appShortcuts.length === 0
                 ? t('shortcuts.noShortcuts')
                 : t('shortcuts.noMatch')}
@@ -685,25 +744,25 @@ export function SettingsApp() {
 
   // Render Advanced section
   const renderAdvancedSection = () => (
-    <div className="settings-panel">
-      <div className="settings-panel-header">
-        <h2 className="settings-panel-title">{t('advanced.title')}</h2>
+    <div className="flex-1 flex flex-col overflow-hidden">
+      <div className="flex items-center justify-between h-14 px-6 border-b border-hairline shrink-0">
+        <h2 className="text-sm font-medium text-ink m-0">{t('advanced.title')}</h2>
       </div>
 
-      <div className="settings-panel-content">
-        <div className="settings-row">
-          <div className="settings-row-info">
-            <span className="settings-row-label">{t('advanced.showVoltOn')}</span>
+      <div className="flex-1 overflow-y-auto p-6">
+        <div className="flex items-center justify-between py-3 border-b border-hairline last:border-0">
+          <div className="flex flex-col gap-0.5">
+            <span className="text-sm text-body">{t('advanced.showVoltOn')}</span>
           </div>
           <select
-            className="settings-dropdown"
+            className="bg-surface-elevated border border-hairline rounded-md px-3 py-1.5 text-sm text-on-dark outline-none focus:border-hairline-strong cursor-pointer"
             value={settings.appearance.windowPosition}
             onChange={async (e) => {
               const position = e.target.value as WindowPosition;
               updateSettings('appearance', 'windowPosition', position);
               if (position !== 'custom') {
                 try {
-                  await invoke('set_window_position', {
+                  await invoke<void>('set_window_position', {
                     position,
                     customX: null,
                     customY: null,
@@ -721,19 +780,19 @@ export function SettingsApp() {
           </select>
         </div>
 
-        <div className="settings-row">
-          <div className="settings-row-info">
-            <span className="settings-row-label">{t('advanced.showOnScreen')}</span>
-            <span className="settings-row-desc">{t('advanced.showOnScreenDesc')}</span>
+        <div className="flex items-center justify-between py-3 border-b border-hairline last:border-0">
+          <div className="flex flex-col gap-0.5">
+            <span className="text-sm text-body">{t('advanced.showOnScreen')}</span>
+            <span className="text-xs text-mute mt-0.5">{t('advanced.showOnScreenDesc')}</span>
           </div>
           <select
-            className="settings-dropdown"
+            className="bg-surface-elevated border border-hairline rounded-md px-3 py-1.5 text-sm text-on-dark outline-none focus:border-hairline-strong cursor-pointer"
             value={settings.general.showOnScreen ?? 'cursor'}
             onChange={async (e) => {
               const value = e.target.value as ShowOnScreen;
               updateSettings('general', 'showOnScreen', value);
               try {
-                await invoke('update_show_on_screen', { value });
+                await invoke<void>('update_show_on_screen', { value });
               } catch (err) {
                 logger.error('Failed to update show_on_screen state:', err);
               }
@@ -745,13 +804,13 @@ export function SettingsApp() {
           </select>
         </div>
 
-        <div className="settings-row">
-          <div className="settings-row-info">
-            <span className="settings-row-label">{t('advanced.maxResults')}</span>
-            <span className="settings-row-desc">{t('advanced.maxResultsDesc')}</span>
+        <div className="flex items-center justify-between py-3 border-b border-hairline last:border-0">
+          <div className="flex flex-col gap-0.5">
+            <span className="text-sm text-body">{t('advanced.maxResults')}</span>
+            <span className="text-xs text-mute mt-0.5">{t('advanced.maxResultsDesc')}</span>
           </div>
           <select
-            className="settings-dropdown"
+            className="bg-surface-elevated border border-hairline rounded-md px-3 py-1.5 text-sm text-on-dark outline-none focus:border-hairline-strong cursor-pointer"
             value={settings.general.maxResults}
             onChange={(e) => updateSettings('general', 'maxResults', parseInt(e.target.value))}
           >
@@ -762,12 +821,12 @@ export function SettingsApp() {
           </select>
         </div>
 
-        <div className="settings-row">
-          <div className="settings-row-info">
-            <span className="settings-row-label">{t('advanced.windowTransparency')}</span>
-            <span className="settings-row-desc">{t('advanced.transparencyDesc')}</span>
+        <div className="flex items-center justify-between py-3 border-b border-hairline last:border-0">
+          <div className="flex flex-col gap-0.5">
+            <span className="text-sm text-body">{t('advanced.windowTransparency')}</span>
+            <span className="text-xs text-mute mt-0.5">{t('advanced.transparencyDesc')}</span>
           </div>
-          <div className="settings-slider-wrapper">
+          <div className="flex items-center gap-3">
             <input
               type="range"
               min="0.5"
@@ -777,49 +836,55 @@ export function SettingsApp() {
               onChange={(e) =>
                 updateSettings('appearance', 'transparency', parseFloat(e.target.value))
               }
-              className="settings-slider"
+              className="w-36 h-1 rounded-full bg-white/10 outline-none cursor-pointer appearance-none"
             />
-            <span className="settings-slider-value">
+            <span className="text-[13px] text-body min-w-[44px] text-right">
               {Math.round(settings.appearance.transparency * 100)}%
             </span>
           </div>
         </div>
 
-        <div className="settings-section-divider" />
+        <div className="h-px bg-hairline my-5" />
 
-        <h3 className="settings-subsection-title">{t('advanced.theme')}</h3>
+        <h3 className="text-sm font-semibold text-ink mb-1.5">{t('advanced.theme')}</h3>
 
-        <div className="settings-theme-selector">
-          <button
-            className={`theme-card ${settings.appearance.theme === 'light' ? 'active' : ''}`}
-            onClick={() => handleThemeChange('light')}
-          >
-            <div className="theme-preview light">
-              <div className="theme-preview-bar" />
-              <div className="theme-preview-content" />
-            </div>
-            <span>{t('advanced.themeLight')}</span>
-          </button>
-          <button
-            className={`theme-card ${settings.appearance.theme === 'dark' ? 'active' : ''}`}
-            onClick={() => handleThemeChange('dark')}
-          >
-            <div className="theme-preview dark">
-              <div className="theme-preview-bar" />
-              <div className="theme-preview-content" />
-            </div>
-            <span>{t('advanced.themeDark')}</span>
-          </button>
-          <button
-            className={`theme-card ${settings.appearance.theme === 'auto' ? 'active' : ''}`}
-            onClick={() => handleThemeChange('auto')}
-          >
-            <div className="theme-preview auto">
-              <div className="theme-preview-bar" />
-              <div className="theme-preview-content" />
-            </div>
-            <span>{t('advanced.themeAuto')}</span>
-          </button>
+        <div className="flex gap-4">
+          {(['light', 'dark', 'auto'] as const).map((themeOption) => (
+            <button
+              key={themeOption}
+              className={cn(
+                'flex-1 p-4 rounded-xl bg-surface-elevated/30 border-2 cursor-pointer transition-all flex flex-col items-center gap-3',
+                settings.appearance.theme === themeOption
+                  ? 'border-accent-blue bg-accent-blue/10'
+                  : 'border-transparent hover:bg-surface-elevated/50'
+              )}
+              onClick={() => handleThemeChange(themeOption)}
+            >
+              <div
+                className={cn(
+                  'w-full h-[60px] rounded-md overflow-hidden flex flex-col',
+                  themeOption === 'light' && 'bg-[#f3f4f6]',
+                  themeOption === 'dark' && 'bg-[#1f2937]',
+                  themeOption === 'auto' && 'bg-gradient-to-br from-[#f3f4f6] to-[#1f2937]'
+                )}
+              >
+                <div className={cn(
+                  'h-3',
+                  themeOption === 'light' ? 'bg-black/10' : 'bg-white/10'
+                )} />
+                <div className={cn(
+                  'flex-1 m-2 rounded-xs',
+                  themeOption === 'light' ? 'bg-black/5' : 'bg-white/5'
+                )} />
+              </div>
+              <span className={cn(
+                'text-[13px] font-medium',
+                settings.appearance.theme === themeOption ? 'text-accent-blue' : 'text-body'
+              )}>
+                {t(`advanced.theme${themeOption.charAt(0).toUpperCase() + themeOption.slice(1)}`)}
+              </span>
+            </button>
+          ))}
         </div>
       </div>
     </div>
@@ -911,104 +976,70 @@ export function SettingsApp() {
 
   // Render About section
   const renderAboutSection = () => (
-    <div className="settings-panel">
-      <div className="settings-panel-header">
-        <h2 className="settings-panel-title">{t('about.title')}</h2>
+    <div className="flex-1 flex flex-col overflow-hidden">
+      <div className="flex items-center justify-between h-14 px-6 border-b border-hairline shrink-0">
+        <h2 className="text-sm font-medium text-ink m-0">{t('about.title')}</h2>
       </div>
 
-      <div className="settings-panel-content">
-        <div className="about-app">
-          <div className="about-logo">
-            <img src={logo} alt="Volt Logo" className="about-logo-image" />
+      <div className="flex-1 overflow-y-auto p-6">
+        <div className="text-center py-6 flex flex-col items-center">
+          <div className="w-20 h-20 mx-auto mb-4 flex items-center justify-center">
+            <img src={logo} alt="Volt Logo" className="w-full h-full object-contain" />
           </div>
-          <h3 className="about-name">Volt</h3>
-          <p className="about-version">Version {appVersion}</p>
-          <p className="about-desc">{t('about.description')}</p>
+          <h3 className="text-2xl font-bold text-ink mt-0 mb-1">Volt</h3>
+          <p className="text-sm text-mute mt-0 mb-3">Version {appVersion}</p>
+          <p className="text-sm text-body mt-0 max-w-[400px] mx-auto">{t('about.description')}</p>
         </div>
 
-        <div className="settings-section-divider" />
+        <div className="h-px bg-hairline my-5" />
 
-        <div className="about-links">
-          <button
-            onClick={async () => {
-              try {
-                const { openUrl } = await import('@tauri-apps/plugin-opener');
-                await openUrl('https://voltlaunchr.com');
-              } catch (error) {
-                logger.error('Failed to open website:', error);
-              }
-            }}
-            className="about-link"
-          >
-            <Globe size={20} className="about-link-icon" />
-            <span>{t('about.officialWebsite')}</span>
-          </button>
-          <button
-            onClick={async () => {
-              try {
-                const { openUrl } = await import('@tauri-apps/plugin-opener');
-                await openUrl('https://github.com/VoltLaunchr/Volt');
-              } catch (error) {
-                logger.error('Failed to open GitHub:', error);
-              }
-            }}
-            className="about-link"
-          >
-            <Package size={20} className="about-link-icon" />
-            <span>{t('about.githubRepo')}</span>
-          </button>
-          <button
-            onClick={async () => {
-              try {
-                const { openUrl } = await import('@tauri-apps/plugin-opener');
-                await openUrl('https://github.com/VoltLaunchr/Volt/issues/new');
-              } catch (error) {
-                logger.error('Failed to open issues:', error);
-              }
-            }}
-            className="about-link"
-          >
-            <Bug size={20} className="about-link-icon" />
-            <span>{t('about.reportIssue')}</span>
-          </button>
-          <button
-            onClick={async () => {
-              try {
-                const { openUrl } = await import('@tauri-apps/plugin-opener');
-                await openUrl('https://github.com/VoltLaunchr/Volt/blob/main/CHANGELOG.md');
-              } catch (error) {
-                logger.error('Failed to open changelog:', error);
-              }
-            }}
-            className="about-link"
-          >
-            <FileText size={20} className="about-link-icon" />
-            <span>{t('about.releaseNotes')}</span>
-          </button>
+        <div className="flex flex-col gap-1">
+          {[
+            { icon: Globe, label: t('about.officialWebsite'), url: 'https://voltlaunchr.com' },
+            { icon: Package, label: t('about.githubRepo'), url: 'https://github.com/VoltLaunchr/Volt' },
+            { icon: Bug, label: t('about.reportIssue'), url: 'https://github.com/VoltLaunchr/Volt/issues/new' },
+            { icon: FileText, label: t('about.releaseNotes'), url: 'https://github.com/VoltLaunchr/Volt/blob/main/CHANGELOG.md' },
+          ].map(({ icon: Icon, label, url }) => (
+            <button
+              key={url}
+              onClick={async () => {
+                try {
+                  const { openUrl } = await import('@tauri-apps/plugin-opener');
+                  await openUrl(url);
+                } catch (error) {
+                  logger.error('Failed to open URL:', error);
+                }
+              }}
+              className="flex items-center gap-3 px-4 py-3 rounded-lg text-body bg-transparent border-none w-full text-left text-[length:inherit] font-[inherit] cursor-pointer transition-colors hover:bg-white/5 hover:text-on-dark"
+            >
+              <Icon size={20} className="text-accent-blue shrink-0 transition-colors" />
+              <span>{label}</span>
+            </button>
+          ))}
         </div>
 
-        <div className="settings-section-divider" />
+        <div className="h-px bg-hairline my-5" />
 
-        <div className="about-links">
-          <button onClick={handleOpenLogsFolder} className="about-link">
-            <FolderOpen size={20} className="about-link-icon" />
+        <div className="flex flex-col gap-1">
+          <button onClick={handleOpenLogsFolder} className="flex items-center gap-3 px-4 py-3 rounded-lg text-body bg-transparent border-none w-full text-left text-[length:inherit] font-[inherit] cursor-pointer transition-colors hover:bg-white/5 hover:text-on-dark">
+            <FolderOpen size={20} className="text-accent-blue shrink-0" />
             <span>{t('about.openLogs')}</span>
           </button>
-          <button onClick={handleCopyDiagnostics} className="about-link">
+          <button onClick={handleCopyDiagnostics} className="flex items-center gap-3 px-4 py-3 rounded-lg text-body bg-transparent border-none w-full text-left text-[length:inherit] font-[inherit] cursor-pointer transition-colors hover:bg-white/5 hover:text-on-dark">
             {diagnosticsCopied ? (
-              <Check size={20} className="about-link-icon" />
+              <Check size={20} className="text-accent-green shrink-0" />
             ) : (
-              <Copy size={20} className="about-link-icon" />
+              <Copy size={20} className="text-accent-blue shrink-0" />
             )}
             <span>{diagnosticsCopied ? t('about.copied') : t('about.copyDiagnostics')}</span>
           </button>
         </div>
 
-        <div className="settings-section-divider" />
+        <div className="h-px bg-hairline my-5" />
 
-        <div className="update-section">
-          <h4 className="settings-section-title">{t('about.updates')}</h4>
-          <div className="update-status">
+        <div className="py-2">
+          <h4 className="text-[11px] font-medium text-ash uppercase tracking-widest mb-3">{t('about.updates')}</h4>
+          <div className="flex flex-col gap-2">
             {!updateChecked && !isCheckingUpdate && (
               <Button onClick={handleCheckForUpdate} disabled={isCheckingUpdate}>
                 <RefreshCw size={16} />
@@ -1016,30 +1047,34 @@ export function SettingsApp() {
               </Button>
             )}
             {isCheckingUpdate && (
-              <div className="update-status-row">
+              <div className="flex items-center gap-2 text-[13px] text-ink">
                 <Spinner size="small" />
                 <span>{t('about.checking')}</span>
               </div>
             )}
             {updateChecked && !updateInfo && !isCheckingUpdate && (
-              <div className="update-status-row">
-                <CheckCircle size={16} className="update-check-icon" />
+              <div className="flex items-center gap-2 text-[13px] text-ink">
+                <CheckCircle size={16} className="text-accent-green" />
                 <span>{t('about.upToDate')}</span>
-                <Button onClick={handleCheckForUpdate} className="update-recheck">
+                <Button onClick={handleCheckForUpdate} className="p-1 min-w-0 ml-auto">
                   <RefreshCw size={14} />
                 </Button>
               </div>
             )}
             {updateInfo && !isUpdating && (
-              <div className="update-available">
-                <div className="update-status-row">
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center gap-2 text-[13px] text-ink">
                   <span>{t('about.updateAvailable')}</span>
-                  <span className="update-badge">v{updateInfo.version}</span>
+                  <span className="inline-flex items-center px-2 py-0.5 text-xs font-semibold rounded-full bg-accent-green text-on-dark">
+                    v{updateInfo.version}
+                  </span>
                 </div>
                 {updateInfo.body && (
-                  <div className="update-changelog-wrapper">
-                    <span className="update-changelog-label">{t('about.whatsNew')}</span>
-                    <div className="update-changelog">{updateInfo.body}</div>
+                  <div className="flex flex-col gap-1">
+                    <span className="text-xs font-medium text-body">{t('about.whatsNew')}</span>
+                    <div className="max-h-[150px] overflow-y-auto p-2 bg-surface border border-hairline rounded-md text-xs leading-relaxed text-body whitespace-pre-wrap">
+                      {updateInfo.body}
+                    </div>
                   </div>
                 )}
                 <Button onClick={handleDownloadAndInstall}>
@@ -1049,24 +1084,24 @@ export function SettingsApp() {
               </div>
             )}
             {isUpdating && (
-              <div className="update-downloading">
-                <div className="update-status-row">
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center gap-2 text-[13px] text-ink">
                   <Spinner size="small" />
                   <span>
                     {updateProgress < 100 ? t('about.downloading') : t('about.installing')}
                   </span>
                 </div>
-                <div className="update-progress">
+                <div className="w-full h-1.5 bg-surface border border-hairline rounded-full overflow-hidden">
                   <div
-                    className="update-progress-bar"
+                    className="h-full bg-gradient-to-r from-accent-blue to-accent-green rounded-full transition-[width] duration-300"
                     style={{ width: `${updateProgress}%` }}
                   />
                 </div>
-                <span className="update-progress-text">{updateProgress}%</span>
+                <span className="text-xs text-body text-right">{updateProgress}%</span>
               </div>
             )}
             {updateError && (
-              <div className="update-status-row update-error">
+              <div className="flex items-center gap-2 text-[13px] text-accent-red">
                 <AlertCircle size={16} />
                 <span>{updateError}</span>
               </div>
@@ -1074,9 +1109,9 @@ export function SettingsApp() {
           </div>
         </div>
 
-        <div className="settings-section-divider" />
+        <div className="h-px bg-hairline my-5" />
 
-        <div className="about-links">
+        <div className="flex flex-col gap-1">
           <button
             onClick={async () => {
               try {
@@ -1087,23 +1122,17 @@ export function SettingsApp() {
                 });
                 if (!path) return;
                 await settingsService.exportSettings(path);
-                setExportImportStatus({
-                  type: 'success',
-                  message: t('about.exportSuccess'),
-                });
+                setExportImportStatus({ type: 'success', message: t('about.exportSuccess') });
                 setTimeout(() => setExportImportStatus(null), 3000);
               } catch (error) {
                 logger.error('Failed to export settings:', error);
-                setExportImportStatus({
-                  type: 'error',
-                  message: t('about.exportError'),
-                });
+                setExportImportStatus({ type: 'error', message: t('about.exportError') });
                 setTimeout(() => setExportImportStatus(null), 3000);
               }
             }}
-            className="about-link"
+            className="flex items-center gap-3 px-4 py-3 rounded-lg text-body bg-transparent border-none w-full text-left text-[length:inherit] font-[inherit] cursor-pointer transition-colors hover:bg-white/5 hover:text-on-dark"
           >
-            <Download size={20} className="about-link-icon" />
+            <Download size={20} className="text-accent-blue shrink-0" />
             <span>{t('about.exportSettings')}</span>
           </button>
           <button
@@ -1117,30 +1146,29 @@ export function SettingsApp() {
                 if (!path) return;
                 const imported = await settingsService.importSettings(path as string);
                 setSettings(imported);
-                setExportImportStatus({
-                  type: 'success',
-                  message: t('about.importSuccess'),
-                });
+                setExportImportStatus({ type: 'success', message: t('about.importSuccess') });
                 setTimeout(() => setExportImportStatus(null), 3000);
               } catch (error) {
                 logger.error('Failed to import settings:', error);
-                setExportImportStatus({
-                  type: 'error',
-                  message: t('about.importError'),
-                });
+                setExportImportStatus({ type: 'error', message: t('about.importError') });
                 setTimeout(() => setExportImportStatus(null), 3000);
               }
             }}
-            className="about-link"
+            className="flex items-center gap-3 px-4 py-3 rounded-lg text-body bg-transparent border-none w-full text-left text-[length:inherit] font-[inherit] cursor-pointer transition-colors hover:bg-white/5 hover:text-on-dark"
           >
-            <Upload size={20} className="about-link-icon" />
+            <Upload size={20} className="text-accent-blue shrink-0" />
             <span>{t('about.importSettings')}</span>
           </button>
         </div>
 
         {exportImportStatus && (
           <div
-            className={`settings-status-message ${exportImportStatus.type === 'success' ? 'status-success' : 'status-error'}`}
+            className={cn(
+              'flex items-center gap-2 px-3 py-2 rounded-sm text-[13px] mt-2',
+              exportImportStatus.type === 'success'
+                ? 'bg-accent-green/10 text-accent-green'
+                : 'bg-accent-red/10 text-accent-red'
+            )}
           >
             {exportImportStatus.type === 'success' ? (
               <Check size={16} />
@@ -1151,11 +1179,11 @@ export function SettingsApp() {
           </div>
         )}
 
-        <div className="settings-section-divider" />
+        <div className="h-px bg-hairline my-5" />
 
-        <div className="about-credits">
-          <p className="about-copyright">{t('about.copyright')}</p>
-          <p className="about-tech">{t('about.builtWith')}</p>
+        <div className="text-center">
+          <p className="text-xs text-mute my-1">{t('about.copyright')}</p>
+          <p className="text-xs text-mute my-1">{t('about.builtWith')}</p>
         </div>
       </div>
     </div>
@@ -1190,16 +1218,16 @@ export function SettingsApp() {
     };
 
     return (
-      <div className="settings-panel">
-        <div className="settings-panel-header">
-          <h2 className="settings-panel-title">{t('fileSearch.title')}</h2>
+      <div className="flex-1 flex flex-col overflow-hidden">
+        <div className="flex items-center justify-between h-14 px-6 border-b border-hairline shrink-0">
+          <h2 className="text-sm font-medium text-ink m-0">{t('fileSearch.title')}</h2>
         </div>
 
-        <div className="settings-panel-content">
-          <div className="settings-row">
-            <div className="settings-row-info">
-              <span className="settings-row-label">{t('fileSearch.indexOnStartup')}</span>
-              <span className="settings-row-desc">{t('fileSearch.indexOnStartupDesc')}</span>
+        <div className="flex-1 overflow-y-auto p-6">
+          <div className="flex items-center justify-between py-3 border-b border-hairline last:border-0">
+            <div className="flex flex-col gap-0.5">
+              <span className="text-sm text-body">{t('fileSearch.indexOnStartup')}</span>
+              <span className="text-xs text-mute mt-0.5">{t('fileSearch.indexOnStartupDesc')}</span>
             </div>
             <Toggle
               checked={settings.indexing.indexOnStartup}
@@ -1207,22 +1235,22 @@ export function SettingsApp() {
             />
           </div>
 
-          <div className="settings-section-divider" />
+          <div className="h-px bg-hairline my-5" />
 
-          <h3 className="settings-subsection-title">{t('fileSearch.foldersToIndex')}</h3>
-          <p className="settings-subsection-desc" id="folders-desc">
+          <h3 className="text-sm font-semibold text-ink mb-1.5">{t('fileSearch.foldersToIndex')}</h3>
+          <p className="text-xs text-mute mb-4" id="folders-desc">
             {t('fileSearch.foldersToIndexDesc')}
           </p>
 
-          <div className="folder-list" aria-describedby="folders-desc">
+          <div className="flex flex-col gap-2" aria-describedby="folders-desc">
             {settings.indexing.folders.map((folder, index) => (
-              <div key={index} className="folder-item">
-                <Folder size={16} className="folder-icon" />
-                <span className="folder-path" title={folder}>
+              <div key={index} className="flex items-center gap-2.5 px-3.5 py-2.5 bg-surface-elevated/30 rounded-md border border-hairline transition-all hover:bg-surface-elevated/50">
+                <Folder size={16} className="text-body shrink-0" />
+                <span className="flex-1 text-[13px] text-body font-mono whitespace-nowrap overflow-hidden text-ellipsis" title={folder}>
                   {folder}
                 </span>
                 <button
-                  className="folder-remove-btn"
+                  className="w-6 h-6 rounded-sm bg-transparent border-none text-ash text-lg cursor-pointer flex items-center justify-center transition-all hover:bg-accent-red/15 hover:text-accent-red"
                   onClick={() => removeFolder(index)}
                   title="Remove folder"
                 >
@@ -1230,19 +1258,22 @@ export function SettingsApp() {
                 </button>
               </div>
             ))}
-            <button className="folder-add-btn" onClick={addFolder}>
+            <button
+              className="flex items-center justify-center gap-1.5 py-3 rounded-md bg-transparent border border-dashed border-accent-blue/30 text-accent-blue text-[13px] font-medium cursor-pointer transition-all hover:bg-accent-blue/10 hover:border-accent-blue"
+              onClick={addFolder}
+            >
               <span>+</span> {t('fileSearch.addFolder')}
             </button>
           </div>
 
-          <div className="settings-section-divider" />
+          <div className="h-px bg-hairline my-5" />
 
-          <h3 className="settings-subsection-title">{t('fileSearch.fileExtensions')}</h3>
-          <p className="settings-subsection-desc" id="extensions-desc">{t('fileSearch.fileExtensionsDesc')}</p>
+          <h3 className="text-sm font-semibold text-ink mb-1.5">{t('fileSearch.fileExtensions')}</h3>
+          <p className="text-xs text-mute mb-4" id="extensions-desc">{t('fileSearch.fileExtensionsDesc')}</p>
 
           <input
             type="text"
-            className="settings-text-input"
+            className="bg-surface-elevated border border-hairline rounded-md px-3 py-1.5 text-sm text-on-dark outline-none focus:border-hairline-strong placeholder:text-ash w-full"
             aria-describedby="extensions-desc"
             value={settings.indexing.fileExtensions.join(', ')}
             onChange={(e) => {
@@ -1255,20 +1286,20 @@ export function SettingsApp() {
             placeholder={t('fileSearch.fileExtensionsPlaceholder')}
           />
 
-          <div className="settings-section-divider" />
+          <div className="h-px bg-hairline my-5" />
 
-          <h3 className="settings-subsection-title">{t('fileSearch.excludedPaths')}</h3>
-          <p className="settings-subsection-desc">{t('fileSearch.excludedPathsDesc')}</p>
+          <h3 className="text-sm font-semibold text-ink mb-1.5">{t('fileSearch.excludedPaths')}</h3>
+          <p className="text-xs text-mute mb-4">{t('fileSearch.excludedPathsDesc')}</p>
 
-          <div className="folder-list">
+          <div className="flex flex-col gap-2">
             {settings.indexing.excludedPaths.map((path, index) => (
-              <div key={index} className="folder-item">
-                <FolderX size={16} className="folder-icon" />
-                <span className="folder-path" title={path}>
+              <div key={index} className="flex items-center gap-2.5 px-3.5 py-2.5 bg-surface-elevated/30 rounded-md border border-hairline transition-all hover:bg-surface-elevated/50">
+                <FolderX size={16} className="text-body shrink-0" />
+                <span className="flex-1 text-[13px] text-body font-mono whitespace-nowrap overflow-hidden text-ellipsis" title={path}>
                   {path}
                 </span>
                 <button
-                  className="folder-remove-btn"
+                  className="w-6 h-6 rounded-sm bg-transparent border-none text-ash text-lg cursor-pointer flex items-center justify-center transition-all hover:bg-accent-red/15 hover:text-accent-red"
                   onClick={() => removeExcludedPath(index)}
                   title="Remove excluded path"
                 >
@@ -1276,59 +1307,43 @@ export function SettingsApp() {
                 </button>
               </div>
             ))}
-            <button className="folder-add-btn" onClick={addExcludedPath}>
+            <button
+              className="flex items-center justify-center gap-1.5 py-3 rounded-md bg-transparent border border-dashed border-accent-blue/30 text-accent-blue text-[13px] font-medium cursor-pointer transition-all hover:bg-accent-blue/10 hover:border-accent-blue"
+              onClick={addExcludedPath}
+            >
               <span>+</span> {t('fileSearch.addPath')}
             </button>
           </div>
 
-          <div className="settings-section-divider" />
+          <div className="h-px bg-hairline my-5" />
 
-          <h3 className="settings-subsection-title">{t('fileSearch.indexStatus')}</h3>
-          <p className="settings-subsection-desc">
+          <h3 className="text-sm font-semibold text-ink mb-1.5">{t('fileSearch.indexStatus')}</h3>
+          <p className="text-xs text-mute mb-4">
             {t('fileSearch.indexStatusDesc')}
           </p>
 
           {indexStats ? (
-            <div className="index-stats-grid">
-              <div className="index-stat-item">
-                <span className="index-stat-label">{t('fileSearch.stats.indexedFiles')}</span>
-                <span className="index-stat-value">
-                  {indexStats.indexedCount.toLocaleString()}
-                </span>
-              </div>
-              <div className="index-stat-item">
-                <span className="index-stat-label">{t('fileSearch.stats.dbSize')}</span>
-                <span className="index-stat-value">
-                  {indexStats.dbSizeBytes > 0
-                    ? `${(indexStats.dbSizeBytes / 1024).toFixed(1)} KB`
-                    : '—'}
-                </span>
-              </div>
-              <div className="index-stat-item">
-                <span className="index-stat-label">{t('fileSearch.stats.lastScan')}</span>
-                <span className="index-stat-value">
-                  {indexStats.lastFullScan > 0
-                    ? new Date(indexStats.lastFullScan * 1000).toLocaleString()
-                    : t('fileSearch.stats.never')}
-                </span>
-              </div>
-              <div className="index-stat-item">
-                <span className="index-stat-label">{t('fileSearch.stats.watcher')}</span>
-                <span
-                  className={`index-stat-value ${indexStats.isWatching ? 'index-stat-active' : 'index-stat-inactive'}`}
-                >
-                  {indexStats.isWatching ? t('fileSearch.stats.active') : t('fileSearch.stats.inactive')}
-                </span>
-              </div>
+            <div className="grid grid-cols-2 gap-2 mt-2">
+              {[
+                { label: t('fileSearch.stats.indexedFiles'), value: indexStats.indexedCount.toLocaleString() },
+                { label: t('fileSearch.stats.dbSize'), value: indexStats.dbSizeBytes > 0 ? `${(indexStats.dbSizeBytes / 1024).toFixed(1)} KB` : '—' },
+                { label: t('fileSearch.stats.lastScan'), value: indexStats.lastFullScan > 0 ? new Date(indexStats.lastFullScan * 1000).toLocaleString() : t('fileSearch.stats.never') },
+                { label: t('fileSearch.stats.watcher'), value: indexStats.isWatching ? t('fileSearch.stats.active') : t('fileSearch.stats.inactive'), accent: indexStats.isWatching ? 'text-accent-green' : undefined },
+              ].map(({ label, value, accent }) => (
+                <div key={label} className="flex flex-col gap-0.5 px-3 py-2.5 rounded-md bg-surface-elevated/20 border border-hairline">
+                  <span className="text-[11px] text-body uppercase tracking-[0.04em]">{label}</span>
+                  <span className={cn('text-[13px] font-medium text-ink', accent)}>{value}</span>
+                </div>
+              ))}
             </div>
           ) : (
-            <p className="settings-subsection-desc">{t('fileSearch.loadingStats')}</p>
+            <p className="text-xs text-mute mb-4">{t('fileSearch.loadingStats')}</p>
           )}
 
-          <div className="settings-row" style={{ marginTop: '12px' }}>
-            <div className="settings-row-info">
-              <span className="settings-row-label">{t('fileSearch.stats.rebuild')}</span>
-              <span className="settings-row-desc">
+          <div className="flex items-center justify-between py-3 border-b border-hairline last:border-0 mt-3">
+            <div className="flex flex-col gap-0.5">
+              <span className="text-sm text-body">{t('fileSearch.stats.rebuild')}</span>
+              <span className="text-xs text-mute mt-0.5">
                 {t('fileSearch.stats.rebuildDesc')}
               </span>
             </div>
@@ -1338,7 +1353,7 @@ export function SettingsApp() {
               onClick={async () => {
                 setIsRebuilding(true);
                 try {
-                  await invoke('invalidate_index');
+                  await invoke<void>('invalidate_index');
                   // Poll until indexing is done
                   const pollStats = async () => {
                     try {
@@ -1371,21 +1386,21 @@ export function SettingsApp() {
 
   // Render Applications section
   const renderApplicationsSection = () => (
-    <div className="settings-panel">
-      <div className="settings-panel-header">
-        <h2 className="settings-panel-title">{t('applications.title')}</h2>
+    <div className="flex-1 flex flex-col overflow-hidden">
+      <div className="flex items-center justify-between h-14 px-6 border-b border-hairline shrink-0">
+        <h2 className="text-sm font-medium text-ink m-0">{t('applications.title')}</h2>
       </div>
 
-      <div className="settings-panel-content">
-        <div className="settings-info-box">
-          <Lightbulb size={20} className="settings-info-icon" />
-          <p>{t('applications.infoText')}</p>
+      <div className="flex-1 overflow-y-auto p-6">
+        <div className="flex items-start gap-3 px-3.5 py-3.5 bg-accent-blue/8 border border-accent-blue/20 rounded-lg mb-5">
+          <Lightbulb size={20} className="text-accent-blue shrink-0 mt-0.5" />
+          <p className="m-0 text-[13px] text-body leading-relaxed">{t('applications.infoText')}</p>
         </div>
 
-        <div className="settings-row">
-          <div className="settings-row-info">
-            <span className="settings-row-label">{t('applications.scanApps')}</span>
-            <span className="settings-row-desc">
+        <div className="flex items-center justify-between py-3 border-b border-hairline last:border-0">
+          <div className="flex flex-col gap-0.5">
+            <span className="text-sm text-body">{t('applications.scanApps')}</span>
+            <span className="text-xs text-mute mt-0.5">
               {t('applications.scanAppsDesc')}
             </span>
           </div>
@@ -1406,15 +1421,15 @@ export function SettingsApp() {
               }
             }}
           >
-            {isScanningApps ? 'Analyse en cours...' : t('applications.scanNow')}
+            {isScanningApps ? t('applications.scanning') : t('applications.scanNow')}
           </Button>
         </div>
         {scanResult && (
-          <div className="settings-info-box" style={{ marginTop: 8 }}>
+          <div className="flex items-start gap-3 px-3.5 py-3.5 bg-accent-blue/8 border border-accent-blue/20 rounded-lg mt-2">
             {scanResult.error ? (
-              <p style={{ color: 'var(--color-error)' }}>Erreur: {scanResult.error}</p>
+              <p className="m-0 text-[13px] text-accent-red">{t('applications.scanError', { error: scanResult.error })}</p>
             ) : (
-              <p>{scanResult.count} applications trouvées</p>
+              <p className="m-0 text-[13px] text-body">{t('applications.scanResult', { count: scanResult.count })}</p>
             )}
           </div>
         )}
@@ -1435,21 +1450,25 @@ export function SettingsApp() {
     ];
 
     return (
-      <div className="settings-panel">
-        <div className="settings-panel-header">
-          <h2 className="settings-panel-title">{t('plugins.title')}</h2>
+      <div className="flex-1 flex flex-col overflow-hidden">
+        <div className="flex items-center justify-between h-14 px-6 border-b border-hairline shrink-0">
+          <h2 className="text-sm font-medium text-ink m-0">{t('plugins.title')}</h2>
         </div>
 
-        <div className="settings-panel-content">
-          <div className="plugins-list">
+        <div className="flex-1 overflow-y-auto p-6">
+          <div className="flex flex-col gap-2">
             {plugins.map((plugin) => {
               const isEnabled = settings.plugins.enabledPlugins.includes(plugin.id);
               return (
-                <div key={plugin.id} className="plugin-item">
-                  {React.createElement(plugin.icon, { size: 20, className: 'plugin-icon' })}
-                  <div className="plugin-info">
-                    <span className="plugin-name">{t(plugin.nameKey)}</span>
-                    {plugin.builtin && <span className="plugin-badge">{t('plugins.builtin')}</span>}
+                <div key={plugin.id} className="flex items-center gap-3 px-4 py-3 bg-surface-elevated/30 rounded-lg transition-colors hover:bg-surface-elevated/50">
+                  {React.createElement(plugin.icon, { size: 20, className: 'text-accent-blue shrink-0' })}
+                  <div className="flex-1 flex items-center gap-2">
+                    <span className="text-sm font-medium text-ink">{t(plugin.nameKey)}</span>
+                    {plugin.builtin && (
+                      <span className="px-2 py-0.5 rounded-xs bg-accent-blue/15 text-accent-blue text-[10px] font-semibold uppercase">
+                        {t('plugins.builtin')}
+                      </span>
+                    )}
                   </div>
                   <Toggle
                     checked={isEnabled}
@@ -1466,24 +1485,25 @@ export function SettingsApp() {
 
   // Render Clipboard section
   const renderClipboardSection = () => (
-    <div className="settings-panel">
-      <div className="settings-panel-header">
-        <h2 className="settings-panel-title">{t('clipboard.title')}</h2>
+    <div className="flex-1 flex flex-col overflow-hidden">
+      <div className="flex items-center justify-between h-14 px-6 border-b border-hairline shrink-0">
+        <h2 className="text-sm font-medium text-ink m-0">{t('clipboard.title')}</h2>
       </div>
 
-      <div className="settings-panel-content">
-        <div className="settings-info-box">
-          <ClipboardIcon size={20} className="settings-info-icon" />
-          <p>
+      <div className="flex-1 overflow-y-auto p-6">
+        <div className="flex items-start gap-3 px-3.5 py-3.5 bg-accent-blue/8 border border-accent-blue/20 rounded-lg mb-5">
+          <ClipboardIcon size={20} className="text-accent-blue shrink-0 mt-0.5" />
+          <p className="m-0 text-[13px] text-body leading-relaxed">
             {t('clipboard.infoText')}{' '}
-            <kbd>cb</kbd> {t('clipboard.infoTextSuffix')}
+            <kbd className="px-1.5 py-0.5 rounded-xs bg-black/30 font-mono text-xs">cb</kbd>{' '}
+            {t('clipboard.infoTextSuffix')}
           </p>
         </div>
 
-        <div className="settings-row">
-          <div className="settings-row-info">
-            <span className="settings-row-label">{t('clipboard.monitoring')}</span>
-            <span className="settings-row-desc">{t('clipboard.monitoringDesc')}</span>
+        <div className="flex items-center justify-between py-3 border-b border-hairline last:border-0">
+          <div className="flex flex-col gap-0.5">
+            <span className="text-sm text-body">{t('clipboard.monitoring')}</span>
+            <span className="text-xs text-mute mt-0.5">{t('clipboard.monitoringDesc')}</span>
           </div>
           <Toggle
             checked={settings.plugins.clipboardMonitoring}
@@ -1491,16 +1511,16 @@ export function SettingsApp() {
           />
         </div>
 
-        <div className="settings-row">
-          <div className="settings-row-info">
-            <span className="settings-row-label">{t('clipboard.clearHistory')}</span>
-            <span className="settings-row-desc">{t('clipboard.clearHistoryDesc')}</span>
+        <div className="flex items-center justify-between py-3 border-b border-hairline last:border-0">
+          <div className="flex flex-col gap-0.5">
+            <span className="text-sm text-body">{t('clipboard.clearHistory')}</span>
+            <span className="text-xs text-mute mt-0.5">{t('clipboard.clearHistoryDesc')}</span>
           </div>
           <Button
             variant="secondary"
             onClick={async () => {
               try {
-                await invoke('clear_clipboard_history');
+                await invoke<void>('clear_clipboard_history');
               } catch (err) {
                 logger.error('Failed to clear clipboard history:', err);
                 setError(t('errors.saveFailed'));
@@ -1516,24 +1536,25 @@ export function SettingsApp() {
 
   // Render Shell Commands section
   const renderShellSection = () => (
-    <div className="settings-panel">
-      <div className="settings-panel-header">
-        <h2 className="settings-panel-title">Shell Commands</h2>
+    <div className="flex-1 flex flex-col overflow-hidden">
+      <div className="flex items-center justify-between h-14 px-6 border-b border-hairline shrink-0">
+        <h2 className="text-sm font-medium text-ink m-0">{t('shell.title')}</h2>
       </div>
 
-      <div className="settings-panel-content">
-        <div className="settings-info-box">
-          <Terminal size={20} className="settings-info-icon" />
-          <p>
-            Execute shell commands directly from Volt with the <kbd>&gt;</kbd> prefix.
-            Output streams in real-time with ANSI color support.
+      <div className="flex-1 overflow-y-auto p-6">
+        <div className="flex items-start gap-3 px-3.5 py-3.5 bg-accent-blue/8 border border-accent-blue/20 rounded-lg mb-5">
+          <Terminal size={20} className="text-accent-blue shrink-0 mt-0.5" />
+          <p className="m-0 text-[13px] text-body leading-relaxed">
+            {t('shell.infoText')}{' '}
+            <kbd className="px-1.5 py-0.5 rounded-xs bg-black/30 font-mono text-xs">&gt;</kbd>{' '}
+            {t('shell.infoTextSuffix')}
           </p>
         </div>
 
-        <div className="settings-row">
-          <div className="settings-row-info">
-            <span className="settings-row-label">Enable Shell Commands</span>
-            <span className="settings-row-desc">Allow running commands with the &gt; prefix</span>
+        <div className="flex items-center justify-between py-3 border-b border-hairline last:border-0">
+          <div className="flex flex-col gap-0.5">
+            <span className="text-sm text-body">{t('shell.enabled')}</span>
+            <span className="text-xs text-mute mt-0.5">{t('shell.enabledDesc')}</span>
           </div>
           <Toggle
             checked={settings.shell?.enabled ?? true}
@@ -1541,15 +1562,15 @@ export function SettingsApp() {
           />
         </div>
 
-        <div className="settings-row">
-          <div className="settings-row-info">
-            <span className="settings-row-label">Default Shell</span>
-            <span className="settings-row-desc">Override the system shell (leave empty for default: cmd on Windows, sh on Unix)</span>
+        <div className="flex items-center justify-between py-3 border-b border-hairline last:border-0">
+          <div className="flex flex-col gap-0.5">
+            <span className="text-sm text-body">{t('shell.defaultShell')}</span>
+            <span className="text-xs text-mute mt-0.5">{t('shell.defaultShellDesc')}</span>
           </div>
           <input
             type="text"
-            className="settings-input"
-            placeholder="System default"
+            className="bg-surface-elevated border border-hairline rounded-md px-3 py-1.5 text-sm text-on-dark outline-none focus:border-hairline-strong placeholder:text-ash"
+            placeholder={t('shell.defaultShellPlaceholder')}
             value={settings.shell?.defaultShell ?? ''}
             onChange={(e) =>
               updateSettings('shell', 'defaultShell', e.target.value || null)
@@ -1557,15 +1578,15 @@ export function SettingsApp() {
           />
         </div>
 
-        <div className="settings-row">
-          <div className="settings-row-info">
-            <span className="settings-row-label">Working Directory</span>
-            <span className="settings-row-desc">Default directory for commands (leave empty for home directory)</span>
+        <div className="flex items-center justify-between py-3 border-b border-hairline last:border-0">
+          <div className="flex flex-col gap-0.5">
+            <span className="text-sm text-body">{t('shell.workingDir')}</span>
+            <span className="text-xs text-mute mt-0.5">{t('shell.workingDirDesc')}</span>
           </div>
           <input
             type="text"
-            className="settings-input"
-            placeholder="Home directory"
+            className="bg-surface-elevated border border-hairline rounded-md px-3 py-1.5 text-sm text-on-dark outline-none focus:border-hairline-strong placeholder:text-ash"
+            placeholder={t('shell.workingDirPlaceholder')}
             value={settings.shell?.workingDir ?? ''}
             onChange={(e) =>
               updateSettings('shell', 'workingDir', e.target.value || null)
@@ -1573,14 +1594,14 @@ export function SettingsApp() {
           />
         </div>
 
-        <div className="settings-row">
-          <div className="settings-row-info">
-            <span className="settings-row-label">Timeout (ms)</span>
-            <span className="settings-row-desc">Maximum time before a command is killed</span>
+        <div className="flex items-center justify-between py-3 border-b border-hairline last:border-0">
+          <div className="flex flex-col gap-0.5">
+            <span className="text-sm text-body">{t('shell.timeout')}</span>
+            <span className="text-xs text-mute mt-0.5">{t('shell.timeoutDesc')}</span>
           </div>
           <input
             type="number"
-            className="settings-input"
+            className="bg-surface-elevated border border-hairline rounded-md px-3 py-1.5 text-sm text-on-dark outline-none focus:border-hairline-strong"
             min={1000}
             max={300000}
             step={1000}
@@ -1591,14 +1612,14 @@ export function SettingsApp() {
           />
         </div>
 
-        <div className="settings-row">
-          <div className="settings-row-info">
-            <span className="settings-row-label">History Size</span>
-            <span className="settings-row-desc">Maximum number of commands to remember</span>
+        <div className="flex items-center justify-between py-3 border-b border-hairline last:border-0">
+          <div className="flex flex-col gap-0.5">
+            <span className="text-sm text-body">{t('shell.historySize')}</span>
+            <span className="text-xs text-mute mt-0.5">{t('shell.historySizeDesc')}</span>
           </div>
           <input
             type="number"
-            className="settings-input"
+            className="bg-surface-elevated border border-hairline rounded-md px-3 py-1.5 text-sm text-on-dark outline-none focus:border-hairline-strong"
             min={0}
             max={5000}
             step={50}
@@ -1609,23 +1630,23 @@ export function SettingsApp() {
           />
         </div>
 
-        <div className="settings-row">
-          <div className="settings-row-info">
-            <span className="settings-row-label">Clear Command History</span>
-            <span className="settings-row-desc">Remove all saved shell command history</span>
+        <div className="flex items-center justify-between py-3 border-b border-hairline last:border-0">
+          <div className="flex flex-col gap-0.5">
+            <span className="text-sm text-body">{t('shell.clearHistory')}</span>
+            <span className="text-xs text-mute mt-0.5">{t('shell.clearHistoryDesc')}</span>
           </div>
           <Button
             variant="secondary"
             onClick={async () => {
               try {
-                await invoke('clear_shell_history');
+                await invoke<void>('clear_shell_history');
               } catch (err) {
                 logger.error('Failed to clear shell history:', err);
-                setError('Failed to clear shell history');
+                setError(t('shell.clearFailed'));
               }
             }}
           >
-            Clear
+            {t('shell.clear')}
           </Button>
         </div>
       </div>
@@ -1636,7 +1657,7 @@ export function SettingsApp() {
   const renderContent = () => {
     if (isLoading) {
       return (
-        <div className="settings-loading">
+        <div className="flex-1 flex items-center justify-center">
           <Spinner size="medium" message={t('loading')} />
         </div>
       );
@@ -1651,17 +1672,19 @@ export function SettingsApp() {
         return <ExtensionsStore />;
       case 'account':
         return (
-          <div className="settings-panel">
-            <div className="settings-panel-header">
-              <h2 className="settings-panel-title">{t('account.title', 'Account')}</h2>
+          <div className="flex-1 flex flex-col overflow-hidden">
+            <div className="flex items-center justify-between h-14 px-6 border-b border-hairline shrink-0">
+              <h2 className="text-sm font-medium text-ink m-0">{t('account.title', 'Account')}</h2>
             </div>
-            <div className="settings-panel-content">
+            <div className="flex-1 overflow-y-auto p-6">
               <AccountSection />
             </div>
           </div>
         );
       case 'integrations':
         return <IntegrationsPanel />;
+      case 'sync':
+        return <SyncPanel />;
       case 'advanced':
         return renderAdvancedSection();
       case 'about':
@@ -1682,41 +1705,55 @@ export function SettingsApp() {
   };
 
   return (
-    <div className="settings-app">
+    <div className="flex h-screen flex-col bg-canvas text-ink overflow-hidden">
       {/* Custom title bar */}
-      <div className="settings-titlebar" data-tauri-drag-region>
-        <span className="settings-titlebar-title">{t('titlebar')}</span>
-        <div className="settings-titlebar-controls">
-          <button className="titlebar-btn minimize" onClick={handleMinimize}>
+      <div
+        className="flex items-center justify-between h-8 px-3 bg-black/30 border-b border-hairline shrink-0 select-none"
+        data-tauri-drag-region
+      >
+        <span className="text-[13px] font-medium text-mute">{t('titlebar')}</span>
+        <div className="no-drag flex gap-2">
+          <button
+            className="w-7 h-7 rounded-sm bg-transparent border-none text-ash text-lg cursor-pointer flex items-center justify-center transition-colors hover:bg-white/10 hover:text-on-dark"
+            onClick={handleMinimize}
+          >
             <span>−</span>
           </button>
-          <button className="titlebar-btn close" onClick={handleClose}>
+          <button
+            className="w-7 h-7 rounded-sm bg-transparent border-none text-ash text-lg cursor-pointer flex items-center justify-center transition-colors hover:bg-accent-red/20 hover:text-accent-red"
+            onClick={handleClose}
+          >
             <span>×</span>
           </button>
         </div>
       </div>
 
-      <div className="settings-layout">
+      <div className="flex flex-1 overflow-hidden">
         {renderSidebar()}
 
-        <main className="settings-main">
+        <main className="flex-1 flex flex-col overflow-hidden relative">
           {error && (
-            <div className="settings-error-banner">
+            <div className="flex items-center justify-between px-4 py-2.5 bg-accent-red/10 border-b border-accent-red/20 text-accent-red text-[13px]">
               <span>{error}</span>
-              <button onClick={() => setError(null)}>×</button>
+              <button
+                className="w-6 h-6 rounded-sm bg-transparent border-none text-accent-red text-lg cursor-pointer hover:bg-accent-red/20"
+                onClick={() => setError(null)}
+              >
+                ×
+              </button>
             </div>
           )}
 
           {renderContent()}
 
           {hasChanges && (
-            <div className="settings-save-bar">
-              <span>{t('saveBar.unsavedChanges')}</span>
-              <div className="settings-save-actions">
+            <div className="absolute bottom-0 left-0 right-0 flex items-center justify-between px-6 py-3 bg-black/30 border-t border-hairline">
+              <span className="text-[13px] text-body">{t('saveBar.unsavedChanges')}</span>
+              <div className="flex gap-2">
                 <Button variant="secondary" onClick={() => loadSettings()}>
                   {t('saveBar.discard')}
                 </Button>
-                <Button variant="primary" onClick={handleSave} disabled={isSaving}>
+                <Button variant="default" onClick={handleSave} disabled={isSaving}>
                   {isSaving ? t('actions.saving') : t('saveBar.saveChanges')}
                 </Button>
               </div>

@@ -14,18 +14,17 @@ import { SuggestionsView } from '../../features/suggestions';
 import { ErrorMessage, Spinner } from '../../shared/components/ui';
 import { defaultSuggestions } from '../../shared/constants/suggestions';
 import { SearchResult } from '../../shared/types/common.types';
-import { logger } from '../../shared/utils/logger';
 import { useAppStore } from '../../stores/appStore';
 import { useSearchStore } from '../../stores/searchStore';
 import { useUiStore } from '../../stores/uiStore';
-import { openSettingsWindow } from '../utils';
 
 interface ViewRouterProps {
   onSelectEmoji: (emoji: string) => void;
   onLaunchResult: (result: SearchResult) => void;
+  onActivateSuggestion: (categoryIndex: number, itemIndex: number) => Promise<void>;
 }
 
-export function ViewRouter({ onSelectEmoji, onLaunchResult }: ViewRouterProps) {
+export function ViewRouter({ onSelectEmoji, onLaunchResult, onActivateSuggestion }: ViewRouterProps) {
   const { t } = useTranslation('common');
   const activeView = useUiStore((s) => s.activeView);
   const searchQuery = useSearchStore((s) => s.searchQuery);
@@ -55,58 +54,6 @@ export function ViewRouter({ onSelectEmoji, onLaunchResult }: ViewRouterProps) {
       globalIndex += defaultSuggestions[i].items.length;
     }
     useSearchStore.getState().setSelectedIndex(globalIndex + itemIndex);
-  };
-
-  const handleSuggestionActivate = async (categoryIndex: number, itemIndex: number) => {
-    const category = defaultSuggestions[categoryIndex];
-    const item = category.items[itemIndex];
-    const { setQuery } = useSearchStore.getState();
-    const { setActiveView } = useUiStore.getState();
-
-    switch (item.id) {
-      case 'whats-new':
-        setActiveView({ type: 'changelog' });
-        break;
-      case 'settings':
-      case 'account':
-        await openSettingsWindow();
-        break;
-      case 'about':
-        try {
-          const { openUrl } = await import('@tauri-apps/plugin-opener');
-          await openUrl('https://voltlaunchr.com');
-        } catch (err) {
-          logger.error('Failed to open website:', err);
-          window.open('https://voltlaunchr.com', '_blank');
-        }
-        break;
-      case 'clipboard-history':
-        setActiveView({ type: 'clipboard' });
-        break;
-      case 'search-emoji':
-        setQuery(':');
-        break;
-      case 'search-files':
-        setActiveView({ type: 'files' });
-        break;
-      case 'system-monitor':
-        setQuery('system ');
-        break;
-      case 'calculator':
-        setActiveView({ type: 'calculator' });
-        break;
-      case 'timer':
-        setActiveView({ type: 'timer' });
-        break;
-      case 'web-search':
-        setQuery('? ');
-        break;
-      case 'steam-games':
-        setActiveView({ type: 'games' });
-        break;
-      default:
-        console.log('Unknown suggestion:', item.id);
-    }
   };
 
   switch (activeView.type) {
@@ -152,7 +99,7 @@ export function ViewRouter({ onSelectEmoji, onLaunchResult }: ViewRouterProps) {
         suggestions={defaultSuggestions}
         selectedIndex={selectedIndex}
         onSelect={handleSuggestionSelect}
-        onActivate={handleSuggestionActivate}
+        onActivate={onActivateSuggestion}
       />
     );
   }
@@ -167,6 +114,7 @@ export function ViewRouter({ onSelectEmoji, onLaunchResult }: ViewRouterProps) {
 
   return (
     <div
+      className="flex flex-col flex-1 min-h-0"
       style={{
         opacity: isResultsStale ? 0.7 : 1,
         transition: 'opacity 100ms ease-out',

@@ -97,6 +97,18 @@ const voltAPI = createVoltAPI();
 declare global {
   interface Window {
     VoltAPI: VoltAPIInterface;
+    /**
+     * Extension i18n bridge installed by `src/i18n/index.ts` after
+     * `i18n.init()` resolves. The Worker bundle's \`VoltI18n.addTranslations()\`
+     * helper calls this so extensions can add translation resources at runtime.
+     * Optional because main thread code runs before i18n is initialised
+     * (e.g. in tests), and it is `undefined` in that window.
+     */
+    __volt_i18n_addBundle__?: (
+      lng: string,
+      ns: string,
+      resources: Record<string, unknown>
+    ) => void;
   }
 }
 

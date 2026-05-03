@@ -137,6 +137,21 @@ export class WorkerPlugin implements Plugin {
   }
 
   /**
+   * Reject and clear ALL pending requests (used when the worker is being torn
+   * down). Without this, a per-request timeout that recreates the worker
+   * leaves stale `pending` entries whose later timer firings call
+   * `terminateWorker()` on the freshly-recreated worker, breaking the new
+   * one. See M12.
+   */
+  private cleanupPending(reason: string): void {
+    for (const [, p] of this.pending) {
+      clearTimeout(p.timer);
+      p.reject(new Error(reason));
+    }
+    this.pending.clear();
+  }
+
+  /**
    * Send a typed request to the Worker and wait for response with timeout.
    */
   private sendRequest<T>(worker: Worker, type: 'match' | 'execute', payload: unknown): Promise<T> {
@@ -147,7 +162,13 @@ export class WorkerPlugin implements Plugin {
       const id = crypto.randomUUID();
 
       const timer = setTimeout(() => {
-        this.pending.delete(id);
+        // Reject ALL pending entries — not just this one. Keeping the others
+        // alive past `terminateWorker()` is unsafe: their later timer firings
+        // would call `terminateWorker()` again, killing whichever worker the
+        // plugin has lazily recreated in the meantime. (M12)
+        this.cleanupPending(
+          `Worker reset due to timeout (after ${WORKER_TIMEOUT_MS}ms on ${type})`
+        );
         this.terminateWorker();
         reject(new Error(`Worker timeout after ${WORKER_TIMEOUT_MS}ms for ${type}`));
       }, WORKER_TIMEOUT_MS);
@@ -277,23 +298,95 @@ export class WorkerPlugin implements Plugin {
 
       const hostname = parsed.hostname.toLowerCase();
 
+      // Empty hostname is not addressable; refuse rather than letting the
+      // platform fetcher decide. (M2)
+      if (hostname === '') return false;
+
       // Block localhost by name.
       if (hostname === 'localhost') return false;
+
+      // Reject "compressed" IPv4 forms that browsers happily resolve to
+      // private addresses:
+      //   * `http://0/` → 0.0.0.0
+      //   * `http://2130706433/` → 127.0.0.1 (decimal-as-int)
+      //   * `http://0x7f000001/` → 127.0.0.1 (hex-as-int)
+      //   * `http://0177.0.0.1/` → 127.0.0.1 (octal-prefixed dotted form)
+      // Anything that isn't either a strict dotted-quad IPv4 or a host with
+      // at least one alphabetic character (FQDN) is suspicious. (M2)
+      if (
+        hostname === '0' ||
+        /^(?:0x[0-9a-f]+|\d+)$/i.test(hostname)
+      ) {
+        return false;
+      }
+
+      // If the hostname looks IPv4-shaped at all (digits + dots, no letters)
+      // require strict dotted-quad. This rejects octal forms like
+      // `0177.0.0.1` and partial forms like `127.1`.
+      const hasLetter = /[a-z]/i.test(hostname);
+      const looksIpv4ish = /^[0-9.]+$/.test(hostname);
+      if (!hasLetter && looksIpv4ish) {
+        const strictDottedQuad = /^\d{1,3}(\.\d{1,3}){3}$/;
+        if (!strictDottedQuad.test(hostname)) return false;
+        // Each octet must be 0..255 with no leading zero ambiguity.
+        const octets = hostname.split('.');
+        for (const o of octets) {
+          if (o.length > 1 && o.startsWith('0')) return false; // octal-style
+          const n = Number(o);
+          if (!Number.isInteger(n) || n < 0 || n > 255) return false;
+        }
+      }
 
       // IPv4 private/reserved ranges.
       if (this.isPrivateIPv4(hostname)) return false;
 
       // IPv6 loopback / ULA / link-local / IPv4-mapped-private.
       // `URL` exposes bracketed hostnames with brackets stripped, but we
-      // handle both forms defensively.
+      // handle both forms defensively. Catch IPv4-mapped IPv6 expressed
+      // purely in hex hextets (e.g. `[::ffff:7f00:1]`) which the original
+      // `isPrivateIPv6` regex (which only handled `::ffff:a.b.c.d`) missed.
+      // (M2)
       if (hostname.includes(':') || hostname.startsWith('[')) {
         if (this.isPrivateIPv6(hostname)) return false;
+        if (this.isHexMappedIpv4Private(hostname)) return false;
       }
 
       return true;
     } catch {
       return false;
     }
+  }
+
+  /**
+   * Detect IPv4-mapped IPv6 addresses encoded as hex hextets (e.g.
+   * `::ffff:7f00:1` == 127.0.0.1). The existing `isPrivateIPv6` only matches
+   * the dotted form (`::ffff:127.0.0.1`); without this helper an attacker can
+   * round-trip the same address as `[::ffff:7f00:1]` and bypass the check.
+   * (M2)
+   */
+  private isHexMappedIpv4Private(hostname: string): boolean {
+    // Strip brackets and lowercase.
+    const h = (
+      hostname.startsWith('[') && hostname.endsWith(']')
+        ? hostname.slice(1, -1)
+        : hostname
+    ).toLowerCase();
+    if (!h.includes(':')) return false;
+    const parts = h.split(':');
+    // Need at least the last two hextets to encode 32 bits of IPv4.
+    if (parts.length < 2) return false;
+    const lastTwo = parts.slice(-2);
+    const hex = /^[0-9a-f]{1,4}$/;
+    if (!hex.test(lastTwo[0]) || !hex.test(lastTwo[1])) return false;
+    const high = parseInt(lastTwo[0], 16);
+    const low = parseInt(lastTwo[1], 16);
+    if (Number.isNaN(high) || Number.isNaN(low)) return false;
+    const a = (high >> 8) & 0xff;
+    const b = high & 0xff;
+    const c = (low >> 8) & 0xff;
+    const d = low & 0xff;
+    const dotted = `${a}.${b}.${c}.${d}`;
+    return this.isPrivateIPv4(dotted);
   }
 
   /**
@@ -420,6 +513,13 @@ export class WorkerPlugin implements Plugin {
     // Force credentials off — extensions must never carry app cookies.
     sanitized.credentials = 'omit';
 
+    // Force manual redirect handling so we can re-validate each hop's URL
+    // against `isUrlSafe` (SSRF defense). With the default `redirect: 'follow'`
+    // a server can return a 302 pointing at 127.0.0.1 / link-local addresses
+    // and the platform fetcher will silently follow it because only the
+    // INITIAL URL was validated. We loop in `handleFetchRequest` instead. (H3)
+    sanitized.redirect = 'manual';
+
     if (sanitized.headers) {
       if (sanitized.headers instanceof Headers) {
         const cleaned = new Headers();
@@ -491,7 +591,59 @@ export class WorkerPlugin implements Plugin {
 
     try {
       const safeOptions = this.sanitizeFetchOptions(payload.options);
-      const response = await fetch(payload.url, safeOptions);
+
+      // Manual redirect loop with re-validation at every hop. The initial URL
+      // was already approved by `isUrlSafe` above; we still re-check it inside
+      // the loop so a single code path enforces the policy for hop 0..N. (H3)
+      //
+      // Browser caveat: with `redirect: 'manual'` the response is "opaque
+      // redirect" — `status` is reported as 0 and `Location` may be hidden.
+      // In Tauri's WebView2/WKWebView the spec-compliant behavior tends to
+      // follow Chromium/Safari, where `headers.get('Location')` is null on
+      // opaque redirects. As a defense in depth we therefore detect *both*
+      // `type === 'opaqueredirect'` and a real 3xx (in case the runtime
+      // surfaces redirects transparently); when `Location` is null on an
+      // opaque redirect we fail closed rather than blindly returning the
+      // opaque body. The redirected request is still safer than the default
+      // `follow` behavior because the platform fetcher refuses to follow on
+      // its own under `manual`.
+      const MAX_REDIRECTS = 5;
+      let currentUrl = payload.url;
+      let response: Response | null = null;
+      for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
+        if (!this.isUrlSafe(currentUrl)) {
+          throw new Error(`SSRF: blocked redirect to ${currentUrl}`);
+        }
+        const candidate = await fetch(currentUrl, safeOptions);
+        const isRedirect =
+          candidate.type === 'opaqueredirect' ||
+          (candidate.status >= 300 && candidate.status < 400);
+        if (isRedirect) {
+          const loc = candidate.headers.get('Location');
+          if (!loc) {
+            // Opaque redirect with no readable Location: fail closed. The
+            // alternative (return the opaque response to the worker) leaks
+            // a "redirect happened to somewhere unknown" — better to error
+            // than to silently let an SSRF attempt look like a normal
+            // empty 0-status response.
+            if (candidate.type === 'opaqueredirect') {
+              throw new Error(
+                'SSRF: blocked opaque redirect with unreadable Location header'
+              );
+            }
+            response = candidate;
+            break;
+          }
+          // Resolve relative redirects against the URL we just fetched.
+          currentUrl = new URL(loc, currentUrl).toString();
+          continue;
+        }
+        response = candidate;
+        break;
+      }
+      if (!response) {
+        throw new Error('SSRF: redirect loop exceeded MAX_REDIRECTS');
+      }
       // Cap body read to MAX_FETCH_BODY_BYTES on BOTH branches to prevent a
       // malicious endpoint from OOMing the renderer with an unbounded stream.
       //
@@ -545,12 +697,10 @@ export class WorkerPlugin implements Plugin {
    */
   private handleError = (event: ErrorEvent) => {
     logger.error(`[WorkerPlugin:${this.id}] Worker error:`, event.message);
-    // Reject all pending requests
-    for (const [, pending] of this.pending) {
-      clearTimeout(pending.timer);
-      pending.reject(new Error(`Worker error: ${event.message}`));
-    }
-    this.pending.clear();
+    // Reject ALL pending requests and clear timers in one shot — same M12
+    // rationale as in `sendRequest`: orphaned timers would call
+    // `terminateWorker()` on the next-created worker.
+    this.cleanupPending(`Worker error: ${event.message}`);
     this.terminateWorker();
   };
 
@@ -634,12 +784,9 @@ export class WorkerPlugin implements Plugin {
    * Clean up resources when the plugin is unloaded.
    */
   destroy(): void {
-    // Reject all pending requests
-    for (const [, pending] of this.pending) {
-      clearTimeout(pending.timer);
-      pending.reject(new Error('Plugin destroyed'));
-    }
-    this.pending.clear();
+    // Reject all pending requests via the shared helper (same semantics as
+    // the timeout / error paths — see M12).
+    this.cleanupPending('Plugin destroyed');
     this.terminateWorker();
   }
 }

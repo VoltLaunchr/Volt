@@ -18,7 +18,7 @@ export const openSettingsWindow = async (): Promise<void> => {
   }
   // Create new settings window
   const settingsWindow = new WebviewWindow('settings', {
-    url: 'settings.html',
+    url: 'index.html',
     title: 'Volt Settings',
     width: 900,
     height: 600,
@@ -34,6 +34,36 @@ export const openSettingsWindow = async (): Promise<void> => {
   });
   settingsWindow.once('tauri://error', (e) => {
     logger.error('Failed to create settings window:', e);
+  });
+};
+
+/**
+ * Opens (or focuses) the standalone System Monitor window.
+ */
+export const openSystemMonitorWindow = async (): Promise<void> => {
+  const existing = await WebviewWindow.getByLabel('system-monitor');
+  if (existing) {
+    await existing.show();
+    await existing.setFocus();
+    return;
+  }
+  const win = new WebviewWindow('system-monitor', {
+    url: 'index.html',
+    title: 'Volt System Monitor',
+    width: 1060,
+    height: 720,
+    minWidth: 800,
+    minHeight: 560,
+    resizable: true,
+    center: true,
+    decorations: false,
+    transparent: false,
+    alwaysOnTop: false,
+    skipTaskbar: false,
+    focus: true,
+  });
+  win.once('tauri://error', (e) => {
+    logger.error('Failed to create system-monitor window:', e);
   });
 };
 

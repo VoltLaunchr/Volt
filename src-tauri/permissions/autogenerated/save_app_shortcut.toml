@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-save-app-shortcut"
+description = "Enables the save_app_shortcut command without any pre-configured scope."
+commands.allow = ["save_app_shortcut"]
+
+[[permission]]
+identifier = "deny-save-app-shortcut"
+description = "Denies the save_app_shortcut command without any pre-configured scope."
+commands.deny = ["save_app_shortcut"]

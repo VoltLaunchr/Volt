@@ -74,7 +74,7 @@ export function parseQuery(raw: string): ParsedQuery {
       operators.ext = val.replace(/^\./, ''); // strip leading dot
       hasOperators = true;
     } else if (operator === 'in') {
-      // Expand ~ to home dir (handled by backend, pass as-is)
+      // Pass dir value as-is; backend expands ~ to the home directory
       operators.dir = val;
       hasOperators = true;
     } else if (operator === 'size') {

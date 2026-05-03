@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-update-plugin-settings"
+description = "Enables the update_plugin_settings command without any pre-configured scope."
+commands.allow = ["update_plugin_settings"]
+
+[[permission]]
+identifier = "deny-update-plugin-settings"
+description = "Denies the update_plugin_settings command without any pre-configured scope."
+commands.deny = ["update_plugin_settings"]

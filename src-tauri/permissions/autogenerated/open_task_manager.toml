@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-open-task-manager"
+description = "Enables the open_task_manager command without any pre-configured scope."
+commands.allow = ["open_task_manager"]
+
+[[permission]]
+identifier = "deny-open-task-manager"
+description = "Denies the open_task_manager command without any pre-configured scope."
+commands.deny = ["open_task_manager"]

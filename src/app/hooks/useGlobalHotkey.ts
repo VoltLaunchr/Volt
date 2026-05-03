@@ -29,6 +29,7 @@ interface UseGlobalHotkeyOptions {
   onOpenCalculator: () => void;
   onOpenHelp: () => void;
   onTogglePreview: () => void;
+  onOpenActionsMenu: (result: SearchResult) => void;
 }
 
 export interface UseGlobalHotkeyResult {
@@ -54,6 +55,7 @@ export function useGlobalHotkey({
   onOpenCalculator,
   onOpenHelp,
   onTogglePreview,
+  onOpenActionsMenu,
 }: UseGlobalHotkeyOptions): UseGlobalHotkeyResult {
   const { setSelectedIndex, setQuery: setSearchQuery, setResults } = useSearchStore.getState();
   // Setup global keyboard shortcuts (F1 / ? for help)
@@ -110,11 +112,15 @@ export function useGlobalHotkey({
         return;
       }
 
-      // --- Ctrl+K: Clear input ---
+      // --- Ctrl+K: Open actions menu for selected result (falls back to clear if nothing selected) ---
       if (e.key === 'k' && e.ctrlKey && !e.shiftKey && !e.altKey) {
         e.preventDefault();
-        setSearchQuery('');
-        setResults([]);
+        if (selectedResult) {
+          onOpenActionsMenu(selectedResult);
+        } else {
+          setSearchQuery('');
+          setResults([]);
+        }
         return;
       }
 
@@ -146,10 +152,22 @@ export function useGlobalHotkey({
         return;
       }
 
-      // --- Ctrl+P: Toggle preview panel ---
+      // --- Ctrl+N: Navigate to next result (Emacs-style, alias for ArrowDown) ---
+      if (e.key === 'n' && e.ctrlKey && !e.shiftKey && !e.altKey) {
+        e.preventDefault();
+        setSelectedIndex((prev) => (prev < maxIndex ? prev + 1 : prev));
+        return;
+      }
+
+      // --- Ctrl+P: Navigate to previous result (Emacs-style, alias for ArrowUp) ---
+      // When results are shown, Ctrl+P moves up the list; otherwise it toggles the preview panel.
       if (e.key === 'p' && e.ctrlKey && !e.shiftKey && !e.altKey) {
         e.preventDefault();
-        onTogglePreview();
+        if (!isShowingSuggestions && results.length > 0) {
+          setSelectedIndex((prev) => (prev > 0 ? prev - 1 : prev));
+        } else {
+          onTogglePreview();
+        }
         return;
       }
 
@@ -161,7 +179,7 @@ export function useGlobalHotkey({
             ? (selectedResult.data as FileInfo).path
             : (selectedResult.data as AppInfo).path;
         const dirPath = getDirectoryPath(path);
-        applicationService.launchApplication(dirPath);
+        invoke<void>('open_path', { path: dirPath }).catch((err) => logger.error(err));
         return;
       }
 
@@ -219,7 +237,7 @@ export function useGlobalHotkey({
         // Remove from history if it's an app or file
         if (selectedResult.type === SearchResultType.Application) {
           const appData = selectedResult.data as AppInfo;
-          invoke('remove_from_history', { path: appData.path }).catch((err) => logger.error(err));
+          invoke<void>('remove_from_history', { path: appData.path }).catch((err) => logger.error(err));
           // Remove from current results
           setResults(results.filter((r) => r.id !== selectedResult.id));
         }
@@ -238,7 +256,7 @@ export function useGlobalHotkey({
             selectedResult.type === SearchResultType.File
               ? (selectedResult.data as FileInfo).path
               : (selectedResult.data as AppInfo).path;
-          invoke('launch_application', { path, asAdmin: true })
+          invoke<void>('launch_application', { path, asAdmin: true })
             .then(() => {
               if (closeOnLaunch) {
                 hideWindow();
@@ -349,6 +367,7 @@ export function useGlobalHotkey({
       onOpenSettings,
       onOpenHelp,
       onTogglePreview,
+      onOpenActionsMenu,
     ]
   );
 

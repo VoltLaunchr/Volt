@@ -1,7 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { Search, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import './SearchBar.css';
+import { cn } from '@/lib/utils';
 
 interface SearchBarProps {
   value: string;
@@ -13,7 +13,7 @@ interface SearchBarProps {
   selectedIndex?: number;
 }
 
-export const SearchBar: React.FC<SearchBarProps> = ({
+export function SearchBar({
   value,
   onChange,
   onKeyDown,
@@ -21,7 +21,7 @@ export const SearchBar: React.FC<SearchBarProps> = ({
   autoFocus = true,
   resultCount,
   selectedIndex,
-}) => {
+}: SearchBarProps): React.JSX.Element {
   const { t } = useTranslation('common');
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -39,15 +39,15 @@ export const SearchBar: React.FC<SearchBarProps> = ({
   })();
 
   return (
-    <div className="search-bar">
-      <div className="search-icon">
+    <div className={cn('relative flex items-center h-[60px] px-4 gap-3 border-b border-hairline shrink-0')}>
+      <div className="text-mute shrink-0">
         <Search size={20} strokeWidth={2} />
       </div>
       <input
         ref={inputRef}
         id="search-input"
         type="text"
-        className="search-input"
+        className="flex-1 bg-transparent text-on-dark text-[15px] placeholder:text-ash outline-none caret-on-dark"
         value={value}
         onChange={(e) => onChange(e.target.value)}
         onKeyDown={onKeyDown}
@@ -66,7 +66,11 @@ export const SearchBar: React.FC<SearchBarProps> = ({
         }
       />
       {value && (
-        <button className="clear-button" onClick={() => onChange('')} aria-label={t('search.clearSearch')}>
+        <button
+          className="shrink-0 text-ash hover:text-on-dark transition-colors p-1 rounded-xs cursor-pointer"
+          onClick={() => onChange('')}
+          aria-label={t('search.clearSearch')}
+        >
           <X size={16} strokeWidth={2} />
         </button>
       )}
@@ -76,4 +80,4 @@ export const SearchBar: React.FC<SearchBarProps> = ({
       </span>
     </div>
   );
-};
+}

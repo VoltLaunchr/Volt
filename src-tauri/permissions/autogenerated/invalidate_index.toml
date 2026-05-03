@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-invalidate-index"
+description = "Enables the invalidate_index command without any pre-configured scope."
+commands.allow = ["invalidate_index"]
+
+[[permission]]
+identifier = "deny-invalidate-index"
+description = "Denies the invalidate_index command without any pre-configured scope."
+commands.deny = ["invalidate_index"]

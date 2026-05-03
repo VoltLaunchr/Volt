@@ -72,7 +72,7 @@ export const applicationService = {
     const launchedAt = Date.now();
 
     try {
-      await invoke('launch_application', { path });
+      await invoke<void>('launch_application', { path });
       return {
         success: true,
         path,

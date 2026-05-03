@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-is-steam-installed"
+description = "Enables the is_steam_installed command without any pre-configured scope."
+commands.allow = ["is_steam_installed"]
+
+[[permission]]
+identifier = "deny-is-steam-installed"
+description = "Denies the is_steam_installed command without any pre-configured scope."
+commands.deny = ["is_steam_installed"]
