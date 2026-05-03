@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-center-window"
+description = "Enables the center_window command without any pre-configured scope."
+commands.allow = ["center_window"]
+
+[[permission]]
+identifier = "deny-center-window"
+description = "Denies the center_window command without any pre-configured scope."
+commands.deny = ["center_window"]

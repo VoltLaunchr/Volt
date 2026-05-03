@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-search-games"
+description = "Enables the search_games command without any pre-configured scope."
+commands.allow = ["search_games"]
+
+[[permission]]
+identifier = "deny-search-games"
+description = "Denies the search_games command without any pre-configured scope."
+commands.deny = ["search_games"]

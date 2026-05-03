@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-delete-clipboard-item"
+description = "Enables the delete_clipboard_item command without any pre-configured scope."
+commands.allow = ["delete_clipboard_item"]
+
+[[permission]]
+identifier = "deny-delete-clipboard-item"
+description = "Denies the delete_clipboard_item command without any pre-configured scope."
+commands.deny = ["delete_clipboard_item"]

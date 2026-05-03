@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-get-memory-usage"
+description = "Enables the get_memory_usage command without any pre-configured scope."
+commands.allow = ["get_memory_usage"]
+
+[[permission]]
+identifier = "deny-get-memory-usage"
+description = "Denies the get_memory_usage command without any pre-configured scope."
+commands.deny = ["get_memory_usage"]

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-get-pinned-apps"
+description = "Enables the get_pinned_apps command without any pre-configured scope."
+commands.allow = ["get_pinned_apps"]
+
+[[permission]]
+identifier = "deny-get-pinned-apps"
+description = "Denies the get_pinned_apps command without any pre-configured scope."
+commands.deny = ["get_pinned_apps"]

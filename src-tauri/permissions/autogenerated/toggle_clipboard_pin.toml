@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-toggle-clipboard-pin"
+description = "Enables the toggle_clipboard_pin command without any pre-configured scope."
+commands.allow = ["toggle_clipboard_pin"]
+
+[[permission]]
+identifier = "deny-toggle-clipboard-pin"
+description = "Denies the toggle_clipboard_pin command without any pre-configured scope."
+commands.deny = ["toggle_clipboard_pin"]

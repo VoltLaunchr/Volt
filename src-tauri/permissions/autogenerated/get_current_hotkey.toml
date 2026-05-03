@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-get-current-hotkey"
+description = "Enables the get_current_hotkey command without any pre-configured scope."
+commands.allow = ["get_current_hotkey"]
+
+[[permission]]
+identifier = "deny-get-current-hotkey"
+description = "Denies the get_current_hotkey command without any pre-configured scope."
+commands.deny = ["get_current_hotkey"]

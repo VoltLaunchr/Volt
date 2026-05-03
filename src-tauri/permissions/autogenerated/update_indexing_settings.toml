@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-update-indexing-settings"
+description = "Enables the update_indexing_settings command without any pre-configured scope."
+commands.allow = ["update_indexing_settings"]
+
+[[permission]]
+identifier = "deny-update-indexing-settings"
+description = "Denies the update_indexing_settings command without any pre-configured scope."
+commands.deny = ["update_indexing_settings"]

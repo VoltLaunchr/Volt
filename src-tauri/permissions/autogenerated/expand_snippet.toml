@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-expand-snippet"
+description = "Enables the expand_snippet command without any pre-configured scope."
+commands.allow = ["expand_snippet"]
+
+[[permission]]
+identifier = "deny-expand-snippet"
+description = "Denies the expand_snippet command without any pre-configured scope."
+commands.deny = ["expand_snippet"]

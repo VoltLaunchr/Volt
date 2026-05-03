@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-update-shortcuts-settings"
+description = "Enables the update_shortcuts_settings command without any pre-configured scope."
+commands.allow = ["update_shortcuts_settings"]
+
+[[permission]]
+identifier = "deny-update-shortcuts-settings"
+description = "Denies the update_shortcuts_settings command without any pre-configured scope."
+commands.deny = ["update_shortcuts_settings"]

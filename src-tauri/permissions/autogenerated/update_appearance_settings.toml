@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-update-appearance-settings"
+description = "Enables the update_appearance_settings command without any pre-configured scope."
+commands.allow = ["update_appearance_settings"]
+
+[[permission]]
+identifier = "deny-update-appearance-settings"
+description = "Denies the update_appearance_settings command without any pre-configured scope."
+commands.deny = ["update_appearance_settings"]

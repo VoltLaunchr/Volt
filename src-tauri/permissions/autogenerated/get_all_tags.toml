@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-get-all-tags"
+description = "Enables the get_all_tags command without any pre-configured scope."
+commands.allow = ["get_all_tags"]
+
+[[permission]]
+identifier = "deny-get-all-tags"
+description = "Denies the get_all_tags command without any pre-configured scope."
+commands.deny = ["get_all_tags"]

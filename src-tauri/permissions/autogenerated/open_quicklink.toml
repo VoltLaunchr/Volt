@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-open-quicklink"
+description = "Enables the open_quicklink command without any pre-configured scope."
+commands.allow = ["open_quicklink"]
+
+[[permission]]
+identifier = "deny-open-quicklink"
+description = "Denies the open_quicklink command without any pre-configured scope."
+commands.deny = ["open_quicklink"]

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-refresh-dev-extension"
+description = "Enables the refresh_dev_extension command without any pre-configured scope."
+commands.allow = ["refresh_dev_extension"]
+
+[[permission]]
+identifier = "deny-refresh-dev-extension"
+description = "Denies the refresh_dev_extension command without any pre-configured scope."
+commands.deny = ["refresh_dev_extension"]

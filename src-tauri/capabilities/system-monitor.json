@@ -1,0 +1,22 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "system-monitor-capability",
+  "description": "Minimal permissions for the system monitor window. Only invokes get_system_metrics_v2, kill_process_by_pid, and open_task_manager. core:window:allow-close is added explicitly so getCurrentWindow().close() in the React tree works without needing core:window:default's full surface.",
+  "windows": ["system-monitor"],
+  "permissions": [
+    "core:default",
+    "core:window:default",
+    "core:webview:default",
+    "core:window:allow-show",
+    "core:window:allow-hide",
+    "core:window:allow-close",
+    "core:window:allow-minimize",
+    "core:window:allow-set-focus",
+    "core:window:allow-start-dragging",
+    "core:webview:allow-create-webview-window",
+
+    "allow-get-system-metrics-v2",
+    "allow-kill-process-by-pid",
+    "allow-open-task-manager"
+  ]
+}

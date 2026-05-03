@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-disable-autostart"
+description = "Enables the disable_autostart command without any pre-configured scope."
+commands.allow = ["disable_autostart"]
+
+[[permission]]
+identifier = "deny-disable-autostart"
+description = "Denies the disable_autostart command without any pre-configured scope."
+commands.deny = ["disable_autostart"]

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-launch-app"
+description = "Enables the launch_app command without any pre-configured scope."
+commands.allow = ["launch_app"]
+
+[[permission]]
+identifier = "deny-launch-app"
+description = "Denies the launch_app command without any pre-configured scope."
+commands.deny = ["launch_app"]

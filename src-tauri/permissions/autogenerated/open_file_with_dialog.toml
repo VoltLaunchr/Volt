@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-open-file-with-dialog"
+description = "Enables the open_file_with_dialog command without any pre-configured scope."
+commands.allow = ["open_file_with_dialog"]
+
+[[permission]]
+identifier = "deny-open-file-with-dialog"
+description = "Denies the open_file_with_dialog command without any pre-configured scope."
+commands.deny = ["open_file_with_dialog"]

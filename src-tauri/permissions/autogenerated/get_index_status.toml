@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-get-index-status"
+description = "Enables the get_index_status command without any pre-configured scope."
+commands.allow = ["get_index_status"]
+
+[[permission]]
+identifier = "deny-get-index-status"
+description = "Denies the get_index_status command without any pre-configured scope."
+commands.deny = ["get_index_status"]

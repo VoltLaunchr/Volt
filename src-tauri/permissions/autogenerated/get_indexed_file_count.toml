@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-get-indexed-file-count"
+description = "Enables the get_indexed_file_count command without any pre-configured scope."
+commands.allow = ["get_indexed_file_count"]
+
+[[permission]]
+identifier = "deny-get-indexed-file-count"
+description = "Denies the get_indexed_file_count command without any pre-configured scope."
+commands.deny = ["get_indexed_file_count"]

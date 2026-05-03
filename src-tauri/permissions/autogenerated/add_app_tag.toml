@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-add-app-tag"
+description = "Enables the add_app_tag command without any pre-configured scope."
+commands.allow = ["add_app_tag"]
+
+[[permission]]
+identifier = "deny-add-app-tag"
+description = "Denies the add_app_tag command without any pre-configured scope."
+commands.deny = ["add_app_tag"]

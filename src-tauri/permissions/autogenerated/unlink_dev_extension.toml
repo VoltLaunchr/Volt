@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-unlink-dev-extension"
+description = "Enables the unlink_dev_extension command without any pre-configured scope."
+commands.allow = ["unlink_dev_extension"]
+
+[[permission]]
+identifier = "deny-unlink-dev-extension"
+description = "Denies the unlink_dev_extension command without any pre-configured scope."
+commands.deny = ["unlink_dev_extension"]

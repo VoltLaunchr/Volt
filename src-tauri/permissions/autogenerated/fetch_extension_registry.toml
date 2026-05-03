@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-fetch-extension-registry"
+description = "Enables the fetch_extension_registry command without any pre-configured scope."
+commands.allow = ["fetch_extension_registry"]
+
+[[permission]]
+identifier = "deny-fetch-extension-registry"
+description = "Denies the fetch_extension_registry command without any pre-configured scope."
+commands.deny = ["fetch_extension_registry"]

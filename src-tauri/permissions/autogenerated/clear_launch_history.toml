@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-clear-launch-history"
+description = "Enables the clear_launch_history command without any pre-configured scope."
+commands.allow = ["clear_launch_history"]
+
+[[permission]]
+identifier = "deny-clear-launch-history"
+description = "Denies the clear_launch_history command without any pre-configured scope."
+commands.deny = ["clear_launch_history"]

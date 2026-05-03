@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-execute-shell-command-streaming"
+description = "Enables the execute_shell_command_streaming command without any pre-configured scope."
+commands.allow = ["execute_shell_command_streaming"]
+
+[[permission]]
+identifier = "deny-execute-shell-command-streaming"
+description = "Denies the execute_shell_command_streaming command without any pre-configured scope."
+commands.deny = ["execute_shell_command_streaming"]

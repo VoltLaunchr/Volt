@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-update-show-on-screen"
+description = "Enables the update_show_on_screen command without any pre-configured scope."
+commands.allow = ["update_show_on_screen"]
+
+[[permission]]
+identifier = "deny-update-show-on-screen"
+description = "Denies the update_show_on_screen command without any pre-configured scope."
+commands.deny = ["update_show_on_screen"]

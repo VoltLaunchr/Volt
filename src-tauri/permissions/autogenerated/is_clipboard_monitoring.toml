@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-is-clipboard-monitoring"
+description = "Enables the is_clipboard_monitoring command without any pre-configured scope."
+commands.allow = ["is_clipboard_monitoring"]
+
+[[permission]]
+identifier = "deny-is-clipboard-monitoring"
+description = "Denies the is_clipboard_monitoring command without any pre-configured scope."
+commands.deny = ["is_clipboard_monitoring"]

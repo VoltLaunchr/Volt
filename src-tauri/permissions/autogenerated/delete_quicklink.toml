@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-delete-quicklink"
+description = "Enables the delete_quicklink command without any pre-configured scope."
+commands.allow = ["delete_quicklink"]
+
+[[permission]]
+identifier = "deny-delete-quicklink"
+description = "Denies the delete_quicklink command without any pre-configured scope."
+commands.deny = ["delete_quicklink"]

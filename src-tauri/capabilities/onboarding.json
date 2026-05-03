@@ -1,0 +1,24 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "onboarding-capability",
+  "description": "Minimal permissions for the first-launch onboarding window. Calls load_settings, update_general_settings, update_hotkey_settings, plus auth_login + auth_get_session for first-launch sign-in. opener for any external links shown in the onboarding flow.",
+  "windows": ["onboarding"],
+  "permissions": [
+    "core:default",
+    "core:window:default",
+    "core:webview:default",
+    "core:window:allow-show",
+    "core:window:allow-hide",
+    "core:window:allow-close",
+    "core:window:allow-set-focus",
+    "core:window:allow-start-dragging",
+    "core:webview:allow-create-webview-window",
+    "opener:default",
+
+    "allow-load-settings",
+    "allow-update-general-settings",
+    "allow-update-hotkey-settings",
+    "allow-auth-login",
+    "allow-auth-get-session"
+  ]
+}

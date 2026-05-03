@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-sync-push"
+description = "Enables the sync_push command without any pre-configured scope."
+commands.allow = ["sync_push"]
+
+[[permission]]
+identifier = "deny-sync-push"
+description = "Denies the sync_push command without any pre-configured scope."
+commands.deny = ["sync_push"]
