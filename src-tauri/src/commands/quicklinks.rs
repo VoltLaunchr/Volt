@@ -145,12 +145,46 @@ pub async fn save_quicklink(
     Ok(ql)
 }
 
+/// Validate a URL-type quicklink target.
+///
+/// The URL must parse and use one of `ALLOWED_URL_SCHEMES`. Used both on save
+/// and at sync-pull time (to reject malicious rows pushed via Supabase REST).
+pub(crate) fn validate_url_target(target: &str) -> VoltResult<()> {
+    let parsed = url::Url::parse(target)
+        .map_err(|e| VoltError::InvalidConfig(format!("Invalid URL '{}': {}", target, e)))?;
+    if !ALLOWED_URL_SCHEMES.contains(&parsed.scheme()) {
+        return Err(VoltError::InvalidConfig(format!(
+            "URL scheme '{}' not allowed (only {} are permitted)",
+            parsed.scheme(),
+            ALLOWED_URL_SCHEMES.join(", ")
+        )));
+    }
+    Ok(())
+}
+
+/// Validate a folder-type quicklink target. Lightweight: non-empty + no shell
+/// metacharacters (we don't require the path to exist on this device, since
+/// synced rows may reference paths only valid on the source device).
+pub(crate) fn validate_folder_target(target: &str) -> VoltResult<()> {
+    if target.trim().is_empty() {
+        return Err(VoltError::InvalidConfig(
+            "Folder path cannot be empty".into(),
+        ));
+    }
+    if target.chars().any(|c| SHELL_METACHARS.contains(&c)) {
+        return Err(VoltError::InvalidConfig(
+            "Folder path contains forbidden shell metacharacters".into(),
+        ));
+    }
+    Ok(())
+}
+
 /// Validate a command-type quicklink target.
 ///
 /// The program (first whitespace-separated token) must be an absolute path to
 /// an existing file. Shell metacharacters are also rejected (same list used at
 /// open time).
-fn validate_command_target(target: &str) -> VoltResult<()> {
+pub(crate) fn validate_command_target(target: &str) -> VoltResult<()> {
     if target.trim().is_empty() {
         return Err(VoltError::InvalidConfig(
             "Command target cannot be empty".into(),

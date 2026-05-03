@@ -4,13 +4,23 @@
 //! All commands gate on `profiles.tier = 'premium'`.
 
 use crate::commands::auth;
-use crate::commands::quicklinks::{Quicklink, QuicklinkState};
+use crate::commands::quicklinks::{
+    validate_command_target, validate_folder_target, validate_url_target, Quicklink, QuicklinkState,
+};
 use crate::commands::snippets::{Snippet, SnippetState};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Mutex;
 use tauri::State;
-use tracing::info;
+use tracing::{info, warn};
+
+// Sync-pull row sanity caps (applied to remote rows before insertion).
+// A cross-device attacker with a leaked access token could write rows directly
+// via Supabase REST; these limits + per-row validators prevent persisting them.
+const MAX_SNIPPET_TRIGGER_LEN: usize = 64;
+const MAX_SNIPPET_CONTENT_LEN: usize = 100_000;
+const MAX_SNIPPET_ID_LEN: usize = 128;
+const MAX_QUICKLINK_FIELD_LEN: usize = 4096;
 
 const SUPABASE_URL: &str = env!("SUPABASE_URL");
 const SUPABASE_ANON_KEY: &str = env!("SUPABASE_ANON_KEY");
@@ -50,13 +60,34 @@ struct SyncRow {
     data: serde_json::Value,
 }
 
-/// Validate session and check premium tier. Returns the active session.
+/// Premium gate. Prefers `tier` JWT claim if upstream Supabase auth hook
+/// publishes one (defense in depth — avoids the `profiles.tier` UPDATE-via-REST
+/// privilege escalation). Falls back to REST `/profiles?id=eq.<uid>` for
+/// backward compat. Migration path: configure a Supabase auth hook to add
+/// `tier` to access-token claims, then this REST fallback can be removed.
 async fn require_premium() -> Result<auth::AuthSession, String> {
     let session = auth::auth_get_session()
         .await
         .map_err(|e| e.to_string())?
         .ok_or_else(|| "not_logged_in".to_string())?;
 
+    // Defense in depth: if the access token carries a verified `tier`
+    // claim, trust it. The renderer cannot mint a signed JWT, so a claim
+    // that survives JWKS signature verification is authoritative — and
+    // unlike a REST `/profiles?id=eq.<uid>` lookup, it's not vulnerable to
+    // a leaked anon key + `profiles.tier` UPDATE if upstream RLS ever
+    // drifts.
+    if let Ok(claims) = auth::validate_access_token(&session.access_token).await
+        && let Some(ref tier) = claims.tier
+    {
+        let tier = tier.as_str();
+        if matches!(tier, "premium" | "lifetime" | "developer" | "admin") {
+            return Ok(session);
+        }
+        return Err("premium_required".to_string());
+    }
+
+    // Fallback (current behavior) — REST profile lookup.
     let profile = auth::auth_get_profile()
         .await
         .map_err(|e| e.to_string())?
@@ -137,6 +168,61 @@ async fn fetch(
     Ok(rows.into_iter().next().map(|r| r.data))
 }
 
+/// Validate a single remote snippet row pulled from Supabase.
+///
+/// Defends against a leaked access token / cross-device attacker writing
+/// pathological rows directly via Supabase REST.
+fn validate_remote_snippet(s: &Snippet) -> Result<(), String> {
+    if s.id.trim().is_empty() {
+        return Err("empty id".into());
+    }
+    if s.id.len() > MAX_SNIPPET_ID_LEN {
+        return Err(format!("id too long ({} chars)", s.id.len()));
+    }
+    if s.trigger.trim().is_empty() {
+        return Err("empty trigger".into());
+    }
+    if s.trigger.len() > MAX_SNIPPET_TRIGGER_LEN {
+        return Err(format!(
+            "trigger too long ({} chars, max {})",
+            s.trigger.len(),
+            MAX_SNIPPET_TRIGGER_LEN
+        ));
+    }
+    if s.content.len() > MAX_SNIPPET_CONTENT_LEN {
+        return Err(format!(
+            "content too long ({} bytes, max {})",
+            s.content.len(),
+            MAX_SNIPPET_CONTENT_LEN
+        ));
+    }
+    Ok(())
+}
+
+/// Validate a single remote quicklink row pulled from Supabase. Reuses the
+/// same validators applied at save time so that a maliciously injected row
+/// (e.g. `link_type="command"` with a piped shell payload) is rejected
+/// before it ever reaches local state.
+fn validate_remote_quicklink(q: &Quicklink) -> Result<(), String> {
+    if q.id.trim().is_empty() {
+        return Err("empty id".into());
+    }
+    if q.id.len() > MAX_QUICKLINK_FIELD_LEN
+        || q.name.len() > MAX_QUICKLINK_FIELD_LEN
+        || q.shortcut.len() > MAX_QUICKLINK_FIELD_LEN
+        || q.target.len() > MAX_QUICKLINK_FIELD_LEN
+    {
+        return Err("field exceeds max length".into());
+    }
+    match q.link_type.as_str() {
+        "command" => validate_command_target(&q.target).map_err(|e| e.to_string())?,
+        "url" => validate_url_target(&q.target).map_err(|e| e.to_string())?,
+        "folder" => validate_folder_target(&q.target).map_err(|e| e.to_string())?,
+        other => return Err(format!("unknown link_type={}", other)),
+    }
+    Ok(())
+}
+
 // ---------------------------------------------------------------------------
 // Tauri commands
 // ---------------------------------------------------------------------------
@@ -197,7 +283,17 @@ pub async fn sync_pull(
         let mut merged: HashMap<String, Snippet> =
             local.into_iter().map(|s| (s.id.clone(), s)).collect();
 
+        let mut snip_accepted = 0usize;
+        let mut snip_rejected = 0usize;
         for remote_snippet in remote {
+            if let Err(reason) = validate_remote_snippet(&remote_snippet) {
+                warn!(
+                    "sync_pull: rejecting snippet id={} reason={}",
+                    remote_snippet.id, reason
+                );
+                snip_rejected += 1;
+                continue;
+            }
             merged
                 .entry(remote_snippet.id.clone())
                 .and_modify(|local_s| {
@@ -206,7 +302,12 @@ pub async fn sync_pull(
                     }
                 })
                 .or_insert(remote_snippet);
+            snip_accepted += 1;
         }
+        info!(
+            "sync_pull snippets: accepted={} rejected={}",
+            snip_accepted, snip_rejected
+        );
 
         snippet_state.replace_all(merged)?;
     }
@@ -216,8 +317,25 @@ pub async fn sync_pull(
         let remote: Vec<Quicklink> = serde_json::from_value(data)
             .map_err(|e| format!("parse remote quicklinks: {}", e))?;
 
-        let map: HashMap<String, Quicklink> =
-            remote.into_iter().map(|q| (q.id.clone(), q)).collect();
+        let mut map: HashMap<String, Quicklink> = HashMap::new();
+        let mut ql_accepted = 0usize;
+        let mut ql_rejected = 0usize;
+        for ql in remote {
+            if let Err(reason) = validate_remote_quicklink(&ql) {
+                warn!(
+                    "sync_pull: rejecting quicklink id={} reason={}",
+                    ql.id, reason
+                );
+                ql_rejected += 1;
+                continue;
+            }
+            map.insert(ql.id.clone(), ql);
+            ql_accepted += 1;
+        }
+        info!(
+            "sync_pull quicklinks: accepted={} rejected={}",
+            ql_accepted, ql_rejected
+        );
         quicklink_state.replace_all(map)?;
     }
 
