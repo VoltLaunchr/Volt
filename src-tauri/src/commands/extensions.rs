@@ -129,6 +129,16 @@ pub struct InstalledExtensionsState {
     pub extensions: Vec<InstalledExtension>,
 }
 
+/// Server-side allowlist of extension permission identifiers.
+///
+/// Mirrors the frontend `EXTENSION_PERMISSIONS` constant in
+/// `src/features/extensions/types/extension.types.ts`. Any new permission
+/// MUST be added in both places — the frontend needs the type/UI affordance,
+/// and the backend rejects anything not in this list at IPC time so a
+/// compromised frontend or replayed IPC cannot smuggle bogus / future /
+/// misspelled permissions into `granted_permissions`. (M1)
+const ALLOWED_PERMISSIONS: &[&str] = &["clipboard", "network", "notifications", "openUrl"];
+
 /// Validate extension ID to prevent path traversal attacks
 fn validate_extension_id(id: &str) -> VoltResult<()> {
     if id.is_empty() {
@@ -398,20 +408,49 @@ fn get_installed_state_path(app: &AppHandle) -> VoltResult<PathBuf> {
 /// Load installed extensions state from disk.
 ///
 /// Also verifies the detached HMAC signature (`installed.json.sig`). A
-/// missing or mismatching signature is logged but never causes load failure
-/// — see `extension_state_sig` for the rationale.
+/// missing signature is logged but never causes load failure — see
+/// `extension_state_sig` for the rationale.
+///
+/// On a `Mismatch` outcome we still load the JSON (so the launcher never
+/// bricks itself) BUT we fail-closed on permissions: every parsed
+/// extension's `granted_permissions` is reset to empty. The user is
+/// expected to re-grant deliberately. The tamper alert is set inside
+/// `read_state_with_outcome` so the UI banner surfaces. (H4)
 fn load_installed_state(app: &AppHandle) -> VoltResult<InstalledExtensionsState> {
     let state_path = get_installed_state_path(app)?;
 
-    let content = extension_state_sig::read_state_with_verification(&state_path, "installed")
+    let outcome = extension_state_sig::read_state_with_outcome(&state_path, "installed")
         .map_err(|e| VoltError::FileSystem(format!("Failed to read installed state: {}", e)))?;
 
-    let Some(content) = content else {
+    let Some((content, verify_outcome)) = outcome else {
         return Ok(InstalledExtensionsState::default());
     };
 
-    serde_json::from_str(&content)
-        .map_err(|e| VoltError::Serialization(format!("Failed to parse installed state: {}", e)))
+    let mut state: InstalledExtensionsState = serde_json::from_str(&content)
+        .map_err(|e| VoltError::Serialization(format!("Failed to parse installed state: {}", e)))?;
+
+    if matches!(
+        verify_outcome,
+        extension_state_sig::VerifyOutcome::Mismatch
+    ) {
+        // Fail closed: tampered file MUST NOT carry forward permissions.
+        // Other-process attackers running as the user can forge signatures
+        // (DPAPI is per-user) so the signature gate alone is insufficient.
+        // We log per-extension to leave a forensic trail of what was reset.
+        for ext in state.extensions.iter_mut() {
+            if !ext.granted_permissions.is_empty() {
+                warn!(
+                    "Extension '{}': clearing {} granted permissions due to installed-state \
+                     signature mismatch (H4 fail-closed). User must re-grant.",
+                    ext.manifest.id,
+                    ext.granted_permissions.len()
+                );
+            }
+            ext.granted_permissions = Vec::new();
+        }
+    }
+
+    Ok(state)
 }
 
 /// Save installed extensions state to disk, along with the HMAC signature.
@@ -672,7 +711,13 @@ pub async fn toggle_extension(
     }
 }
 
-/// Update granted permissions for an installed extension
+/// Update granted permissions for an installed extension.
+///
+/// Permission strings are validated against `ALLOWED_PERMISSIONS` server-side
+/// (M1). The frontend has its own type-level allowlist but the backend must
+/// not trust it: an attacker reaching this command via a compromised IPC,
+/// replay, or extension dev-tools can otherwise smuggle arbitrary strings
+/// into `granted_permissions` and persist them across signature roundtrips.
 #[tauri::command]
 pub async fn update_extension_permissions(
     app: AppHandle,
@@ -680,6 +725,19 @@ pub async fn update_extension_permissions(
     permissions: Vec<String>,
 ) -> VoltResult<()> {
     validate_extension_id(&extension_id)?;
+
+    // Reject anything not on the canonical permission list. We refuse the
+    // entire batch on a single bad entry rather than silently filtering —
+    // silently dropping would let a malicious caller probe for the exact
+    // shape of the allowlist while still partial-succeeding.
+    for perm in &permissions {
+        if !ALLOWED_PERMISSIONS.contains(&perm.as_str()) {
+            return Err(VoltError::InvalidConfig(format!(
+                "Unknown extension permission: '{}'. Allowed: {:?}",
+                perm, ALLOWED_PERMISSIONS
+            )));
+        }
+    }
 
     let mut state = load_installed_state(&app)?;
 

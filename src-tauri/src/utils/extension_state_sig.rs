@@ -405,13 +405,29 @@ pub fn read_state_with_verification(
     state_path: &Path,
     label: &str,
 ) -> std::io::Result<Option<String>> {
+    Ok(read_state_with_outcome(state_path, label)?.map(|(c, _)| c))
+}
+
+/// Same as [`read_state_with_verification`] but also returns the
+/// [`VerifyOutcome`] so callers can apply policy on a `Mismatch` (e.g.
+/// fail-closed reset of `granted_permissions`).
+///
+/// The outcome reflects the verification result; the contents are always
+/// returned as read from disk. Callers that wish to fail-closed must
+/// post-process the deserialized struct themselves — see `commands/
+/// extensions.rs::load_installed_state` for the H4 implementation.
+pub fn read_state_with_outcome(
+    state_path: &Path,
+    label: &str,
+) -> std::io::Result<Option<(String, VerifyOutcome)>> {
     if !state_path.exists() {
         return Ok(None);
     }
 
     let contents = std::fs::read_to_string(state_path)?;
+    let outcome = verify_state_signature(state_path, &contents);
 
-    match verify_state_signature(state_path, &contents) {
+    match outcome {
         VerifyOutcome::Ok => {
             debug!("{} state signature verified", label);
         }
@@ -425,23 +441,25 @@ pub fn read_state_with_verification(
             );
         }
         VerifyOutcome::Mismatch => {
-            // Proceed WITH the state on disk. Resetting it would be worse
-            // than trusting it, because legitimate edits (rare) shouldn't
-            // brick the launcher and an attacker who flipped a permission
-            // bit has already won at the file-system level anyway — we're
-            // only trying to detect & log.
+            // Surface the warning AND set the process-wide tamper flag so
+            // the UI banner shows up. The caller (commands/extensions.rs)
+            // is expected to fail-closed by clearing `granted_permissions`
+            // for every entry it parses out of these contents — we never
+            // refuse to load (that would brick the launcher), but a
+            // tampered file MUST NOT carry forward permissions.
             warn!(
                 "{} state signature MISMATCH for {:?} — file may have been modified externally. \
-                 Loading as-is; consider reviewing granted permissions.",
+                 Granted permissions will be reset; reviewing extensions is recommended.",
                 label, state_path
             );
+            mark_tamper_detected();
         }
         VerifyOutcome::KeyUnavailable => {
             // One-time warning already emitted from `load_or_create_key`.
         }
     }
 
-    Ok(Some(contents))
+    Ok(Some((contents, outcome)))
 }
 
 #[cfg(test)]
@@ -476,6 +494,44 @@ mod tests {
             tmp_path(sig),
             PathBuf::from("/tmp/extensions/installed.json.sig.tmp")
         );
+    }
+
+    /// `read_state_with_outcome` must surface the underlying VerifyOutcome
+    /// so commands can implement fail-closed policy (H4). For a state file
+    /// that has no `.sig` companion the outcome is `NoSignature` and the
+    /// contents are returned as read.
+    #[test]
+    fn read_state_with_outcome_returns_no_signature_when_sig_missing() {
+        use std::env;
+        use std::fs;
+
+        let dir = env::temp_dir().join(format!(
+            "volt_state_outcome_test_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        fs::create_dir_all(&dir).unwrap();
+        let json = dir.join("installed.json");
+        fs::write(&json, "{\"extensions\":[]}").unwrap();
+
+        let result = read_state_with_outcome(&json, "installed").unwrap();
+        let (contents, outcome) = result.expect("contents present");
+        assert_eq!(contents, "{\"extensions\":[]}");
+        // Without a `.sig` and depending on keyring availability we get
+        // either NoSignature or KeyUnavailable — both are benign and both
+        // are NOT Mismatch, which is what callers care about for H4.
+        assert!(
+            matches!(
+                outcome,
+                VerifyOutcome::NoSignature | VerifyOutcome::KeyUnavailable
+            ),
+            "expected NoSignature or KeyUnavailable, got {:?}",
+            outcome
+        );
+        let _ = fs::remove_dir_all(&dir);
     }
 
     /// Validates the atomic-write contract by checking the final on-disk
