@@ -513,6 +513,13 @@ export class WorkerPlugin implements Plugin {
     // Force credentials off — extensions must never carry app cookies.
     sanitized.credentials = 'omit';
 
+    // Force manual redirect handling so we can re-validate each hop's URL
+    // against `isUrlSafe` (SSRF defense). With the default `redirect: 'follow'`
+    // a server can return a 302 pointing at 127.0.0.1 / link-local addresses
+    // and the platform fetcher will silently follow it because only the
+    // INITIAL URL was validated. We loop in `handleFetchRequest` instead. (H3)
+    sanitized.redirect = 'manual';
+
     if (sanitized.headers) {
       if (sanitized.headers instanceof Headers) {
         const cleaned = new Headers();
@@ -584,7 +591,59 @@ export class WorkerPlugin implements Plugin {
 
     try {
       const safeOptions = this.sanitizeFetchOptions(payload.options);
-      const response = await fetch(payload.url, safeOptions);
+
+      // Manual redirect loop with re-validation at every hop. The initial URL
+      // was already approved by `isUrlSafe` above; we still re-check it inside
+      // the loop so a single code path enforces the policy for hop 0..N. (H3)
+      //
+      // Browser caveat: with `redirect: 'manual'` the response is "opaque
+      // redirect" — `status` is reported as 0 and `Location` may be hidden.
+      // In Tauri's WebView2/WKWebView the spec-compliant behavior tends to
+      // follow Chromium/Safari, where `headers.get('Location')` is null on
+      // opaque redirects. As a defense in depth we therefore detect *both*
+      // `type === 'opaqueredirect'` and a real 3xx (in case the runtime
+      // surfaces redirects transparently); when `Location` is null on an
+      // opaque redirect we fail closed rather than blindly returning the
+      // opaque body. The redirected request is still safer than the default
+      // `follow` behavior because the platform fetcher refuses to follow on
+      // its own under `manual`.
+      const MAX_REDIRECTS = 5;
+      let currentUrl = payload.url;
+      let response: Response | null = null;
+      for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
+        if (!this.isUrlSafe(currentUrl)) {
+          throw new Error(`SSRF: blocked redirect to ${currentUrl}`);
+        }
+        const candidate = await fetch(currentUrl, safeOptions);
+        const isRedirect =
+          candidate.type === 'opaqueredirect' ||
+          (candidate.status >= 300 && candidate.status < 400);
+        if (isRedirect) {
+          const loc = candidate.headers.get('Location');
+          if (!loc) {
+            // Opaque redirect with no readable Location: fail closed. The
+            // alternative (return the opaque response to the worker) leaks
+            // a "redirect happened to somewhere unknown" — better to error
+            // than to silently let an SSRF attempt look like a normal
+            // empty 0-status response.
+            if (candidate.type === 'opaqueredirect') {
+              throw new Error(
+                'SSRF: blocked opaque redirect with unreadable Location header'
+              );
+            }
+            response = candidate;
+            break;
+          }
+          // Resolve relative redirects against the URL we just fetched.
+          currentUrl = new URL(loc, currentUrl).toString();
+          continue;
+        }
+        response = candidate;
+        break;
+      }
+      if (!response) {
+        throw new Error('SSRF: redirect loop exceeded MAX_REDIRECTS');
+      }
       // Cap body read to MAX_FETCH_BODY_BYTES on BOTH branches to prevent a
       // malicious endpoint from OOMing the renderer with an unbounded stream.
       //
