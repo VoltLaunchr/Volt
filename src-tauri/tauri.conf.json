@@ -23,7 +23,7 @@
         "transparent": true,
         "alwaysOnTop": true,
         "skipTaskbar": true,
-        "visible": true,
+        "visible": false,
         "focus": true,
         "fullscreen": false,
         "label": "main"
