@@ -74,7 +74,7 @@ sha2 = "0.10"
 rand = "0.9"
 hex = "0.4"
 unicode-normalization = "0.1"
-jsonwebtoken = "9"
+jsonwebtoken = "10"
 
 [target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
 tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
