@@ -82,7 +82,7 @@ export class QuicklinksPlugin implements Plugin {
     // If cache hasn't loaded yet, trigger async load and optimistically return true
     // so the first query isn't dropped; match() will fetch fresh data anyway
     if (!this.cacheLoaded) {
-      this.refreshCache();
+      void this.refreshCache();
       return true;
     }
 

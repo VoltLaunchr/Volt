@@ -95,7 +95,7 @@ export function CalculatorView({
         onClose();
       } else if (e.key === 'Enter' && result) {
         e.preventDefault();
-        handleCopyResult();
+        void handleCopyResult();
       } else if (e.key === 'ArrowDown') {
         e.preventDefault();
         if (selectedHistoryIndex < history.length - 1) {
@@ -186,7 +186,9 @@ export function CalculatorView({
                 </div>
                 <button
                   className="flex items-center gap-2 px-3 py-2 bg-accent-blue-soft border border-[rgba(87,193,255,0.3)] rounded-md text-accent-blue text-sm font-semibold shrink-0 hover:bg-[rgba(87,193,255,0.25)] transition-colors"
-                  onClick={handleCopyResult}
+                  onClick={() => {
+                    void handleCopyResult();
+                  }}
                   title={t('view.copyResult')}
                 >
                   <span className="text-base">📋</span>

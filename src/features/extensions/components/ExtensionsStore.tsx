@@ -107,7 +107,7 @@ export function ExtensionsStore(_props: ExtensionsStoreProps): React.JSX.Element
 
   // Load extensions on mount
   useEffect(() => {
-    loadExtensions();
+    void loadExtensions();
   }, [loadExtensions]);
 
   const handleInstall = useCallback(async (extension: ExtensionInfo) => {
@@ -127,7 +127,7 @@ export function ExtensionsStore(_props: ExtensionsStoreProps): React.JSX.Element
       }
 
       // Increment download counter in Supabase (fire-and-forget)
-      extensionService.incrementDownload(extensionId);
+      void extensionService.incrementDownload(extensionId);
 
       // Optimistically bump the local counter
       setAvailableExtensions((prev) =>
@@ -319,7 +319,9 @@ export function ExtensionsStore(_props: ExtensionsStoreProps): React.JSX.Element
         </h2>
         <button
           className="w-7 h-7 rounded-sm bg-transparent border-0 text-mute cursor-pointer flex items-center justify-center transition-colors hover:bg-white/10 hover:text-on-dark"
-          onClick={loadExtensions}
+          onClick={() => {
+            void loadExtensions();
+          }}
           title={t('header.refresh')}
         >
           <RefreshCw size={18} />
@@ -422,8 +424,12 @@ export function ExtensionsStore(_props: ExtensionsStoreProps): React.JSX.Element
                 installed={isInstalled(ext.manifest.id)}
                 installing={installingIds.has(ext.manifest.id)}
                 uninstalling={uninstallingIds.has(ext.manifest.id)}
-                onInstall={() => handleInstall(ext)}
-                onUninstall={() => handleUninstall(ext.manifest.id)}
+                onInstall={() => {
+                  void handleInstall(ext);
+                }}
+                onUninstall={() => {
+                  void handleUninstall(ext.manifest.id);
+                }}
               />
             ))
           )
@@ -433,7 +439,9 @@ export function ExtensionsStore(_props: ExtensionsStoreProps): React.JSX.Element
             <div className="mb-4">
               <button
                 className="flex items-center justify-center gap-2 w-full px-3 py-3 bg-transparent border border-dashed border-accent-blue/30 rounded-md text-accent-blue text-sm font-medium cursor-pointer transition-colors hover:bg-accent-blue-soft hover:border-accent-blue disabled:opacity-50 disabled:cursor-not-allowed"
-                onClick={handleLinkDevExtension}
+                onClick={() => {
+                  void handleLinkDevExtension();
+                }}
                 disabled={linkingDev}
               >
                 {linkingDev ? (
@@ -461,9 +469,15 @@ export function ExtensionsStore(_props: ExtensionsStoreProps): React.JSX.Element
                   <DevExtensionCard
                     key={ext.manifest.id}
                     extension={ext}
-                    onToggle={(enabled) => handleToggleDevExtension(ext.manifest.id, enabled)}
-                    onUnlink={() => handleUnlinkDevExtension(ext.manifest.id)}
-                    onRefresh={() => handleRefreshDevExtension(ext.manifest.id)}
+                    onToggle={(enabled) => {
+                      void handleToggleDevExtension(ext.manifest.id, enabled);
+                    }}
+                    onUnlink={() => {
+                      void handleUnlinkDevExtension(ext.manifest.id);
+                    }}
+                    onRefresh={() => {
+                      void handleRefreshDevExtension(ext.manifest.id);
+                    }}
                   />
                 ))}
               </div>
@@ -483,8 +497,12 @@ export function ExtensionsStore(_props: ExtensionsStoreProps): React.JSX.Element
                     key={ext.manifest.id}
                     extension={ext}
                     uninstalling={uninstallingIds.has(ext.manifest.id)}
-                    onToggle={(enabled) => handleToggle(ext.manifest.id, enabled)}
-                    onUninstall={() => handleUninstall(ext.manifest.id)}
+                    onToggle={(enabled) => {
+                      void handleToggle(ext.manifest.id, enabled);
+                    }}
+                    onUninstall={() => {
+                      void handleUninstall(ext.manifest.id);
+                    }}
                   />
                 ))}
               </div>

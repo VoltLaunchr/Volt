@@ -22,7 +22,7 @@ export class EmojiPickerPlugin implements Plugin {
 
   constructor() {
     // Pre-load emoji data in background to avoid delays
-    this.preloadEmojis();
+    void this.preloadEmojis();
   }
 
   /**

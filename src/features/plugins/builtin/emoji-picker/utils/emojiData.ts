@@ -3,7 +3,6 @@
  * Uses emojibase for cross-platform Unicode emoji support
  */
 
-import type { Emoji } from 'emojibase';
 import { logger } from '../../../../../shared/utils/logger';
 import type { SearchableEmoji } from '../types';
 import { EMOJI_GROUPS } from '../types';
@@ -24,7 +23,7 @@ export async function loadEmojiData(): Promise<SearchableEmoji[]> {
     const { default: emojiData } = await import('emojibase-data/en/data.json');
 
     // Process and normalize emoji data
-    const processed = (emojiData as Emoji[])
+    const processed = emojiData
       .filter((emoji) => {
         // Filter out emojis without necessary data
         return (

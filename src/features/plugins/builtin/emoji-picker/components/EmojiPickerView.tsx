@@ -59,7 +59,7 @@ export function EmojiPickerView({
 
   // Load emoji data on mount
   useEffect(() => {
-    loadEmojiData().then((data) => {
+    void loadEmojiData().then((data) => {
       setAllEmojis(data);
       setIsLoading(false);
       updateDisplayedEmojis(data, selectedCategory, searchQuery);

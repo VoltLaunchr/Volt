@@ -142,7 +142,7 @@ export function useApplications(autoLoad = true): UseApplicationsReturn {
   // Auto-load on mount if enabled
   useEffect(() => {
     if (autoLoad) {
-      refresh();
+      void refresh();
     }
   }, [autoLoad, refresh]);
 

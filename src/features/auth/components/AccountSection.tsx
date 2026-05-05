@@ -95,7 +95,9 @@ export function AccountSection() {
           )}
 
           <button
-            onClick={handleLogin}
+            onClick={() => {
+              void handleLogin();
+            }}
             style={{
               ...btnBase,
               width: '100%',
@@ -176,7 +178,9 @@ export function AccountSection() {
 
         {/* Sign out */}
         <button
-          onClick={handleLogout}
+          onClick={() => {
+            void handleLogout();
+          }}
           disabled={isLoggingOut}
           style={{
             ...btnBase,

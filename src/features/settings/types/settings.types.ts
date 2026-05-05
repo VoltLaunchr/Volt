@@ -6,6 +6,8 @@
 export type ShowOnScreen = 'cursor' | 'focusedWindow' | 'primaryScreen';
 export type SearchSensitivity = 'low' | 'medium' | 'high';
 
+export type UpdateChannel = 'stable' | 'beta';
+
 export interface GeneralSettings {
   startWithWindows: boolean;
   maxResults: number;
@@ -16,6 +18,7 @@ export interface GeneralSettings {
   searchSensitivity: SearchSensitivity;
   showOnScreen: ShowOnScreen;
   autoCheckForUpdates: boolean;
+  updateChannel: UpdateChannel;
 }
 
 export interface CustomPosition {
@@ -133,6 +136,7 @@ export const DEFAULT_SETTINGS: Settings = {
     searchSensitivity: 'medium',
     showOnScreen: 'cursor',
     autoCheckForUpdates: true,
+    updateChannel: 'stable',
   },
   appearance: {
     theme: 'dark',

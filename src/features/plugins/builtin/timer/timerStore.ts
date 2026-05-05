@@ -230,7 +230,8 @@ class TimerStore {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (!raw) return;
 
-      const saved: ActiveTimer[] = JSON.parse(raw);
+      const parsed: unknown = JSON.parse(raw);
+      const saved: ActiveTimer[] = Array.isArray(parsed) ? (parsed as ActiveTimer[]) : [];
       const now = Date.now();
 
       for (const timer of saved) {

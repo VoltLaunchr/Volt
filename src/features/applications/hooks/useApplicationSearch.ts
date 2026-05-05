@@ -127,7 +127,7 @@ export function useApplicationSearch(
 
       // Debounce the actual search
       debounceTimerRef.current = setTimeout(() => {
-        performSearch(newQuery, searchId);
+        void performSearch(newQuery, searchId);
       }, debounceMs);
     },
     [debounceMs, performSearch]
@@ -159,7 +159,7 @@ export function useApplicationSearch(
   useEffect(() => {
     if (query.trim() && apps.length > 0) {
       const searchId = ++searchIdRef.current;
-      performSearch(query, searchId);
+      void performSearch(query, searchId);
     }
   }, [apps, query, performSearch]);
 

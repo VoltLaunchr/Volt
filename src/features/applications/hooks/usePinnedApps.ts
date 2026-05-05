@@ -131,7 +131,7 @@ export function usePinnedApps(autoLoad = true): UsePinnedAppsReturn {
   // Auto-load on mount
   useEffect(() => {
     if (autoLoad) {
-      refresh();
+      void refresh();
     }
   }, [autoLoad, refresh]);
 

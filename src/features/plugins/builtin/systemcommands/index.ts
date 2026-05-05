@@ -120,17 +120,18 @@ export class SystemCommandsPlugin implements Plugin {
         await this.quitApp();
         break;
       default:
-        console.warn(`Unknown system command: ${action}`);
+        console.warn(`Unknown system command: ${String(action)}`);
     }
   }
 
-  private async reloadApp(): Promise<void> {
+  private reloadApp(): Promise<void> {
     try {
       // Reload the frontend window
       window.location.reload();
     } catch (error) {
       logger.error('Failed to reload app:', error);
     }
+    return Promise.resolve();
   }
 
   private async openWebsite(): Promise<void> {
@@ -142,9 +143,10 @@ export class SystemCommandsPlugin implements Plugin {
     }
   }
 
-  private async openSettings(): Promise<void> {
+  private openSettings(): Promise<void> {
     // Trigger settings modal via custom event
     window.dispatchEvent(new CustomEvent('volt:open-settings'));
+    return Promise.resolve();
   }
 
   private async quitApp(): Promise<void> {

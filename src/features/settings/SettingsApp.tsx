@@ -33,7 +33,17 @@ import {
 import { Button, HotkeyCapture, Spinner, Toggle } from '../../shared/components/ui';
 import { logger } from '../../shared/utils/logger';
 import { applyTheme, settingsService } from './services/settingsService';
-import { checkForUpdate, downloadAndInstall, type UpdateInfo } from './services/updateService';
+import {
+  checkForUpdate,
+  downloadAndInstall,
+  deferredInstall,
+  hasPendingUpdate,
+  clearPendingUpdate,
+  snoozeUpdate,
+  skipVersion,
+  type UpdateInfo,
+  type UpdateChannel,
+} from './services/updateService';
 import {
   DEFAULT_SETTINGS,
   Settings,
@@ -77,6 +87,8 @@ export function SettingsApp() {
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
   const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
+  const [isDeferring, setIsDeferring] = useState(false);
+  const [deferralReady, setDeferralReady] = useState(() => hasPendingUpdate());
   const [updateProgress, setUpdateProgress] = useState(0);
   const [updateChecked, setUpdateChecked] = useState(false);
   const [updateError, setUpdateError] = useState<string | null>(null);
@@ -123,7 +135,7 @@ export function SettingsApp() {
   // Refresh index stats whenever the file-search panel is shown
   useEffect(() => {
     if (activeCategory === 'file-search') {
-      fetchIndexStats();
+      void fetchIndexStats();
     }
   }, [activeCategory, fetchIndexStats]);
 
@@ -144,7 +156,7 @@ export function SettingsApp() {
 
   // Load settings on mount
   useEffect(() => {
-    loadSettings();
+    void loadSettings();
   }, [loadSettings]);
 
   // Apply theme on mount
@@ -154,10 +166,12 @@ export function SettingsApp() {
 
   // Handle escape key to close window
   useEffect(() => {
-    const handleKeyDown = async (e: KeyboardEvent) => {
+    const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        const currentWindow = getCurrentWindow();
-        await currentWindow.close();
+        void (async () => {
+          const currentWindow = getCurrentWindow();
+          await currentWindow.close();
+        })();
       }
     };
 
@@ -177,7 +191,7 @@ export function SettingsApp() {
   // Load app shortcuts when switching to shortcuts category
   useEffect(() => {
     if (activeCategory === 'shortcuts') {
-      loadAppShortcuts();
+      void loadAppShortcuts();
     }
   }, [activeCategory, loadAppShortcuts]);
 
@@ -285,7 +299,7 @@ export function SettingsApp() {
         }
       }
 
-      i18n.changeLanguage(resolvedLng);
+      await i18n.changeLanguage(resolvedLng);
       await emit('volt://language-changed', { language: resolvedLng });
     },
     [updateSettings]
@@ -431,7 +445,9 @@ export function SettingsApp() {
           <select
             className="bg-surface-elevated border border-hairline rounded-md px-3 py-1.5 text-sm text-on-dark outline-none focus:border-hairline-strong cursor-pointer"
             value={settings.general.language}
-            onChange={(e) => handleLanguageChange(e.target.value as 'auto' | 'en' | 'fr')}
+            onChange={(e) => {
+              void handleLanguageChange(e.target.value as 'auto' | 'en' | 'fr');
+            }}
           >
             <option value="auto">{t('general.languageAuto')}</option>
             <option value="en">{t('general.languageEn')}</option>
@@ -453,7 +469,12 @@ export function SettingsApp() {
           <div className="flex flex-col gap-0.5">
             <span className="text-sm text-body">{t('general.openAtLogin')}</span>
           </div>
-          <Toggle checked={settings.general.startWithWindows} onChange={handleAutostartChange} />
+          <Toggle
+            checked={settings.general.startWithWindows}
+            onChange={(checked) => {
+              void handleAutostartChange(checked);
+            }}
+          />
         </div>
 
         <div className="flex items-center justify-between py-3 border-b border-hairline last:border-0">
@@ -509,7 +530,9 @@ export function SettingsApp() {
           <div className="shrink-0">
             <HotkeyCapture
               value={settings.hotkeys.toggleWindow}
-              onChange={handleToggleWindowHotkeyChange}
+              onChange={(hotkey) => {
+                void handleToggleWindowHotkeyChange(hotkey);
+              }}
               onError={setHotkeyError}
               aria-labelledby="hotkey-label"
               aria-describedby="hotkey-desc"
@@ -532,7 +555,9 @@ export function SettingsApp() {
           <Button
             variant="secondary"
             disabled={isRestartingOnboarding}
-            onClick={handleRestartOnboarding}
+            onClick={() => {
+              void handleRestartOnboarding();
+            }}
           >
             {isRestartingOnboarding ? <Spinner size="small" /> : <RefreshCw size={14} />}
             {t('general.restartOnboarding')}
@@ -625,7 +650,7 @@ export function SettingsApp() {
                 </option>
               ))}
             </select>
-            <Button variant="secondary" onClick={syncAppShortcuts}>
+            <Button variant="secondary" onClick={() => { void syncAppShortcuts(); }}>
               {t('shortcuts.syncApps')}
             </Button>
           </div>
@@ -690,10 +715,12 @@ export function SettingsApp() {
                                 className="w-full bg-surface-elevated border border-hairline rounded-md px-2 py-1 text-sm text-on-dark outline-none focus:border-hairline-strong"
                                 defaultValue={shortcut.alias || ''}
                                 autoFocus
-                                onBlur={(e) => handleAliasChange(shortcut, e.target.value)}
+                                onBlur={(e) => {
+                                  void handleAliasChange(shortcut, e.target.value);
+                                }}
                                 onKeyDown={(e) => {
                                   if (e.key === 'Enter') {
-                                    handleAliasChange(shortcut, e.currentTarget.value);
+                                    void handleAliasChange(shortcut, e.currentTarget.value);
                                   } else if (e.key === 'Escape') {
                                     setEditingAliasId(null);
                                   }
@@ -711,14 +738,18 @@ export function SettingsApp() {
                           <span className="flex items-center pointer-events-auto">
                             <HotkeyCapture
                               value={shortcut.hotkey || ''}
-                              onChange={(hotkey) => handleHotkeyChange(shortcut, hotkey)}
+                              onChange={(hotkey) => {
+                                void handleHotkeyChange(shortcut, hotkey);
+                              }}
                               onError={setHotkeyError}
                             />
                           </span>
                           <span className="flex items-center justify-center pointer-events-auto">
                             <Toggle
                               checked={shortcut.enabled}
-                              onChange={() => handleToggleEnabled(shortcut)}
+                              onChange={() => {
+                                void handleToggleEnabled(shortcut);
+                              }}
                             />
                           </span>
                         </div>
@@ -757,19 +788,21 @@ export function SettingsApp() {
           <select
             className="bg-surface-elevated border border-hairline rounded-md px-3 py-1.5 text-sm text-on-dark outline-none focus:border-hairline-strong cursor-pointer"
             value={settings.appearance.windowPosition}
-            onChange={async (e) => {
+            onChange={(e) => {
               const position = e.target.value as WindowPosition;
               updateSettings('appearance', 'windowPosition', position);
               if (position !== 'custom') {
-                try {
-                  await invoke<void>('set_window_position', {
-                    position,
-                    customX: null,
-                    customY: null,
-                  });
-                } catch (err) {
-                  logger.error('Failed to set window position:', err);
-                }
+                void (async () => {
+                  try {
+                    await invoke<void>('set_window_position', {
+                      position,
+                      customX: null,
+                      customY: null,
+                    });
+                  } catch (err) {
+                    logger.error('Failed to set window position:', err);
+                  }
+                })();
               }
             }}
           >
@@ -788,14 +821,16 @@ export function SettingsApp() {
           <select
             className="bg-surface-elevated border border-hairline rounded-md px-3 py-1.5 text-sm text-on-dark outline-none focus:border-hairline-strong cursor-pointer"
             value={settings.general.showOnScreen ?? 'cursor'}
-            onChange={async (e) => {
+            onChange={(e) => {
               const value = e.target.value as ShowOnScreen;
               updateSettings('general', 'showOnScreen', value);
-              try {
-                await invoke<void>('update_show_on_screen', { value });
-              } catch (err) {
-                logger.error('Failed to update show_on_screen state:', err);
-              }
+              void (async () => {
+                try {
+                  await invoke<void>('update_show_on_screen', { value });
+                } catch (err) {
+                  logger.error('Failed to update show_on_screen state:', err);
+                }
+              })();
             }}
           >
             <option value="cursor">{t('advanced.screenOptions.cursor')}</option>
@@ -948,7 +983,8 @@ export function SettingsApp() {
     setUpdateError(null);
     setUpdateInfo(null);
     try {
-      const update = await checkForUpdate();
+      const channel = (settings?.general.updateChannel ?? 'stable') as UpdateChannel;
+      const update = await checkForUpdate(channel);
       setUpdateInfo(update);
       setUpdateChecked(true);
     } catch (error) {
@@ -957,6 +993,41 @@ export function SettingsApp() {
     } finally {
       setIsCheckingUpdate(false);
     }
+  };
+
+  const handleSnooze = () => {
+    snoozeUpdate();
+    setUpdateInfo(null);
+    setUpdateChecked(false);
+  };
+
+  const handleSkipVersion = () => {
+    if (updateInfo?.version) skipVersion(updateInfo.version);
+    setUpdateInfo(null);
+    setUpdateChecked(false);
+  };
+
+  const handleDeferredInstall = async () => {
+    setIsDeferring(true);
+    setUpdateProgress(0);
+    setUpdateError(null);
+    try {
+      await deferredInstall((progress) => {
+        setUpdateProgress(progress.percentage);
+      });
+      setDeferralReady(true);
+      setUpdateInfo(null);
+    } catch (error) {
+      logger.error('Failed to defer install:', error);
+      setUpdateError(error instanceof Error ? error.message : 'Failed to download update');
+    } finally {
+      setIsDeferring(false);
+    }
+  };
+
+  const handleCancelDeferral = () => {
+    clearPendingUpdate();
+    setDeferralReady(false);
   };
 
   const handleDownloadAndInstall = async () => {
@@ -1002,13 +1073,15 @@ export function SettingsApp() {
           ].map(({ icon: Icon, label, url }) => (
             <button
               key={url}
-              onClick={async () => {
-                try {
-                  const { openUrl } = await import('@tauri-apps/plugin-opener');
-                  await openUrl(url);
-                } catch (error) {
-                  logger.error('Failed to open URL:', error);
-                }
+              onClick={() => {
+                void (async () => {
+                  try {
+                    const { openUrl } = await import('@tauri-apps/plugin-opener');
+                    await openUrl(url);
+                  } catch (error) {
+                    logger.error('Failed to open URL:', error);
+                  }
+                })();
               }}
               className="flex items-center gap-3 px-4 py-3 rounded-lg text-body bg-transparent border-none w-full text-left text-[length:inherit] font-[inherit] cursor-pointer transition-colors hover:bg-white/5 hover:text-on-dark"
             >
@@ -1021,11 +1094,11 @@ export function SettingsApp() {
         <div className="h-px bg-hairline my-5" />
 
         <div className="flex flex-col gap-1">
-          <button onClick={handleOpenLogsFolder} className="flex items-center gap-3 px-4 py-3 rounded-lg text-body bg-transparent border-none w-full text-left text-[length:inherit] font-[inherit] cursor-pointer transition-colors hover:bg-white/5 hover:text-on-dark">
+          <button onClick={() => { void handleOpenLogsFolder(); }} className="flex items-center gap-3 px-4 py-3 rounded-lg text-body bg-transparent border-none w-full text-left text-[length:inherit] font-[inherit] cursor-pointer transition-colors hover:bg-white/5 hover:text-on-dark">
             <FolderOpen size={20} className="text-accent-blue shrink-0" />
             <span>{t('about.openLogs')}</span>
           </button>
-          <button onClick={handleCopyDiagnostics} className="flex items-center gap-3 px-4 py-3 rounded-lg text-body bg-transparent border-none w-full text-left text-[length:inherit] font-[inherit] cursor-pointer transition-colors hover:bg-white/5 hover:text-on-dark">
+          <button onClick={() => { void handleCopyDiagnostics(); }} className="flex items-center gap-3 px-4 py-3 rounded-lg text-body bg-transparent border-none w-full text-left text-[length:inherit] font-[inherit] cursor-pointer transition-colors hover:bg-white/5 hover:text-on-dark">
             {diagnosticsCopied ? (
               <Check size={20} className="text-accent-green shrink-0" />
             ) : (
@@ -1039,9 +1112,48 @@ export function SettingsApp() {
 
         <div className="py-2">
           <h4 className="text-[11px] font-medium text-ash uppercase tracking-widest mb-3">{t('about.updates')}</h4>
+
+          {/* Channel selector */}
+          <div className="flex items-center gap-3 mb-3">
+            <span className="text-xs text-mute">{t('about.channel')}</span>
+            {(['stable', 'beta'] as UpdateChannel[]).map((ch) => (
+              <label key={ch} className="flex items-center gap-1.5 cursor-pointer text-xs text-body">
+                <input
+                  type="radio"
+                  name="updateChannel"
+                  value={ch}
+                  checked={(settings?.general.updateChannel ?? 'stable') === ch}
+                  onChange={() => {
+                    if (!settings) return;
+                    const updated = { ...settings, general: { ...settings.general, updateChannel: ch } };
+                    void settingsService.updateGeneralSettings(updated.general).catch(() => {});
+                  }}
+                  className="accent-accent-blue"
+                />
+                {ch === 'stable' ? t('about.channelStable') : t('about.channelBeta')}
+              </label>
+            ))}
+          </div>
+
           <div className="flex flex-col gap-2">
-            {!updateChecked && !isCheckingUpdate && (
-              <Button onClick={handleCheckForUpdate} disabled={isCheckingUpdate}>
+            {/* Deferred update ready banner */}
+            {deferralReady && (
+              <div className="flex items-center justify-between gap-2 px-3 py-2 rounded-md bg-accent-blue/10 border border-accent-blue/30 text-[13px] text-ink">
+                <div className="flex items-center gap-2">
+                  <CheckCircle size={14} className="text-accent-blue shrink-0" />
+                  <span>{t('about.deferralReady')}</span>
+                </div>
+                <button
+                  onClick={handleCancelDeferral}
+                  className="text-xs text-mute hover:text-body transition-colors cursor-pointer bg-transparent border-none"
+                >
+                  {t('about.cancelDeferral')}
+                </button>
+              </div>
+            )}
+
+            {!updateChecked && !isCheckingUpdate && !deferralReady && (
+              <Button onClick={() => { void handleCheckForUpdate(); }} disabled={isCheckingUpdate}>
                 <RefreshCw size={16} />
                 {t('about.checkForUpdates')}
               </Button>
@@ -1056,17 +1168,24 @@ export function SettingsApp() {
               <div className="flex items-center gap-2 text-[13px] text-ink">
                 <CheckCircle size={16} className="text-accent-green" />
                 <span>{t('about.upToDate')}</span>
-                <Button onClick={handleCheckForUpdate} className="p-1 min-w-0 ml-auto">
+                <Button onClick={() => { void handleCheckForUpdate(); }} className="p-1 min-w-0 ml-auto">
                   <RefreshCw size={14} />
                 </Button>
               </div>
             )}
-            {updateInfo && !isUpdating && (
+            {updateInfo && !isUpdating && !isDeferring && (
               <div className="flex flex-col gap-2">
+                {/* Critical update banner */}
+                {updateInfo.critical && (
+                  <div className="flex items-center gap-2 px-3 py-2 rounded-md bg-accent-red/10 border border-accent-red/30 text-[13px] text-accent-red font-medium">
+                    <AlertCircle size={14} className="shrink-0" />
+                    <span>{t('about.criticalUpdate')}</span>
+                  </div>
+                )}
                 <div className="flex items-center gap-2 text-[13px] text-ink">
                   <span>{t('about.updateAvailable')}</span>
                   <span className="inline-flex items-center px-2 py-0.5 text-xs font-semibold rounded-full bg-accent-green text-on-dark">
-                    v{updateInfo.version}
+                    v{updateInfo.version}{updateInfo.isBeta ? ' beta' : ''}
                   </span>
                 </div>
                 {updateInfo.body && (
@@ -1077,18 +1196,58 @@ export function SettingsApp() {
                     </div>
                   </div>
                 )}
-                <Button onClick={handleDownloadAndInstall}>
-                  <Download size={16} />
-                  {t('about.downloadAndInstall')}
-                </Button>
+                {updateInfo.isBeta ? (
+                  <Button onClick={() => {
+                    void import('@tauri-apps/plugin-opener').then(({ openUrl }) =>
+                      openUrl('https://github.com/VoltLaunchr/Volt/releases')
+                    );
+                  }}>
+                    <Download size={16} />
+                    {t('about.downloadFromGitHub')}
+                  </Button>
+                ) : (
+                  <>
+                    <Button onClick={() => { void handleDownloadAndInstall(); }}>
+                      <Download size={16} />
+                      {t('about.downloadAndInstall')}
+                    </Button>
+                    {!updateInfo.critical && (
+                      <Button onClick={() => { void handleDeferredInstall(); }} className="bg-transparent border border-hairline hover:bg-white/5">
+                        <Download size={16} />
+                        {t('about.installOnNextRestart')}
+                      </Button>
+                    )}
+                  </>
+                )}
+                {/* Snooze / Skip — hidden for critical updates */}
+                {!updateInfo.critical && (
+                  <div className="flex items-center gap-3 mt-1">
+                    <button
+                      onClick={handleSnooze}
+                      className="text-xs text-mute hover:text-body transition-colors cursor-pointer bg-transparent border-none"
+                    >
+                      {t('about.remindLater')}
+                    </button>
+                    <button
+                      onClick={handleSkipVersion}
+                      className="text-xs text-mute hover:text-body transition-colors cursor-pointer bg-transparent border-none"
+                    >
+                      {t('about.skipVersion')}
+                    </button>
+                  </div>
+                )}
               </div>
             )}
-            {isUpdating && (
+            {(isUpdating || isDeferring) && (
               <div className="flex flex-col gap-2">
                 <div className="flex items-center gap-2 text-[13px] text-ink">
                   <Spinner size="small" />
                   <span>
-                    {updateProgress < 100 ? t('about.downloading') : t('about.installing')}
+                    {isDeferring
+                      ? t('about.deferring')
+                      : updateProgress < 100
+                        ? t('about.downloading')
+                        : t('about.installing')}
                   </span>
                 </div>
                 <div className="w-full h-1.5 bg-surface border border-hairline rounded-full overflow-hidden">
@@ -1113,22 +1272,24 @@ export function SettingsApp() {
 
         <div className="flex flex-col gap-1">
           <button
-            onClick={async () => {
-              try {
-                const { save } = await import('@tauri-apps/plugin-dialog');
-                const path = await save({
-                  filters: [{ name: 'JSON', extensions: ['json'] }],
-                  defaultPath: 'volt-settings.json',
-                });
-                if (!path) return;
-                await settingsService.exportSettings(path);
-                setExportImportStatus({ type: 'success', message: t('about.exportSuccess') });
-                setTimeout(() => setExportImportStatus(null), 3000);
-              } catch (error) {
-                logger.error('Failed to export settings:', error);
-                setExportImportStatus({ type: 'error', message: t('about.exportError') });
-                setTimeout(() => setExportImportStatus(null), 3000);
-              }
+            onClick={() => {
+              void (async () => {
+                try {
+                  const { save } = await import('@tauri-apps/plugin-dialog');
+                  const path = await save({
+                    filters: [{ name: 'JSON', extensions: ['json'] }],
+                    defaultPath: 'volt-settings.json',
+                  });
+                  if (!path) return;
+                  await settingsService.exportSettings(path);
+                  setExportImportStatus({ type: 'success', message: t('about.exportSuccess') });
+                  setTimeout(() => setExportImportStatus(null), 3000);
+                } catch (error) {
+                  logger.error('Failed to export settings:', error);
+                  setExportImportStatus({ type: 'error', message: t('about.exportError') });
+                  setTimeout(() => setExportImportStatus(null), 3000);
+                }
+              })();
             }}
             className="flex items-center gap-3 px-4 py-3 rounded-lg text-body bg-transparent border-none w-full text-left text-[length:inherit] font-[inherit] cursor-pointer transition-colors hover:bg-white/5 hover:text-on-dark"
           >
@@ -1136,23 +1297,25 @@ export function SettingsApp() {
             <span>{t('about.exportSettings')}</span>
           </button>
           <button
-            onClick={async () => {
-              try {
-                const { open } = await import('@tauri-apps/plugin-dialog');
-                const path = await open({
-                  filters: [{ name: 'JSON', extensions: ['json'] }],
-                  multiple: false,
-                });
-                if (!path) return;
-                const imported = await settingsService.importSettings(path as string);
-                setSettings(imported);
-                setExportImportStatus({ type: 'success', message: t('about.importSuccess') });
-                setTimeout(() => setExportImportStatus(null), 3000);
-              } catch (error) {
-                logger.error('Failed to import settings:', error);
-                setExportImportStatus({ type: 'error', message: t('about.importError') });
-                setTimeout(() => setExportImportStatus(null), 3000);
-              }
+            onClick={() => {
+              void (async () => {
+                try {
+                  const { open } = await import('@tauri-apps/plugin-dialog');
+                  const path = await open({
+                    filters: [{ name: 'JSON', extensions: ['json'] }],
+                    multiple: false,
+                  });
+                  if (!path) return;
+                  const imported = await settingsService.importSettings(path);
+                  setSettings(imported);
+                  setExportImportStatus({ type: 'success', message: t('about.importSuccess') });
+                  setTimeout(() => setExportImportStatus(null), 3000);
+                } catch (error) {
+                  logger.error('Failed to import settings:', error);
+                  setExportImportStatus({ type: 'error', message: t('about.importError') });
+                  setTimeout(() => setExportImportStatus(null), 3000);
+                }
+              })();
             }}
             className="flex items-center gap-3 px-4 py-3 rounded-lg text-body bg-transparent border-none w-full text-left text-[length:inherit] font-[inherit] cursor-pointer transition-colors hover:bg-white/5 hover:text-on-dark"
           >
@@ -1350,29 +1513,33 @@ export function SettingsApp() {
             <Button
               variant="secondary"
               disabled={isRebuilding}
-              onClick={async () => {
+              onClick={() => {
                 setIsRebuilding(true);
-                try {
-                  await invoke<void>('invalidate_index');
-                  // Poll until indexing is done
-                  const pollStats = async () => {
-                    try {
-                      const status = await invoke<{ isIndexing: boolean }>('get_index_status');
-                      if (status.isIndexing) {
-                        setTimeout(pollStats, 800);
-                      } else {
-                        await fetchIndexStats();
-                        setIsRebuilding(false);
-                      }
-                    } catch {
-                      setIsRebuilding(false);
-                    }
-                  };
-                  setTimeout(pollStats, 500);
-                } catch (err) {
-                  logger.error('Failed to rebuild index:', err);
-                  setIsRebuilding(false);
-                }
+                void (async () => {
+                  try {
+                    await invoke<void>('invalidate_index');
+                    // Poll until indexing is done
+                    const pollStats = () => {
+                      void (async () => {
+                        try {
+                          const status = await invoke<{ isIndexing: boolean }>('get_index_status');
+                          if (status.isIndexing) {
+                            setTimeout(pollStats, 800);
+                          } else {
+                            await fetchIndexStats();
+                            setIsRebuilding(false);
+                          }
+                        } catch {
+                          setIsRebuilding(false);
+                        }
+                      })();
+                    };
+                    setTimeout(pollStats, 500);
+                  } catch (err) {
+                    logger.error('Failed to rebuild index:', err);
+                    setIsRebuilding(false);
+                  }
+                })();
               }}
             >
               {isRebuilding ? <Spinner size="small" /> : null}
@@ -1407,18 +1574,20 @@ export function SettingsApp() {
           <Button
             variant="secondary"
             disabled={isScanningApps}
-            onClick={async () => {
-              setIsScanningApps(true);
-              setScanResult(null);
-              try {
-                const apps = await invoke<unknown[]>('scan_applications');
-                setScanResult({ count: apps.length, error: null });
-              } catch (err) {
-                logger.error('Failed to scan applications:', err);
-                setScanResult({ count: 0, error: String(err) });
-              } finally {
-                setIsScanningApps(false);
-              }
+            onClick={() => {
+              void (async () => {
+                setIsScanningApps(true);
+                setScanResult(null);
+                try {
+                  const apps = await invoke<unknown[]>('scan_applications');
+                  setScanResult({ count: apps.length, error: null });
+                } catch (err) {
+                  logger.error('Failed to scan applications:', err);
+                  setScanResult({ count: 0, error: String(err) });
+                } finally {
+                  setIsScanningApps(false);
+                }
+              })();
             }}
           >
             {isScanningApps ? t('applications.scanning') : t('applications.scanNow')}
@@ -1472,7 +1641,9 @@ export function SettingsApp() {
                   </div>
                   <Toggle
                     checked={isEnabled}
-                    onChange={(checked) => handlePluginToggle(plugin.id, checked)}
+                    onChange={(checked) => {
+                      void handlePluginToggle(plugin.id, checked);
+                    }}
                   />
                 </div>
               );
@@ -1507,7 +1678,9 @@ export function SettingsApp() {
           </div>
           <Toggle
             checked={settings.plugins.clipboardMonitoring}
-            onChange={handleClipboardMonitoringToggle}
+            onChange={(checked) => {
+              void handleClipboardMonitoringToggle(checked);
+            }}
           />
         </div>
 
@@ -1518,13 +1691,15 @@ export function SettingsApp() {
           </div>
           <Button
             variant="secondary"
-            onClick={async () => {
-              try {
-                await invoke<void>('clear_clipboard_history');
-              } catch (err) {
-                logger.error('Failed to clear clipboard history:', err);
-                setError(t('errors.saveFailed'));
-              }
+            onClick={() => {
+              void (async () => {
+                try {
+                  await invoke<void>('clear_clipboard_history');
+                } catch (err) {
+                  logger.error('Failed to clear clipboard history:', err);
+                  setError(t('errors.saveFailed'));
+                }
+              })();
             }}
           >
             {t('clipboard.clear')}
@@ -1637,13 +1812,15 @@ export function SettingsApp() {
           </div>
           <Button
             variant="secondary"
-            onClick={async () => {
-              try {
-                await invoke<void>('clear_shell_history');
-              } catch (err) {
-                logger.error('Failed to clear shell history:', err);
-                setError(t('shell.clearFailed'));
-              }
+            onClick={() => {
+              void (async () => {
+                try {
+                  await invoke<void>('clear_shell_history');
+                } catch (err) {
+                  logger.error('Failed to clear shell history:', err);
+                  setError(t('shell.clearFailed'));
+                }
+              })();
             }}
           >
             {t('shell.clear')}
@@ -1715,13 +1892,13 @@ export function SettingsApp() {
         <div className="no-drag flex gap-2">
           <button
             className="w-7 h-7 rounded-sm bg-transparent border-none text-ash text-lg cursor-pointer flex items-center justify-center transition-colors hover:bg-white/10 hover:text-on-dark"
-            onClick={handleMinimize}
+            onClick={() => { void handleMinimize(); }}
           >
             <span>−</span>
           </button>
           <button
             className="w-7 h-7 rounded-sm bg-transparent border-none text-ash text-lg cursor-pointer flex items-center justify-center transition-colors hover:bg-accent-red/20 hover:text-accent-red"
-            onClick={handleClose}
+            onClick={() => { void handleClose(); }}
           >
             <span>×</span>
           </button>
@@ -1750,10 +1927,10 @@ export function SettingsApp() {
             <div className="absolute bottom-0 left-0 right-0 flex items-center justify-between px-6 py-3 bg-black/30 border-t border-hairline">
               <span className="text-[13px] text-body">{t('saveBar.unsavedChanges')}</span>
               <div className="flex gap-2">
-                <Button variant="secondary" onClick={() => loadSettings()}>
+                <Button variant="secondary" onClick={() => { void loadSettings(); }}>
                   {t('saveBar.discard')}
                 </Button>
-                <Button variant="default" onClick={handleSave} disabled={isSaving}>
+                <Button variant="default" onClick={() => { void handleSave(); }} disabled={isSaving}>
                   {isSaving ? t('actions.saving') : t('saveBar.saveChanges')}
                 </Button>
               </div>

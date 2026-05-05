@@ -4,7 +4,7 @@
  */
 
 import { invoke } from '@tauri-apps/api/core';
-import type { AppInfo } from '../../../shared/types/common.types';
+import type { AppCategory, AppInfo } from '../../../shared/types/common.types';
 import { logger } from '../../../shared/utils/logger';
 import type { AppLaunchResult, AppSearchOptions } from '../types';
 
@@ -23,7 +23,8 @@ export const applicationService = {
       return apps;
     } catch (error) {
       logger.error('Failed to scan applications:', error);
-      throw new Error(`Failed to scan applications: ${error}`);
+      const msg = error instanceof Error ? error.message : String(error);
+      throw new Error(`Failed to scan applications: ${msg}`);
     }
   },
 
@@ -59,7 +60,8 @@ export const applicationService = {
       return results;
     } catch (error) {
       logger.error('Failed to search applications:', error);
-      throw new Error(`Failed to search applications: ${error}`);
+      const msg = error instanceof Error ? error.message : String(error);
+      throw new Error(`Failed to search applications: ${msg}`);
     }
   },
 
@@ -131,7 +133,7 @@ export const applicationService = {
    * @param category - Category to filter by
    * @returns Filtered applications array
    */
-  filterByCategory(apps: AppInfo[], category: string): AppInfo[] {
+  filterByCategory(apps: AppInfo[], category: AppCategory): AppInfo[] {
     return apps.filter((app) => app.category === category);
   },
 

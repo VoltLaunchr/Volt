@@ -81,13 +81,15 @@ export function useAuth(): UseAuthReturn {
         return;
       }
 
-      refreshTimerRef.current = setTimeout(async () => {
-        try {
-          await authService.refreshToken();
-          await loadAuthState();
-        } catch (err) {
-          logger.warn('[useAuth] Scheduled refresh failed:', err);
-        }
+      refreshTimerRef.current = setTimeout(() => {
+        void (async () => {
+          try {
+            await authService.refreshToken();
+            await loadAuthState();
+          } catch (err) {
+            logger.warn('[useAuth] Scheduled refresh failed:', err);
+          }
+        })();
       }, delaySec * 1000);
     },
     [loadAuthState]
@@ -95,7 +97,7 @@ export function useAuth(): UseAuthReturn {
 
   // Initial load
   useEffect(() => {
-    loadAuthState().then((session) => {
+    void loadAuthState().then((session) => {
       if (session) {
         scheduleRefresh(session);
       }
@@ -106,12 +108,14 @@ export function useAuth(): UseAuthReturn {
   useEffect(() => {
     let unlisten: UnlistenFn | undefined;
 
-    listen<AuthSession>('auth:session-updated', async () => {
-      logger.info('[useAuth] Session updated via deep link');
-      const session = await loadAuthState();
-      if (session) {
-        scheduleRefresh(session);
-      }
+    void listen<AuthSession>('auth:session-updated', () => {
+      void (async () => {
+        logger.info('[useAuth] Session updated via deep link');
+        const session = await loadAuthState();
+        if (session) {
+          scheduleRefresh(session);
+        }
+      })();
     }).then((fn) => {
       unlisten = fn;
     });
@@ -129,12 +133,14 @@ export function useAuth(): UseAuthReturn {
   useEffect(() => {
     let unlisten: UnlistenFn | undefined;
 
-    getCurrentWindow()
-      .listen('tauri://focus', async () => {
-        const session = await loadAuthState();
-        if (session) {
-          scheduleRefresh(session);
-        }
+    void getCurrentWindow()
+      .listen('tauri://focus', () => {
+        void (async () => {
+          const session = await loadAuthState();
+          if (session) {
+            scheduleRefresh(session);
+          }
+        })();
       })
       .then((fn) => {
         unlisten = fn;

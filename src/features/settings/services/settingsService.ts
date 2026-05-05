@@ -11,6 +11,8 @@ import {
   Theme,
 } from '../types/settings.types';
 
+const errorMessage = (err: unknown): string => (err instanceof Error ? err.message : String(err));
+
 /**
  * Settings service for interacting with the Tauri backend
  */
@@ -36,7 +38,7 @@ export const settingsService = {
       await invoke<void>('save_settings', { settings });
     } catch (error) {
       logger.error('Failed to save settings:', error);
-      throw new Error(`Failed to save settings: ${error}`);
+      throw new Error(`Failed to save settings: ${errorMessage(error)}`);
     }
   },
 
@@ -48,7 +50,7 @@ export const settingsService = {
       return await invoke<Settings>('update_general_settings', { general });
     } catch (error) {
       logger.error('Failed to update general settings:', error);
-      throw new Error(`Failed to update general settings: ${error}`);
+      throw new Error(`Failed to update general settings: ${errorMessage(error)}`);
     }
   },
 
@@ -60,7 +62,7 @@ export const settingsService = {
       return await invoke<Settings>('update_appearance_settings', { appearance });
     } catch (error) {
       logger.error('Failed to update appearance settings:', error);
-      throw new Error(`Failed to update appearance settings: ${error}`);
+      throw new Error(`Failed to update appearance settings: ${errorMessage(error)}`);
     }
   },
 
@@ -72,7 +74,7 @@ export const settingsService = {
       return await invoke<Settings>('update_hotkey_settings', { hotkeys });
     } catch (error) {
       logger.error('Failed to update hotkey settings:', error);
-      throw new Error(`Failed to update hotkey settings: ${error}`);
+      throw new Error(`Failed to update hotkey settings: ${errorMessage(error)}`);
     }
   },
 
@@ -84,7 +86,7 @@ export const settingsService = {
       return await invoke<Settings>('update_indexing_settings', { indexing });
     } catch (error) {
       logger.error('Failed to update indexing settings:', error);
-      throw new Error(`Failed to update indexing settings: ${error}`);
+      throw new Error(`Failed to update indexing settings: ${errorMessage(error)}`);
     }
   },
 
@@ -96,7 +98,7 @@ export const settingsService = {
       return await invoke<Settings>('update_plugin_settings', { plugins });
     } catch (error) {
       logger.error('Failed to update plugin settings:', error);
-      throw new Error(`Failed to update plugin settings: ${error}`);
+      throw new Error(`Failed to update plugin settings: ${errorMessage(error)}`);
     }
   },
 
@@ -121,7 +123,7 @@ export const settingsService = {
       await invoke<void>('set_theme', { theme });
     } catch (error) {
       logger.error('Failed to set theme:', error);
-      throw new Error(`Failed to set theme: ${error}`);
+      throw new Error(`Failed to set theme: ${errorMessage(error)}`);
     }
   },
 
@@ -133,7 +135,7 @@ export const settingsService = {
       return await invoke<string>('export_settings', { path });
     } catch (error) {
       logger.error('Failed to export settings:', error);
-      throw new Error(`Failed to export settings: ${error}`);
+      throw new Error(`Failed to export settings: ${errorMessage(error)}`);
     }
   },
 
@@ -145,7 +147,7 @@ export const settingsService = {
       return await invoke<Settings>('import_settings', { path });
     } catch (error) {
       logger.error('Failed to import settings:', error);
-      throw new Error(`Failed to import settings: ${error}`);
+      throw new Error(`Failed to import settings: ${errorMessage(error)}`);
     }
   },
 };

@@ -93,14 +93,16 @@ export function useRecentApps(options: UseRecentAppsOptions = {}): UseRecentApps
   // Auto-load on mount
   useEffect(() => {
     if (autoLoad) {
-      refresh();
+      void refresh();
     }
   }, [autoLoad, refresh]);
 
   // Auto-refresh interval
   useEffect(() => {
     if (refreshInterval > 0) {
-      const intervalId = setInterval(refresh, refreshInterval);
+      const intervalId = setInterval(() => {
+        void refresh();
+      }, refreshInterval);
       return () => clearInterval(intervalId);
     }
   }, [refreshInterval, refresh]);

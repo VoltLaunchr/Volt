@@ -17,6 +17,7 @@ const APP_ICON = {
   games: '/icons/app/games_icon.svg',
   shell: '/icons/app/shell_icon.svg',
   systemCommand: '/icons/app/settings_icon.svg',
+  fileSearch: '/icons/app/file_search_icon.svg',
 } as const;
 import { SearchResult, SearchResultType } from '../../../shared/types/common.types';
 import type { ShellOutputData } from '../../plugins/builtin/shell';
@@ -315,6 +316,8 @@ export function ResultItem({ result, isSelected }: ResultItemProps) {
         renderSystemMonitorIcon()
       ) : result.icon ? (
         <img src={result.icon} alt="" className="w-8 h-8 object-contain shrink-0" />
+      ) : result.type === SearchResultType.File ? (
+        <img src={APP_ICON.fileSearch} alt="" className="w-8 h-8 object-contain shrink-0 rounded-md" />
       ) : result.type === SearchResultType.Game ? (
         <img src={APP_ICON.games} alt="" className="w-8 h-8 object-contain shrink-0 rounded-md" />
       ) : result.type === SearchResultType.Calculator ? (

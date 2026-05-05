@@ -79,7 +79,7 @@ export class TimerPlugin implements Plugin {
     );
   }
 
-  async match(context: PluginContext): Promise<PluginResult[]> {
+  match(context: PluginContext): PluginResult[] {
     const lower = context.query.toLowerCase().trim();
     const results: PluginResult[] = [];
 
@@ -208,7 +208,7 @@ export class TimerPlugin implements Plugin {
     return results;
   }
 
-  async execute(result: PluginResult): Promise<void> {
+  execute(result: PluginResult): void {
     const data = result.data as { action: string; duration?: number; label?: string; timerId?: string };
 
     if (data.action === 'open-view') {

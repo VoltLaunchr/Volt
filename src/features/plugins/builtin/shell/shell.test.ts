@@ -113,8 +113,11 @@ describe('ShellCommandPlugin', () => {
 
   describe('execute', () => {
     it('refuses to execute a blocked command', async () => {
-      const events: CustomEvent[] = [];
-      const listener = (e: Event) => events.push(e as CustomEvent);
+      interface ShellOutputDetail {
+        data: { status: string; errorMessage?: string };
+      }
+      const events: CustomEvent<ShellOutputDetail>[] = [];
+      const listener = (e: Event) => events.push(e as CustomEvent<ShellOutputDetail>);
       window.addEventListener('volt:shell-output', listener);
 
       await plugin.execute({

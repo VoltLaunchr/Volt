@@ -581,10 +581,10 @@ export class ShellCommandPlugin implements Plugin {
             }
           }, STREAMING_DRAIN_MS);
         })
-        .catch((err) => {
+        .catch((err: unknown) => {
           if (!resolved) {
             resolved = true;
-            reject(err);
+            reject(err instanceof Error ? err : new Error(String(err)));
           }
         });
     });
