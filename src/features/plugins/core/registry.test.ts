@@ -201,8 +201,8 @@ describe('PluginRegistry', () => {
       registry.register(
         makePlugin({
           id: 'reject',
-          match: async () => {
-            throw new Error('async fail');
+          match: () => {
+            return Promise.reject(new Error('async fail'));
           },
         })
       );

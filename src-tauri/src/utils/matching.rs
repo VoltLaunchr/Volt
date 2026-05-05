@@ -5,6 +5,8 @@ use nucleo_matcher::{Config, Matcher, Utf32Str};
 ///
 /// # Examples
 /// ```
+/// use volt_lib::utils::matching::fuzzy_match;
+///
 /// assert!(fuzzy_match("hello world", "hlo"));
 /// assert!(fuzzy_match("visual studio code", "vsc"));
 /// assert!(!fuzzy_match("hello", "world"));

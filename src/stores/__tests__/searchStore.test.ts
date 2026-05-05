@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { useSearchStore } from '../searchStore';
-import { SearchResult, SearchResultType } from '../../shared/types/common.types';
+import { SearchResult, SearchResultType, type AppInfo } from '../../shared/types/common.types';
 
 const mockResult: SearchResult = {
   id: '1',
@@ -9,7 +9,7 @@ const mockResult: SearchResult = {
   subtitle: '',
   icon: '',
   score: 100,
-  data: { id: '1', name: 'Test', path: '/test', icon: '' } as any,
+  data: { id: '1', name: 'Test', path: '/test', icon: '', usageCount: 0 } satisfies AppInfo,
 };
 
 describe('searchStore', () => {

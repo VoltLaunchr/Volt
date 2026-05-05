@@ -53,15 +53,15 @@ export function FileSearchView({ onClose }: FileSearchViewProps): React.JSX.Elem
   }, []);
 
   useEffect(() => {
-    loadRecentFiles();
+    void loadRecentFiles();
   }, [loadRecentFiles]);
 
   // Refresh when indexing completes
   useEffect(() => {
     let unlisten: (() => void) | undefined;
-    listen<{ phase: string }>('indexing-progress', ({ payload }) => {
+    void listen<{ phase: string }>('indexing-progress', ({ payload }) => {
       if (payload.phase === 'complete' || payload.phase === 'db_loaded') {
-        loadRecentFiles();
+        void loadRecentFiles();
       }
     }).then((fn) => { unlisten = fn; });
     return () => { unlisten?.(); };
@@ -112,7 +112,7 @@ export function FileSearchView({ onClose }: FileSearchViewProps): React.JSX.Elem
   // Debounced search
   useEffect(() => {
     const timeoutId = setTimeout(() => {
-      performSearch(searchQuery);
+      void performSearch(searchQuery);
     }, 200);
 
     return () => clearTimeout(timeoutId);
@@ -121,7 +121,7 @@ export function FileSearchView({ onClose }: FileSearchViewProps): React.JSX.Elem
   // Re-filter when type filter changes
   useEffect(() => {
     if (searchQuery.trim()) {
-      performSearch(searchQuery);
+      void performSearch(searchQuery);
     }
   }, [typeFilter, searchQuery, performSearch]);
 
@@ -157,7 +157,7 @@ export function FileSearchView({ onClose }: FileSearchViewProps): React.JSX.Elem
         case 'Enter':
           e.preventDefault();
           if (selectedFile) {
-            handleOpenFile(selectedFile);
+            void handleOpenFile(selectedFile);
           }
           break;
 
@@ -176,7 +176,7 @@ export function FileSearchView({ onClose }: FileSearchViewProps): React.JSX.Elem
       // Track file access for recent files
       await invoke<void>('track_file_access', { path: file.path, name: file.name });
       // Reload recent files for next time
-      loadRecentFiles();
+      void loadRecentFiles();
       onClose();
     } catch (error) {
       logger.error('Failed to open file:', error);
@@ -355,7 +355,9 @@ export function FileSearchView({ onClose }: FileSearchViewProps): React.JSX.Elem
                     setSelectedIndex(index);
                     setSelectedFile(file);
                   }}
-                  onDoubleClick={() => handleOpenFile(file)}
+                  onDoubleClick={() => {
+                    void handleOpenFile(file);
+                  }}
                 >
                   <div className="w-8 h-8 flex items-center justify-center shrink-0 text-mute text-xl">
                     {getFileIcon(file.name)}
@@ -418,7 +420,9 @@ export function FileSearchView({ onClose }: FileSearchViewProps): React.JSX.Elem
             <div className="flex gap-2 px-4 py-3 border-t border-hairline bg-canvas">
               <button
                 className="flex flex-1 items-center justify-center gap-2 px-4 py-2 text-sm font-medium rounded-md border border-hairline bg-accent-blue text-on-dark cursor-pointer transition-all hover:opacity-90"
-                onClick={() => handleOpenFile(selectedFile)}
+                onClick={() => {
+                  void handleOpenFile(selectedFile);
+                }}
               >
                 <span>{t('actions.open')}</span>
                 <kbd className="px-1.5 py-0.5 text-xs font-mono bg-white/20 rounded-sm">↵</kbd>

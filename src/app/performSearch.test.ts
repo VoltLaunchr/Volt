@@ -80,10 +80,10 @@ describe('performSearch pipeline (integration)', () => {
   });
 
   it('apps appear above files when both match', async () => {
-    mockedInvoke.mockImplementation(async (cmd: string) => {
-      if (cmd === 'search_applications') return fakeApps;
-      if (cmd === 'search_files') return fakeFiles;
-      return [];
+    mockedInvoke.mockImplementation((cmd: string) => {
+      if (cmd === 'search_applications') return Promise.resolve(fakeApps);
+      if (cmd === 'search_files') return Promise.resolve(fakeFiles);
+      return Promise.resolve([]);
     });
     const results = await performSearch('fire');
     expect(results.length).toBeGreaterThan(0);
@@ -91,10 +91,10 @@ describe('performSearch pipeline (integration)', () => {
   });
 
   it('calculator plugin produces a result for a math query', async () => {
-    mockedInvoke.mockImplementation(async (cmd: string) => {
-      if (cmd === 'search_applications') return [];
-      if (cmd === 'search_files') return [];
-      return [];
+    mockedInvoke.mockImplementation((cmd: string) => {
+      if (cmd === 'search_applications') return Promise.resolve([]);
+      if (cmd === 'search_files') return Promise.resolve([]);
+      return Promise.resolve([]);
     });
     const results = await performSearch('2+2');
     const calc = results.find((r) => r.kind === 'plugin');
@@ -103,17 +103,17 @@ describe('performSearch pipeline (integration)', () => {
   });
 
   it('websearch plugin produces a result for "?" query', async () => {
-    mockedInvoke.mockImplementation(async () => []);
+    mockedInvoke.mockImplementation(() => Promise.resolve([]));
     const results = await performSearch('?tauri');
     const ws = results.find((r) => r.kind === 'plugin' && r.pluginId === 'websearch');
     expect(ws).toBeDefined();
   });
 
   it('plugin errors do not break the pipeline', async () => {
-    mockedInvoke.mockImplementation(async (cmd: string) => {
-      if (cmd === 'search_files') throw new Error('boom');
-      if (cmd === 'search_applications') return fakeApps;
-      return [];
+    mockedInvoke.mockImplementation((cmd: string) => {
+      if (cmd === 'search_files') return Promise.reject(new Error('boom'));
+      if (cmd === 'search_applications') return Promise.resolve(fakeApps);
+      return Promise.resolve([]);
     });
     const results = await performSearch('fire');
     expect(results.length).toBeGreaterThan(0);
@@ -121,10 +121,10 @@ describe('performSearch pipeline (integration)', () => {
   });
 
   it('merges plugin + apps + files in score order', async () => {
-    mockedInvoke.mockImplementation(async (cmd: string) => {
-      if (cmd === 'search_applications') return fakeApps;
-      if (cmd === 'search_files') return fakeFiles;
-      return [];
+    mockedInvoke.mockImplementation((cmd: string) => {
+      if (cmd === 'search_applications') return Promise.resolve(fakeApps);
+      if (cmd === 'search_files') return Promise.resolve(fakeFiles);
+      return Promise.resolve([]);
     });
     const results = await performSearch('2+2');
     // App (200) > Calculator (95) > File (80)

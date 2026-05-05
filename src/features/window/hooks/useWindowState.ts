@@ -127,7 +127,7 @@ export function useWindowState(): UseWindowStateReturn {
 
   // Load initial state on mount
   useEffect(() => {
-    refreshState();
+    void refreshState();
   }, [refreshState]);
 
   return {

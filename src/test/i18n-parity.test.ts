@@ -13,7 +13,7 @@ function extractKeys(obj: Record<string, unknown>, prefix = ''): string[] {
 }
 
 function loadJson(path: string): Record<string, unknown> {
-  return JSON.parse(readFileSync(path, 'utf-8'));
+  return JSON.parse(readFileSync(path, 'utf-8')) as Record<string, unknown>;
 }
 
 // ── Global locale namespaces ─────────────────────────────────────────────────

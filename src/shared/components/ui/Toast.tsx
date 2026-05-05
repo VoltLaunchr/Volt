@@ -1,49 +1,7 @@
 import { useEffect } from 'react';
-import { create } from 'zustand';
 import { CheckCircle, AlertCircle, Info, X, Download } from 'lucide-react';
 import { cn } from '@/lib/utils';
-
-export type ToastType = 'info' | 'success' | 'error' | 'update';
-
-export interface ToastItem {
-  id: string;
-  message: string;
-  type: ToastType;
-  duration: number;
-  action?: () => void;
-}
-
-interface ToastStore {
-  toasts: ToastItem[];
-  addToast: (message: string, type?: ToastType, duration?: number, action?: () => void) => void;
-  removeToast: (id: string) => void;
-}
-
-let toastCounter = 0;
-
-export const useToastStore = create<ToastStore>()((set) => ({
-  toasts: [],
-
-  addToast: (message, type = 'info', duration = 5000, action?) => {
-    const id = `toast-${++toastCounter}`;
-    set((state) => {
-      const newToasts = [...state.toasts, { id, message, type, duration, action }];
-      // Keep max 3 toasts
-      return { toasts: newToasts.slice(-3) };
-    });
-  },
-
-  removeToast: (id) =>
-    set((state) => ({
-      toasts: state.toasts.filter((t) => t.id !== id),
-    })),
-}));
-
-/** Convenience hook for showing toasts. */
-export function useToast() {
-  const addToast = useToastStore((s) => s.addToast);
-  return { showToast: addToast };
-}
+import { useToastStore, type ToastItem } from './toast-store';
 
 function ToastIcon({ type }: { type: ToastItem['type'] }) {
   const iconClass = {
@@ -77,7 +35,7 @@ function ToastEntry({ toast }: { toast: ToastItem }) {
   return (
     <div
       className="flex items-center gap-3 px-4 py-3 rounded-md border border-hairline-strong bg-surface-elevated text-body text-sm min-w-[260px] max-w-[400px] shadow-lg"
-      role="status"
+      role={(toast.dismissable ?? true) ? 'status' : 'alert'}
     >
       <ToastIcon type={toast.type} />
       <span
@@ -98,13 +56,15 @@ function ToastEntry({ toast }: { toast: ToastItem }) {
       >
         {toast.message}
       </span>
-      <button
-        className="text-mute hover:text-on-dark transition-colors ml-1 shrink-0 cursor-pointer"
-        onClick={() => removeToast(toast.id)}
-        aria-label="Dismiss notification"
-      >
-        <X size={14} />
-      </button>
+      {(toast.dismissable ?? true) && (
+        <button
+          className="text-mute hover:text-on-dark transition-colors ml-1 shrink-0 cursor-pointer"
+          onClick={() => removeToast(toast.id)}
+          aria-label="Dismiss notification"
+        >
+          <X size={14} />
+        </button>
+      )}
     </div>
   );
 }

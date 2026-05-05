@@ -32,7 +32,7 @@ export const openSettingsWindow = async (): Promise<void> => {
     skipTaskbar: false,
     focus: true,
   });
-  settingsWindow.once('tauri://error', (e) => {
+  void settingsWindow.once('tauri://error', (e) => {
     logger.error('Failed to create settings window:', e);
   });
 };
@@ -62,7 +62,7 @@ export const openSystemMonitorWindow = async (): Promise<void> => {
     skipTaskbar: false,
     focus: true,
   });
-  win.once('tauri://error', (e) => {
+  void win.once('tauri://error', (e) => {
     logger.error('Failed to create system-monitor window:', e);
   });
 };

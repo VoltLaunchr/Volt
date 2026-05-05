@@ -74,7 +74,7 @@ export function ChangelogView({ onClose }: ChangelogViewProps): React.JSX.Elemen
         if (!response.ok) {
           throw new Error(`Failed to load changelog: ${response.status}`);
         }
-        const data: ChangelogData = await response.json();
+        const data = (await response.json()) as ChangelogData;
         // Get the latest version (first in array)
         if (data.versions && data.versions.length > 0) {
           setChangelog(data.versions[0]);
@@ -89,7 +89,7 @@ export function ChangelogView({ onClose }: ChangelogViewProps): React.JSX.Elemen
       }
     };
 
-    loadChangelog();
+    void loadChangelog();
   }, []);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {

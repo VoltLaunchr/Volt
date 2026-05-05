@@ -24,8 +24,8 @@ export function getHistory(): CalculationHistoryItem[] {
     const stored = window.localStorage.getItem(STORAGE_KEY);
     if (!stored) return [];
 
-    const history = JSON.parse(stored);
-    return Array.isArray(history) ? history : [];
+    const history: unknown = JSON.parse(stored);
+    return Array.isArray(history) ? (history as CalculationHistoryItem[]) : [];
   } catch (error) {
     logger.error('Failed to load calculation history:', error);
     return [];

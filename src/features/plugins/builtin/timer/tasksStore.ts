@@ -82,8 +82,8 @@ class TasksStore {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (!raw) return;
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) this.tasks = parsed;
+      const parsed: unknown = JSON.parse(raw);
+      if (Array.isArray(parsed)) this.tasks = parsed as PomodoroTask[];
     } catch (err) {
       logger.warn('Failed to restore pomodoro tasks', err);
     }

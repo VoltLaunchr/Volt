@@ -400,7 +400,9 @@ export function SystemMonitorDetail(): React.JSX.Element {
                     type="button"
                     className="px-2 py-0.5 bg-transparent border border-hairline text-mute text-xs cursor-pointer transition-all hover:bg-[rgba(239,68,68,0.12)] hover:border-[rgba(239,68,68,0.45)] hover:text-[#ef4444]"
                     aria-label={`${t('killProcess')} ${p.name} (PID ${p.pid})`}
-                    onClick={() => handleKill(p.pid, p.name)}
+                    onClick={() => {
+                      void handleKill(p.pid, p.name);
+                    }}
                   >
                     {t('killProcess')}
                   </button>
@@ -426,7 +428,9 @@ export function SystemMonitorDetail(): React.JSX.Element {
                     type="button"
                     className="px-2 py-0.5 bg-transparent border border-hairline text-mute text-xs cursor-pointer transition-all hover:bg-[rgba(239,68,68,0.12)] hover:border-[rgba(239,68,68,0.45)] hover:text-[#ef4444]"
                     aria-label={`${t('killProcess')} ${p.name} (PID ${p.pid})`}
-                    onClick={() => handleKill(p.pid, p.name)}
+                    onClick={() => {
+                      void handleKill(p.pid, p.name);
+                    }}
                   >
                     {t('killProcess')}
                   </button>
@@ -468,7 +472,9 @@ export function SystemMonitorDetail(): React.JSX.Element {
           <button
             type="button"
             className="px-3 py-1.5 bg-surface border border-hairline text-ink text-sm cursor-pointer transition-all hover:bg-hairline"
-            onClick={handleOpenTaskManager}
+            onClick={() => {
+              void handleOpenTaskManager();
+            }}
           >
             {t('openTaskManager')}
           </button>

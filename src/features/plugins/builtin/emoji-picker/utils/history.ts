@@ -17,8 +17,8 @@ export function getHistory(): FrequentEmoji[] {
     const stored = window.localStorage.getItem(STORAGE_KEY);
     if (!stored) return [];
 
-    const history = JSON.parse(stored);
-    return Array.isArray(history) ? history : [];
+    const history: unknown = JSON.parse(stored);
+    return Array.isArray(history) ? (history as FrequentEmoji[]) : [];
   } catch (error) {
     logger.error('Failed to load emoji history:', error);
     return [];

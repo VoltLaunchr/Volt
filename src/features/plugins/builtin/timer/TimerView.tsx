@@ -388,7 +388,7 @@ export function TimerView({ onClose }: TimerViewProps): React.JSX.Element {
             role="tablist"
             aria-label="Timer mode"
           >
-            {(Object.values(MODES) as ModeCfg[]).map((m) => (
+            {Object.values(MODES).map((m) => (
               <button
                 key={m.key}
                 type="button"

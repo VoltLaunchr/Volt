@@ -7,6 +7,8 @@ import { invoke } from '@tauri-apps/api/core';
 import { logger } from '../../../shared/utils';
 import type { LaunchRecord } from '../types/launcher.types';
 
+const errorMessage = (err: unknown): string => (err instanceof Error ? err.message : String(err));
+
 /**
  * Service for launching applications and managing history
  */
@@ -20,7 +22,7 @@ export const launcherService = {
       await invoke<void>('launch_app', { path });
     } catch (error) {
       logger.error('Failed to launch app:', error);
-      throw new Error(`Failed to launch application: ${error}`);
+      throw new Error(`Failed to launch application: ${errorMessage(error)}`);
     }
   },
 
@@ -71,7 +73,7 @@ export const launcherService = {
       await invoke<void>('pin_app', { path });
     } catch (error) {
       logger.error('Failed to pin app:', error);
-      throw new Error(`Failed to pin application: ${error}`);
+      throw new Error(`Failed to pin application: ${errorMessage(error)}`);
     }
   },
 
@@ -84,7 +86,7 @@ export const launcherService = {
       await invoke<void>('unpin_app', { path });
     } catch (error) {
       logger.error('Failed to unpin app:', error);
-      throw new Error(`Failed to unpin application: ${error}`);
+      throw new Error(`Failed to unpin application: ${errorMessage(error)}`);
     }
   },
 
@@ -98,7 +100,7 @@ export const launcherService = {
       await invoke<void>('add_app_tag', { path, tag });
     } catch (error) {
       logger.error('Failed to add tag:', error);
-      throw new Error(`Failed to add tag: ${error}`);
+      throw new Error(`Failed to add tag: ${errorMessage(error)}`);
     }
   },
 
@@ -112,7 +114,7 @@ export const launcherService = {
       await invoke<void>('remove_app_tag', { path, tag });
     } catch (error) {
       logger.error('Failed to remove tag:', error);
-      throw new Error(`Failed to remove tag: ${error}`);
+      throw new Error(`Failed to remove tag: ${errorMessage(error)}`);
     }
   },
 
@@ -162,7 +164,7 @@ export const launcherService = {
       await invoke<void>('clear_launch_history');
     } catch (error) {
       logger.error('Failed to clear history:', error);
-      throw new Error(`Failed to clear history: ${error}`);
+      throw new Error(`Failed to clear history: ${errorMessage(error)}`);
     }
   },
 
@@ -175,7 +177,7 @@ export const launcherService = {
       await invoke<void>('remove_from_history', { path });
     } catch (error) {
       logger.error('Failed to remove from history:', error);
-      throw new Error(`Failed to remove from history: ${error}`);
+      throw new Error(`Failed to remove from history: ${errorMessage(error)}`);
     }
   },
 

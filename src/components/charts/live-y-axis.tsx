@@ -1,7 +1,7 @@
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { useChart } from "./chart-context";
+import { useChart } from "./use-chart";
 
 // ---------------------------------------------------------------------------
 // Interval picker (inspired by liveline's pickInterval)
@@ -120,10 +120,6 @@ export function LiveYAxis({
   // Stabilize the tick VALUE set: only recompute which ticks exist when the
   // domain crosses an interval boundary. We quantize min/max to interval
   // boundaries so the set doesn't change on every sub-pixel lerp frame.
-  const quantizedMin = interval > 0 ? Math.floor(minVal / interval) : 0;
-  const quantizedMax = interval > 0 ? Math.ceil(maxVal / interval) : 0;
-
-  // biome-ignore lint/correctness/useExhaustiveDependencies: quantized values are intentional coarse-grained deps for stability
   const stableTickValues = useMemo(() => {
     if (interval <= 0 || valRange <= 0) {
       return [];
@@ -141,15 +137,7 @@ export function LiveYAxis({
       values.push(rounded);
     }
     return values;
-  }, [
-    quantizedMin,
-    quantizedMax,
-    interval,
-    minVal,
-    maxVal,
-    valRange,
-    allowDecimals,
-  ]);
+  }, [interval, minVal, maxVal, valRange, allowDecimals]);
 
   // Pixel positions update every frame for smooth movement
   const tickData = useMemo(

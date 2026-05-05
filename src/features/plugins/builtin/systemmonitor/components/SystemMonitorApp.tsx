@@ -703,18 +703,20 @@ export function SystemMonitorApp(): React.JSX.Element {
   }, []);
 
   const handleTitlebarMouseDown = useCallback(
-    async (e: React.MouseEvent<HTMLDivElement>) => {
+    (e: React.MouseEvent<HTMLDivElement>) => {
       if (e.button !== 0) return;
       if ((e.target as HTMLElement).closest('button')) return;
-      try {
-        if (e.detail === 2) {
-          await getCurrentWindow().toggleMaximize();
-        } else {
-          await getCurrentWindow().startDragging();
+      void (async () => {
+        try {
+          if (e.detail === 2) {
+            await getCurrentWindow().toggleMaximize();
+          } else {
+            await getCurrentWindow().startDragging();
+          }
+        } catch (err) {
+          logger.error('startDragging failed:', err);
         }
-      } catch (err) {
-        logger.error('startDragging failed:', err);
-      }
+      })();
     },
     [],
   );
@@ -807,9 +809,9 @@ export function SystemMonitorApp(): React.JSX.Element {
 
         <div style={{ flex: 1 }} />
 
-        <Btn onClick={handleExport}>Export CSV</Btn>
-        <Btn onClick={handleTaskManager}>Task Manager</Btn>
-        <Btn onClick={handleClose} danger square>✕</Btn>
+        <Btn onClick={() => { void handleExport(); }}>Export CSV</Btn>
+        <Btn onClick={() => { void handleTaskManager(); }}>Task Manager</Btn>
+        <Btn onClick={() => { void handleClose(); }} danger square>✕</Btn>
       </div>
 
       {/* ── Scrollable body ───────────────────────────────────────────────── */}
@@ -966,7 +968,9 @@ export function SystemMonitorApp(): React.JSX.Element {
                       ? (p.cpuUsagePercent / maxCpuVal) * 100
                       : (p.memoryBytes / maxMemVal) * 100
                   }
-                  onKill={handleKill}
+                  onKill={(pid, name) => {
+                    void handleKill(pid, name);
+                  }}
                 />
               ))}
             </div>

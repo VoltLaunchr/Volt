@@ -25,7 +25,16 @@ export function formatUptime(seconds: number): string {
 }
 
 function csvEscape(value: unknown): string {
-  const s = String(value ?? '');
+  let s: string;
+  if (value === null || value === undefined) {
+    s = '';
+  } else if (typeof value === 'string') {
+    s = value;
+  } else if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint') {
+    s = value.toString();
+  } else {
+    s = JSON.stringify(value);
+  }
   if (s.includes(',') || s.includes('"') || s.includes('\n') || s.includes('\r')) {
     return `"${s.replace(/"/g, '""')}"`;
   }

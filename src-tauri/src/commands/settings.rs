@@ -28,6 +28,8 @@ pub struct GeneralSettings {
     pub show_on_screen: String,
     #[serde(default = "default_true")]
     pub auto_check_for_updates: bool,
+    #[serde(default = "default_stable")]
+    pub update_channel: String,
 }
 
 fn default_true() -> bool {
@@ -46,6 +48,10 @@ fn default_show_on_screen() -> String {
     "cursor".to_string()
 }
 
+fn default_stable() -> String {
+    "stable".to_string()
+}
+
 impl Default for GeneralSettings {
     fn default() -> Self {
         Self {
@@ -58,6 +64,7 @@ impl Default for GeneralSettings {
             search_sensitivity: "medium".to_string(),
             show_on_screen: "cursor".to_string(),
             auto_check_for_updates: true,
+            update_channel: "stable".to_string(),
         }
     }
 }

@@ -38,7 +38,7 @@ export function sortAppsByName(apps: AppInfo[]): AppInfo[] {
  * @param category - Category to filter by
  * @returns Filtered applications array
  */
-export function filterAppsByCategory(apps: AppInfo[], category: AppCategory | string): AppInfo[] {
+export function filterAppsByCategory(apps: AppInfo[], category: AppCategory): AppInfo[] {
   return apps.filter((app) => app.category === category);
 }
 

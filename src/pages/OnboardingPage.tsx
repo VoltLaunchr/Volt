@@ -46,5 +46,5 @@ export function OnboardingPage() {
 
   if (!ready) return null;
 
-  return <OnboardingModal isOpen={true} onComplete={handleComplete} />;
+  return <OnboardingModal isOpen={true} onComplete={() => { void handleComplete(); }} />;
 }

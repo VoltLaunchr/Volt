@@ -31,7 +31,7 @@ export function SyncPanel() {
   }, []);
 
   useEffect(() => {
-    loadStatus();
+    void loadStatus();
   }, [loadStatus]);
 
   const runOp = async (op: 'push' | 'pull') => {
@@ -108,7 +108,9 @@ export function SyncPanel() {
               actionLabel={t('sync.push.action')}
               loading={activeOp === 'push'}
               disabled={isBusy || isLocked}
-              onClick={() => runOp('push')}
+              onClick={() => {
+                void runOp('push');
+              }}
             />
 
             {/* Pull card */}
@@ -119,7 +121,9 @@ export function SyncPanel() {
               actionLabel={t('sync.pull.action')}
               loading={activeOp === 'pull'}
               disabled={isBusy || isLocked}
-              onClick={() => runOp('pull')}
+              onClick={() => {
+                void runOp('pull');
+              }}
             />
 
             {/* Last synced */}

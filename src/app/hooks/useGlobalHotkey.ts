@@ -141,7 +141,7 @@ export function useGlobalHotkey({
       // --- Ctrl+Q: Quit Volt ---
       if (e.key === 'q' && e.ctrlKey && !e.shiftKey && !e.altKey) {
         e.preventDefault();
-        hideWindow().catch((err) => logger.error(err));
+        hideWindow().catch((err: unknown) => logger.error('hideWindow failed:', err));
         return;
       }
 
@@ -179,7 +179,9 @@ export function useGlobalHotkey({
             ? (selectedResult.data as FileInfo).path
             : (selectedResult.data as AppInfo).path;
         const dirPath = getDirectoryPath(path);
-        invoke<void>('open_path', { path: dirPath }).catch((err) => logger.error(err));
+        invoke<void>('open_path', { path: dirPath }).catch((err: unknown) =>
+          logger.error('open_path failed:', err),
+        );
         return;
       }
 
@@ -227,7 +229,7 @@ export function useGlobalHotkey({
             : selectedResult.type === SearchResultType.Application
               ? (selectedResult.data as AppInfo).path
               : selectedResult.title;
-        navigator.clipboard.writeText(path);
+        void navigator.clipboard.writeText(path);
         return;
       }
 
@@ -237,7 +239,9 @@ export function useGlobalHotkey({
         // Remove from history if it's an app or file
         if (selectedResult.type === SearchResultType.Application) {
           const appData = selectedResult.data as AppInfo;
-          invoke<void>('remove_from_history', { path: appData.path }).catch((err) => logger.error(err));
+          invoke<void>('remove_from_history', { path: appData.path }).catch((err: unknown) =>
+            logger.error('remove_from_history failed:', err),
+          );
           // Remove from current results
           setResults(results.filter((r) => r.id !== selectedResult.id));
         }
@@ -259,12 +263,12 @@ export function useGlobalHotkey({
           invoke<void>('launch_application', { path, asAdmin: true })
             .then(() => {
               if (closeOnLaunch) {
-                hideWindow();
+                void hideWindow();
               }
               setSearchQuery('');
               setResults([]);
             })
-            .catch((err) => logger.error(err));
+            .catch((err: unknown) => logger.error('launch_application failed:', err));
         }
         return;
       }
@@ -275,10 +279,14 @@ export function useGlobalHotkey({
         // Launch without hiding window
         if (selectedResult.type === SearchResultType.Application) {
           const appData = selectedResult.data as { path: string };
-          applicationService.launchApplication(appData.path).catch((err) => logger.error(err));
+          applicationService.launchApplication(appData.path).catch((err: unknown) =>
+            logger.error('launchApplication failed:', err),
+          );
         } else if (selectedResult.type === SearchResultType.File) {
           const fileData = selectedResult.data as FileInfo;
-          applicationService.launchApplication(fileData.path).catch((err) => logger.error(err));
+          applicationService.launchApplication(fileData.path).catch((err: unknown) =>
+            logger.error('launchApplication failed:', err),
+          );
         }
         // Don't hide window, just clear search
         setSearchQuery('');
@@ -351,7 +359,7 @@ export function useGlobalHotkey({
           e.preventDefault();
           setSearchQuery('');
           setResults([]);
-          hideWindow().catch((err) => logger.error(err));
+          hideWindow().catch((err: unknown) => logger.error('hideWindow failed:', err));
           break;
       }
     },

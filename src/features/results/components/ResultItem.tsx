@@ -1,13 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import {
-  AppWindow,
-  Copy,
-  Equal,
-  File,
-  FolderOpen,
-  Globe,
-  Loader2,
-} from 'lucide-react';
+import { AppWindow, Copy, Equal, FolderOpen, Globe, Loader2 } from 'lucide-react';
 
 const APP_ICON = {
   calculator: '/icons/app/calculator_icon.svg',
@@ -17,6 +9,7 @@ const APP_ICON = {
   games: '/icons/app/games_icon.svg',
   shell: '/icons/app/shell_icon.svg',
   systemCommand: '/icons/app/settings_icon.svg',
+  fileSearch: '/icons/app/file_search_icon.svg',
 } as const;
 import { SearchResult, SearchResultType } from '../../../shared/types/common.types';
 import type { ShellOutputData } from '../../plugins/builtin/shell';
@@ -315,6 +308,8 @@ export function ResultItem({ result, isSelected }: ResultItemProps) {
         renderSystemMonitorIcon()
       ) : result.icon ? (
         <img src={result.icon} alt="" className="w-8 h-8 object-contain shrink-0" />
+      ) : result.type === SearchResultType.File ? (
+        <img src={APP_ICON.fileSearch} alt="" className="w-8 h-8 object-contain shrink-0 rounded-md" />
       ) : result.type === SearchResultType.Game ? (
         <img src={APP_ICON.games} alt="" className="w-8 h-8 object-contain shrink-0 rounded-md" />
       ) : result.type === SearchResultType.Calculator ? (
@@ -331,9 +326,7 @@ export function ResultItem({ result, isSelected }: ResultItemProps) {
         <img src={APP_ICON.timer} alt="" className="w-8 h-8 object-contain shrink-0 rounded-md" />
       ) : (
         <div className="flex items-center justify-center w-8 h-8 shrink-0 text-body">
-          {result.type === SearchResultType.File ? (
-            <File size={24} strokeWidth={2} className="w-4 h-4 text-mute" />
-          ) : result.type === SearchResultType.Application ? (
+          {result.type === SearchResultType.Application ? (
             <AppWindow size={24} strokeWidth={2} className="w-4 h-4 text-mute" />
           ) : result.type === SearchResultType.Url ? (
             <Globe size={24} strokeWidth={2} className="w-4 h-4 text-mute" />

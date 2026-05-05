@@ -39,7 +39,7 @@ export function ClipboardHistoryView({ onClose }: ClipboardHistoryViewProps): Re
   }, []);
 
   useEffect(() => {
-    loadHistory();
+    void loadHistory();
   }, [loadHistory]);
 
   // Filter items based on search query and type filter
@@ -102,7 +102,7 @@ export function ClipboardHistoryView({ onClose }: ClipboardHistoryViewProps): Re
         case 'Enter':
           e.preventDefault();
           if (selectedItem) {
-            handlePaste(selectedItem);
+            void handlePaste(selectedItem);
           }
           break;
 
@@ -409,7 +409,9 @@ export function ClipboardHistoryView({ onClose }: ClipboardHistoryViewProps): Re
                         setSelectedIndex(globalIndex);
                         setSelectedItem(item);
                       }}
-                      onDoubleClick={() => handlePaste(item)}
+                      onDoubleClick={() => {
+                        void handlePaste(item);
+                      }}
                     >
                       <div className="text-xl shrink-0 w-6 text-center flex items-center justify-center">
                         <span className={cn(isSelected ? '[&_img]:brightness-0 [&_img]:saturate-100 [&_img]:invert' : '[&_img]:brightness-0 [&_img]:saturate-100 [&_img]:invert-[60%] [&_img]:opacity-80')}>
@@ -533,20 +535,26 @@ export function ClipboardHistoryView({ onClose }: ClipboardHistoryViewProps): Re
             <div className="flex gap-2 px-4 py-3 border-t border-hairline bg-canvas">
               <button
                 className="flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium rounded-md border border-hairline bg-accent-blue text-on-dark cursor-pointer transition-all hover:opacity-90"
-                onClick={() => handlePaste(selectedItem)}
+                onClick={() => {
+                  void handlePaste(selectedItem);
+                }}
               >
                 <span>{t('actions.paste')}</span>
                 <kbd className="px-1.5 py-0.5 text-xs font-mono bg-white/20 rounded-sm">↵</kbd>
               </button>
               <button
                 className="flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium rounded-md border border-hairline bg-surface text-ink cursor-pointer transition-all hover:bg-surface-elevated hover:border-hairline-strong"
-                onClick={() => handleTogglePin(selectedItem)}
+                onClick={() => {
+                  void handleTogglePin(selectedItem);
+                }}
               >
                 {selectedItem.pinned ? t('actions.unpin') : t('actions.pin')}
               </button>
               <button
                 className="flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium rounded-md border border-accent-red bg-transparent text-accent-red cursor-pointer transition-all hover:bg-accent-red hover:text-on-dark"
-                onClick={() => handleDelete(selectedItem)}
+                onClick={() => {
+                  void handleDelete(selectedItem);
+                }}
               >
                 {t('actions.delete')}
               </button>

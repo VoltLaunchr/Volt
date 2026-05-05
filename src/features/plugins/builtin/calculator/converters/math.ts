@@ -73,13 +73,13 @@ function processScientificFunctions(expr: string): string {
     const before = processed;
 
     // sqrt(x)
-    processed = processed.replace(/sqrt\s*\(\s*([^()]+)\s*\)/gi, (_match, arg) => {
+    processed = processed.replace(/sqrt\s*\(\s*([^()]+)\s*\)/gi, (_match: string, arg: string) => {
       const val = evaluateSimple(arg);
       return val !== null ? Math.sqrt(val).toString() : _match;
     });
 
     // sin(x) - expects degrees by default
-    processed = processed.replace(/sin\s*\(\s*([^()]+)\s*\)/gi, (_match, arg) => {
+    processed = processed.replace(/sin\s*\(\s*([^()]+)\s*\)/gi, (_match: string, arg: string) => {
       const val = evaluateSimple(arg);
       if (val === null) return _match;
       const radians = (val * Math.PI) / 180;
@@ -87,7 +87,7 @@ function processScientificFunctions(expr: string): string {
     });
 
     // cos(x) - expects degrees by default
-    processed = processed.replace(/cos\s*\(\s*([^()]+)\s*\)/gi, (_match, arg) => {
+    processed = processed.replace(/cos\s*\(\s*([^()]+)\s*\)/gi, (_match: string, arg: string) => {
       const val = evaluateSimple(arg);
       if (val === null) return _match;
       const radians = (val * Math.PI) / 180;
@@ -95,7 +95,7 @@ function processScientificFunctions(expr: string): string {
     });
 
     // tan(x) - expects degrees by default
-    processed = processed.replace(/tan\s*\(\s*([^()]+)\s*\)/gi, (_match, arg) => {
+    processed = processed.replace(/tan\s*\(\s*([^()]+)\s*\)/gi, (_match: string, arg: string) => {
       const val = evaluateSimple(arg);
       if (val === null) return _match;
       const radians = (val * Math.PI) / 180;
@@ -103,19 +103,19 @@ function processScientificFunctions(expr: string): string {
     });
 
     // log(x) - base 10
-    processed = processed.replace(/log\s*\(\s*([^()]+)\s*\)/gi, (_match, arg) => {
+    processed = processed.replace(/log\s*\(\s*([^()]+)\s*\)/gi, (_match: string, arg: string) => {
       const val = evaluateSimple(arg);
       return val !== null && val > 0 ? Math.log10(val).toString() : _match;
     });
 
     // ln(x) - natural log
-    processed = processed.replace(/ln\s*\(\s*([^()]+)\s*\)/gi, (_match, arg) => {
+    processed = processed.replace(/ln\s*\(\s*([^()]+)\s*\)/gi, (_match: string, arg: string) => {
       const val = evaluateSimple(arg);
       return val !== null && val > 0 ? Math.log(val).toString() : _match;
     });
 
     // abs(x)
-    processed = processed.replace(/abs\s*\(\s*([^()]+)\s*\)/gi, (_match, arg) => {
+    processed = processed.replace(/abs\s*\(\s*([^()]+)\s*\)/gi, (_match: string, arg: string) => {
       const val = evaluateSimple(arg);
       return val !== null ? Math.abs(val).toString() : _match;
     });

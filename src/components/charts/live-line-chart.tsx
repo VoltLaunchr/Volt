@@ -135,7 +135,7 @@ function interpolateAtTime(
   if (points.length === 0) {
     return null;
   }
-  const firstPt = points[0] as LiveLinePoint;
+  const firstPt = points[0];
   const lastPt = points.at(-1) as LiveLinePoint;
   if (timeSec <= firstPt.time) {
     return firstPt.value;
@@ -170,7 +170,13 @@ function interpolateAtTime(
   return p1.value + (p2.value - p1.value) * t;
 }
 
-const bisectTime = bisector<LiveLinePoint, number>((d) => d.time).left;
+const timeBisector = bisector<LiveLinePoint, number>((d) => d.time);
+const bisectTime = (
+  array: ArrayLike<LiveLinePoint>,
+  x: number,
+  lo?: number,
+  hi?: number
+) => timeBisector.left(array, x, lo, hi);
 
 function extractLiveLineConfigs(children: ReactNode): LineConfig[] {
   const configs: LineConfig[] = [];

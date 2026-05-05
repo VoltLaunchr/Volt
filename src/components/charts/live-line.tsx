@@ -2,55 +2,9 @@ import { curveMonotoneX } from "@visx/curve";
 import { AreaClosed, LinePath } from "@visx/shape";
 import { motion } from "motion/react";
 import { useCallback, useId, useMemo } from "react";
-import { chartCssVars, useChart } from "./chart-context";
-
-export type Momentum = "up" | "down" | "flat";
-
-export interface MomentumColors {
-  up: string;
-  down: string;
-  flat: string;
-}
-
-export function detectMomentum(
-  data: Record<string, unknown>[],
-  dataKey: string,
-  lookback = 20
-): Momentum {
-  if (data.length < 5) {
-    return "flat";
-  }
-  const start = Math.max(0, data.length - lookback);
-  let min = Number.POSITIVE_INFINITY;
-  let max = Number.NEGATIVE_INFINITY;
-  for (let i = start; i < data.length; i++) {
-    const v = data[i]?.[dataKey];
-    if (typeof v === "number") {
-      if (v < min) {
-        min = v;
-      }
-      if (v > max) {
-        max = v;
-      }
-    }
-  }
-  const range = max - min;
-  if (range === 0) {
-    return "flat";
-  }
-  const tailStart = Math.max(start, data.length - 5);
-  const first = (data[tailStart]?.[dataKey] as number) ?? 0;
-  const last = (data.at(-1)?.[dataKey] as number) ?? 0;
-  const delta = last - first;
-  const threshold = range * 0.12;
-  if (delta > threshold) {
-    return "up";
-  }
-  if (delta < -threshold) {
-    return "down";
-  }
-  return "flat";
-}
+import { chartCssVars } from "./chart-css-vars";
+import { useChart } from "./use-chart";
+import { detectMomentum, type MomentumColors } from "./live-line.utils";
 
 export interface LiveLineProps {
   /** Key in data to use for y values */
@@ -124,10 +78,8 @@ export function LiveLine({
   // The second-to-last point is the "now" position (live tip).
   // The last point is the queued future point for the fade-out zone.
   const nowPoint = data.length >= 2 ? data.at(-2) : data.at(-1);
-  const liveValue =
-    nowPoint && typeof nowPoint[dataKey] === "number"
-      ? (nowPoint[dataKey] as number)
-      : 0;
+  const nowValueRaw = nowPoint?.[dataKey];
+  const liveValue = typeof nowValueRaw === "number" ? nowValueRaw : 0;
 
   const liveDotX = nowPoint ? (xScale(xAccessor(nowPoint)) ?? 0) : innerWidth;
   const liveDotY = yScale(liveValue) ?? 0;

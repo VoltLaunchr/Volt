@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import Snowfall from 'react-snowfall';
 import { useTranslation } from 'react-i18next';
 import { listen } from '@tauri-apps/api/event';
@@ -22,6 +22,7 @@ import { useResultActions } from './hooks/useResultActions';
 import { useSearchPipeline } from './hooks/useSearchPipeline';
 import { openSettingsWindow } from './utils';
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
+import { installPendingUpdate, hasPendingUpdate } from '../features/settings/services/updateService';
 import i18n from '../i18n';
 
 const WINDOW_WIDTH_DEFAULT = 800;
@@ -79,15 +80,15 @@ function App() {
 
   useEffect(() => {
     let unlisten: (() => void) | undefined;
-    listen<{ language: string }>('volt://language-changed', ({ payload }) => {
-      i18n.changeLanguage(payload.language);
+    void listen<{ language: string }>('volt://language-changed', ({ payload }) => {
+      void i18n.changeLanguage(payload.language);
     }).then((fn) => { unlisten = fn; });
     return () => { unlisten?.(); };
   }, []);
 
   useEffect(() => {
     let unlisten: (() => void) | undefined;
-    listen('volt://restart-onboarding', () => {
+    void listen('volt://restart-onboarding', () => {
       const current = useAppStore.getState().settings;
       if (current) {
         useAppStore.getState().setSettings({
@@ -105,14 +106,42 @@ function App() {
   useEffect(() => {
     if (rawHasSeenOnboarding !== false) return;
     WebviewWindow.getByLabel('onboarding').then((win) => {
-      if (win) { win.show(); win.setFocus(); }
+      if (win) { void win.show(); void win.setFocus(); }
     }).catch(() => {});
   }, [rawHasSeenOnboarding]);
+
+  // Main window starts hidden in tauri.conf.json (launcher behaviour). Reveal it
+  // once settings are loaded AND onboarding is already done. First-time users
+  // stay hidden until OnboardingPage.handleComplete shows the main window itself.
+  const mainShownRef = useRef(false);
+  useEffect(() => {
+    if (mainShownRef.current) return;
+    if (rawHasSeenOnboarding !== true) return;
+    mainShownRef.current = true;
+    const win = getCurrentWindow();
+    win.show().then(() => win.setFocus()).catch(() => {});
+  }, [rawHasSeenOnboarding]);
+
+  // Install a deferred update when the user closes the app.
+  useEffect(() => {
+    const win = getCurrentWindow();
+    const unlisten = win.onCloseRequested(async (event) => {
+      if (!hasPendingUpdate()) return;
+      event.preventDefault();
+      try {
+        await installPendingUpdate();
+      } catch {
+        // If install fails, allow the app to close normally
+        await win.destroy();
+      }
+    });
+    return () => { void unlisten.then((fn) => fn()); };
+  }, []);
 
   // When the onboarding window closes, mark onboarding as done in this window's store.
   useEffect(() => {
     let unlisten: (() => void) | undefined;
-    listen('volt://onboarding-complete', () => {
+    void listen('volt://onboarding-complete', () => {
       const current = useAppStore.getState().settings;
       if (current) {
         useAppStore.getState().setSettings({
@@ -195,7 +224,7 @@ function App() {
       </a>
       {activeView.type === 'search' && (
         <>
-          <div className="drag-region" onMouseDown={startDragging}>
+          <div className="drag-region" onMouseDown={() => { void startDragging(); }}>
             <div className="drag-handle"></div>
           </div>
           <SearchBar
@@ -212,8 +241,8 @@ function App() {
       <div className="flex flex-row flex-1 min-h-0 overflow-hidden">
         <div className="flex flex-col flex-1 min-h-0 min-w-0">
           <ViewRouter
-            onSelectEmoji={handleSelectEmoji}
-            onLaunchResult={handleLaunch}
+            onSelectEmoji={(emoji) => { void handleSelectEmoji(emoji); }}
+            onLaunchResult={(result) => { void handleLaunch(result); }}
             onActivateSuggestion={handleSuggestionActivate}
           />
         </div>
@@ -229,7 +258,7 @@ function App() {
 
       <ResultContextMenu
         state={contextMenu}
-        onLaunch={handleLaunch}
+        onLaunch={(result) => { void handleLaunch(result); }}
         onShowProperties={handleShowProperties}
         onClose={closeContextMenu}
       />
@@ -237,7 +266,7 @@ function App() {
       <ActionsMenu
         isOpen={isActionsMenuOpen}
         result={actionsMenuResult}
-        onLaunch={handleLaunch}
+        onLaunch={(result) => { void handleLaunch(result); }}
         onShowProperties={handleShowProperties}
         onClose={closeActionsMenu}
       />

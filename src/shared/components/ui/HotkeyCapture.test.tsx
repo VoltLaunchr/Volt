@@ -30,7 +30,7 @@ describe('HotkeyCapture', () => {
   });
 
   it('captures Ctrl+Shift+Space and normalizes to "ctrl+shift+Space"', () => {
-    const onChange = vi.fn();
+    const onChange = vi.fn<(hotkey: string) => void>();
     render(<HotkeyCapture value="" onChange={onChange} />);
     startRecording();
 
@@ -59,7 +59,7 @@ describe('HotkeyCapture', () => {
   });
 
   it('normalizes arrow keys', () => {
-    const onChange = vi.fn();
+    const onChange = vi.fn<(hotkey: string) => void>();
     render(<HotkeyCapture value="" onChange={onChange} />);
     startRecording();
 
@@ -77,7 +77,7 @@ describe('HotkeyCapture', () => {
   });
 
   it('normalizes Enter to Return', () => {
-    const onChange = vi.fn();
+    const onChange = vi.fn<(hotkey: string) => void>();
     render(<HotkeyCapture value="" onChange={onChange} />);
     startRecording();
 
@@ -94,8 +94,8 @@ describe('HotkeyCapture', () => {
   });
 
   it('rejects a main key without any modifier', () => {
-    const onChange = vi.fn();
-    const onError = vi.fn();
+    const onChange = vi.fn<(hotkey: string) => void>();
+    const onError = vi.fn<(error: string) => void>();
     render(<HotkeyCapture value="" onChange={onChange} onError={onError} />);
     startRecording();
 
@@ -117,7 +117,7 @@ describe('HotkeyCapture', () => {
   });
 
   it('uppercases single letter keys', () => {
-    const onChange = vi.fn();
+    const onChange = vi.fn<(hotkey: string) => void>();
     render(<HotkeyCapture value="" onChange={onChange} />);
     startRecording();
 

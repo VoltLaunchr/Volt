@@ -366,7 +366,9 @@ export function OnboardingModal({ isOpen, onComplete }: OnboardingModalProps) {
               hotkey={hotkey}
               justSaved={justSaved}
               error={hotkeyError}
-              onHotkeyChange={handleHotkeyChange}
+              onHotkeyChange={(hk) => {
+                void handleHotkeyChange(hk);
+              }}
               onError={handleHotkeyError}
               onRecordingChange={setIsCapturingHotkey}
             />

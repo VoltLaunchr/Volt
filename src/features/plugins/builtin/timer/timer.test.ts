@@ -118,38 +118,38 @@ describe('TimerPlugin', () => {
   // ── match: flexible parsing ────────────────────────────────────────────
 
   describe('match — flexible duration parsing', () => {
-    it('parses "timer 5m"', async () => {
-      const results = await plugin.match({ query: 'timer 5m' });
+    it('parses "timer 5m"', () => {
+      const results = plugin.match({ query: 'timer 5m' });
       expect(results.length).toBeGreaterThanOrEqual(1);
       const startResult = results.find((r) => (r.data as Record<string, unknown>).action === 'start');
       expect(startResult).toBeDefined();
       expect((startResult!.data as Record<string, unknown>).duration).toBe(5 * 60_000);
     });
 
-    it('parses "timer 5 minutes"', async () => {
-      const results = await plugin.match({ query: 'timer 5 minutes' });
+    it('parses "timer 5 minutes"', () => {
+      const results = plugin.match({ query: 'timer 5 minutes' });
       const startResult = results.find((r) => (r.data as Record<string, unknown>).action === 'start');
       expect(startResult).toBeDefined();
       expect((startResult!.data as Record<string, unknown>).duration).toBe(5 * 60_000);
     });
 
-    it('parses "timer 1h30m work session"', async () => {
-      const results = await plugin.match({ query: 'timer 1h30m work session' });
+    it('parses "timer 1h30m work session"', () => {
+      const results = plugin.match({ query: 'timer 1h30m work session' });
       const startResult = results.find((r) => (r.data as Record<string, unknown>).action === 'start');
       expect(startResult).toBeDefined();
       expect((startResult!.data as Record<string, unknown>).duration).toBe(90 * 60_000);
       expect((startResult!.data as Record<string, unknown>).label).toBe('work session');
     });
 
-    it('parses "countdown 30s"', async () => {
-      const results = await plugin.match({ query: 'countdown 30s' });
+    it('parses "countdown 30s"', () => {
+      const results = plugin.match({ query: 'countdown 30s' });
       const startResult = results.find((r) => (r.data as Record<string, unknown>).action === 'start');
       expect(startResult).toBeDefined();
       expect((startResult!.data as Record<string, unknown>).duration).toBe(30_000);
     });
 
-    it('parses bare number "timer 10" as 10 minutes', async () => {
-      const results = await plugin.match({ query: 'timer 10' });
+    it('parses bare number "timer 10" as 10 minutes', () => {
+      const results = plugin.match({ query: 'timer 10' });
       const startResult = results.find((r) => (r.data as Record<string, unknown>).action === 'start');
       expect(startResult).toBeDefined();
       expect((startResult!.data as Record<string, unknown>).duration).toBe(10 * 60_000);
@@ -159,15 +159,15 @@ describe('TimerPlugin', () => {
   // ── match: presets ─────────────────────────────────────────────────────
 
   describe('match — presets', () => {
-    it('shows quick presets for bare "timer"', async () => {
-      const results = await plugin.match({ query: 'timer' });
+    it('shows quick presets for bare "timer"', () => {
+      const results = plugin.match({ query: 'timer' });
       expect(results.length).toBeGreaterThanOrEqual(4);
       expect(results.some((r) => r.title.includes('1 Minute'))).toBe(true);
       expect(results.some((r) => r.title.includes('Pomodoro'))).toBe(true);
     });
 
-    it('shows pomodoro presets', async () => {
-      const results = await plugin.match({ query: 'pomodoro' });
+    it('shows pomodoro presets', () => {
+      const results = plugin.match({ query: 'pomodoro' });
       expect(results.length).toBe(4);
       expect(results[0].data?.action).toBe('open-view');
       expect(results[1].title).toContain('25 minutes');
@@ -177,10 +177,10 @@ describe('TimerPlugin', () => {
   // ── match: active timer results ────────────────────────────────────────
 
   describe('match — active timers shown in results', () => {
-    it('shows active timers with cancel action when typing "timer"', async () => {
+    it('shows active timers with cancel action when typing "timer"', () => {
       timerStore.startTimer(60_000, 'Test Timer');
 
-      const results = await plugin.match({ query: 'timer' });
+      const results = plugin.match({ query: 'timer' });
       const cancelResult = results.find(
         (r) => (r.data as Record<string, unknown>).action === 'cancel',
       );
@@ -193,9 +193,9 @@ describe('TimerPlugin', () => {
   // ── execute ────────────────────────────────────────────────────────────
 
   describe('execute', () => {
-    it('starts a timer via timerStore', async () => {
+    it('starts a timer via timerStore', () => {
       const before = timerStore.getActiveTimers().length;
-      await plugin.execute({
+      plugin.execute({
         id: 'timer-test',
         type: PluginResultType.Timer,
         title: 'Test',
@@ -206,11 +206,11 @@ describe('TimerPlugin', () => {
       expect(timerStore.getActiveTimers().length).toBe(before + 1);
     });
 
-    it('cancels a timer', async () => {
+    it('cancels a timer', () => {
       const id = timerStore.startTimer(60_000, 'To Cancel');
       expect(timerStore.getTimer(id)).toBeDefined();
 
-      await plugin.execute({
+      plugin.execute({
         id: 'timer-cancel',
         type: PluginResultType.Timer,
         title: 'Cancel',
@@ -237,16 +237,16 @@ describe('timerStore persistence', () => {
     timerStore.startTimer(60_000, 'Persist Test');
     const stored = localStorage.getItem('volt-timers');
     expect(stored).not.toBeNull();
-    const parsed = JSON.parse(stored!);
+    const parsed = JSON.parse(stored!) as { id: string; label: string }[];
     expect(parsed.length).toBeGreaterThanOrEqual(1);
-    expect(parsed.some((t: { label: string }) => t.label === 'Persist Test')).toBe(true);
+    expect(parsed.some((t) => t.label === 'Persist Test')).toBe(true);
   });
 
   it('removes timer from localStorage on cancel', () => {
     const id = timerStore.startTimer(60_000, 'Cancel Persist');
     timerStore.cancelTimer(id);
     const stored = localStorage.getItem('volt-timers');
-    const parsed = JSON.parse(stored!);
-    expect(parsed.some((t: { id: string }) => t.id === id)).toBe(false);
+    const parsed = JSON.parse(stored!) as { id: string }[];
+    expect(parsed.some((t) => t.id === id)).toBe(false);
   });
 });

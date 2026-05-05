@@ -177,7 +177,7 @@ export function useLauncher(autoLoad = true): UseLauncherReturn {
   // Auto-load on mount
   useEffect(() => {
     if (autoLoad) {
-      refresh();
+      void refresh();
     }
   }, [autoLoad, refresh]);
 

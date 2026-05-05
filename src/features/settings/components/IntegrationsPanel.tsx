@@ -77,7 +77,7 @@ export function IntegrationsPanel() {
       }
       setCredentials(status);
     };
-    loadCredentials();
+    void loadCredentials();
   }, []);
 
   const handleOAuthStart = async (serviceId: 'github' | 'notion') => {
@@ -190,10 +190,18 @@ export function IntegrationsPanel() {
             onToggleVisibility={() =>
               setShowTokens((prev) => ({ ...prev, [integration.id]: !prev[integration.id] }))
             }
-            onSave={() => handleSaveToken(integration.id)}
-            onTest={() => handleTestToken(integration.id)}
-            onDelete={() => handleDeleteToken(integration.id)}
-            onOAuthStart={() => handleOAuthStart(integration.id)}
+            onSave={() => {
+              void handleSaveToken(integration.id);
+            }}
+            onTest={() => {
+              void handleTestToken(integration.id);
+            }}
+            onDelete={() => {
+              void handleDeleteToken(integration.id);
+            }}
+            onOAuthStart={() => {
+              void handleOAuthStart(integration.id);
+            }}
             t={t}
           />
         ))}

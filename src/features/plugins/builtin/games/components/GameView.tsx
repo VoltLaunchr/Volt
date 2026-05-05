@@ -36,7 +36,7 @@ interface GameViewProps {
   onClose: () => void;
 }
 
-type PlatformFilter = 'all' | string;
+type PlatformFilter = string;
 
 export function GameView({ onClose }: GameViewProps): React.JSX.Element {
   const { t } = useTranslation('games');
@@ -72,7 +72,7 @@ export function GameView({ onClose }: GameViewProps): React.JSX.Element {
   }, []);
 
   useEffect(() => {
-    loadGames();
+    void loadGames();
   }, [loadGames]);
 
   // Filter games based on search query and platform
@@ -132,7 +132,7 @@ export function GameView({ onClose }: GameViewProps): React.JSX.Element {
         case 'Enter':
           e.preventDefault();
           if (selectedGame) {
-            handleLaunchGame(selectedGame);
+            void handleLaunchGame(selectedGame);
           }
           break;
 
@@ -308,7 +308,9 @@ export function GameView({ onClose }: GameViewProps): React.JSX.Element {
         {/* Rescan button */}
         <button
           className="flex items-center justify-center w-8 h-8 bg-canvas border border-hairline rounded-md text-mute cursor-pointer transition-all hover:bg-surface-elevated hover:border-hairline-strong hover:text-ink disabled:opacity-50 disabled:cursor-not-allowed"
-          onClick={handleRescan}
+          onClick={() => {
+            void handleRescan();
+          }}
           disabled={isRescanning}
           title={t('view.rescan')}
         >
@@ -376,7 +378,9 @@ export function GameView({ onClose }: GameViewProps): React.JSX.Element {
                         setSelectedIndex(globalIndex);
                         setSelectedGame(game);
                       }}
-                      onDoubleClick={() => handleLaunchGame(game)}
+                      onDoubleClick={() => {
+                        void handleLaunchGame(game);
+                      }}
                     >
                       <div className="w-10 h-10 rounded-md overflow-hidden shrink-0 bg-surface flex items-center justify-center">
                         {game.iconPath ? (
@@ -416,7 +420,9 @@ export function GameView({ onClose }: GameViewProps): React.JSX.Element {
                     setSelectedIndex(index);
                     setSelectedGame(game);
                   }}
-                  onDoubleClick={() => handleLaunchGame(game)}
+                  onDoubleClick={() => {
+                    void handleLaunchGame(game);
+                  }}
                 >
                   <div className="w-10 h-10 rounded-md overflow-hidden shrink-0 bg-surface flex items-center justify-center">
                     {game.iconPath ? (
@@ -514,7 +520,9 @@ export function GameView({ onClose }: GameViewProps): React.JSX.Element {
             <div className="flex gap-2 px-4 py-3 border-t border-hairline bg-canvas">
               <button
                 className="flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium rounded-md border border-hairline bg-accent-blue-soft text-on-dark cursor-pointer transition-all hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
-                onClick={() => handleLaunchGame(selectedGame)}
+                onClick={() => {
+                  void handleLaunchGame(selectedGame);
+                }}
                 disabled={!selectedGame.isInstalled}
               >
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
@@ -526,7 +534,7 @@ export function GameView({ onClose }: GameViewProps): React.JSX.Element {
               <button
                 className="flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium rounded-md border border-hairline bg-surface text-ink cursor-pointer transition-all hover:bg-surface-elevated hover:border-hairline-strong"
                 onClick={() => {
-                  invoke<void>('open_path', { path: selectedGame.installPath });
+                  void invoke<void>('open_path', { path: selectedGame.installPath });
                 }}
               >
                 <svg

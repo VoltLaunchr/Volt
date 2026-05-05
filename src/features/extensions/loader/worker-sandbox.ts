@@ -200,7 +200,7 @@ export class WorkerPlugin implements Plugin {
       // Worker-generated fetch ids are numeric (see __fetchCounter__ in
       // worker-bootstrap); coerce for the handler signature.
       const fetchId = typeof id === 'number' ? id : Number(id);
-      this.handleFetchRequest(fetchId, payload as { url: string; options?: RequestInit });
+      void this.handleFetchRequest(fetchId, payload as { url: string; options?: RequestInit });
       return;
     }
 
@@ -530,14 +530,12 @@ export class WorkerPlugin implements Plugin {
         });
         sanitized.headers = cleaned;
       } else if (Array.isArray(sanitized.headers)) {
-        sanitized.headers = (sanitized.headers as [string, string][]).filter(
+        sanitized.headers = sanitized.headers.filter(
           ([key]) => !FORBIDDEN_HEADERS.has(String(key).toLowerCase())
         );
       } else if (typeof sanitized.headers === 'object') {
         const cleaned: Record<string, string> = {};
-        for (const [key, value] of Object.entries(
-          sanitized.headers as Record<string, string>
-        )) {
+        for (const [key, value] of Object.entries(sanitized.headers)) {
           if (!FORBIDDEN_HEADERS.has(key.toLowerCase())) {
             cleaned[key] = value;
           }
