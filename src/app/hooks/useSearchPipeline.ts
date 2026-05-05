@@ -1,7 +1,7 @@
 import { invoke, Channel } from '@tauri-apps/api/core';
 import { useCallback, useEffect, useRef } from 'react';
 import { pluginRegistry } from '../../features/plugins/core';
-import { PluginResult as PluginResultData } from '../../features/plugins/types';
+import { PluginResult as PluginResultData, PluginResultType } from '../../features/plugins/types';
 import { AppInfo, FileInfo, SearchResult, SearchResultType } from '../../shared/types/common.types';
 import {
   SEARCH_SCORING,
@@ -164,25 +164,25 @@ const convertPlugins = (
     // `{ type, value, color }` payload directly, so we unwrap here.
     let data: SearchResult['data'] = result;
     switch (result.type) {
-      case 'calculator':
+      case PluginResultType.Calculator:
         searchResultType = SearchResultType.Calculator;
         break;
-      case 'websearch':
+      case PluginResultType.WebSearch:
         searchResultType = SearchResultType.WebSearch;
         break;
-      case 'systemcommand':
+      case PluginResultType.SystemCommand:
         searchResultType = SearchResultType.SystemCommand;
         break;
-      case 'game':
+      case PluginResultType.Game:
         searchResultType = SearchResultType.Game;
         break;
-      case 'timer':
+      case PluginResultType.Timer:
         searchResultType = SearchResultType.Timer;
         break;
-      case 'shellcommand':
+      case PluginResultType.ShellCommand:
         searchResultType = SearchResultType.ShellCommand;
         break;
-      case 'systemmonitor':
+      case PluginResultType.SystemMonitor:
         searchResultType = SearchResultType.SystemMonitor;
         data = (result.data ?? result) as SearchResult['data'];
         break;
@@ -454,7 +454,7 @@ export function useSearchPipeline({
             { engine: 'youtube', label: 'YouTube', url: `https://www.youtube.com/results?search_query=${encoded}` },
           ];
           fallbackEngines.forEach(({ engine, label, url }) => {
-            const fallbackId = `websearch-fallback-${engine}-${Date.now()}`;
+            const fallbackId = `websearch-fallback-${engine}-${searchId}`;
             allResults.push({
               id: fallbackId,
               type: SearchResultType.WebSearch,
@@ -494,7 +494,7 @@ export function useSearchPipeline({
     const debounceMs = searchQuery.trim().length > 2 ? 80 : 150;
 
     const timeoutId = setTimeout(() => {
-      performSearch(searchQuery);
+      void performSearch(searchQuery);
     }, debounceMs);
 
     return () => clearTimeout(timeoutId);

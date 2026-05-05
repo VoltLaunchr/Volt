@@ -28,7 +28,7 @@ import type { Settings } from '../../features/settings/types/settings.types';
 import { updateService } from '../../features/settings/services/updateService';
 import { AppInfo } from '../../shared/types/common.types';
 import { logger } from '../../shared/utils/logger';
-import { useToastStore } from '../../shared/components/ui/Toast';
+import { useToastStore } from '../../shared/components/ui/toast-store';
 import { useAppStore } from '../../stores/appStore';
 import { useUiStore } from '../../stores/uiStore';
 import type { ExtensionPermission } from '../../features/extensions/types/extension.types';
@@ -150,7 +150,7 @@ export function useAppLifecycle(): UseAppLifecycleResult {
       }
     };
 
-    initializeApp();
+    void initializeApp();
   }, [setSettings]);
 
   // Best-effort update check on startup + periodic background check.
@@ -162,33 +162,50 @@ export function useAppLifecycle(): UseAppLifecycleResult {
       return;
     }
 
-    const showUpdateToast = (update: { version: string }) => {
+    const channel = settings?.general.updateChannel ?? 'stable';
+
+    const showUpdateToast = (update: { version: string; critical?: boolean; isBeta?: boolean }) => {
       const { addToast } = useToastStore.getState();
+      const label = update.isBeta ? `v${update.version} (beta)` : `v${update.version}`;
+      const message = update.critical
+        ? `Critical update ${label} available — install immediately`
+        : `Update available: ${label} — Open Settings to update`;
+
       addToast(
-        `Update available: v${update.version} — Open Settings to update`,
+        message,
         'update',
         0,
         () => {
-          window.dispatchEvent(new CustomEvent('volt:open-settings-update', { detail: update }));
-        }
+          // Open the settings window and navigate to About section
+          void import('@tauri-apps/api/webviewWindow').then(({ WebviewWindow }) => {
+            WebviewWindow.getByLabel('settings').then((win) => {
+              if (win) {
+                void win.show();
+                void win.setFocus();
+              }
+            }).catch(() => {});
+          });
+        },
+        // Critical updates cannot be dismissed — the user must open Settings
+        !update.critical
       );
     };
 
     // Startup check (once per mount, throttled inside the service)
     if (!updateCheckDone.current) {
       updateCheckDone.current = true;
-      void updateService.checkUpdateOnStartup().then((update) => {
+      void updateService.checkUpdateOnStartup(channel).then((update) => {
         if (update) showUpdateToast(update);
       });
     }
 
     // Periodic background check every 6h
-    updateService.startPeriodicCheck((update) => showUpdateToast(update));
+    updateService.startPeriodicCheck((update) => showUpdateToast(update), channel);
 
     return () => {
       updateService.stopPeriodicCheck();
     };
-  }, [settings?.general.autoCheckForUpdates]);
+  }, [settings?.general.autoCheckForUpdates, settings?.general.updateChannel]);
 
   // Setup listener for system theme changes (for auto mode)
   useEffect(() => {
@@ -205,27 +222,30 @@ export function useAppLifecycle(): UseAppLifecycleResult {
     let unlistenFn: (() => void) | undefined;
     let cancelled = false;
 
-    listen<{ action: 'load' | 'unload' | 'reload'; extensionId: string }>(
+    void listen<{ action: 'load' | 'unload' | 'reload'; extensionId: string }>(
       'extension-changed',
-      async (event) => {
+      (event) => {
         const { action, extensionId } = event.payload;
         logger.info(`[App] Received extension event: ${action} ${extensionId}`);
 
-        try {
-          switch (action) {
-            case 'load':
-            case 'reload':
-              await extensionLoader.reloadExtension(extensionId);
-              logger.info(`✓ Extension ${extensionId} ${action}ed in main window`);
-              break;
-            case 'unload':
-              extensionLoader.unloadExtension(extensionId);
-              logger.info(`✓ Extension ${extensionId} unloaded from main window`);
-              break;
+        const run = async () => {
+          try {
+            switch (action) {
+              case 'load':
+              case 'reload':
+                await extensionLoader.reloadExtension(extensionId);
+                logger.info(`✓ Extension ${extensionId} ${action}ed in main window`);
+                break;
+              case 'unload':
+                extensionLoader.unloadExtension(extensionId);
+                logger.info(`✓ Extension ${extensionId} unloaded from main window`);
+                break;
+            }
+          } catch (err) {
+            logger.error(`Failed to ${action} extension ${extensionId}:`, err);
           }
-        } catch (err) {
-          logger.error(`Failed to ${action} extension ${extensionId}:`, err);
-        }
+        };
+        void run();
       }
     ).then((fn) => {
       // If the component already unmounted while the Promise was pending,
@@ -248,11 +268,12 @@ export function useAppLifecycle(): UseAppLifecycleResult {
     let unlistenFn: (() => void) | undefined;
     let cancelled = false;
 
-    listen<Settings>('settings-changed', async (event) => {
+    void listen<Settings>('settings-changed', (event) => {
       const newSettings = event.payload;
       const currentSettings = useAppStore.getState().settings;
 
       setSettings(newSettings);
+      applyTheme(newSettings.appearance.theme);
       applyTransparency(newSettings.appearance.transparency);
 
       const foldersChanged =
@@ -265,18 +286,50 @@ export function useAppLifecycle(): UseAppLifecycleResult {
           JSON.stringify(currentSettings.indexing.fileExtensions);
 
       if ((foldersChanged || extensionsChanged) && newSettings.indexing.folders.length > 0) {
-        try {
-          setIsIndexing(true);
-          await invoke<void>('start_indexing', {
-            folders: newSettings.indexing.folders,
-            excludedPaths: newSettings.indexing.excludedPaths,
-            fileExtensions: newSettings.indexing.fileExtensions,
-            force: true,
-          });
-        } catch (err) {
-          logger.error('Failed to restart indexing after settings change:', err);
-          setIsIndexing(false);
-        }
+        const restart = async () => {
+          // Tear down any active progress listener from a previous indexing run
+          // before registering a new one, so we don't double-fire setIsIndexing.
+          indexingUnlistenRef.current?.();
+          indexingUnlistenRef.current = null;
+
+          try {
+            setIsIndexing(true);
+            const { addToast } = useToastStore.getState();
+            addToast(`Indexing ${newSettings.indexing.folders.length} folder(s)...`, 'info');
+
+            const unlisten = await listen<{
+              phase: string;
+              indexedFiles: number;
+            }>('indexing-progress', (evt) => {
+              const { phase, indexedFiles } = evt.payload;
+              if (phase === 'complete') {
+                setIsIndexing(false);
+                addToast(`Indexing complete — ${indexedFiles} files indexed`, 'success');
+                unlisten();
+                indexingUnlistenRef.current = null;
+              } else if (phase === 'error') {
+                setIsIndexing(false);
+                addToast('Indexing failed', 'error', 0);
+                unlisten();
+                indexingUnlistenRef.current = null;
+              }
+            });
+            indexingUnlistenRef.current = unlisten;
+
+            await invoke<void>('start_indexing', {
+              folders: newSettings.indexing.folders,
+              excludedPaths: newSettings.indexing.excludedPaths,
+              fileExtensions: newSettings.indexing.fileExtensions,
+              force: true,
+            });
+          } catch (err) {
+            logger.error('Failed to restart indexing after settings change:', err);
+            setIsIndexing(false);
+            indexingUnlistenRef.current?.();
+            indexingUnlistenRef.current = null;
+          }
+        };
+        void restart();
       }
     }).then((fn) => {
       if (cancelled) fn();
@@ -292,27 +345,36 @@ export function useAppLifecycle(): UseAppLifecycleResult {
   // Ref to track the indexing listener for cleanup on unmount
   const indexingUnlistenRef = useRef<(() => void) | null>(null);
 
-  // Start file indexing if enabled in settings
+  // Start file indexing if enabled in settings.
+  // We deliberately depend only on the narrow indexing knobs and read the
+  // indexing config from the store inside the effect to avoid re-running on
+  // every unrelated settings change (which would tear down the active
+  // indexing-progress listener mid-scan).
+  const indexOnStartup = settings?.indexing.indexOnStartup;
+  const indexingFolders = settings?.indexing.folders;
+  const indexingExcludedPaths = settings?.indexing.excludedPaths;
+  const indexingFileExtensions = settings?.indexing.fileExtensions;
   useEffect(() => {
     const startFileIndexing = async () => {
       // Prevent double indexing (StrictMode)
       if (indexingStarted.current) return;
 
-      if (!settings?.indexing.indexOnStartup) {
+      const currentSettings = useAppStore.getState().settings;
+      if (!currentSettings?.indexing.indexOnStartup) {
         return;
       }
 
       indexingStarted.current = true;
 
       // If no folders configured, auto-configure with default folders
-      let foldersToIndex = settings.indexing.folders;
+      let foldersToIndex = currentSettings.indexing.folders;
       if (foldersToIndex.length === 0) {
         try {
           const defaultFolders = await invoke<string[]>('get_default_index_folders');
           if (defaultFolders.length > 0) {
             // Update settings with default folders
             await settingsService.updateIndexingSettings({
-              ...settings.indexing,
+              ...currentSettings.indexing,
               folders: defaultFolders,
             });
             foldersToIndex = defaultFolders;
@@ -334,7 +396,7 @@ export function useAppLifecycle(): UseAppLifecycleResult {
       const INDEX_CONFIG_KEY = 'volt:lastIndexConfig';
       const currentConfigSig = JSON.stringify({
         folders: [...foldersToIndex].sort(),
-        ext: [...settings.indexing.fileExtensions].sort(),
+        ext: [...currentSettings.indexing.fileExtensions].sort(),
       });
       const lastConfigSig = localStorage.getItem(INDEX_CONFIG_KEY);
       const forceRescan = lastConfigSig !== currentConfigSig;
@@ -376,8 +438,8 @@ export function useAppLifecycle(): UseAppLifecycleResult {
         // force=true bypasses the SQLite cache when the config changed since last run.
         await invoke<void>('start_indexing', {
           folders: foldersToIndex,
-          excludedPaths: settings.indexing.excludedPaths,
-          fileExtensions: settings.indexing.fileExtensions,
+          excludedPaths: currentSettings.indexing.excludedPaths,
+          fileExtensions: currentSettings.indexing.fileExtensions,
           force: forceRescan || undefined,
         });
       } catch (err) {
@@ -387,8 +449,8 @@ export function useAppLifecycle(): UseAppLifecycleResult {
       }
     };
 
-    if (settings) {
-      startFileIndexing();
+    if (indexOnStartup !== undefined) {
+      void startFileIndexing();
     }
 
     return () => {
@@ -398,17 +460,7 @@ export function useAppLifecycle(): UseAppLifecycleResult {
         indexingUnlistenRef.current = null;
       }
     };
-    // Narrow deps to the indexing knobs that actually decide whether to start.
-    // Broader deps (`settings`) caused this effect to re-run on every unrelated
-    // settings change; the cleanup then tore down the active indexing-progress
-    // listener mid-scan, leaving the UI stuck on "Indexing…".
-  }, [
-    settings?.indexing.indexOnStartup,
-    settings?.indexing.folders,
-    settings?.indexing.excludedPaths,
-    settings?.indexing.fileExtensions,
-    setIsIndexing,
-  ]);
+  }, [indexOnStartup, indexingFolders, indexingExcludedPaths, indexingFileExtensions, setIsIndexing]);
 
   return {
     allApps,

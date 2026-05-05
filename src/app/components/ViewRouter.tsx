@@ -99,7 +99,7 @@ export function ViewRouter({ onSelectEmoji, onLaunchResult, onActivateSuggestion
         suggestions={defaultSuggestions}
         selectedIndex={selectedIndex}
         onSelect={handleSuggestionSelect}
-        onActivate={onActivateSuggestion}
+        onActivate={(catIndex, itemIndex) => { void onActivateSuggestion(catIndex, itemIndex); }}
       />
     );
   }

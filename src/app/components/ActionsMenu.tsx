@@ -76,7 +76,7 @@ export function ActionsMenu({ isOpen, result, onLaunch, onShowProperties, onClos
               id: 'copy-command',
               label: 'Copy Command',
               icon: Copy,
-              onClick: () => { if (command) navigator.clipboard.writeText(command); },
+              onClick: () => { if (command) void navigator.clipboard.writeText(command); },
             },
             ...(hasOutput
               ? [{
@@ -85,7 +85,7 @@ export function ActionsMenu({ isOpen, result, onLaunch, onShowProperties, onClos
                   icon: FileText,
                   onClick: () => {
                     const output = shellData?.stdout || shellData?.stderr || '';
-                    navigator.clipboard.writeText(output);
+                    void navigator.clipboard.writeText(output);
                   },
                 } satisfies Action]
               : []),
@@ -135,7 +135,7 @@ export function ActionsMenu({ isOpen, result, onLaunch, onShowProperties, onClos
             label: t('contextMenu.openFolder'),
             icon: FolderOpen,
             shortcutKeys: ['Ctrl', 'O'],
-            onClick: () => applicationService.launchApplication(getDirectoryPath(path)),
+            onClick: () => { void applicationService.launchApplication(getDirectoryPath(path)); },
           },
         ],
       },
@@ -147,7 +147,7 @@ export function ActionsMenu({ isOpen, result, onLaunch, onShowProperties, onClos
             label: t('contextMenu.copyPath'),
             icon: Copy,
             shortcutKeys: ['Ctrl', 'C'],
-            onClick: () => navigator.clipboard.writeText(path),
+            onClick: () => { void navigator.clipboard.writeText(path); },
           },
           {
             id: 'properties',

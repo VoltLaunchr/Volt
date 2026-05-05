@@ -54,7 +54,7 @@ export function ResultContextMenu({
         label: 'Copy Command',
         icon: '\ud83d\udccb',
         onClick: () => {
-          if (command) navigator.clipboard.writeText(command);
+          if (command) void navigator.clipboard.writeText(command);
         },
       },
       ...(hasOutput
@@ -65,7 +65,7 @@ export function ResultContextMenu({
               icon: '\ud83d\udcc4',
               onClick: () => {
                 const output = shellData?.stdout || shellData?.stderr || '';
-                navigator.clipboard.writeText(output);
+                void navigator.clipboard.writeText(output);
               },
             },
           ]
@@ -130,7 +130,7 @@ export function ResultContextMenu({
       icon: '\ud83d\udcc1',
       onClick: () => {
         if (state.result) {
-          applicationService.launchApplication(getDirectoryPath(pathOf(state.result)));
+          void applicationService.launchApplication(getDirectoryPath(pathOf(state.result)));
         }
       },
     },
@@ -140,7 +140,7 @@ export function ResultContextMenu({
       icon: '\ud83d\udccb',
       onClick: () => {
         if (state.result) {
-          navigator.clipboard.writeText(pathOf(state.result));
+          void navigator.clipboard.writeText(pathOf(state.result));
         }
       },
     },
