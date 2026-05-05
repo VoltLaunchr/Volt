@@ -1,13 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import {
-  AppWindow,
-  Copy,
-  Equal,
-  File,
-  FolderOpen,
-  Globe,
-  Loader2,
-} from 'lucide-react';
+import { AppWindow, Copy, Equal, FolderOpen, Globe, Loader2 } from 'lucide-react';
 
 const APP_ICON = {
   calculator: '/icons/app/calculator_icon.svg',
@@ -334,9 +326,7 @@ export function ResultItem({ result, isSelected }: ResultItemProps) {
         <img src={APP_ICON.timer} alt="" className="w-8 h-8 object-contain shrink-0 rounded-md" />
       ) : (
         <div className="flex items-center justify-center w-8 h-8 shrink-0 text-body">
-          {result.type === SearchResultType.File ? (
-            <File size={24} strokeWidth={2} className="w-4 h-4 text-mute" />
-          ) : result.type === SearchResultType.Application ? (
+          {result.type === SearchResultType.Application ? (
             <AppWindow size={24} strokeWidth={2} className="w-4 h-4 text-mute" />
           ) : result.type === SearchResultType.Url ? (
             <Globe size={24} strokeWidth={2} className="w-4 h-4 text-mute" />
