@@ -21,8 +21,11 @@ use super::types::{LaunchError, LaunchOptions, LaunchResult, LaunchableFileType}
 /// ```no_run
 /// use volt_lib::launcher::launch;
 ///
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// let result = launch("C:\\Program Files\\App\\app.exe")?;
 /// println!("Launched with PID: {:?}", result.pid);
+/// # Ok(())
+/// # }
 /// ```
 pub fn launch(path: &str) -> Result<LaunchResult, LaunchError> {
     launch_with_options(path, LaunchOptions::default())

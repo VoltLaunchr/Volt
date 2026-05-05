@@ -285,7 +285,7 @@ impl VoltPluginAPI {
     /// - `id`: Unique identifier (string)
     ///
     /// # Example
-    /// ```no_run
+    /// ```ignore
     /// use serde_json::json;
     /// let results = vec![
     ///     json!({

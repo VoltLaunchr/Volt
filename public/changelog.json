@@ -1,6 +1,60 @@
 {
   "versions": [
     {
+      "version": "0.1.4",
+      "date": "2026-05-05",
+      "title": "Stability and security hardening",
+      "description": "Volt v0.1.4 improves startup reliability, release readiness, cross-platform checks, and security hardening.",
+      "sections": [
+        {
+          "type": "security",
+          "title": "Security",
+          "icon": "shield",
+          "items": [
+            "Security hardening and improvements"
+          ]
+        },
+        {
+          "type": "fixes",
+          "title": "Bug Fixes",
+          "icon": "shield",
+          "items": [
+            "Drop unreachable File branch in ResultItem icon fallback",
+            "Hide main window at cold start until ready",
+            "Grant settings window index/scan permissions",
+            "Gate UWP regex behind target_os = \"windows\"",
+            "Rustfmt + clippy compliance + e2e tests aligned to v0.1.2 UI",
+            "Vitest @ alias + drop runtime-version targets from sync-version"
+          ]
+        },
+        {
+          "type": "refactor",
+          "title": "Under the Hood",
+          "icon": "cpu",
+          "items": [
+            "Lint compliance + extension i18n bridge + typed IPC"
+          ]
+        },
+        {
+          "type": "docs",
+          "title": "Documentation",
+          "icon": "package",
+          "items": [
+            "Lint guardrails in CLAUDE.md, README polish, updater key custody, audit notes"
+          ]
+        }
+      ],
+      "footer": {
+        "gettingStarted": "Press Ctrl+Space to open Volt anytime. Check out what's new in v0.1.4!",
+        "feedback": "Have feedback or found a bug? Visit our GitHub repository to report issues or request features.",
+        "links": {
+          "github": "https://github.com/VoltLaunchr/Volt",
+          "releases": "https://github.com/VoltLaunchr/Volt/releases",
+          "docs": "https://voltlaunchr.com/docs"
+        }
+      }
+    },
+    {
       "version": "0.1.2",
       "date": "2026-05-03",
       "title": "V0.1.2 — Cloud Sync preview, onboarding, system monitor, UI migration & more",

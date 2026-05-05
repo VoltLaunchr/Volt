@@ -6,7 +6,7 @@
 //! ## Organization
 //!
 //! Each plugin has its own directory with the following structure:
-//! ```
+//! ```text
 //! plugin_name/
 //! ├── mod.rs          - Module declaration and exports
 //! ├── plugin.rs       - Main plugin implementation

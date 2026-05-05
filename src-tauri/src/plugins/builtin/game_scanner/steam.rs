@@ -251,7 +251,7 @@ impl SteamScanner {
     /// Parse libraryfolders.vdf to get additional Steam library locations
     ///
     /// VDF format example:
-    /// ```
+    /// ```text
     /// "libraryfolders"
     /// {
     ///     "0"
