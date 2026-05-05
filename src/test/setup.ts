@@ -8,11 +8,11 @@ afterEach(() => {
 });
 
 vi.mock('@tauri-apps/api/core', () => ({
-  invoke: vi.fn(async () => undefined),
+  invoke: vi.fn(() => Promise.resolve(undefined)),
 }));
 
 vi.mock('@tauri-apps/plugin-opener', () => ({
-  openUrl: vi.fn(async () => undefined),
+  openUrl: vi.fn(() => Promise.resolve(undefined)),
 }));
 
 vi.mock('i18next', () => ({

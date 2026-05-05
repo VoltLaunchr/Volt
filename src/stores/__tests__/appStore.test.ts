@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { useAppStore } from '../appStore';
+import { DEFAULT_SETTINGS, type Settings } from '../../features/settings/types/settings.types';
 
 describe('appStore', () => {
   beforeEach(() => {
@@ -13,14 +14,25 @@ describe('appStore', () => {
   });
 
   it('setSettings updates settings', () => {
-    const mockSettings = {
-      general: { startWithWindows: false, maxResults: 8, closeOnLaunch: true },
-      appearance: { theme: 'dark', transparency: 0.85, windowPosition: 'center' },
+    const mockSettings: Settings = {
+      ...DEFAULT_SETTINGS,
+      general: {
+        ...DEFAULT_SETTINGS.general,
+        startWithWindows: false,
+        maxResults: 8,
+        closeOnLaunch: true,
+      },
+      appearance: {
+        ...DEFAULT_SETTINGS.appearance,
+        theme: 'dark',
+        transparency: 0.85,
+        windowPosition: 'center',
+      },
       hotkeys: { toggleWindow: 'Ctrl+Space', openSettings: 'Ctrl+,' },
       indexing: { folders: [], excludedPaths: [], fileExtensions: [], indexOnStartup: true },
       plugins: { enabledPlugins: [], clipboardMonitoring: true },
       shortcuts: { appShortcuts: [] },
-    } as any;
+    };
     useAppStore.getState().setSettings(mockSettings);
     expect(useAppStore.getState().settings).toBe(mockSettings);
   });
@@ -33,7 +45,7 @@ describe('appStore', () => {
   });
 
   it('setSettings to null works', () => {
-    useAppStore.getState().setSettings({ general: {} } as any);
+    useAppStore.getState().setSettings(DEFAULT_SETTINGS);
     useAppStore.getState().setSettings(null);
     expect(useAppStore.getState().settings).toBeNull();
   });

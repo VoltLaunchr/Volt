@@ -28,8 +28,9 @@ export type { PropertiesDialogProps } from './PropertiesDialog';
 export { HelpDialog } from './HelpDialog';
 export type { HelpDialogProps } from './HelpDialog';
 
-export { ToastContainer, useToastStore, useToast } from './Toast';
-export type { ToastItem } from './Toast';
+export { ToastContainer } from './Toast';
+export { useToastStore, useToast } from './toast-store';
+export type { ToastItem, ToastType } from './toast-store';
 
 export { OnboardingModal } from './OnboardingModal';
 

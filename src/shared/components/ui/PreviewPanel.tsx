@@ -68,7 +68,9 @@ export function PreviewPanel({ result, isOpen }: PreviewPanelProps) {
 
     // Debounce 200ms for keyboard navigation
     clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => fetchPreview(path), 200);
+    debounceRef.current = setTimeout(() => {
+      void fetchPreview(path);
+    }, 200);
 
     return () => clearTimeout(debounceRef.current);
   }, [isOpen, result, fetchPreview]);

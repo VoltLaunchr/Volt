@@ -1,5 +1,23 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { useUiStore } from '../uiStore';
+import {
+  SearchResultType,
+  type AppInfo,
+  type SearchResult,
+} from '../../shared/types/common.types';
+
+const fakeAppInfo: AppInfo = { id: '1', name: 'Test', path: '/test', usageCount: 0 };
+
+const makeResult = (overrides: Partial<SearchResult> = {}): SearchResult => ({
+  id: '1',
+  type: SearchResultType.Application,
+  title: 'Test',
+  subtitle: '',
+  icon: '',
+  score: 100,
+  data: fakeAppInfo,
+  ...overrides,
+});
 
 describe('uiStore', () => {
   beforeEach(() => {
@@ -21,7 +39,7 @@ describe('uiStore', () => {
   });
 
   it('openContextMenu sets position and result', () => {
-    const result = { id: '1', type: 0, title: 'Test', subtitle: '', icon: '', score: 100, data: {} } as any;
+    const result = makeResult();
     useUiStore.getState().openContextMenu({ x: 10, y: 20 }, result);
     const state = useUiStore.getState();
     expect(state.contextMenu.isOpen).toBe(true);
@@ -29,20 +47,20 @@ describe('uiStore', () => {
   });
 
   it('closeContextMenu resets context menu', () => {
-    useUiStore.getState().openContextMenu({ x: 10, y: 20 }, {} as any);
+    useUiStore.getState().openContextMenu({ x: 10, y: 20 }, makeResult());
     useUiStore.getState().closeContextMenu();
     expect(useUiStore.getState().contextMenu.isOpen).toBe(false);
   });
 
   it('openProperties sets result and flag', () => {
-    const result = { id: '1', type: 0, title: 'Test', subtitle: '', icon: '', score: 100, data: {} } as any;
+    const result = makeResult();
     useUiStore.getState().openProperties(result);
     expect(useUiStore.getState().isPropertiesOpen).toBe(true);
     expect(useUiStore.getState().propertiesResult).toBe(result);
   });
 
   it('closeProperties resets flag', () => {
-    useUiStore.getState().openProperties({} as any);
+    useUiStore.getState().openProperties(makeResult());
     useUiStore.getState().closeProperties();
     expect(useUiStore.getState().isPropertiesOpen).toBe(false);
   });

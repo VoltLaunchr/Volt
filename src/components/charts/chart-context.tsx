@@ -10,35 +10,8 @@ type ScaleBand<Domain extends { toString(): string }> = ReturnType<
   typeof scaleBand<Domain>
 >;
 
-import {
-  createContext,
-  type Dispatch,
-  type RefObject,
-  type SetStateAction,
-  useContext,
-} from "react";
+import type { Dispatch, RefObject, SetStateAction } from "react";
 import type { ChartSelection } from "./use-chart-interaction";
-
-// CSS variable references for theming
-export const chartCssVars = {
-  background: "var(--chart-background)",
-  foreground: "var(--chart-foreground)",
-  foregroundMuted: "var(--chart-foreground-muted)",
-  label: "var(--chart-label)",
-  linePrimary: "var(--chart-line-primary)",
-  lineSecondary: "var(--chart-line-secondary)",
-  crosshair: "var(--chart-crosshair)",
-  grid: "var(--chart-grid)",
-  indicatorColor: "var(--chart-indicator-color)",
-  indicatorSecondaryColor: "var(--chart-indicator-secondary-color)",
-  markerBackground: "var(--chart-marker-background)",
-  markerBorder: "var(--chart-marker-border)",
-  markerForeground: "var(--chart-marker-foreground)",
-  badgeBackground: "var(--chart-marker-badge-background)",
-  badgeForeground: "var(--chart-marker-badge-foreground)",
-  segmentBackground: "var(--chart-segment-background)",
-  segmentLine: "var(--chart-segment-line)",
-};
 
 export interface Margin {
   top: number;
@@ -135,7 +108,9 @@ export interface ChartContextValue {
   setHoveredCandleIndex?: (index: number | null) => void;
 }
 
-const ChartContext = createContext<ChartContextValue | null>(null);
+// Internal — consumed by `ChartProvider` here and `useChart` (in `use-chart.ts`).
+// Not exported to keep this file Fast-Refresh-friendly (component-only exports).
+import { ChartContext } from "./chart-context-internal";
 
 export function ChartProvider({
   children,
@@ -148,16 +123,3 @@ export function ChartProvider({
     <ChartContext.Provider value={value}>{children}</ChartContext.Provider>
   );
 }
-
-export function useChart(): ChartContextValue {
-  const context = useContext(ChartContext);
-  if (!context) {
-    throw new Error(
-      "useChart must be used within a ChartProvider. " +
-        "Make sure your component is wrapped in <LineChart>, <AreaChart>, or <BarChart>."
-    );
-  }
-  return context;
-}
-
-export default ChartContext;

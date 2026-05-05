@@ -1,5 +1,5 @@
 import { motion, useSpring } from "motion/react";
-import { chartCssVars } from "../chart-context";
+import { chartCssVars } from "../chart-css-vars";
 
 // Faster spring for crosshair - responsive to mouse movement
 const crosshairSpringConfig = { stiffness: 300, damping: 30 };

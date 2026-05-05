@@ -104,7 +104,7 @@ interface PropertyRowProps {
 
 function PropertyRow({ label, value, copyable, copyLabel }: PropertyRowProps) {
   const handleCopy = () => {
-    navigator.clipboard.writeText(value);
+    void navigator.clipboard.writeText(value);
   };
 
   return (

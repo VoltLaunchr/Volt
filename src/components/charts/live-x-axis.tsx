@@ -1,7 +1,7 @@
 import { motion, useSpring } from "motion/react";
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
-import { useChart } from "./chart-context";
+import { useChart } from "./use-chart";
 
 const TICKER_HALF_WIDTH = 50;
 const FADE_BUFFER = 20;
