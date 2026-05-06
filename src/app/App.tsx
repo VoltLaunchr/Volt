@@ -21,7 +21,6 @@ import { useGlobalHotkey } from './hooks/useGlobalHotkey';
 import { useResultActions } from './hooks/useResultActions';
 import { useSearchPipeline } from './hooks/useSearchPipeline';
 import { openSettingsWindow } from './utils';
-import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { installPendingUpdate, hasPendingUpdate } from '../features/settings/services/updateService';
 import i18n from '../i18n';
 
@@ -100,19 +99,10 @@ function App() {
     return () => { unlisten?.(); };
   }, []);
 
-  // Open the dedicated onboarding window for first-time users (or after restart-onboarding).
-  // The window is pre-configured at 1300×800 in tauri.conf.json — no JS resize needed.
-  const rawHasSeenOnboarding = settings?.general.hasSeenOnboarding;
-  useEffect(() => {
-    if (rawHasSeenOnboarding !== false) return;
-    WebviewWindow.getByLabel('onboarding').then((win) => {
-      if (win) { void win.show(); void win.setFocus(); }
-    }).catch(() => {});
-  }, [rawHasSeenOnboarding]);
-
   // Main window starts hidden in tauri.conf.json (launcher behaviour). Reveal it
   // once settings are loaded AND onboarding is already done. First-time users
   // stay hidden until OnboardingPage.handleComplete shows the main window itself.
+  const rawHasSeenOnboarding = settings?.general.hasSeenOnboarding;
   const mainShownRef = useRef(false);
   useEffect(() => {
     if (mainShownRef.current) return;

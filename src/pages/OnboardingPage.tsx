@@ -10,15 +10,30 @@ import type { Settings } from '../features/settings/types/settings.types';
 
 export function OnboardingPage() {
   const [ready, setReady] = useState(false);
+  const [needsOnboarding, setNeedsOnboarding] = useState(false);
 
   useEffect(() => {
     invoke<Settings>('load_settings')
       .then((s) => {
         useAppStore.getState().setSettings(s);
+        setNeedsOnboarding(!s.general.hasSeenOnboarding);
         setReady(true);
       })
-      .catch(() => setReady(true));
+      .catch(() => {
+        // If settings fail to load, show onboarding as fallback
+        setNeedsOnboarding(true);
+        setReady(true);
+      });
   }, []);
+
+  // Show this window only after content is ready and onboarding is actually needed.
+  // This prevents the transparent-window flash that occurs when the main window
+  // calls win.show() before this page's React tree has rendered its first frame.
+  useEffect(() => {
+    if (!ready || !needsOnboarding) return;
+    const win = getCurrentWindow();
+    win.show().then(() => win.setFocus()).catch(() => {});
+  }, [ready, needsOnboarding]);
 
   const handleComplete = async () => {
     const settings = useAppStore.getState().settings;
@@ -44,7 +59,7 @@ export function OnboardingPage() {
     getCurrentWindow().close().catch(() => {});
   };
 
-  if (!ready) return null;
+  if (!ready || !needsOnboarding) return null;
 
   return <OnboardingModal isOpen={true} onComplete={() => { void handleComplete(); }} />;
 }
