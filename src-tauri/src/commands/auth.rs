@@ -83,12 +83,11 @@ const JWKS_FETCH_MAX_ATTEMPTS: u32 = 2;
 /// blocked on the auth flow completing.
 const JWKS_RETRY_BACKOFF: Duration = Duration::from_millis(500);
 
-fn auth_state_lock()
--> Result<std::sync::MutexGuard<'static, HashMap<String, PendingAuthFlow>>, String> {
-    Ok(AUTH_STATE.lock().unwrap_or_else(|e| {
-        tracing::warn!("AUTH_STATE mutex was poisoned; recovering");
+fn auth_state_lock() -> std::sync::MutexGuard<'static, HashMap<String, PendingAuthFlow>> {
+    AUTH_STATE.lock().unwrap_or_else(|e| {
+        warn!("AUTH_STATE mutex was poisoned; recovering");
         e.into_inner()
-    }))
+    })
 }
 
 /// Drop pending flows older than `AUTH_STATE_TTL`.
@@ -236,7 +235,7 @@ pub async fn auth_start_login() -> Result<String, String> {
     let (verifier, challenge) = generate_pkce_pair();
 
     {
-        let mut map = auth_state_lock()?;
+        let mut map = auth_state_lock();
         prune_expired_auth_states(&mut map);
         cap_auth_states(&mut map);
         map.insert(
@@ -502,7 +501,7 @@ pub async fn handle_auth_deep_link(url_str: &str) -> Result<AuthSession, String>
         .clone();
 
     let verifier = {
-        let mut map = auth_state_lock()?;
+        let mut map = auth_state_lock();
         prune_expired_auth_states(&mut map);
         let flow = map.remove(&state).ok_or_else(|| {
             warn!("Auth callback rejected: unknown or expired state nonce");
@@ -521,17 +520,7 @@ pub async fn handle_auth_deep_link(url_str: &str) -> Result<AuthSession, String>
         return exchange_code_for_session(code.clone(), verifier).await;
     }
 
-    if let (Some(access_token), Some(refresh_token)) =
-        (params.get("access_token"), params.get("refresh_token"))
-    {
-        warn!(
-            "DEPRECATED: legacy implicit-grant auth callback used (token-in-URL). \
-             Will be removed in v0.2.0. Use PKCE flow instead."
-        );
-        return persist_implicit_session(access_token.clone(), refresh_token.clone()).await;
-    }
-
-    Err("Auth callback URL missing both `code` and `access_token`/`refresh_token`".into())
+    Err("Auth callback URL missing required `code` parameter".into())
 }
 
 /// PKCE path — exchange the auth code for tokens via the website, then
@@ -595,28 +584,7 @@ async fn exchange_code_for_session(code: String, verifier: String) -> Result<Aut
     Ok(session)
 }
 
-/// Legacy implicit path — tokens already came through the deep link.
-/// We still cryptographically verify the access token before persisting,
-/// so this path is no weaker than PKCE for tampering detection — it just
-/// loses the privacy benefit of keeping tokens out of the URL.
-async fn persist_implicit_session(
-    access_token: String,
-    refresh_token: String,
-) -> Result<AuthSession, String> {
-    let claims = validate_access_token(&access_token).await?;
 
-    let session = AuthSession {
-        access_token,
-        refresh_token,
-        expires_at: claims.exp,
-        user_id: claims.sub,
-    };
-
-    save_auth_session(&session)?;
-    info!("Auth session saved via implicit deep-link callback");
-
-    Ok(session)
-}
 
 // ---------------------------------------------------------------------------
 // JWT signature + claim validation (ES256/RS256/EdDSA via JWKS)
@@ -872,7 +840,7 @@ mod tests {
         // `access_token` present → must be rejected before any HTTP call.
         let state = "test-missing-payload";
         {
-            let mut map = auth_state_lock().unwrap();
+            let mut map = auth_state_lock();
             map.insert(
                 state.to_string(),
                 PendingAuthFlow {

@@ -123,7 +123,7 @@ impl LaunchHistory {
     }
 
     /// Load history from a file
-    fn load_from_file(path: &PathBuf) -> Option<HashMap<String, LaunchRecord>> {
+    fn load_from_file(path: &Path) -> Option<HashMap<String, LaunchRecord>> {
         if !path.exists() {
             return None;
         }
@@ -226,9 +226,10 @@ impl LaunchHistory {
             if self.auto_save {
                 self.save()?;
             }
+            Ok(())
+        } else {
+            Err(format!("App '{}' not found in launch history", path))
         }
-
-        Ok(())
     }
 
     /// Unpin an application
@@ -241,9 +242,10 @@ impl LaunchHistory {
             if self.auto_save {
                 self.save()?;
             }
+            Ok(())
+        } else {
+            Err(format!("App '{}' not found in launch history", path))
         }
-
-        Ok(())
     }
 
     /// Add a tag to an application
@@ -256,9 +258,10 @@ impl LaunchHistory {
             if self.auto_save {
                 self.save()?;
             }
+            Ok(())
+        } else {
+            Err(format!("App '{}' not found in launch history", path))
         }
-
-        Ok(())
     }
 
     /// Remove a tag from an application
@@ -271,9 +274,10 @@ impl LaunchHistory {
             if self.auto_save {
                 self.save()?;
             }
+            Ok(())
+        } else {
+            Err(format!("App '{}' not found in launch history", path))
         }
-
-        Ok(())
     }
 
     /// Remove a record from history
@@ -310,7 +314,7 @@ impl LaunchHistory {
     /// Get all unique tags used in history
     pub fn get_all_tags(&self) -> Vec<String> {
         let records = self.get_all();
-        let mut tags: Vec<String> = records.iter().flat_map(|r| r.tags.clone()).collect();
+        let mut tags: Vec<String> = records.iter().flat_map(|r| r.tags.iter().cloned()).collect();
         tags.sort();
         tags.dedup();
         tags

@@ -5,7 +5,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use tauri::State;
 use uuid::Uuid;
@@ -48,7 +48,7 @@ impl QuicklinkState {
         }
     }
 
-    fn load_from_file(path: &PathBuf) -> Option<HashMap<String, Quicklink>> {
+    fn load_from_file(path: &Path) -> Option<HashMap<String, Quicklink>> {
         if !path.exists() {
             return None;
         }

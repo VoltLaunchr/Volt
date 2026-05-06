@@ -377,7 +377,9 @@ fn flatten_single_root_dir(extension_dir: &PathBuf) -> VoltResult<()> {
         })?;
     }
 
-    let _ = fs::remove_dir(&inner);
+    if let Err(e) = fs::remove_dir(&inner) {
+        warn!("Failed to remove inner dir after flatten: {}", e);
+    }
     Ok(())
 }
 
@@ -570,6 +572,7 @@ pub async fn install_extension(
     info!("Downloading extension from: {}", download_url);
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(30))
+        .redirect(reqwest::redirect::Policy::none())
         .build()
         .map_err(|e| VoltError::Unknown(format!("HTTP client build failed: {}", e)))?;
     let response = client
@@ -588,12 +591,24 @@ pub async fn install_extension(
         )));
     }
 
-    let bytes = response
-        .bytes()
-        .await
-        .map_err(|e| VoltError::Unknown(format!("Failed to read extension data: {}", e)))?;
+    const MAX_EXTENSION_SIZE: usize = 50 * 1024 * 1024; // 50MB cap
+    let mut buf: Vec<u8> = Vec::new();
+    {
+        use futures_util::StreamExt;
+        let mut stream = response.bytes_stream();
+        while let Some(chunk) = stream.next().await {
+            let chunk = chunk
+                .map_err(|e| VoltError::Unknown(format!("Failed to read extension data: {}", e)))?;
+            if buf.len() + chunk.len() > MAX_EXTENSION_SIZE {
+                return Err(VoltError::InvalidConfig(
+                    "Extension archive exceeds 50MB limit".to_string(),
+                ));
+            }
+            buf.extend_from_slice(&chunk);
+        }
+    }
 
-    debug!("Downloaded {} bytes", bytes.len());
+    debug!("Downloaded {} bytes", buf.len());
 
     // Detect archive format from the URL. We treat anything ending in .tar.gz
     // or .tgz as a gzipped tar, otherwise fall back to ZIP (the original format).
@@ -601,9 +616,9 @@ pub async fn install_extension(
     let is_tar_gz = url_lower.ends_with(".tar.gz") || url_lower.ends_with(".tgz");
 
     if is_tar_gz {
-        extract_tar_gz(&bytes, &extension_dir)?;
+        extract_tar_gz(&buf, &extension_dir)?;
     } else {
-        extract_zip(&bytes, &extension_dir)?;
+        extract_zip(&buf, &extension_dir)?;
     }
 
     debug!("Extraction complete, checking for manifest...");
@@ -1375,6 +1390,7 @@ pub async fn link_dev_extension(app: AppHandle, path: String) -> VoltResult<DevE
 /// Unlink a dev extension
 #[tauri::command]
 pub async fn unlink_dev_extension(app: AppHandle, extension_id: String) -> VoltResult<()> {
+    validate_extension_id(&extension_id)?;
     let mut state = load_dev_state(&app)?;
 
     let before_count = state.extensions.len();
@@ -1551,8 +1567,7 @@ pub async fn increment_extension_download(extension_id: String) -> VoltResult<()
         .post(&url)
         .header("apikey", SUPABASE_ANON_KEY)
         .header("Authorization", format!("Bearer {}", SUPABASE_ANON_KEY))
-        .header("Content-Type", "application/json")
-        .body(format!(r#"{{"p_extension_id":"{}"}}"#, extension_id))
+        .json(&serde_json::json!({ "p_extension_id": extension_id }))
         .send()
         .await;
 

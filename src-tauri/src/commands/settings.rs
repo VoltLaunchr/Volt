@@ -1,7 +1,7 @@
 use crate::core::error::{VoltError, VoltResult};
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::Mutex;
 
@@ -369,7 +369,7 @@ pub async fn save_settings(app_handle: AppHandle, settings: Settings) -> VoltRes
 ///
 /// Uses a write-to-temp-then-rename pattern so that a crash during the write
 /// never leaves a zero-byte (or partially-written) settings file behind.
-fn save_settings_to_file(path: &PathBuf, settings: &Settings) -> VoltResult<()> {
+fn save_settings_to_file(path: &Path, settings: &Settings) -> VoltResult<()> {
     let content = serde_json::to_string_pretty(settings)
         .map_err(|e| VoltError::Serialization(format!("Failed to serialize settings: {}", e)))?;
 

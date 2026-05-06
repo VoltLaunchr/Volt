@@ -893,7 +893,10 @@ pub async fn get_db_index_stats(
         db.get_stats(is_watching).map_err(VoltError::Unknown)
     } else {
         // No DB – synthesise stats from in-memory state.
-        let indexed_count = state.files.lock().map(|f| f.len()).unwrap_or(0);
+        let indexed_count = state.files.lock().map(|f| f.len()).unwrap_or_else(|e| {
+            warn!("files mutex poisoned in get_db_index_stats: {}", e);
+            0
+        });
         Ok(DbIndexStats {
             indexed_count,
             db_size_bytes: 0,

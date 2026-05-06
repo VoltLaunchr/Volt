@@ -23,13 +23,32 @@ const SENSITIVE_DIRECTORIES: &[&str] = &[
     "Windows\\System32\\LogFiles\\WMI",
 ];
 
+/// Pre-built `\name\` wrapped patterns for single-segment entries.
+/// Multi-segment entries (already containing `\`) are matched via `ends_with` only.
+#[cfg(target_os = "windows")]
+const SENSITIVE_DIRECTORIES_WRAPPED: &[&str] = &[
+    "\\WindowsApps\\",
+    "\\System Volume Information\\",
+    "\\$Recycle.Bin\\",
+    "\\$RECYCLE.BIN\\",
+    "\\Recovery\\",
+    "\\Config.Msi\\",
+    "\\Documents and Settings\\",
+    "", // multi-segment — ends_with covers it
+    "", // multi-segment — ends_with covers it
+    "", // multi-segment — ends_with covers it
+];
+
 /// Check if a directory is a known sensitive/protected Windows directory
 #[cfg(target_os = "windows")]
 fn is_sensitive_directory(path: &Path) -> bool {
     let path_str = path.to_string_lossy();
-    SENSITIVE_DIRECTORIES.iter().any(|sensitive| {
-        path_str.ends_with(sensitive) || path_str.contains(&format!("\\{}\\", sensitive))
-    })
+    SENSITIVE_DIRECTORIES
+        .iter()
+        .zip(SENSITIVE_DIRECTORIES_WRAPPED.iter())
+        .any(|(sensitive, wrapped)| {
+            path_str.ends_with(sensitive) || (!wrapped.is_empty() && path_str.contains(*wrapped))
+        })
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -100,6 +119,13 @@ fn get_file_icon(path: &Path) -> Option<String> {
 pub fn scan_files(config: &IndexConfig) -> Result<Vec<FileInfo>, String> {
     let mut files = Vec::new();
 
+    // Build lowercased extension set once — O(1) lookup per file instead of O(n) per-extension alloc.
+    let extensions_lower: std::collections::HashSet<String> = config
+        .file_extensions
+        .iter()
+        .map(|e| e.to_lowercase())
+        .collect();
+
     for folder in &config.folders {
         let path = PathBuf::from(folder);
         if !path.exists() {
@@ -107,7 +133,7 @@ pub fn scan_files(config: &IndexConfig) -> Result<Vec<FileInfo>, String> {
             continue;
         }
 
-        if let Ok(scanned) = scan_directory(&path, config, 0) {
+        if let Ok(scanned) = scan_directory(&path, config, 0, &extensions_lower) {
             files.extend(scanned);
         }
     }
@@ -120,6 +146,7 @@ fn scan_directory(
     dir_path: &Path,
     config: &IndexConfig,
     current_depth: usize,
+    extensions_lower: &std::collections::HashSet<String>,
 ) -> Result<Vec<FileInfo>, String> {
     let mut files = Vec::new();
 
@@ -198,7 +225,7 @@ fn scan_directory(
             }
 
             // Recursively scan subdirectory
-            if let Ok(sub_files) = scan_directory(&path, config, current_depth + 1) {
+            if let Ok(sub_files) = scan_directory(&path, config, current_depth + 1, extensions_lower) {
                 files.extend(sub_files);
             }
         } else if metadata.is_file() {
@@ -207,16 +234,11 @@ fn scan_directory(
                 continue;
             }
 
-            // Check file extension filter - if empty, index all files
-            if !config.file_extensions.is_empty() {
+            // Check file extension filter — O(1) HashSet lookup, built once in scan_files.
+            if !extensions_lower.is_empty() {
                 if let Some(ext) = path.extension() {
                     let ext_str = ext.to_string_lossy().to_lowercase();
-                    // Check if this extension is in our allowed list
-                    if !config
-                        .file_extensions
-                        .iter()
-                        .any(|e| e.to_lowercase() == ext_str)
-                    {
+                    if !extensions_lower.contains(&ext_str) {
                         continue;
                     }
                 } else {

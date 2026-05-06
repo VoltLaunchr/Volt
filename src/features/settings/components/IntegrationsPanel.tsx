@@ -128,15 +128,10 @@ export function IntegrationsPanel() {
   };
 
   const handleTestToken = async (serviceId: 'github' | 'notion') => {
-    const token = tokenInputs[serviceId];
-    if (!token || token.trim().length === 0) {
-      setErrors((prev) => ({ ...prev, [serviceId]: t('integrations.enterTokenFirst') }));
-      return;
-    }
     setTestingTokens((prev) => ({ ...prev, [serviceId]: true }));
     setErrors((prev) => ({ ...prev, [serviceId]: '' }));
     try {
-      const isValid = await credentialsService.testToken(serviceId, token);
+      const isValid = await credentialsService.testToken(serviceId);
       setTokenStatus((prev) => ({ ...prev, [serviceId]: isValid ? 'valid' : 'invalid' }));
       if (!isValid) {
         setErrors((prev) => ({ ...prev, [serviceId]: t('integrations.invalidToken', { service: serviceId }) }));

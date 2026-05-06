@@ -92,134 +92,124 @@ impl SearchEngine {
         // - Otherwise, ignore case
         let pattern = Pattern::parse(query, CaseMatching::Smart, Normalization::Smart);
 
-        let mut results: Vec<SearchResult> = files
-            .iter()
-            .filter(|file| {
-                // Category filter
-                if let Some(ref categories) = options.categories
-                    && !categories.contains(&file.category)
-                {
-                    return false;
-                }
+        // Single buffer reused across all files — eliminates one Vec<u32> allocation per file.
+        let mut buf: Vec<char> = Vec::new();
+        let mut results: Vec<SearchResult> = Vec::new();
 
-                // Hidden file filter
-                if !options.include_hidden && file.name.starts_with('.') {
-                    return false;
-                }
+        for file in files {
+            // Category filter
+            if let Some(ref categories) = options.categories
+                && !categories.contains(&file.category)
+            {
+                continue;
+            }
 
-                // Extension filter (e.g., ext:pdf)
-                if let Some(ref ext) = options.ext_filter
-                    && !file.extension.eq_ignore_ascii_case(ext)
-                {
-                    return false;
-                }
+            // Hidden file filter
+            if !options.include_hidden && file.name.starts_with('.') {
+                continue;
+            }
 
-                // Directory filter (e.g., in:~/Documents)
-                if let Some(ref dir) = options.dir_filter {
-                    // Expand ~/... to the user's home directory before comparing.
-                    // Use strip_prefix("~/") so that bare `~` or multi-byte chars
-                    // at index 1 never cause a panic or wrong byte-boundary slice.
-                    let expanded = if let Some(rest) = dir.strip_prefix("~/") {
-                        if let Some(home) = dirs::home_dir() {
-                            home.join(rest).to_string_lossy().into_owned()
-                        } else {
-                            dir.clone()
-                        }
+            // Extension filter (e.g., ext:pdf)
+            if let Some(ref ext) = options.ext_filter
+                && !file.extension.eq_ignore_ascii_case(ext)
+            {
+                continue;
+            }
+
+            // Directory filter (e.g., in:~/Documents)
+            if let Some(ref dir) = options.dir_filter {
+                // Expand ~/... to the user's home directory before comparing.
+                // Use strip_prefix("~/") so that bare `~` or multi-byte chars
+                // at index 1 never cause a panic or wrong byte-boundary slice.
+                let expanded = if let Some(rest) = dir.strip_prefix("~/") {
+                    if let Some(home) = dirs::home_dir() {
+                        home.join(rest).to_string_lossy().into_owned()
                     } else {
                         dir.clone()
-                    };
-                    if !file.path.starts_with(expanded.as_str()) {
-                        return false;
                     }
-                }
-
-                // Size filters
-                if let Some(min) = options.size_min
-                    && file.size < min
-                {
-                    return false;
-                }
-                if let Some(max) = options.size_max
-                    && file.size > max
-                {
-                    return false;
-                }
-
-                // Modified time filters
-                if let Some(after) = options.modified_after
-                    && file.modified < after
-                {
-                    return false;
-                }
-                if let Some(before) = options.modified_before
-                    && file.modified > before
-                {
-                    return false;
-                }
-
-                true
-            })
-            .filter_map(|file| {
-                // Decide what to match against
-                let haystack = if options.filename_only {
-                    &file.name
                 } else {
-                    &file.path
+                    dir.clone()
                 };
-
-                // Convert to Utf32Str for nucleo
-                let haystack_utf32: Vec<char> = haystack.chars().collect();
-                let haystack_str = Utf32Str::Unicode(&haystack_utf32);
-
-                // Get the base score from nucleo matcher.
-                // Some(0) means characters exist as a subsequence but are so
-                // spread apart the match is meaningless — treat the same as None.
-                let base_score = match pattern.score(haystack_str, &mut self.matcher) {
-                    Some(s) if s > 0 => s,
-                    _ => return None,
-                };
-
-                // Apply category-specific boosts
-                let category_boost = self.get_category_boost(&file.category);
-
-                // Apply recency boost if configured
-                let recency_multiplier = if let Some(boost) = options.recency_boost {
-                    self.calculate_recency_boost(file.modified, boost)
-                } else {
-                    1.0
-                };
-
-                // Apply frequency boost for executables and applications
-                let frequency_multiplier = if options.frequency_boost.is_some()
-                    && matches!(
-                        file.category,
-                        FileCategory::Application | FileCategory::Game
-                    ) {
-                    1.2 // Slight boost for apps and games
-                } else {
-                    1.0
-                };
-
-                // Calculate final score
-                let final_score = ((base_score as f32)
-                    * category_boost
-                    * recency_multiplier
-                    * frequency_multiplier) as u32;
-
-                // Apply minimum score threshold
-                if let Some(min_score) = options.min_score
-                    && final_score < min_score
-                {
-                    return None;
+                if !file.path.starts_with(expanded.as_str()) {
+                    continue;
                 }
+            }
 
-                Some(SearchResult {
-                    file: file.clone(),
-                    score: final_score,
-                    matched_indices: Vec::new(), // We could compute indices if needed for highlighting
-                })
-            })
-            .collect();
+            // Size filters
+            if let Some(min) = options.size_min
+                && file.size < min
+            {
+                continue;
+            }
+            if let Some(max) = options.size_max
+                && file.size > max
+            {
+                continue;
+            }
+
+            // Modified time filters
+            if let Some(after) = options.modified_after
+                && file.modified < after
+            {
+                continue;
+            }
+            if let Some(before) = options.modified_before
+                && file.modified > before
+            {
+                continue;
+            }
+
+            // Decide what to match against
+            let haystack = if options.filename_only { &file.name } else { &file.path };
+
+            // Reuse buf across iterations — Utf32Str::new clears and refills it in place.
+            let haystack_str = Utf32Str::new(haystack, &mut buf);
+
+            // Get the base score from nucleo matcher.
+            // Some(0) means characters exist as a subsequence but are so
+            // spread apart the match is meaningless — treat the same as None.
+            let base_score = match pattern.score(haystack_str, &mut self.matcher) {
+                Some(s) if s > 0 => s,
+                _ => continue,
+            };
+
+            // Apply category-specific boosts
+            let category_boost = self.get_category_boost(&file.category);
+
+            // Apply recency boost if configured
+            let recency_multiplier = if let Some(boost) = options.recency_boost {
+                self.calculate_recency_boost(file.modified, boost)
+            } else {
+                1.0
+            };
+
+            // Apply frequency boost for executables and applications
+            let frequency_multiplier = if options.frequency_boost.is_some()
+                && matches!(file.category, FileCategory::Application | FileCategory::Game)
+            {
+                1.2
+            } else {
+                1.0
+            };
+
+            // Calculate final score
+            let final_score =
+                ((base_score as f32) * category_boost * recency_multiplier * frequency_multiplier)
+                    as u32;
+
+            // Apply minimum score threshold
+            if let Some(min_score) = options.min_score
+                && final_score < min_score
+            {
+                continue;
+            }
+
+            results.push(SearchResult {
+                file: file.clone(),
+                score: final_score,
+                matched_indices: Vec::new(),
+            });
+        }
 
         // Sort by score (descending), then by name (ascending) for ties
         results.sort_by(|a, b| match b.score.cmp(&a.score) {
@@ -248,53 +238,47 @@ impl SearchEngine {
 
         let pattern = Pattern::parse(query, CaseMatching::Smart, Normalization::Smart);
 
-        let mut results: Vec<SearchResult> = files
-            .iter()
-            .filter(|file| {
-                if let Some(ref categories) = options.categories
-                    && !categories.contains(&file.category)
-                {
-                    return false;
-                }
-                if !options.include_hidden && file.name.starts_with('.') {
-                    return false;
-                }
-                true
-            })
-            .filter_map(|file| {
-                let haystack = if options.filename_only {
-                    &file.name
-                } else {
-                    &file.path
+        let mut buf: Vec<char> = Vec::new();
+        let mut results: Vec<SearchResult> = Vec::new();
+
+        for file in files {
+            if let Some(ref categories) = options.categories
+                && !categories.contains(&file.category)
+            {
+                continue;
+            }
+            if !options.include_hidden && file.name.starts_with('.') {
+                continue;
+            }
+
+            let haystack = if options.filename_only { &file.name } else { &file.path };
+
+            // Reuse buf across iterations — Utf32Str::new clears and refills it in place.
+            let haystack_str = Utf32Str::new(haystack, &mut buf);
+
+            // Get score with indices — discard Some(0) weak subsequence matches.
+            let mut indices = Vec::new();
+            let base_score =
+                match pattern.indices(haystack_str, &mut self.matcher, &mut indices) {
+                    Some(s) if s > 0 => s,
+                    _ => continue,
                 };
 
-                let haystack_utf32: Vec<char> = haystack.chars().collect();
-                let haystack_str = Utf32Str::Unicode(&haystack_utf32);
+            let category_boost = self.get_category_boost(&file.category);
+            let final_score = ((base_score as f32) * category_boost) as u32;
 
-                // Get score with indices — discard Some(0) weak subsequence matches.
-                let mut indices = Vec::new();
-                let base_score =
-                    match pattern.indices(haystack_str, &mut self.matcher, &mut indices) {
-                        Some(s) if s > 0 => s,
-                        _ => return None,
-                    };
+            if let Some(min_score) = options.min_score
+                && final_score < min_score
+            {
+                continue;
+            }
 
-                let category_boost = self.get_category_boost(&file.category);
-                let final_score = ((base_score as f32) * category_boost) as u32;
-
-                if let Some(min_score) = options.min_score
-                    && final_score < min_score
-                {
-                    return None;
-                }
-
-                Some(SearchResult {
-                    file: file.clone(),
-                    score: final_score,
-                    matched_indices: indices,
-                })
-            })
-            .collect();
+            results.push(SearchResult {
+                file: file.clone(),
+                score: final_score,
+                matched_indices: indices,
+            });
+        }
 
         results.sort_by(|a, b| match b.score.cmp(&a.score) {
             Ordering::Equal => a.file.name.cmp(&b.file.name),

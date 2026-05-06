@@ -276,19 +276,17 @@ pub async fn record_shell_command(
 pub async fn get_shell_history(
     state: tauri::State<'_, ShellHistoryState>,
 ) -> Result<Vec<ShellHistoryRecord>, VoltError> {
-    let mut records: Vec<ShellHistoryRecord> = {
+    let records: Vec<ShellHistoryRecord> = {
         let history = state
             .history
             .lock()
             .map_err(|e| VoltError::Unknown(e.to_string()))?;
         history.values().cloned().collect()
     };
-    records.sort_by(|a, b| {
-        shell_frecency(b)
-            .partial_cmp(&shell_frecency(a))
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
-    Ok(records)
+    let mut scored: Vec<(ShellHistoryRecord, f64)> =
+        records.into_iter().map(|r| { let s = shell_frecency(&r); (r, s) }).collect();
+    scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    Ok(scored.into_iter().map(|(r, _)| r).collect())
 }
 
 /// Fuzzy-match `prefix` against command strings and return top N by frecency.
@@ -316,14 +314,11 @@ pub async fn get_shell_suggestions(
     };
 
     if prefix.is_empty() {
-        let mut all = records;
-        all.sort_by(|a, b| {
-            shell_frecency(b)
-                .partial_cmp(&shell_frecency(a))
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
-        all.truncate(limit);
-        return Ok(all);
+        let mut scored: Vec<(ShellHistoryRecord, f64)> =
+            records.into_iter().map(|r| { let s = shell_frecency(&r); (r, s) }).collect();
+        scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        scored.truncate(limit);
+        return Ok(scored.into_iter().map(|(r, _)| r).collect());
     }
 
     let mut matcher = Matcher::new(Config::DEFAULT);

@@ -58,7 +58,10 @@ fn deeplink_rate_limited() -> bool {
     let now = Instant::now();
     let mut times = match DEEPLINK_TIMES.lock() {
         Ok(g) => g,
-        Err(p) => p.into_inner(), // poisoned — best effort, don't crash on it
+        Err(p) => {
+            warn!("DEEPLINK_TIMES mutex poisoned; recovering — prior panic may have corrupted rate limiter");
+            p.into_inner()
+        }
     };
 
     // Drop entries older than the window. Times are pushed in order so we

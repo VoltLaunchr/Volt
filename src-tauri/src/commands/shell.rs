@@ -436,7 +436,8 @@ pub async fn execute_shell_command(
     let timeout_ms = options
         .timeout_ms
         .or(Some(shell_settings.timeout_ms))
-        .unwrap_or(DEFAULT_TIMEOUT_MS);
+        .unwrap_or(DEFAULT_TIMEOUT_MS)
+        .min(300_000); // 5-minute hard cap — prevents runaway user-supplied timeouts
     let working_dir = options
         .working_dir
         .clone()
@@ -687,7 +688,8 @@ pub async fn execute_shell_command_streaming(
 
     let timeout_ms = timeout_ms
         .or(Some(shell_settings.timeout_ms))
-        .unwrap_or(DEFAULT_TIMEOUT_MS);
+        .unwrap_or(DEFAULT_TIMEOUT_MS)
+        .min(300_000); // 5-minute hard cap — prevents runaway user-supplied timeouts
     let effective_working_dir = working_dir.or_else(|| shell_settings.working_dir.clone());
 
     // Reject UNC paths and resolve symlinks BEFORE spawning.
