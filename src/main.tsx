@@ -7,8 +7,22 @@ import './styles/global.css';
 
 const root = ReactDOM.createRoot(document.getElementById('root') as HTMLElement);
 
-function renderFatalError(error: unknown) {
+// ---------------------------------------------------------------------------
+// Fatal error renderer
+// ---------------------------------------------------------------------------
+// Called when bootstrap() throws before any page is mounted, or when the
+// startup watchdog fires. Must be self-contained (no external CSS, no i18n)
+// and MUST show the window — it may still be hidden (visible:false in
+// tauri.conf.json) if the crash happened before the React happy-path ran.
+
+async function renderFatalError(error: unknown): Promise<void> {
   const message = error instanceof Error ? error.message : String(error);
+
+  // Show the window first so the error UI is actually visible to the user.
+  try {
+    await getCurrentWindow().show();
+  } catch { /* best-effort — ignore if the window API is unavailable */ }
+
   root.render(
     <div
       style={{
@@ -16,29 +30,42 @@ function renderFatalError(error: unknown) {
         flexDirection: 'column',
         alignItems: 'center',
         justifyContent: 'center',
-        height: '100vh',
-        background: 'rgba(20, 20, 30, 0.95)',
+        minHeight: '100vh',
+        background: '#0e0e1a',
         color: '#e0e0e0',
         fontFamily: 'system-ui, -apple-system, sans-serif',
         gap: '12px',
         padding: '24px',
         textAlign: 'center',
+        boxSizing: 'border-box',
       }}
     >
-      <h1 style={{ fontSize: '18px', fontWeight: 600, margin: 0 }}>Volt failed to start</h1>
-      <p style={{ fontSize: '13px', color: '#999', margin: 0, maxWidth: '400px', wordBreak: 'break-word' }}>
+      <span style={{ fontSize: '32px', color: '#f59e0b' }} aria-hidden="true">⚠</span>
+      <h1 style={{ fontSize: '18px', fontWeight: 600, margin: 0, color: '#f0f0f0' }}>
+        Volt failed to start
+      </h1>
+      <p
+        style={{
+          fontSize: '13px',
+          color: '#888',
+          margin: 0,
+          maxWidth: '400px',
+          wordBreak: 'break-word',
+          lineHeight: 1.6,
+        }}
+      >
         {message}
       </p>
       <button
-        onClick={() => window.location.reload()}
+        onClick={() => { window.location.reload(); }}
         style={{
           marginTop: '8px',
           padding: '8px 20px',
           fontSize: '13px',
           fontWeight: 500,
           color: '#fff',
-          background: '#3a3a5c',
-          border: '1px solid #4a4a6a',
+          background: '#3b3b6b',
+          border: '1px solid #5050a0',
           borderRadius: '6px',
           cursor: 'pointer',
         }}
@@ -49,9 +76,41 @@ function renderFatalError(error: unknown) {
   );
 }
 
-async function bootstrap() {
+// ---------------------------------------------------------------------------
+// Startup watchdog
+// ---------------------------------------------------------------------------
+// If bootstrap() is still pending after WATCHDOG_MS, something is blocking
+// (IPC unavailable, plugin hanging, unresolved Promise). We fire the error
+// UI so the user sees a message instead of a blank transparent window.
+// The timeout is cancelled the moment bootstrap() settles (success or error).
+
+const WATCHDOG_MS = 10_000;
+let watchdogTimer: number | undefined;
+
+function armWatchdog(): void {
+  watchdogTimer = window.setTimeout((): void => {
+    void renderFatalError(
+      new Error(
+        'Volt took too long to start (> 10 s).\n' +
+        'This usually means the IPC bridge is unavailable or a background task is hanging.\n' +
+        'Try restarting the application.'
+      )
+    );
+  }, WATCHDOG_MS);
+}
+
+function disarmWatchdog(): void {
+  window.clearTimeout(watchdogTimer);
+}
+
+// ---------------------------------------------------------------------------
+// Bootstrap
+// ---------------------------------------------------------------------------
+
+async function bootstrap(): Promise<void> {
   const windowLabel = getCurrentWindow().label;
 
+  // Load language preference before rendering anything so i18n is ready.
   const [settingsResult] = await Promise.allSettled([
     invoke<{ general: { language?: string } }>('load_settings'),
   ]);
@@ -64,49 +123,48 @@ async function bootstrap() {
     console.error('[Volt] i18n init failed, falling back to defaults:', err);
   }
 
+  // Lazy-import the ErrorBoundary once so every page gets it.
+  const { ErrorBoundary } = await import('./shared/components/ErrorBoundary');
+
+  const wrap = (node: React.ReactNode): React.ReactElement => (
+    <React.StrictMode>
+      <ErrorBoundary>{node}</ErrorBoundary>
+    </React.StrictMode>
+  );
+
   switch (windowLabel) {
     case 'settings': {
       const { SettingsPage } = await import('./pages/SettingsPage');
-      root.render(
-        <React.StrictMode>
-          <SettingsPage />
-        </React.StrictMode>
-      );
+      root.render(wrap(<SettingsPage />));
       break;
     }
     case 'onboarding': {
       const { OnboardingPage } = await import('./pages/OnboardingPage');
-      root.render(
-        <React.StrictMode>
-          <OnboardingPage />
-        </React.StrictMode>
-      );
+      root.render(wrap(<OnboardingPage />));
       break;
     }
     case 'system-monitor': {
       const { SystemMonitorPage } = await import('./pages/SystemMonitorPage');
-      root.render(
-        <React.StrictMode>
-          <SystemMonitorPage />
-        </React.StrictMode>
-      );
+      root.render(wrap(<SystemMonitorPage />));
       break;
     }
     default: {
       const { MainPage } = await import('./pages/MainPage');
-      const { ErrorBoundary } = await import('./shared/components/ErrorBoundary');
-      root.render(
-        <React.StrictMode>
-          <ErrorBoundary>
-            <MainPage />
-          </ErrorBoundary>
-        </React.StrictMode>
-      );
+      root.render(wrap(<MainPage />));
     }
   }
 }
 
-bootstrap().catch((err) => {
-  console.error('[Volt] Fatal bootstrap error:', err);
-  renderFatalError(err);
-});
+// ---------------------------------------------------------------------------
+// Entry point
+// ---------------------------------------------------------------------------
+
+armWatchdog();
+
+bootstrap()
+  .then(disarmWatchdog)
+  .catch((err) => {
+    disarmWatchdog();
+    console.error('[Volt] Fatal bootstrap error:', err);
+    void renderFatalError(err);
+  });
