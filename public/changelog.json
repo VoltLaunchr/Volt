@@ -1,6 +1,33 @@
 {
   "versions": [
     {
+      "version": "0.1.7",
+      "date": "2026-05-06",
+      "title": "First release with working CI pipeline",
+      "description": "Volt v0.1.7 is the first version that actually ships through automated CI: Tauri version mismatch and tag-trigger bugs fixed. Includes the full startup error-visibility improvements from v0.1.5/v0.1.6.",
+      "sections": [
+        {
+          "type": "fixes",
+          "title": "Bug Fixes",
+          "icon": "shield",
+          "items": [
+            "Show window + actionable UI on any boot failure (React crash, IPC hang, watchdog timeout)",
+            "Eliminate transparent-window flash on fresh install",
+            "Release pipeline: align Tauri npm/Rust versions and trigger release.yml via workflow_dispatch"
+          ]
+        }
+      ],
+      "footer": {
+        "gettingStarted": "Press Ctrl+Space to open Volt anytime. Check out what's new in v0.1.7!",
+        "feedback": "Have feedback or found a bug? Visit our GitHub repository to report issues or request features.",
+        "links": {
+          "github": "https://github.com/VoltLaunchr/Volt",
+          "releases": "https://github.com/VoltLaunchr/Volt/releases",
+          "docs": "https://voltlaunchr.com/docs"
+        }
+      }
+    },
+    {
       "version": "0.1.6",
       "date": "2026-05-06",
       "title": "Robust startup error handling",
