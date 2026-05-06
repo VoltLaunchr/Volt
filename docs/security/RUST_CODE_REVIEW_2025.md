@@ -8,7 +8,7 @@ Full expert review of the `main` branch Rust codebase (75 files). Issues are cla
 
 ### C1 · `std::thread::sleep` in async context blocks Tokio worker thread
 **File:** `src-tauri/src/plugins/builtin/system_monitor/plugin.rs` ~l.232
-**Status:** Open
+**Status:** Fixed in commit d9c80a9
 
 `refresh_cpu_dual_sample` calls `std::thread::sleep(200ms)`. This method is invoked through `refresh_cache()`, which is called inside a `tauri::async_runtime::spawn(async move { … })` block in `lib.rs`. A Tokio worker thread is blocked for 200ms on every monitor tick (every 5 seconds), degrading IPC latency across the whole app.
 
@@ -93,7 +93,7 @@ if !canonical_cache_path.starts_with(&canonical_cache_dir) {
 
 ### H1 · No abort handle on `start_indexing` — goroutine leak on shutdown
 **File:** `src-tauri/src/commands/files.rs` l.196, 833
-**Status:** Open
+**Status:** Fixed in commit d9c80a9
 
 `tauri::async_runtime::spawn(...)` is called and the `JoinHandle` is immediately dropped. No mechanism exists to cancel the background scan when the app shuts down or when `stop_file_watcher` is called. The internal `spawn_blocking` (filesystem walk) continues running past runtime teardown.
 
