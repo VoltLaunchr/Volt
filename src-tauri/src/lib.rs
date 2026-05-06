@@ -413,9 +413,9 @@ pub fn run() {
             app.manage(ShellExecutionState::new());
 
             app.manage(SystemMonitorState {
-                monitor: std::sync::Mutex::new(
+                monitor: std::sync::Arc::new(std::sync::Mutex::new(
                     plugins::builtin::SystemMonitorPlugin::new().with_api(plugin_api),
-                ),
+                )),
             });
 
             // Prime the CPU baseline in the background so the first user
@@ -451,16 +451,23 @@ pub fn run() {
                 tokio::time::sleep(sysinfo::MINIMUM_CPU_UPDATE_INTERVAL).await;
                 loop {
                     if let Some(state) = ticker_handle.try_state::<SystemMonitorState>() {
-                        match state.monitor.lock() {
-                            Ok(monitor) => {
-                                if let Err(e) = monitor.refresh_cache() {
-                                    warn!("System monitor cache refresh failed: {}", e);
+                        // `refresh_cache` calls `std::thread::sleep` internally
+                        // (CPU dual-sample). Offload to a blocking thread so the
+                        // Tokio worker thread is not parked during the sleep.
+                        let monitor_arc = state.monitor.clone();
+                        let _ = tokio::task::spawn_blocking(move || {
+                            match monitor_arc.lock() {
+                                Ok(monitor) => {
+                                    if let Err(e) = monitor.refresh_cache() {
+                                        warn!("System monitor cache refresh failed: {}", e);
+                                    }
+                                }
+                                Err(e) => {
+                                    warn!("SystemMonitorState lock poisoned in ticker: {}", e)
                                 }
                             }
-                            Err(e) => {
-                                warn!("SystemMonitorState lock poisoned in ticker: {}", e)
-                            }
-                        }
+                        })
+                        .await;
                     }
                     tokio::time::sleep(std::time::Duration::from_secs(5)).await;
                 }
