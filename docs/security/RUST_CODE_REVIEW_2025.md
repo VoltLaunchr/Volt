@@ -402,3 +402,72 @@ All constituent types implement `Default`. Clippy `new_without_default`.
 3. **M1–M7** — Medium (robustness)
 4. **P1–P9** — Performance (hot paths first: P1, P2, P3, P8)
 5. **I1–I4** — Idiomatic cleanup
+
+---
+
+## Second Audit — May 2025 (follow-up on `dev` branch)
+
+Targeted review of authentication, sync, extension loading, and settings import paths.
+
+---
+
+### A1 · Auth tokens crossing the IPC boundary (HIGH)
+**Files:** `src-tauri/src/commands/auth.rs`, `src/features/auth/types.ts`
+**Status:** Fixed in commit ac98024
+
+`auth_get_session` and `auth_refresh_token` returned `AuthSession` directly over IPC, exposing `access_token` and `refresh_token` to the renderer. A compromised extension or XSS could extract them via `invoke("auth_get_session")`.
+
+**Fix:** Split into `SessionStatus` (renderer-safe: `user_id + expires_at` only) and `AuthSession` (backend-only, never serialized over IPC). `sync.rs::require_premium()` now uses `load_auth_session()` directly (backend path) instead of the IPC command. Frontend `AuthSession` interface purged of both token fields.
+
+---
+
+### A2 · Fail-open path containment in `read_source_files_recursive` (MEDIUM)
+**File:** `src-tauri/src/commands/extensions.rs`
+**Status:** Fixed in commit ac98024
+
+The per-entry containment check was guarded by `if let Ok(canonical) && let Ok(canonical_base)` — if either `canonicalize` call failed (broken symlink, long path, race), the guard was bypassed and the file read proceeded without verification.
+
+**Fix:** Fail-closed: `canonical_base` computed once upfront with `?`; per-entry `canonicalize` failures `warn! + continue` (skip the entry) instead of fall-through.
+
+---
+
+### A3 · `import_settings` — no size cap, free extension, error oracle (MEDIUM)
+**File:** `src-tauri/src/commands/settings.rs` l.694–724
+**Status:** Fixed in commit 2a21e5a
+
+Three issues in a single function:
+- Accepted any file extension (not just `.json`), allowing arbitrary files to be fed to the parser.
+- No size cap: a 2 GB JSON blob would be parsed entirely in memory.
+- Distinct error messages for "not JSON" vs "missing key" vs "wrong shape" allowed partial error-oracle fingerprinting of the settings schema.
+
+**Fix:** `validate_settings_path(&path, Some("json"))` enforces `.json`; 1 MiB cap enforced on raw bytes before parsing; all parse/structure errors return a uniform `"Invalid settings file"` string.
+
+---
+
+### A4 · `clear_oauth_pending` accepts unvalidated service string (LOW)
+**File:** `src-tauri/src/commands/oauth.rs` l.296–306
+**Status:** Fixed in commit 2a21e5a
+
+The `service` parameter was forwarded directly to `pending_requests.retain(...)` without validation. A renderer or extension could call `clear_oauth_pending("github")` to cancel a legitimate in-flight OAuth flow (self-DoS), or inject arbitrary service names into the retain predicate.
+
+**Fix:** Early-return `Err` if `service` is not one of `"github" | "notion"`.
+
+---
+
+### A5 · `load_dev_state` ignores `VerifyOutcome::Mismatch` (LOW)
+**File:** `src-tauri/src/commands/extensions.rs` l.1137–1149
+**Status:** Fixed in commit 2a21e5a
+
+`load_dev_state` called `read_state_with_verification` (discards `VerifyOutcome`) instead of `read_state_with_outcome`. A tampered `dev-extensions.json` (e.g. path changed to a malicious extension) would load silently without any fail-closed response, inconsistent with the H4 pattern in `load_installed_state`.
+
+**Fix:** Use `read_state_with_outcome`; on `Mismatch`, disable all dev extensions (`enabled = false`) with per-extension `warn!` logging.
+
+---
+
+### A6 · Auth tokens not zeroized on drop (LOW)
+**Files:** `src-tauri/src/commands/auth.rs`, `src-tauri/Cargo.toml`
+**Status:** Fixed in commit 2a21e5a
+
+`AuthSession.access_token` / `refresh_token` and `PendingAuthFlow.code_verifier` are plain `String` fields — on drop, the backing heap bytes are not zeroed, so tokens can survive in a core dump or heap inspection.
+
+**Fix:** Added `zeroize = { version = "1", features = ["derive"] }`. `AuthSession` derives `Zeroize + ZeroizeOnDrop` (tokens zeroed on drop of every instance and every clone). `PendingAuthFlow` gets a manual `Drop` impl that calls `code_verifier.zeroize()`.
