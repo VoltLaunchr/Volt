@@ -65,11 +65,19 @@ struct SyncRow {
 /// privilege escalation). Falls back to REST `/profiles?id=eq.<uid>` for
 /// backward compat. Migration path: configure a Supabase auth hook to add
 /// `tier` to access-token claims, then this REST fallback can be removed.
+///
+/// Uses `load_auth_session` (backend-only) instead of the `auth_get_session`
+/// IPC command so that tokens never have to cross the renderer boundary.
 async fn require_premium() -> Result<auth::AuthSession, String> {
-    let session = auth::auth_get_session()
-        .await
+    let session = auth::load_auth_session()
         .map_err(|e| e.to_string())?
         .ok_or_else(|| "not_logged_in".to_string())?;
+
+    // Expiry check (mirrors what the IPC command does before returning).
+    let now = chrono::Utc::now().timestamp();
+    if now >= session.expires_at {
+        return Err("not_logged_in".to_string());
+    }
 
     // Defense in depth: if the access token carries a verified `tier`
     // claim, trust it. The renderer cannot mint a signed JWT, so a claim

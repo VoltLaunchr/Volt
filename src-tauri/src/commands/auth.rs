@@ -146,7 +146,7 @@ fn ensure_configured() -> Result<(), String> {
     Ok(())
 }
 
-/// Stored auth session with tokens and expiry
+/// Full auth session stored in the OS keyring. Tokens never leave the backend.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AuthSession {
@@ -154,6 +154,17 @@ pub struct AuthSession {
     pub refresh_token: String,
     pub expires_at: i64,
     pub user_id: String,
+}
+
+/// Session info returned to the renderer via IPC.
+/// Deliberately omits tokens — the renderer only needs to know whether a
+/// valid session exists and when it expires (to schedule a proactive refresh).
+/// All token-bearing operations are performed entirely in the backend.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionStatus {
+    pub user_id: String,
+    pub expires_at: i64,
 }
 
 /// User profile fetched from Supabase
@@ -195,7 +206,9 @@ pub fn save_auth_session(session: &AuthSession) -> Result<(), String> {
     keyring_store::store_signed(AUTH_ACCOUNT, &json)
 }
 
-fn load_auth_session() -> Result<Option<AuthSession>, String> {
+/// Load the full `AuthSession` (with tokens) from the OS keyring.
+/// For backend-only use — tokens must not be forwarded to the renderer.
+pub fn load_auth_session() -> Result<Option<AuthSession>, String> {
     keyring_store::migrate_from_json_if_needed();
     // retrieve_signed verifies the HMAC tag and silently drops + returns
     // None on mismatch — the user observes a logged-out state and is forced
@@ -270,21 +283,26 @@ pub async fn auth_login() -> Result<(), String> {
     Ok(())
 }
 
-/// Get current session (reads stored tokens, checks expiry).
+/// Get current session status (checks expiry, returns user_id + expires_at).
+/// Tokens are never returned to the renderer.
 #[tauri::command]
-pub async fn auth_get_session() -> Result<Option<AuthSession>, String> {
+pub async fn auth_get_session() -> Result<Option<SessionStatus>, String> {
     debug!("Getting auth session");
-    let session = load_auth_session()?;
+    let session = match load_auth_session()? {
+        Some(s) => s,
+        None => return Ok(None),
+    };
 
-    if let Some(ref s) = session {
-        let now = chrono::Utc::now().timestamp();
-        if now >= s.expires_at {
-            debug!("Auth session expired");
-            return Ok(None);
-        }
+    let now = chrono::Utc::now().timestamp();
+    if now >= session.expires_at {
+        debug!("Auth session expired");
+        return Ok(None);
     }
 
-    Ok(session)
+    Ok(Some(SessionStatus {
+        user_id: session.user_id,
+        expires_at: session.expires_at,
+    }))
 }
 
 /// Fetch user profile from Supabase REST API using stored access_token.
@@ -341,8 +359,9 @@ pub async fn auth_get_profile() -> Result<Option<UserProfile>, String> {
 }
 
 /// Refresh the access token using the stored refresh_token.
+/// Returns only session status (no tokens) to the renderer.
 #[tauri::command]
-pub async fn auth_refresh_token() -> Result<AuthSession, String> {
+pub async fn auth_refresh_token() -> Result<SessionStatus, String> {
     ensure_configured()?;
     info!("Refreshing Supabase auth token");
 
@@ -430,7 +449,10 @@ pub async fn auth_refresh_token() -> Result<AuthSession, String> {
     save_auth_session(&new_session)?;
     info!("Auth token refreshed successfully");
 
-    Ok(new_session)
+    Ok(SessionStatus {
+        user_id: new_session.user_id,
+        expires_at: new_session.expires_at,
+    })
 }
 
 /// Logout — clear stored auth tokens.

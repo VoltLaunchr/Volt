@@ -952,18 +952,34 @@ fn read_source_files_recursive(
     current_dir: &PathBuf,
     files: &mut std::collections::HashMap<String, String>,
 ) -> VoltResult<()> {
+    // Fail-closed: if the extension root can't be canonicalized (race,
+    // broken symlink, long path on Windows) we refuse to read anything
+    // rather than falling through with no containment check (mirrors the
+    // C4 fix applied to api.rs::read_cache).
+    let canonical_base = base_dir.canonicalize().map_err(|e| {
+        VoltError::FileSystem(format!(
+            "Cannot resolve extension root {:?}: {}",
+            base_dir, e
+        ))
+    })?;
+
     let entries = fs::read_dir(current_dir)
         .map_err(|e| VoltError::FileSystem(format!("Failed to read directory: {}", e)))?;
 
     for entry in entries.flatten() {
         let path = entry.path();
 
-        // Containment check: canonicalize and verify the path is within base_dir.
-        // This prevents symlinks from escaping the extension root.
-        if let Ok(canonical) = path.canonicalize()
-            && let Ok(canonical_base) = base_dir.canonicalize()
-            && !canonical.starts_with(&canonical_base)
-        {
+        // Containment check: fail-closed — skip any entry whose path cannot
+        // be canonicalized (race, broken symlink) rather than processing it
+        // without a verified containment guarantee.
+        let canonical = match path.canonicalize() {
+            Ok(p) => p,
+            Err(_) => {
+                warn!("Skipping unresolvable path in extension source: {:?}", path);
+                continue;
+            }
+        };
+        if !canonical.starts_with(&canonical_base) {
             warn!("Skipping path that escapes extension root: {:?}", path);
             continue;
         }
