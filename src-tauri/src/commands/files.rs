@@ -911,21 +911,28 @@ pub async fn get_db_index_stats(
         .map(|h| h.as_ref().map(|w| w.is_active()).unwrap_or(false))
         .unwrap_or(false);
 
-    if let Some(db) = state.db.as_ref() {
-        db.get_stats(is_watching).map_err(VoltError::Unknown)
-    } else {
-        // No DB – synthesise stats from in-memory state.
-        let indexed_count = state.files.lock().map(|f| f.len()).unwrap_or_else(|e| {
-            warn!("files mutex poisoned in get_db_index_stats: {}", e);
-            0
-        });
-        Ok(DbIndexStats {
-            indexed_count,
-            db_size_bytes: 0,
-            last_full_scan: 0,
-            is_watching,
-        })
-    }
+    // `get_stats` calls `std::fs::metadata` and a synchronous SQLite COUNT —
+    // both are blocking syscalls; offload to avoid parking a Tokio worker.
+    let db_arc = state.db.clone();
+    let files_arc = state.files.clone();
+    tokio::task::spawn_blocking(move || {
+        if let Some(db) = db_arc.as_ref() {
+            db.get_stats(is_watching).map_err(VoltError::Unknown)
+        } else {
+            let indexed_count = files_arc.lock().map(|f| f.len()).unwrap_or_else(|e| {
+                warn!("files mutex poisoned in get_db_index_stats: {}", e);
+                0
+            });
+            Ok(DbIndexStats {
+                indexed_count,
+                db_size_bytes: 0,
+                last_full_scan: 0,
+                is_watching,
+            })
+        }
+    })
+    .await
+    .map_err(|e| VoltError::Unknown(format!("get_db_index_stats task failed: {}", e)))?
 }
 
 /// Start (or restart) the file-system watcher for the configured directories.

@@ -10,6 +10,7 @@ use tauri::AppHandle;
 use tauri::ipc::Channel;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Child;
+use tokio::sync::Notify;
 use tokio::task::{AbortHandle, JoinHandle};
 use tracing::{info, warn};
 use unicode_normalization::UnicodeNormalization;
@@ -236,6 +237,9 @@ pub enum ShellOutputEvent {
 struct RunningProcess {
     abort_handle: AbortHandle,
     kill_flag: Arc<AtomicBool>,
+    /// Paired with `kill_flag`: notified whenever kill is requested so the
+    /// inner `select!` wakes immediately instead of waiting up to 50ms.
+    kill_notify: Arc<Notify>,
     child: Arc<tokio::sync::Mutex<Option<Child>>>,
     reader_aborts: Vec<AbortHandle>,
 }
@@ -472,11 +476,13 @@ pub async fn execute_shell_command(
     let child_shared: Arc<tokio::sync::Mutex<Option<Child>>> =
         Arc::new(tokio::sync::Mutex::new(Some(child)));
     let kill_flag = Arc::new(AtomicBool::new(false));
+    let kill_notify = Arc::new(Notify::new());
 
     // Register BEFORE spawning the driving task so an early drop of this
     // future always has a kill path.
     let child_for_state = Arc::clone(&child_shared);
     let kill_flag_for_state = Arc::clone(&kill_flag);
+    let kill_notify_for_state = Arc::clone(&kill_notify);
 
     let (stdout_handle, stderr_handle): (JoinHandle<Vec<u8>>, JoinHandle<Vec<u8>>) = (
         tokio::spawn(async move {
@@ -501,37 +507,27 @@ pub async fn execute_shell_command(
 
     let child_for_task = Arc::clone(&child_shared);
     let kill_flag_for_task = Arc::clone(&kill_flag);
+    let kill_notify_for_task = Arc::clone(&kill_notify);
 
     let task: JoinHandle<Result<ShellCommandOutput, VoltError>> = tokio::task::spawn(async move {
         let start = std::time::Instant::now();
 
-        // Poll the child inside a select! so the kill flag can interrupt.
-        let wait_result = async {
-            // Hold the child lock just long enough to poll; release between polls.
-            loop {
-                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-                if kill_flag_for_task.load(Ordering::Relaxed) {
-                    let mut guard = child_for_task.lock().await;
-                    if let Some(c) = guard.as_mut() {
+        // Use child.wait() (event-driven) instead of try_wait() polling.
+        // kill_notify is triggered by cancel_shell_command and the outer timeout
+        // handler, both of which set kill_flag before calling notify_one().
+        let wait_result: Result<std::process::ExitStatus, std::io::Error> = {
+            let mut guard = child_for_task.lock().await;
+            match guard.as_mut() {
+                Some(c) => tokio::select! {
+                    status = c.wait() => status,
+                    _ = kill_notify_for_task.notified() => {
                         let _ = c.kill().await;
+                        Err(std::io::Error::other("killed"))
                     }
-                    return Err::<std::process::ExitStatus, std::io::Error>(std::io::Error::other(
-                        "killed",
-                    ));
-                }
-                let mut guard = child_for_task.lock().await;
-                if let Some(c) = guard.as_mut() {
-                    match c.try_wait() {
-                        Ok(Some(status)) => return Ok(status),
-                        Ok(None) => {}
-                        Err(e) => return Err(e),
-                    }
-                } else {
-                    return Err(std::io::Error::other("child taken"));
-                }
+                },
+                None => Err(std::io::Error::other("child taken")),
             }
-        }
-        .await;
+        };
 
         let elapsed = start.elapsed().as_millis() as u64;
 
@@ -581,6 +577,7 @@ pub async fn execute_shell_command(
                 RunningProcess {
                     abort_handle: task.abort_handle(),
                     kill_flag: Arc::clone(&kill_flag),
+                    kill_notify: Arc::clone(&kill_notify),
                     child: Arc::clone(&child_for_state),
                     reader_aborts: reader_aborts.clone(),
                 },
@@ -643,9 +640,10 @@ pub async fn execute_shell_command(
             }
         }
         Err(_) => {
-            // Outer timeout fired. Kill child directly via shared handle and
-            // abort reader tasks so nothing leaks.
+            // Outer timeout fired. Notify the inner select! first (so it kills
+            // the child and releases the lock), then lock to confirm the kill.
             kill_flag_for_state.store(true, Ordering::Relaxed);
+            kill_notify_for_state.notify_one();
             {
                 let mut guard = child_for_state.lock().await;
                 if let Some(c) = guard.as_mut() {
@@ -705,6 +703,7 @@ pub async fn execute_shell_command_streaming(
 
     let kill_flag = Arc::new(AtomicBool::new(false));
     let kill_flag_task = Arc::clone(&kill_flag);
+    let kill_notify = Arc::new(Notify::new());
 
     // Spawn the child outside the task so spawn errors surface directly.
     let mut process = build_shell_command(
@@ -738,6 +737,7 @@ pub async fn execute_shell_command_streaming(
     // line is forwarded as its own IPC event with no upstream throttle.
     let stdout_event = on_event_clone.clone();
     let kill_stdout = Arc::clone(&kill_flag);
+    let kill_notify_stdout = Arc::clone(&kill_notify);
     let stdout_task: JoinHandle<()> = tokio::spawn(async move {
         if let Some(stdout) = stdout {
             let mut reader = BufReader::new(stdout).lines();
@@ -752,9 +752,10 @@ pub async fn execute_shell_command_streaming(
                     let _ = stdout_event.send(ShellOutputEvent::Stdout {
                         line: format!("[output truncated at {} bytes]", STREAM_OUTPUT_CAP),
                     });
-                    // Trip the kill flag so the driving task tears down the
-                    // child process and stops wasting CPU on a runaway producer.
+                    // Trip the kill flag AND notify so the wait select! wakes
+                    // immediately to tear down the child process.
                     kill_stdout.store(true, Ordering::Relaxed);
+                    kill_notify_stdout.notify_one();
                     break;
                 }
                 bytes_sent = next;
@@ -765,6 +766,7 @@ pub async fn execute_shell_command_streaming(
 
     let stderr_event = on_event_clone.clone();
     let kill_stderr = Arc::clone(&kill_flag);
+    let kill_notify_stderr = Arc::clone(&kill_notify);
     let stderr_task: JoinHandle<()> = tokio::spawn(async move {
         if let Some(stderr) = stderr {
             let mut reader = BufReader::new(stderr).lines();
@@ -779,6 +781,7 @@ pub async fn execute_shell_command_streaming(
                         line: format!("[output truncated at {} bytes]", STREAM_OUTPUT_CAP),
                     });
                     kill_stderr.store(true, Ordering::Relaxed);
+                    kill_notify_stderr.notify_one();
                     break;
                 }
                 bytes_sent = next;
@@ -792,32 +795,27 @@ pub async fn execute_shell_command_streaming(
     let reader_aborts = vec![stdout_abort.clone(), stderr_abort.clone()];
 
     let history_handle = history_state.inner().clone();
+    let kill_notify_wait = Arc::clone(&kill_notify);
 
     let task: JoinHandle<(i32, bool)> = tokio::task::spawn(async move {
         let start = std::time::Instant::now();
         let kill_flag = kill_flag_task;
 
+        // Use child.wait() (event-driven) instead of try_wait() polling.
+        // kill_notify_wait is triggered by cancel_shell_command, the outer
+        // timeout, and reader tasks hitting the byte cap.
         let wait_result =
             tokio::time::timeout(std::time::Duration::from_millis(timeout_ms), async {
-                loop {
-                    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-                    if kill_flag.load(Ordering::Relaxed) {
-                        let mut guard = child_for_task.lock().await;
-                        if let Some(c) = guard.as_mut() {
+                let mut guard = child_for_task.lock().await;
+                match guard.as_mut() {
+                    Some(c) => tokio::select! {
+                        status = c.wait() => Some(status),
+                        _ = kill_notify_wait.notified() => {
                             let _ = c.kill().await;
+                            None
                         }
-                        return None;
-                    }
-                    let mut guard = child_for_task.lock().await;
-                    if let Some(c) = guard.as_mut() {
-                        match c.try_wait() {
-                            Ok(Some(status)) => return Some(Ok(status)),
-                            Ok(None) => {}
-                            Err(e) => return Some(Err(e)),
-                        }
-                    } else {
-                        return None;
-                    }
+                    },
+                    None => None,
                 }
             })
             .await;
@@ -887,6 +885,7 @@ pub async fn execute_shell_command_streaming(
                 RunningProcess {
                     abort_handle: task.abort_handle(),
                     kill_flag: Arc::clone(&kill_flag),
+                    kill_notify: Arc::clone(&kill_notify),
                     child: Arc::clone(&child_shared),
                     reader_aborts,
                 },
@@ -930,6 +929,7 @@ pub async fn execute_shell_command_streaming(
         }
         Err(_) => {
             kill_flag.store(true, Ordering::Relaxed);
+            kill_notify.notify_one();
             stdout_abort.abort();
             stderr_abort.abort();
             {
@@ -966,8 +966,10 @@ pub async fn cancel_shell_command(
     };
 
     if let Some(process) = process {
-        // Kill the child directly first so the OS process stops immediately.
+        // Notify first so the inner select! wakes and releases the child lock,
+        // then lock to confirm the kill (belt-and-suspenders).
         process.kill_flag.store(true, Ordering::Relaxed);
+        process.kill_notify.notify_one();
         {
             let mut guard = process.child.lock().await;
             if let Some(c) = guard.as_mut() {

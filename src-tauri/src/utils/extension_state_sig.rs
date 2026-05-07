@@ -48,6 +48,11 @@ type HmacSha256 = Hmac<Sha256>;
 /// Keyring account name for the state HMAC key.
 const HMAC_KEY_ACCOUNT: &str = "extension_state_hmac_key";
 
+/// Domain tag for sig-file HMACs. Distinct from `CREDENTIAL_HMAC_DOMAIN` in
+/// `keyring_store` so a state-file signature can never be replayed as a valid
+/// credential signature and vice-versa, even though both use the same key.
+const STATE_FILE_HMAC_DOMAIN: &str = "volt-state-file-v1";
+
 /// Length of the HMAC key in bytes.
 const HMAC_KEY_LEN: usize = 32;
 
@@ -202,15 +207,12 @@ fn generate_and_store_key() -> Option<[u8; HMAC_KEY_LEN]> {
     }
 }
 
-/// Compute the hex-encoded HMAC-SHA256 of `contents` with the stored key.
+/// Compute the domain-tagged HMAC-SHA256 of `contents` for sig files.
+/// Uses `STATE_FILE_HMAC_DOMAIN` so the output can never be replayed as a
+/// credential signature (which uses `CREDENTIAL_HMAC_DOMAIN`).
 /// Returns `None` if the key is unavailable.
 fn compute_signature(contents: &[u8]) -> Option<String> {
-    let key = load_or_create_key()?;
-    // `new_from_slice` only fails on `InvalidLength`; the HMAC-SHA256 spec
-    // accepts any key length, so this cannot fail in practice.
-    let mut mac = HmacSha256::new_from_slice(&key).ok()?;
-    mac.update(contents);
-    Some(hex::encode(mac.finalize().into_bytes()))
+    hmac_sign_domain(STATE_FILE_HMAC_DOMAIN, contents)
 }
 
 /// Compute a domain-tagged HMAC-SHA256 of `payload` with the shared keyring
@@ -412,10 +414,9 @@ pub enum VerifyOutcome {
 /// to brick the app. Uses constant-time comparison internally via
 /// `Hmac::verify_slice`.
 pub fn verify_state_signature(state_path: &Path, contents: &str) -> VerifyOutcome {
-    let key = match load_or_create_key() {
-        Some(k) => k,
-        None => return VerifyOutcome::KeyUnavailable,
-    };
+    if load_or_create_key().is_none() {
+        return VerifyOutcome::KeyUnavailable;
+    }
 
     let sig_file = sig_path(state_path);
     if !sig_file.exists() {
@@ -433,19 +434,9 @@ pub fn verify_state_signature(state_path: &Path, contents: &str) -> VerifyOutcom
         }
     };
 
-    let expected_bytes = match hex::decode(expected_hex.trim()) {
-        Ok(b) => b,
-        Err(_) => return VerifyOutcome::Mismatch,
-    };
-
-    let mut mac = match HmacSha256::new_from_slice(&key) {
-        Ok(m) => m,
-        Err(_) => return VerifyOutcome::Mismatch,
-    };
-    mac.update(contents.as_bytes());
-
-    // `verify_slice` is constant-time.
-    if mac.verify_slice(&expected_bytes).is_ok() {
+    // `hmac_verify_domain` uses the same domain tag as `compute_signature` and
+    // does a constant-time comparison internally.
+    if hmac_verify_domain(STATE_FILE_HMAC_DOMAIN, contents.as_bytes(), &expected_hex) {
         VerifyOutcome::Ok
     } else {
         VerifyOutcome::Mismatch
