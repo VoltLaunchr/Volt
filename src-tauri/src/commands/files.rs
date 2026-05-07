@@ -795,11 +795,11 @@ pub async fn invalidate_index(
     watcher_state: State<'_, WatcherState>,
 ) -> VoltResult<()> {
     // Abort any in-progress background scan before rebuilding.
-    if let Ok(mut task) = state.scan_task.lock() {
-        if let Some(handle) = task.take() {
-            handle.abort();
-            info!("Aborted in-progress index scan for rebuild");
-        }
+    if let Ok(mut task) = state.scan_task.lock()
+        && let Some(handle) = task.take()
+    {
+        handle.abort();
+        info!("Aborted in-progress index scan for rebuild");
     }
 
     // Stop the watcher while we rebuild.
