@@ -225,7 +225,9 @@ fn scan_directory(
             }
 
             // Recursively scan subdirectory
-            if let Ok(sub_files) = scan_directory(&path, config, current_depth + 1, extensions_lower) {
+            if let Ok(sub_files) =
+                scan_directory(&path, config, current_depth + 1, extensions_lower)
+            {
                 files.extend(sub_files);
             }
         } else if metadata.is_file() {

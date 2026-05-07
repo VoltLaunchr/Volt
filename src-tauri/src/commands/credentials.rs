@@ -190,17 +190,16 @@ pub fn get_credential_info(service: String) -> Result<Option<StoredCredential>, 
 
     match keyring_store::retrieve_signed(&meta_account(&service))? {
         Some(meta_json) => {
-            let meta: CredentialMeta =
-                serde_json::from_str(&meta_json).unwrap_or_else(|e| {
-                    warn!(
-                        "Failed to deserialize credential meta for '{}': {} — using defaults",
-                        service, e
-                    );
-                    CredentialMeta {
-                        saved_at: "Unknown".to_string(),
-                        enabled: true,
-                    }
-                });
+            let meta: CredentialMeta = serde_json::from_str(&meta_json).unwrap_or_else(|e| {
+                warn!(
+                    "Failed to deserialize credential meta for '{}': {} — using defaults",
+                    service, e
+                );
+                CredentialMeta {
+                    saved_at: "Unknown".to_string(),
+                    enabled: true,
+                }
+            });
             Ok(Some(StoredCredential {
                 service,
                 saved_at: meta.saved_at,

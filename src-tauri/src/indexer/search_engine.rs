@@ -160,7 +160,11 @@ impl SearchEngine {
             }
 
             // Decide what to match against
-            let haystack = if options.filename_only { &file.name } else { &file.path };
+            let haystack = if options.filename_only {
+                &file.name
+            } else {
+                &file.path
+            };
 
             // Reuse buf across iterations — Utf32Str::new clears and refills it in place.
             let haystack_str = Utf32Str::new(haystack, &mut buf);
@@ -185,8 +189,10 @@ impl SearchEngine {
 
             // Apply frequency boost for executables and applications
             let frequency_multiplier = if options.frequency_boost.is_some()
-                && matches!(file.category, FileCategory::Application | FileCategory::Game)
-            {
+                && matches!(
+                    file.category,
+                    FileCategory::Application | FileCategory::Game
+                ) {
                 1.2
             } else {
                 1.0
@@ -251,18 +257,21 @@ impl SearchEngine {
                 continue;
             }
 
-            let haystack = if options.filename_only { &file.name } else { &file.path };
+            let haystack = if options.filename_only {
+                &file.name
+            } else {
+                &file.path
+            };
 
             // Reuse buf across iterations — Utf32Str::new clears and refills it in place.
             let haystack_str = Utf32Str::new(haystack, &mut buf);
 
             // Get score with indices — discard Some(0) weak subsequence matches.
             let mut indices = Vec::new();
-            let base_score =
-                match pattern.indices(haystack_str, &mut self.matcher, &mut indices) {
-                    Some(s) if s > 0 => s,
-                    _ => continue,
-                };
+            let base_score = match pattern.indices(haystack_str, &mut self.matcher, &mut indices) {
+                Some(s) if s > 0 => s,
+                _ => continue,
+            };
 
             let category_boost = self.get_category_boost(&file.category);
             let final_score = ((base_score as f32) * category_boost) as u32;

@@ -38,7 +38,8 @@ pub fn search_applications_with_frecency(
         .into_iter()
         .filter_map(|app| {
             // Match against name first
-            let mut match_score = calculate_match_score_with_matcher(&app.name, query, &mut matcher);
+            let mut match_score =
+                calculate_match_score_with_matcher(&app.name, query, &mut matcher);
 
             // If name doesn't match well, try matching against the last two path components
             // (parent dir + filename). Using the full path causes false positives because
@@ -58,7 +59,8 @@ pub fn search_applications_with_frecency(
                 } else {
                     format!("{} {}", parent_name, filename)
                 };
-                let path_score = calculate_match_score_with_matcher(&short_path, query, &mut matcher);
+                let path_score =
+                    calculate_match_score_with_matcher(&short_path, query, &mut matcher);
                 if path_score > match_score {
                     match_score = path_score * 0.9; // slightly lower than name match
                 }

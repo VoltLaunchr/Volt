@@ -1,7 +1,6 @@
 use nucleo_matcher::pattern::{CaseMatching, Normalization, Pattern};
 use nucleo_matcher::{Config, Matcher, Utf32Str};
 
-
 /// Performs fuzzy matching - checks if all characters from pattern appear in text in order
 ///
 /// # Examples

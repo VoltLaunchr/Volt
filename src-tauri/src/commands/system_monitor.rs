@@ -152,7 +152,11 @@ pub fn get_system_metrics_v2(
         .map_err(|e| VoltError::Unknown(format!("Monitor lock poisoned: {}", e)))?;
 
     // Prime the cache on miss so the v2 payload is never hollow on first call.
-    if monitor.cached_last_updated().map_err(VoltError::Unknown)?.is_none() {
+    if monitor
+        .cached_last_updated()
+        .map_err(VoltError::Unknown)?
+        .is_none()
+    {
         monitor.refresh_cache().map_err(VoltError::Unknown)?;
     }
     let cached = monitor.cached_metrics().map_err(VoltError::Unknown)?;

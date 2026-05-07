@@ -702,7 +702,9 @@ pub async fn import_settings(app_handle: AppHandle, path: String) -> VoltResult<
     let bytes = fs::read(&validated_path)
         .map_err(|e| VoltError::FileSystem(format!("Failed to read import file: {}", e)))?;
     if bytes.len() > MAX_IMPORT_BYTES {
-        return Err(VoltError::InvalidConfig("Invalid settings file".to_string()));
+        return Err(VoltError::InvalidConfig(
+            "Invalid settings file".to_string(),
+        ));
     }
 
     // Uniform error for all parse/structure failures — callers cannot distinguish

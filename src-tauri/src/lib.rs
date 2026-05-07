@@ -59,7 +59,9 @@ fn deeplink_rate_limited() -> bool {
     let mut times = match DEEPLINK_TIMES.lock() {
         Ok(g) => g,
         Err(p) => {
-            warn!("DEEPLINK_TIMES mutex poisoned; recovering — prior panic may have corrupted rate limiter");
+            warn!(
+                "DEEPLINK_TIMES mutex poisoned; recovering — prior panic may have corrupted rate limiter"
+            );
             p.into_inner()
         }
     };

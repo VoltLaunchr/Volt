@@ -113,7 +113,10 @@ impl FileIndexDb {
 
         let category = serde_json::to_string(&file.category)
             .unwrap_or_else(|e| {
-                warn!("Failed to serialize category for '{}': {} — using 'other'", file.path, e);
+                warn!(
+                    "Failed to serialize category for '{}': {} — using 'other'",
+                    file.path, e
+                );
                 "\"other\"".to_string()
             })
             .trim_matches('"')
@@ -182,7 +185,10 @@ impl FileIndexDb {
             for file in files {
                 let category = serde_json::to_string(&file.category)
                     .unwrap_or_else(|e| {
-                        warn!("Failed to serialize category for '{}': {} — using 'other'", file.path, e);
+                        warn!(
+                            "Failed to serialize category for '{}': {} — using 'other'",
+                            file.path, e
+                        );
                         "\"other\"".to_string()
                     })
                     .trim_matches('"')

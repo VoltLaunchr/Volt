@@ -613,8 +613,6 @@ async fn exchange_code_for_session(code: String, verifier: String) -> Result<Aut
     Ok(session)
 }
 
-
-
 // ---------------------------------------------------------------------------
 // JWT signature + claim validation (ES256/RS256/EdDSA via JWKS)
 // ---------------------------------------------------------------------------

@@ -1138,9 +1138,8 @@ fn get_dev_state_path(app: &AppHandle) -> VoltResult<PathBuf> {
 fn load_dev_state(app: &AppHandle) -> VoltResult<DevExtensionsState> {
     let state_path = get_dev_state_path(app)?;
 
-    let outcome =
-        extension_state_sig::read_state_with_outcome(&state_path, "dev-extensions")
-            .map_err(|e| VoltError::FileSystem(format!("Failed to read dev state: {}", e)))?;
+    let outcome = extension_state_sig::read_state_with_outcome(&state_path, "dev-extensions")
+        .map_err(|e| VoltError::FileSystem(format!("Failed to read dev state: {}", e)))?;
 
     let Some((content, verify_outcome)) = outcome else {
         return Ok(DevExtensionsState::default());

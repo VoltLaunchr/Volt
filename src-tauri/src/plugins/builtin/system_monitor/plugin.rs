@@ -237,19 +237,28 @@ impl SystemMonitorPlugin {
 
     /// Read only `cpu_usage` from the cache without cloning the full snapshot.
     pub fn cached_cpu_usage(&self) -> Result<f32, String> {
-        let cache = self.cache.read().map_err(|e| format!("lock poisoned: {}", e))?;
+        let cache = self
+            .cache
+            .read()
+            .map_err(|e| format!("lock poisoned: {}", e))?;
         Ok(cache.cpu_usage)
     }
 
     /// Read only `memory_usage_percent` from the cache without cloning the full snapshot.
     pub fn cached_memory_usage(&self) -> Result<f32, String> {
-        let cache = self.cache.read().map_err(|e| format!("lock poisoned: {}", e))?;
+        let cache = self
+            .cache
+            .read()
+            .map_err(|e| format!("lock poisoned: {}", e))?;
         Ok(cache.memory_usage_percent)
     }
 
     /// Read only the disk scalars needed to compute usage % without cloning the full snapshot.
     pub fn cached_disk_usage(&self) -> Result<f32, String> {
-        let cache = self.cache.read().map_err(|e| format!("lock poisoned: {}", e))?;
+        let cache = self
+            .cache
+            .read()
+            .map_err(|e| format!("lock poisoned: {}", e))?;
         Ok(if cache.disk_total > 0 {
             ((cache.disk_used as f64 / cache.disk_total as f64) * 100.0) as f32
         } else {
@@ -260,7 +269,10 @@ impl SystemMonitorPlugin {
     /// Read only `last_updated` from the cache — used by callers that need to
     /// check cache freshness without paying for a full snapshot clone.
     pub fn cached_last_updated(&self) -> Result<Option<Instant>, String> {
-        let cache = self.cache.read().map_err(|e| format!("lock poisoned: {}", e))?;
+        let cache = self
+            .cache
+            .read()
+            .map_err(|e| format!("lock poisoned: {}", e))?;
         Ok(cache.last_updated)
     }
 

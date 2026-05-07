@@ -314,7 +314,10 @@ impl LaunchHistory {
     /// Get all unique tags used in history
     pub fn get_all_tags(&self) -> Vec<String> {
         let records = self.get_all();
-        let mut tags: Vec<String> = records.iter().flat_map(|r| r.tags.iter().cloned()).collect();
+        let mut tags: Vec<String> = records
+            .iter()
+            .flat_map(|r| r.tags.iter().cloned())
+            .collect();
         tags.sort();
         tags.dedup();
         tags
