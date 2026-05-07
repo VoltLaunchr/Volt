@@ -23,7 +23,7 @@ std::thread::sleep(MINIMUM_CPU_UPDATE_INTERVAL); // blocks Tokio worker thread
 
 ### C2 · JSON injection via `format!()` in Supabase RPC body
 **File:** `src-tauri/src/commands/extensions.rs` ~l.1555
-**Status:** Open
+**Status:** Fixed in commit 792b1c3
 
 The POST body for the download-count RPC is built with raw string interpolation instead of `serde_json`. If `validate_extension_id`'s charset is ever relaxed, an ID like `","injected":true,"x":"` breaks out of the JSON object.
 
@@ -39,7 +39,7 @@ The POST body for the download-count RPC is built with raw string interpolation 
 
 ### C3 · Silent data loss in `database.rs` — three related bugs
 **File:** `src-tauri/src/indexer/database.rs` l.114–117, 180–196, 261, 327
-**Status:** Open
+**Status:** Fixed in commit 792b1c3
 
 **(a)** `upsert_files`: row-level failures are `warn!`-logged but the transaction is committed anyway. `Ok(())` is returned even when an arbitrary number of rows were dropped.
 
@@ -65,7 +65,7 @@ if let Err(e) = stmt.execute(params![...]) {
 
 ### C4 · Path containment bypass in `read_cache` when `canonicalize` fails
 **File:** `src-tauri/src/plugins/api.rs` l.462–471
-**Status:** Open
+**Status:** Fixed in commit 792b1c3
 
 The containment check is only enforced when both `canonicalize` calls succeed. If either fails (race condition, long path on Windows, broken symlink), the entire `if` block is skipped and `fs::read(&cache_path)` executes without verification. The guard must be fail-closed.
 
@@ -103,7 +103,7 @@ if !canonical_cache_path.starts_with(&canonical_cache_dir) {
 
 ### H2 · Redirect SSRF on extension download
 **File:** `src-tauri/src/commands/extensions.rs` l.571–580
-**Status:** Open
+**Status:** Fixed in commit 792b1c3
 
 The `reqwest::Client` follows up to 10 redirects by default. `validate_download_url` validates the original URL against a private-IP denylist, but a `302 → http://169.254.169.254/...` redirect is followed without re-validation. CLAUDE.md states "redirect SSRF blocked" — that protection exists only in the Worker sandbox, not on this Rust download path.
 
@@ -113,7 +113,7 @@ The `reqwest::Client` follows up to 10 redirects by default. `validate_download_
 
 ### H3 · No size cap on extension archive download — memory exhaustion
 **File:** `src-tauri/src/commands/extensions.rs` l.591
-**Status:** Open
+**Status:** Fixed in commit 792b1c3
 
 ```rust
 let bytes = response.bytes().await // loads entire response into RAM, no limit
@@ -127,7 +127,7 @@ A URL from `raw.githubusercontent.com` (in the allowlist) returning a 2GB payloa
 
 ### H4 · `pin`/`unpin`/`add_tag`/`remove_tag` silently return `Ok(())` when path not found
 **File:** `src-tauri/src/launcher/history.rs` l.220–277
-**Status:** Open
+**Status:** Fixed in commit 792b1c3
 
 ```rust
 pub fn pin(&self, path: &str) -> Result<(), String> {
@@ -144,7 +144,7 @@ pub fn pin(&self, path: &str) -> Result<(), String> {
 
 ### H5 · Legacy implicit-grant auth tokens in deep link URL (live code)
 **File:** `src-tauri/src/commands/auth.rs` l.524–531
-**Status:** Open
+**Status:** Fixed in commit 792b1c3
 
 The `volt://auth/callback?access_token=...&refresh_token=...` path is deprecated but fully active. On Windows, any app that registers a `volt://` handler can intercept this deep link and steal tokens. Tokens also appear in browser history.
 
@@ -154,7 +154,7 @@ The `volt://auth/callback?access_token=...&refresh_token=...` path is deprecated
 
 ### H6 · `test_credential` accepts a renderer-supplied token — Volt as auth proxy
 **File:** `src-tauri/src/commands/credentials.rs` l.126
-**Status:** Open
+**Status:** Fixed in commit 792b1c3
 
 ```rust
 pub async fn test_credential(service: String, token: String) -> Result<bool, String>
@@ -184,7 +184,7 @@ pub async fn test_credential(service: String) -> Result<bool, String> {
 
 ### M2 · `auth_state_lock()` always returns `Ok(...)` despite `Result<_, String>` return type
 **File:** `src-tauri/src/commands/auth.rs` l.86–92
-**Status:** Open
+**Status:** Fixed in commit 792b1c3
 
 The function signature implies fallibility but the body always returns `Ok(...)`. The poison recovery is unconditional and silent. Callers use `?` expecting a possible `Err` that never occurs. Make it infallible (`-> MutexGuard<'_>`) or log and return `Err` on poison.
 
@@ -208,7 +208,7 @@ Tokio provides `child.wait().await` which yields correctly without polling. The 
 
 ### M4 · Unbounded user-controlled `timeout_ms` in shell command execution
 **File:** `src-tauri/src/commands/shell.rs` l.436–439, 688–690
-**Status:** Open
+**Status:** Fixed in commit 792b1c3
 
 A renderer-supplied `timeout_ms: u64::MAX` converts to a near-infinite `Duration`, defeating the kill mechanism and pinning a Tokio worker thread.
 
@@ -226,14 +226,14 @@ A renderer-supplied `timeout_ms: u64::MAX` converts to a near-infinite `Duration
 
 ### M6 · `validate_extension_id` not called in `unlink_dev_extension`
 **File:** `src-tauri/src/commands/extensions.rs` l.1377
-**Status:** Open
+**Status:** Fixed in commit 792b1c3
 
 All other commands that take `extension_id` call `validate_extension_id` first. `unlink_dev_extension` does not. If the implementation is ever changed to reconstruct the directory path from the ID (as `uninstall_extension` does), the missing validation becomes exploitable.
 
 ---
 
 ### M7 · Swallowed errors losing observability (multiple locations)
-**Status:** Open
+**Status:** Fixed in commit 792b1c3
 
 Several locations discard errors without logging, making production failures invisible:
 
@@ -263,7 +263,7 @@ Several locations discard errors without logging, making production failures inv
 
 ### P2 · `Vec<char>` heap allocation per file per search in `search_engine.rs`
 **File:** `src-tauri/src/indexer/search_engine.rs` l.171, 271
-**Status:** Open
+**Status:** Fixed in commit 792b1c3
 
 ```rust
 let haystack_utf32: Vec<char> = haystack.chars().collect(); // 50k allocs per search
@@ -317,7 +317,7 @@ let platforms: HashSet<GamePlatform> = games.iter().map(|g| g.platform.clone()).
 
 ### P6 · `format!()` string allocation in directory traversal hot loop
 **File:** `src-tauri/src/indexer/scanner.rs` l.30–33
-**Status:** Open
+**Status:** Fixed in commit 792b1c3
 
 ```rust
 path_str.contains(&format!("\\{}\\", sensitive)) // allocates per entry per sensitive dir
@@ -329,7 +329,7 @@ path_str.contains(&format!("\\{}\\", sensitive)) // allocates per entry per sens
 
 ### P7 · `to_lowercase()` per-file per-extension in file filter
 **File:** `src-tauri/src/indexer/scanner.rs` l.213–220
-**Status:** Open
+**Status:** Fixed in commit 792b1c3
 
 `e.to_lowercase()` called inside `iter().any()` for every extension for every file = 1M allocs over a 100k file index with 10 extensions.
 
@@ -339,7 +339,7 @@ path_str.contains(&format!("\\{}\\", sensitive)) // allocates per entry per sens
 
 ### P8 · `shell_frecency()` + `SystemTime::now()` called O(N log N) times during sort
 **File:** `src-tauri/src/commands/shell_history.rs` l.287–291
-**Status:** Open
+**Status:** Fixed in commit 792b1c3
 
 `sort_by` calls `shell_frecency()` on both elements every comparison. With 500 entries this is ~4500 calls to `SystemTime::now()` and `exp()`.
 
@@ -361,7 +361,7 @@ path_str.contains(&format!("\\{}\\", sensitive)) // allocates per entry per sens
 
 ### I1 · `&PathBuf` instead of `&Path` in internal function signatures
 **Files:** `commands/settings.rs` l.372, `commands/snippets.rs` l.44, `launcher/history.rs` l.126
-**Status:** Open
+**Status:** Fixed in commit 792b1c3
 
 Clippy `ptr_arg`. Use `&Path` — `&PathBuf` derefs to `&Path`, no call sites need to change.
 
@@ -377,7 +377,7 @@ Makes `"development".parse::<AppCategory>()` unavailable and the method invisibl
 
 ### I3 · `get_all_tags` double-clones the tag strings
 **File:** `src-tauri/src/launcher/history.rs` l.313
-**Status:** Open
+**Status:** Fixed in commit 792b1c3
 
 ```rust
 records.iter().flat_map(|r| r.tags.clone()) // clones entire Vec per record
