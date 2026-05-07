@@ -11,7 +11,26 @@ body,
   width: 100%;
   height: 100%;
   overflow: hidden;
+}
+
+/* The transparent Tauri window leaks the desktop through whenever the webview
+   has nothing painted yet — the moment between window.show() and React's first
+   paint, or every time the hotkey handler reveals the window from Rust. We
+   paint the dark glass color directly on <body> (matching the same value
+   in index.html so the very first frame is already opaque) and keep <html>
+   + #root transparent so the rounded corners stay see-through. */
+html,
+#root {
   background: transparent;
+}
+
+body {
+  background: rgba(20, 20, 30, 0.97);
+  border-radius: 12px;
+}
+
+[data-theme='light'] body {
+  background: rgba(250, 250, 255, 0.97);
 }
 
 /* ── Actions panel slide-in animation ── */

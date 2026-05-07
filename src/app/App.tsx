@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react';
 import Snowfall from 'react-snowfall';
 import { useTranslation } from 'react-i18next';
-import { listen } from '@tauri-apps/api/event';
+import { emit, listen } from '@tauri-apps/api/event';
 import { getCurrentWindow, LogicalSize } from '@tauri-apps/api/window';
 import { TimerDisplay } from '../features/plugins/builtin';
 import { PermissionDialog } from '../features/extensions/components/PermissionDialog';
@@ -21,7 +21,6 @@ import { useGlobalHotkey } from './hooks/useGlobalHotkey';
 import { useResultActions } from './hooks/useResultActions';
 import { useSearchPipeline } from './hooks/useSearchPipeline';
 import { openSettingsWindow } from './utils';
-import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { installPendingUpdate, hasPendingUpdate } from '../features/settings/services/updateService';
 import i18n from '../i18n';
 
@@ -101,25 +100,37 @@ function App() {
   }, []);
 
   // Open the dedicated onboarding window for first-time users (or after restart-onboarding).
-  // The window is pre-configured at 1300×800 in tauri.conf.json — no JS resize needed.
+  // We emit an event instead of calling show() directly: the onboarding window's
+  // React must paint its solid background BEFORE the OS makes it visible, otherwise
+  // the transparent webview leaks the desktop through during the load gap.
   const rawHasSeenOnboarding = settings?.general.hasSeenOnboarding;
   useEffect(() => {
     if (rawHasSeenOnboarding !== false) return;
-    WebviewWindow.getByLabel('onboarding').then((win) => {
-      if (win) { void win.show(); void win.setFocus(); }
-    }).catch(() => {});
+    void emit('volt://show-onboarding', {});
   }, [rawHasSeenOnboarding]);
 
   // Main window starts hidden in tauri.conf.json (launcher behaviour). Reveal it
-  // once settings are loaded AND onboarding is already done. First-time users
-  // stay hidden until OnboardingPage.handleComplete shows the main window itself.
+  // once settings are loaded AND onboarding is already done.
+  //
+  // Reveal channel: we both emit `volt://main-ready` (consumed by the Rust setup
+  // task at startup, gated by a 5s fallback) AND call `window.show()` directly.
+  // Both paths are idempotent — the second show() is a no-op. Belt-and-suspenders
+  // because (a) on cold-start the Rust listener owns the reveal, but (b) once the
+  // user finishes onboarding mid-session the listener is gone and React must
+  // own it. Double rAF defers the call to after the first paint so the OS never
+  // reveals an empty webview (the transparent window would leak the desktop).
   const mainShownRef = useRef(false);
   useEffect(() => {
     if (mainShownRef.current) return;
     if (rawHasSeenOnboarding !== true) return;
     mainShownRef.current = true;
     const win = getCurrentWindow();
-    win.show().then(() => win.setFocus()).catch(() => {});
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        void emit('volt://main-ready', {});
+        win.show().then(() => win.setFocus()).catch(() => {});
+      });
+    });
   }, [rawHasSeenOnboarding]);
 
   // Install a deferred update when the user closes the app.
