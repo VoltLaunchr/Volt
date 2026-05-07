@@ -26,6 +26,7 @@ use std::collections::HashMap;
 use std::sync::{Mutex, RwLock};
 use std::time::{Duration, Instant};
 use tracing::{debug, error, info, warn};
+use zeroize::{Zeroize, ZeroizeOnDrop};
 
 use super::keyring_store;
 
@@ -35,6 +36,12 @@ use super::keyring_store;
 struct PendingAuthFlow {
     initiated: Instant,
     code_verifier: String,
+}
+
+impl Drop for PendingAuthFlow {
+    fn drop(&mut self) {
+        self.code_verifier.zeroize();
+    }
 }
 
 /// Pending login flows keyed by CSRF state nonce. `Mutex` rather than
@@ -147,7 +154,7 @@ fn ensure_configured() -> Result<(), String> {
 }
 
 /// Full auth session stored in the OS keyring. Tokens never leave the backend.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Zeroize, ZeroizeOnDrop)]
 #[serde(rename_all = "camelCase")]
 pub struct AuthSession {
     pub access_token: String,
@@ -300,7 +307,7 @@ pub async fn auth_get_session() -> Result<Option<SessionStatus>, String> {
     }
 
     Ok(Some(SessionStatus {
-        user_id: session.user_id,
+        user_id: session.user_id.clone(),
         expires_at: session.expires_at,
     }))
 }
@@ -450,7 +457,7 @@ pub async fn auth_refresh_token() -> Result<SessionStatus, String> {
     info!("Auth token refreshed successfully");
 
     Ok(SessionStatus {
-        user_id: new_session.user_id,
+        user_id: new_session.user_id.clone(),
         expires_at: new_session.expires_at,
     })
 }
@@ -533,7 +540,7 @@ pub async fn handle_auth_deep_link(url_str: &str) -> Result<AuthSession, String>
             warn!("Auth callback rejected: state nonce expired during processing");
             return Err("Auth state expired".into());
         }
-        flow.code_verifier
+        flow.code_verifier.clone()
     };
 
     // 2. Pick the path: PKCE (preferred) or legacy implicit (fallback).

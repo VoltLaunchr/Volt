@@ -694,21 +694,26 @@ fn sanitize_imported_paths(paths: Vec<String>) -> Vec<String> {
 /// Import settings from a JSON file at the given path
 #[tauri::command]
 pub async fn import_settings(app_handle: AppHandle, path: String) -> VoltResult<Settings> {
-    let validated_path = validate_settings_path(&path, None)?;
+    // Enforce .json extension; reuse the same validator used for export paths.
+    let validated_path = validate_settings_path(&path, Some("json"))?;
 
-    let content = fs::read_to_string(&validated_path)
+    // Cap at 1 MiB before parsing to prevent a 2 GB JSON blob from exhausting memory.
+    const MAX_IMPORT_BYTES: usize = 1_048_576;
+    let bytes = fs::read(&validated_path)
         .map_err(|e| VoltError::FileSystem(format!("Failed to read import file: {}", e)))?;
+    if bytes.len() > MAX_IMPORT_BYTES {
+        return Err(VoltError::InvalidConfig("Invalid settings file".to_string()));
+    }
 
-    let export_data: serde_json::Value = serde_json::from_str(&content)
-        .map_err(|e| VoltError::Serialization(format!("Failed to parse import file: {}", e)))?;
+    // Uniform error for all parse/structure failures — callers cannot distinguish
+    // "not JSON" from "missing key" from "wrong shape" (partial-oracle prevention).
+    let invalid = || VoltError::InvalidConfig("Invalid settings file".to_string());
 
-    // Validate structure: must have a "settings" key
-    let settings_value = export_data.get("settings").ok_or_else(|| {
-        VoltError::InvalidConfig("Invalid settings file: missing 'settings' key".to_string())
-    })?;
-
-    let mut settings: Settings = serde_json::from_value(settings_value.clone())
-        .map_err(|e| VoltError::InvalidConfig(format!("Invalid settings structure: {}", e)))?;
+    let content = String::from_utf8(bytes).map_err(|_| invalid())?;
+    let export_data: serde_json::Value = serde_json::from_str(&content).map_err(|_| invalid())?;
+    let settings_value = export_data.get("settings").ok_or_else(invalid)?;
+    let mut settings: Settings =
+        serde_json::from_value(settings_value.clone()).map_err(|_| invalid())?;
 
     // Re-validate path-bearing fields. A crafted import could otherwise point
     // the indexer at sensitive system roots or smuggle traversal sequences.

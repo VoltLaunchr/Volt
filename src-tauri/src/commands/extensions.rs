@@ -1132,20 +1132,37 @@ fn get_dev_state_path(app: &AppHandle) -> VoltResult<PathBuf> {
 /// Load dev extensions state from disk.
 ///
 /// Also verifies the detached HMAC signature (`dev-extensions.json.sig`).
-/// A missing or mismatching signature is logged but never causes load
-/// failure — see `extension_state_sig` for the rationale.
+/// On `Mismatch`, all dev extensions are disabled (fail-closed, mirrors H4
+/// in `load_installed_state`) so a tampered path cannot auto-activate a
+/// malicious extension on the next launch.
 fn load_dev_state(app: &AppHandle) -> VoltResult<DevExtensionsState> {
     let state_path = get_dev_state_path(app)?;
 
-    let content = extension_state_sig::read_state_with_verification(&state_path, "dev-extensions")
-        .map_err(|e| VoltError::FileSystem(format!("Failed to read dev state: {}", e)))?;
+    let outcome =
+        extension_state_sig::read_state_with_outcome(&state_path, "dev-extensions")
+            .map_err(|e| VoltError::FileSystem(format!("Failed to read dev state: {}", e)))?;
 
-    let Some(content) = content else {
+    let Some((content, verify_outcome)) = outcome else {
         return Ok(DevExtensionsState::default());
     };
 
-    serde_json::from_str(&content)
-        .map_err(|e| VoltError::Serialization(format!("Failed to parse dev state: {}", e)))
+    let mut state: DevExtensionsState = serde_json::from_str(&content)
+        .map_err(|e| VoltError::Serialization(format!("Failed to parse dev state: {}", e)))?;
+
+    if matches!(verify_outcome, extension_state_sig::VerifyOutcome::Mismatch) {
+        for ext in state.extensions.iter_mut() {
+            if ext.enabled {
+                warn!(
+                    "Dev extension '{}': disabling due to dev-state signature mismatch \
+                     (A5 fail-closed). Re-enable manually after reviewing the extension.",
+                    ext.manifest.id
+                );
+            }
+            ext.enabled = false;
+        }
+    }
+
+    Ok(state)
 }
 
 /// Save dev extensions state to disk, along with the HMAC signature.
