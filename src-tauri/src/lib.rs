@@ -300,53 +300,73 @@ pub fn run() {
                         // The window is created with `visible: false`. We wait for React to
                         // emit `volt://main-ready` (after its first paint of the search bar
                         // has landed on screen), then reveal — guaranteeing the user never
-                        // sees an empty dark rectangle. A fallback timeout of 5s reveals
-                        // the window anyway in case the frontend dies, so the app is never
-                        // stuck invisible. First-time users stay hidden here: OnboardingPage
-                        // shows itself, and `volt://onboarding-complete` reveals main on the
-                        // very first session.
-                        if settings.general.has_seen_onboarding {
-                            let show_handle = app_handle.clone();
-                            tauri::async_runtime::spawn(async move {
-                                let (tx, rx) = tokio::sync::oneshot::channel::<()>();
-                                let tx = std::sync::Arc::new(std::sync::Mutex::new(Some(tx)));
-                                let listener_handle = show_handle.clone();
-                                let event_id = listener_handle.listen("volt://main-ready", {
-                                    let tx = tx.clone();
-                                    move |_event| {
-                                        if let Ok(mut guard) = tx.lock()
-                                            && let Some(sender) = guard.take()
-                                        {
-                                            let _ = sender.send(());
-                                        }
-                                    }
-                                });
-
-                                let waited = tokio::time::timeout(
-                                    std::time::Duration::from_secs(5),
-                                    rx,
-                                )
-                                .await;
-
-                                listener_handle.unlisten(event_id);
-
-                                if let Some(window) = show_handle.get_webview_window("main") {
-                                    if let Err(e) = window.show() {
-                                        warn!("Failed to auto-show main window: {}", e);
-                                    } else {
-                                        let _ = window.set_focus();
-                                        match waited {
-                                            Ok(Ok(_)) => info!(
-                                                "Main window revealed on frontend ready signal"
-                                            ),
-                                            _ => warn!(
-                                                "Main window revealed via 5s fallback (frontend never signaled ready)"
-                                            ),
-                                        }
+                        // sees an empty dark rectangle.
+                        //
+                        // Two paths, same pattern:
+                        // • Returning user (has_seen_onboarding=true): wait for
+                        //   `volt://main-ready` with a 5s fallback.
+                        // • First-time user (has_seen_onboarding=false): wait for
+                        //   `volt://onboarding-complete` with a 30s fallback, then give
+                        //   App.tsx's double-rAF 300 ms to call win.show() first; if it
+                        //   already did, this show() is a no-op.
+                        let event_name = if settings.general.has_seen_onboarding {
+                            "volt://main-ready"
+                        } else {
+                            "volt://onboarding-complete"
+                        };
+                        let fallback_secs = if settings.general.has_seen_onboarding {
+                            5u64
+                        } else {
+                            30
+                        };
+                        let show_handle = app_handle.clone();
+                        tauri::async_runtime::spawn(async move {
+                            let (tx, rx) = tokio::sync::oneshot::channel::<()>();
+                            let tx = std::sync::Arc::new(std::sync::Mutex::new(Some(tx)));
+                            let listener_handle = show_handle.clone();
+                            let event_id = listener_handle.listen(event_name, {
+                                let tx = tx.clone();
+                                move |_event| {
+                                    if let Ok(mut guard) = tx.lock()
+                                        && let Some(sender) = guard.take()
+                                    {
+                                        let _ = sender.send(());
                                     }
                                 }
                             });
-                        }
+
+                            let waited = tokio::time::timeout(
+                                std::time::Duration::from_secs(fallback_secs),
+                                rx,
+                            )
+                            .await;
+
+                            listener_handle.unlisten(event_id);
+
+                            // For first-time users, give App.tsx's double-rAF a head start
+                            // so the OS doesn't reveal an empty webview.
+                            if fallback_secs > 5 {
+                                tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+                            }
+
+                            if let Some(window) = show_handle.get_webview_window("main") {
+                                if let Err(e) = window.show() {
+                                    warn!("Failed to auto-show main window: {}", e);
+                                } else {
+                                    let _ = window.set_focus();
+                                    match waited {
+                                        Ok(Ok(_)) => info!(
+                                            "Main window revealed on frontend ready signal ({})",
+                                            event_name
+                                        ),
+                                        _ => warn!(
+                                            "Main window revealed via {}s fallback (frontend never signaled via {})",
+                                            fallback_secs, event_name
+                                        ),
+                                    }
+                                }
+                            }
+                        });
                     }
                     Err(e) => warn!("Could not load settings: {}. Using defaults.", e),
                 }
