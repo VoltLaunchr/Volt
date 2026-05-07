@@ -253,7 +253,7 @@ Several locations discard errors without logging, making production failures inv
 
 ### P1 · `Matcher::new` + `Pattern::parse` allocated per app per search keystroke
 **File:** `src-tauri/src/utils/matching.rs` l.59
-**Status:** Open
+**Status:** Fixed in commit 39fc26e
 
 `calculate_match_score` creates a new `Matcher` on every call. This is called for every app on every keystroke. `SearchEngine` in `search_engine.rs` correctly holds a persistent `Matcher`.
 
@@ -281,7 +281,7 @@ let haystack = Utf32Str::new(&record.command, &mut buf);
 
 ### P3 · Full `HashMap` deep-cloned on every shell history write
 **File:** `src-tauri/src/commands/shell_history.rs` l.232, 381, 398, 423
-**Status:** Open
+**Status:** Fixed in commit 39fc26e
 
 Up to 500 `ShellHistoryRecord` entries are deep-cloned to pass to `spawn_persist` on every command execution.
 
@@ -296,7 +296,7 @@ tokio::task::spawn_blocking(move || fs::write(&path, json));
 
 ### P4 · Full `Vec<AppInfo>` deep-cloned on every cache hit
 **File:** `src-tauri/src/commands/apps.rs` l.384
-**Status:** Open
+**Status:** Fixed in commit 39fc26e
 
 Every search cycle clones ~500 `AppInfo` structs (each with 5+ `String` fields) just to immediately serialize them for IPC.
 
@@ -349,7 +349,7 @@ path_str.contains(&format!("\\{}\\", sensitive)) // allocates per entry per sens
 
 ### P9 · `CachedMetrics` deep-cloned for scalar-only queries
 **File:** `src-tauri/src/plugins/builtin/system_monitor/plugin.rs` l.564–569
-**Status:** Open
+**Status:** Fixed in commit 39fc26e
 
 `cached_metrics()` clones `Vec<CpuCoreInfo>`, `Vec<DiskInfo>`, `Vec<ProcessInfo>` etc. even when `get_cpu_usage` only needs a single `f32`. `get_system_metrics_v2` calls it twice.
 
