@@ -176,7 +176,7 @@ pub async fn test_credential(service: String) -> Result<bool, String> {
 
 ### M1 · `std::fs::metadata` + synchronous SQLite in `async fn` without `spawn_blocking`
 **File:** `src-tauri/src/indexer/database.rs` l.401, called from `src-tauri/src/commands/files.rs` l.893
-**Status:** Open
+**Status:** Fixed in commit 13819bf
 
 `get_db_index_stats` is an `async fn` Tauri command that calls `std::fs::metadata` (blocking syscall) and a synchronous SQLite `COUNT(*)` without `spawn_blocking`. On Windows with antivirus or network shares, `GetFileAttributesEx` can block.
 
@@ -192,7 +192,7 @@ The function signature implies fallibility but the body always returns `Ok(...)`
 
 ### M3 · 50ms polling loop for child process wait — should use `child.wait().await`
 **File:** `src-tauri/src/commands/shell.rs` l.509–532, 800–819
-**Status:** Open
+**Status:** Fixed in commit 13819bf
 
 ```rust
 loop {
@@ -218,7 +218,7 @@ A renderer-supplied `timeout_ms: u64::MAX` converts to a near-infinite `Duration
 
 ### M5 · HMAC key shared between sig-file and credential paths without domain separation
 **File:** `src-tauri/src/utils/extension_state_sig.rs` l.207, 232
-**Status:** Open
+**Status:** Fixed in commit 13819bf
 
 `compute_signature` (used for `.sig` files) MACs raw JSON bytes without a domain tag. `hmac_sign_domain` (used for credentials) uses a length-prefixed domain construction. Both use the same underlying key. The sig-file signer should use `hmac_sign_domain` with a dedicated domain constant (`"volt-state-file-v1"`).
 
