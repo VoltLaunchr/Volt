@@ -60,6 +60,9 @@ pub struct FileIndexState {
     pub db: Arc<Option<FileIndexDb>>,
     /// Configured folders, stored so that `invalidate_index` can trigger a rescan
     pub config: Arc<Mutex<IndexConfig>>,
+    /// Handle to the currently running background scan, so `invalidate_index`
+    /// can abort an in-progress scan before kicking off a new one.
+    pub scan_task: Mutex<Option<tokio::task::AbortHandle>>,
 }
 
 /// State for the active file-system watcher.  Stored separately so the
@@ -95,6 +98,7 @@ impl Default for FileIndexState {
             })),
             db: Arc::new(None),
             config: Arc::new(Mutex::new(IndexConfig::default())),
+            scan_task: Mutex::new(None),
         }
     }
 }
@@ -126,6 +130,7 @@ impl FileIndexState {
             })),
             db: Arc::new(db),
             config: Arc::new(Mutex::new(IndexConfig::default())),
+            scan_task: Mutex::new(None),
         }
     }
 }
@@ -192,8 +197,9 @@ pub async fn start_indexing(
     let app_handle = app_handle.clone();
     let should_force = force.unwrap_or(false);
 
-    // Run indexing in background
-    tauri::async_runtime::spawn(async move {
+    // Run indexing in background; store the AbortHandle so `invalidate_index`
+    // can cancel a running scan before kicking off a new one.
+    let join_handle = tokio::spawn(async move {
         let config = IndexConfig {
             folders,
             excluded_paths,
@@ -333,6 +339,10 @@ pub async fn start_indexing(
             }
         }
     });
+
+    if let Ok(mut task) = state.scan_task.lock() {
+        *task = Some(join_handle.abort_handle());
+    }
 
     Ok(())
 }
@@ -784,6 +794,14 @@ pub async fn invalidate_index(
     state: State<'_, FileIndexState>,
     watcher_state: State<'_, WatcherState>,
 ) -> VoltResult<()> {
+    // Abort any in-progress background scan before rebuilding.
+    if let Ok(mut task) = state.scan_task.lock()
+        && let Some(handle) = task.take()
+    {
+        handle.abort();
+        info!("Aborted in-progress index scan for rebuild");
+    }
+
     // Stop the watcher while we rebuild.
     if let Ok(mut handle) = watcher_state.handle.lock() {
         if let Some(h) = handle.as_ref() {
@@ -830,7 +848,7 @@ pub async fn invalidate_index(
     let status_arc = state.status.clone();
     let db_arc = state.db.clone();
 
-    tauri::async_runtime::spawn(async move {
+    let rebuild_handle = tokio::spawn(async move {
         // Offload the blocking filesystem walk to the dedicated thread pool.
         let scan_result = tokio::task::spawn_blocking(move || scan_files(&config)).await;
 
@@ -874,6 +892,10 @@ pub async fn invalidate_index(
         }
     });
 
+    if let Ok(mut task) = state.scan_task.lock() {
+        *task = Some(rebuild_handle.abort_handle());
+    }
+
     Ok(())
 }
 
@@ -889,18 +911,28 @@ pub async fn get_db_index_stats(
         .map(|h| h.as_ref().map(|w| w.is_active()).unwrap_or(false))
         .unwrap_or(false);
 
-    if let Some(db) = state.db.as_ref() {
-        db.get_stats(is_watching).map_err(VoltError::Unknown)
-    } else {
-        // No DB – synthesise stats from in-memory state.
-        let indexed_count = state.files.lock().map(|f| f.len()).unwrap_or(0);
-        Ok(DbIndexStats {
-            indexed_count,
-            db_size_bytes: 0,
-            last_full_scan: 0,
-            is_watching,
-        })
-    }
+    // `get_stats` calls `std::fs::metadata` and a synchronous SQLite COUNT —
+    // both are blocking syscalls; offload to avoid parking a Tokio worker.
+    let db_arc = state.db.clone();
+    let files_arc = state.files.clone();
+    tokio::task::spawn_blocking(move || {
+        if let Some(db) = db_arc.as_ref() {
+            db.get_stats(is_watching).map_err(VoltError::Unknown)
+        } else {
+            let indexed_count = files_arc.lock().map(|f| f.len()).unwrap_or_else(|e| {
+                warn!("files mutex poisoned in get_db_index_stats: {}", e);
+                0
+            });
+            Ok(DbIndexStats {
+                indexed_count,
+                db_size_bytes: 0,
+                last_full_scan: 0,
+                is_watching,
+            })
+        }
+    })
+    .await
+    .map_err(|e| VoltError::Unknown(format!("get_db_index_stats task failed: {}", e)))?
 }
 
 /// Start (or restart) the file-system watcher for the configured directories.

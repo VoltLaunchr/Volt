@@ -1,8 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { emit } from '@tauri-apps/api/event';
+import { emit, listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { OnboardingModal } from '../shared/components/ui/OnboardingModal';
 import { settingsService } from '../features/settings';
 import { useAppStore } from '../stores/appStore';
@@ -10,30 +9,50 @@ import type { Settings } from '../features/settings/types/settings.types';
 
 export function OnboardingPage() {
   const [ready, setReady] = useState(false);
-  const [needsOnboarding, setNeedsOnboarding] = useState(false);
+  const [shouldShow, setShouldShow] = useState(false);
 
   useEffect(() => {
     invoke<Settings>('load_settings')
       .then((s) => {
         useAppStore.getState().setSettings(s);
-        setNeedsOnboarding(!s.general.hasSeenOnboarding);
         setReady(true);
+        // First-time launch: settings already say onboarding has not been seen,
+        // so we don't need to wait for the main window's signal — show ourselves.
+        if (s.general.hasSeenOnboarding === false) {
+          setShouldShow(true);
+        }
       })
-      .catch(() => {
-        // If settings fail to load, show onboarding as fallback
-        setNeedsOnboarding(true);
-        setReady(true);
-      });
+      .catch(() => setReady(true));
   }, []);
 
-  // Show this window only after content is ready and onboarding is actually needed.
-  // This prevents the transparent-window flash that occurs when the main window
-  // calls win.show() before this page's React tree has rendered its first frame.
+  // Restart-onboarding flow: the main window resets `hasSeenOnboarding` and
+  // emits this event so we re-show even after the OnboardingPage has been idle.
   useEffect(() => {
-    if (!ready || !needsOnboarding) return;
+    let unlisten: (() => void) | undefined;
+    void listen('volt://show-onboarding', () => setShouldShow(true)).then((fn) => {
+      unlisten = fn;
+    });
+    return () => unlisten?.();
+  }, []);
+
+  useEffect(() => {
+    if (!ready || !shouldShow) return;
     const win = getCurrentWindow();
-    win.show().then(() => win.setFocus()).catch(() => {});
-  }, [ready, needsOnboarding]);
+    let frame1 = 0;
+    let frame2 = 0;
+    frame1 = requestAnimationFrame(() => {
+      frame2 = requestAnimationFrame(() => {
+        win
+          .show()
+          .then(() => win.setFocus())
+          .catch(() => {});
+      });
+    });
+    return () => {
+      cancelAnimationFrame(frame1);
+      cancelAnimationFrame(frame2);
+    };
+  }, [ready, shouldShow]);
 
   const handleComplete = async () => {
     const settings = useAppStore.getState().settings;
@@ -45,21 +64,14 @@ export function OnboardingPage() {
         });
       } catch { /* non-fatal */ }
     }
-    // Notify main window so it updates its state
+    // Notify main window — it will show itself after its next paint cycle.
+    // (See App.tsx: the `volt://onboarding-complete` listener flips
+    // `hasSeenOnboarding`, which triggers the rAF-deferred show() effect.)
     await emit('volt://onboarding-complete', {});
-    // Show + focus the main launcher window so the user actually sees Volt "launch"
-    try {
-      const main = await WebviewWindow.getByLabel('main');
-      if (main) {
-        await main.show();
-        await main.setFocus();
-      }
-    } catch { /* non-fatal */ }
-    // Close onboarding window
     getCurrentWindow().close().catch(() => {});
   };
 
-  if (!ready || !needsOnboarding) return null;
+  if (!ready || !shouldShow) return null;
 
   return <OnboardingModal isOpen={true} onComplete={() => { void handleComplete(); }} />;
 }

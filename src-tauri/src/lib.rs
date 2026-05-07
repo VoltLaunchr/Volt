@@ -58,7 +58,12 @@ fn deeplink_rate_limited() -> bool {
     let now = Instant::now();
     let mut times = match DEEPLINK_TIMES.lock() {
         Ok(g) => g,
-        Err(p) => p.into_inner(), // poisoned — best effort, don't crash on it
+        Err(p) => {
+            warn!(
+                "DEEPLINK_TIMES mutex poisoned; recovering — prior panic may have corrupted rate limiter"
+            );
+            p.into_inner()
+        }
     };
 
     // Drop entries older than the window. Times are pushed in order so we
@@ -292,6 +297,78 @@ pub fn run() {
                         {
                             warn!("Could not set window position: {}", e);
                         }
+
+                        // Auto-reveal the main window on launch once onboarding is done.
+                        // The window is created with `visible: false`. We wait for React to
+                        // emit `volt://main-ready` (after its first paint of the search bar
+                        // has landed on screen), then reveal — guaranteeing the user never
+                        // sees an empty dark rectangle.
+                        //
+                        // Two paths, same pattern:
+                        // • Returning user (has_seen_onboarding=true): wait for
+                        //   `volt://main-ready` with a 5s fallback.
+                        // • First-time user (has_seen_onboarding=false): wait for
+                        //   `volt://onboarding-complete` with a 30s fallback, then give
+                        //   App.tsx's double-rAF 300 ms to call win.show() first; if it
+                        //   already did, this show() is a no-op.
+                        let event_name = if settings.general.has_seen_onboarding {
+                            "volt://main-ready"
+                        } else {
+                            "volt://onboarding-complete"
+                        };
+                        let fallback_secs = if settings.general.has_seen_onboarding {
+                            5u64
+                        } else {
+                            30
+                        };
+                        let show_handle = app_handle.clone();
+                        tauri::async_runtime::spawn(async move {
+                            let (tx, rx) = tokio::sync::oneshot::channel::<()>();
+                            let tx = std::sync::Arc::new(std::sync::Mutex::new(Some(tx)));
+                            let listener_handle = show_handle.clone();
+                            let event_id = listener_handle.listen(event_name, {
+                                let tx = tx.clone();
+                                move |_event| {
+                                    if let Ok(mut guard) = tx.lock()
+                                        && let Some(sender) = guard.take()
+                                    {
+                                        let _ = sender.send(());
+                                    }
+                                }
+                            });
+
+                            let waited = tokio::time::timeout(
+                                std::time::Duration::from_secs(fallback_secs),
+                                rx,
+                            )
+                            .await;
+
+                            listener_handle.unlisten(event_id);
+
+                            // For first-time users, give App.tsx's double-rAF a head start
+                            // so the OS doesn't reveal an empty webview.
+                            if fallback_secs > 5 {
+                                tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+                            }
+
+                            if let Some(window) = show_handle.get_webview_window("main") {
+                                if let Err(e) = window.show() {
+                                    warn!("Failed to auto-show main window: {}", e);
+                                } else {
+                                    let _ = window.set_focus();
+                                    match waited {
+                                        Ok(Ok(_)) => info!(
+                                            "Main window revealed on frontend ready signal ({})",
+                                            event_name
+                                        ),
+                                        _ => warn!(
+                                            "Main window revealed via {}s fallback (frontend never signaled via {})",
+                                            fallback_secs, event_name
+                                        ),
+                                    }
+                                }
+                            }
+                        });
                     }
                     Err(e) => warn!("Could not load settings: {}. Using defaults.", e),
                 }
@@ -410,9 +487,9 @@ pub fn run() {
             app.manage(ShellExecutionState::new());
 
             app.manage(SystemMonitorState {
-                monitor: std::sync::Mutex::new(
+                monitor: std::sync::Arc::new(std::sync::Mutex::new(
                     plugins::builtin::SystemMonitorPlugin::new().with_api(plugin_api),
-                ),
+                )),
             });
 
             // Prime the CPU baseline in the background so the first user
@@ -448,16 +525,23 @@ pub fn run() {
                 tokio::time::sleep(sysinfo::MINIMUM_CPU_UPDATE_INTERVAL).await;
                 loop {
                     if let Some(state) = ticker_handle.try_state::<SystemMonitorState>() {
-                        match state.monitor.lock() {
-                            Ok(monitor) => {
-                                if let Err(e) = monitor.refresh_cache() {
-                                    warn!("System monitor cache refresh failed: {}", e);
+                        // `refresh_cache` calls `std::thread::sleep` internally
+                        // (CPU dual-sample). Offload to a blocking thread so the
+                        // Tokio worker thread is not parked during the sleep.
+                        let monitor_arc = state.monitor.clone();
+                        let _ = tokio::task::spawn_blocking(move || {
+                            match monitor_arc.lock() {
+                                Ok(monitor) => {
+                                    if let Err(e) = monitor.refresh_cache() {
+                                        warn!("System monitor cache refresh failed: {}", e);
+                                    }
+                                }
+                                Err(e) => {
+                                    warn!("SystemMonitorState lock poisoned in ticker: {}", e)
                                 }
                             }
-                            Err(e) => {
-                                warn!("SystemMonitorState lock poisoned in ticker: {}", e)
-                            }
-                        }
+                        })
+                        .await;
                     }
                     tokio::time::sleep(std::time::Duration::from_secs(5)).await;
                 }

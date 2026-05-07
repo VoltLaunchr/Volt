@@ -458,14 +458,17 @@ impl VoltPluginAPI {
         let cache_dir = self.get_plugin_cache_dir(plugin_id)?;
         let cache_path = cache_dir.join(cache_key);
 
-        // Additional safety check: canonicalize and verify path is within cache_dir
-        if let Ok(canonical_cache_path) = cache_path.canonicalize()
-            && let Ok(canonical_cache_dir) = cache_dir.canonicalize()
-            && !canonical_cache_path.starts_with(&canonical_cache_dir)
-        {
+        // Fail-closed: if canonicalization fails for either path, reject the read.
+        // An existing cache entry must canonicalize successfully; failure means
+        // the path doesn't exist or the cache directory was removed.
+        let canonical_cache_dir = cache_dir
+            .canonicalize()
+            .map_err(|e| format!("Cannot resolve cache directory: {}", e))?;
+        let canonical_cache_path = cache_path
+            .canonicalize()
+            .map_err(|_| "Cache entry not found".to_string())?;
+        if !canonical_cache_path.starts_with(&canonical_cache_dir) {
             return Err("Cache path is outside plugin cache directory".to_string());
-        } else if !cache_path.exists() {
-            return Err("Cache entry not found".to_string());
         }
 
         std::fs::read(&cache_path).map_err(|e| format!("Failed to read cache: {}", e))

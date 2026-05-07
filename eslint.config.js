@@ -114,6 +114,7 @@ export default [
           argsIgnorePattern: '^_',
           varsIgnorePattern: '^_',
           caughtErrorsIgnorePattern: '^_',
+          ignoreRestSiblings: true,
         },
       ],
       // Type-checked rules: surface as warnings to keep safety nets visible
@@ -185,6 +186,7 @@ export default [
           argsIgnorePattern: '^_',
           varsIgnorePattern: '^_',
           caughtErrorsIgnorePattern: '^_',
+          ignoreRestSiblings: true,
         },
       ],
       'no-useless-escape': 'warn',

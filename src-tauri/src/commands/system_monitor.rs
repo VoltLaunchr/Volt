@@ -5,14 +5,14 @@ use crate::plugins::builtin::system_monitor::{
     ComponentInfo, CpuCoreInfo, DiskInfo, NetworkInfo, ProcessInfo,
 };
 use serde::{Deserialize, Serialize};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use tauri::State;
 
 /// Persistent system monitor instance for accurate readings (especially CPU).
 /// A single instance is reused across calls so that `sysinfo::System` can
 /// produce meaningful CPU readings (requires at least two refresh cycles).
 pub struct SystemMonitorState {
-    pub monitor: Mutex<SystemMonitorPlugin>,
+    pub monitor: Arc<Mutex<SystemMonitorPlugin>>,
 }
 
 /// System metrics information
@@ -152,8 +152,11 @@ pub fn get_system_metrics_v2(
         .map_err(|e| VoltError::Unknown(format!("Monitor lock poisoned: {}", e)))?;
 
     // Prime the cache on miss so the v2 payload is never hollow on first call.
-    let cached = monitor.cached_metrics().map_err(VoltError::Unknown)?;
-    if cached.last_updated.is_none() {
+    if monitor
+        .cached_last_updated()
+        .map_err(VoltError::Unknown)?
+        .is_none()
+    {
         monitor.refresh_cache().map_err(VoltError::Unknown)?;
     }
     let cached = monitor.cached_metrics().map_err(VoltError::Unknown)?;

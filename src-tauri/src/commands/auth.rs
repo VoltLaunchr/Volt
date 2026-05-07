@@ -26,6 +26,7 @@ use std::collections::HashMap;
 use std::sync::{Mutex, RwLock};
 use std::time::{Duration, Instant};
 use tracing::{debug, error, info, warn};
+use zeroize::{Zeroize, ZeroizeOnDrop};
 
 use super::keyring_store;
 
@@ -35,6 +36,12 @@ use super::keyring_store;
 struct PendingAuthFlow {
     initiated: Instant,
     code_verifier: String,
+}
+
+impl Drop for PendingAuthFlow {
+    fn drop(&mut self) {
+        self.code_verifier.zeroize();
+    }
 }
 
 /// Pending login flows keyed by CSRF state nonce. `Mutex` rather than
@@ -83,12 +90,11 @@ const JWKS_FETCH_MAX_ATTEMPTS: u32 = 2;
 /// blocked on the auth flow completing.
 const JWKS_RETRY_BACKOFF: Duration = Duration::from_millis(500);
 
-fn auth_state_lock()
--> Result<std::sync::MutexGuard<'static, HashMap<String, PendingAuthFlow>>, String> {
-    Ok(AUTH_STATE.lock().unwrap_or_else(|e| {
-        tracing::warn!("AUTH_STATE mutex was poisoned; recovering");
+fn auth_state_lock() -> std::sync::MutexGuard<'static, HashMap<String, PendingAuthFlow>> {
+    AUTH_STATE.lock().unwrap_or_else(|e| {
+        warn!("AUTH_STATE mutex was poisoned; recovering");
         e.into_inner()
-    }))
+    })
 }
 
 /// Drop pending flows older than `AUTH_STATE_TTL`.
@@ -147,14 +153,25 @@ fn ensure_configured() -> Result<(), String> {
     Ok(())
 }
 
-/// Stored auth session with tokens and expiry
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// Full auth session stored in the OS keyring. Tokens never leave the backend.
+#[derive(Debug, Clone, Serialize, Deserialize, Zeroize, ZeroizeOnDrop)]
 #[serde(rename_all = "camelCase")]
 pub struct AuthSession {
     pub access_token: String,
     pub refresh_token: String,
     pub expires_at: i64,
     pub user_id: String,
+}
+
+/// Session info returned to the renderer via IPC.
+/// Deliberately omits tokens — the renderer only needs to know whether a
+/// valid session exists and when it expires (to schedule a proactive refresh).
+/// All token-bearing operations are performed entirely in the backend.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionStatus {
+    pub user_id: String,
+    pub expires_at: i64,
 }
 
 /// User profile fetched from Supabase
@@ -196,7 +213,9 @@ pub fn save_auth_session(session: &AuthSession) -> Result<(), String> {
     keyring_store::store_signed(AUTH_ACCOUNT, &json)
 }
 
-fn load_auth_session() -> Result<Option<AuthSession>, String> {
+/// Load the full `AuthSession` (with tokens) from the OS keyring.
+/// For backend-only use — tokens must not be forwarded to the renderer.
+pub fn load_auth_session() -> Result<Option<AuthSession>, String> {
     keyring_store::migrate_from_json_if_needed();
     // retrieve_signed verifies the HMAC tag and silently drops + returns
     // None on mismatch — the user observes a logged-out state and is forced
@@ -236,7 +255,7 @@ pub async fn auth_start_login() -> Result<String, String> {
     let (verifier, challenge) = generate_pkce_pair();
 
     {
-        let mut map = auth_state_lock()?;
+        let mut map = auth_state_lock();
         prune_expired_auth_states(&mut map);
         cap_auth_states(&mut map);
         map.insert(
@@ -271,21 +290,26 @@ pub async fn auth_login() -> Result<(), String> {
     Ok(())
 }
 
-/// Get current session (reads stored tokens, checks expiry).
+/// Get current session status (checks expiry, returns user_id + expires_at).
+/// Tokens are never returned to the renderer.
 #[tauri::command]
-pub async fn auth_get_session() -> Result<Option<AuthSession>, String> {
+pub async fn auth_get_session() -> Result<Option<SessionStatus>, String> {
     debug!("Getting auth session");
-    let session = load_auth_session()?;
+    let session = match load_auth_session()? {
+        Some(s) => s,
+        None => return Ok(None),
+    };
 
-    if let Some(ref s) = session {
-        let now = chrono::Utc::now().timestamp();
-        if now >= s.expires_at {
-            debug!("Auth session expired");
-            return Ok(None);
-        }
+    let now = chrono::Utc::now().timestamp();
+    if now >= session.expires_at {
+        debug!("Auth session expired");
+        return Ok(None);
     }
 
-    Ok(session)
+    Ok(Some(SessionStatus {
+        user_id: session.user_id.clone(),
+        expires_at: session.expires_at,
+    }))
 }
 
 /// Fetch user profile from Supabase REST API using stored access_token.
@@ -342,8 +366,9 @@ pub async fn auth_get_profile() -> Result<Option<UserProfile>, String> {
 }
 
 /// Refresh the access token using the stored refresh_token.
+/// Returns only session status (no tokens) to the renderer.
 #[tauri::command]
-pub async fn auth_refresh_token() -> Result<AuthSession, String> {
+pub async fn auth_refresh_token() -> Result<SessionStatus, String> {
     ensure_configured()?;
     info!("Refreshing Supabase auth token");
 
@@ -431,7 +456,10 @@ pub async fn auth_refresh_token() -> Result<AuthSession, String> {
     save_auth_session(&new_session)?;
     info!("Auth token refreshed successfully");
 
-    Ok(new_session)
+    Ok(SessionStatus {
+        user_id: new_session.user_id.clone(),
+        expires_at: new_session.expires_at,
+    })
 }
 
 /// Logout — clear stored auth tokens.
@@ -502,7 +530,7 @@ pub async fn handle_auth_deep_link(url_str: &str) -> Result<AuthSession, String>
         .clone();
 
     let verifier = {
-        let mut map = auth_state_lock()?;
+        let mut map = auth_state_lock();
         prune_expired_auth_states(&mut map);
         let flow = map.remove(&state).ok_or_else(|| {
             warn!("Auth callback rejected: unknown or expired state nonce");
@@ -512,7 +540,7 @@ pub async fn handle_auth_deep_link(url_str: &str) -> Result<AuthSession, String>
             warn!("Auth callback rejected: state nonce expired during processing");
             return Err("Auth state expired".into());
         }
-        flow.code_verifier
+        flow.code_verifier.clone()
     };
 
     // 2. Pick the path: PKCE (preferred) or legacy implicit (fallback).
@@ -521,17 +549,7 @@ pub async fn handle_auth_deep_link(url_str: &str) -> Result<AuthSession, String>
         return exchange_code_for_session(code.clone(), verifier).await;
     }
 
-    if let (Some(access_token), Some(refresh_token)) =
-        (params.get("access_token"), params.get("refresh_token"))
-    {
-        warn!(
-            "DEPRECATED: legacy implicit-grant auth callback used (token-in-URL). \
-             Will be removed in v0.2.0. Use PKCE flow instead."
-        );
-        return persist_implicit_session(access_token.clone(), refresh_token.clone()).await;
-    }
-
-    Err("Auth callback URL missing both `code` and `access_token`/`refresh_token`".into())
+    Err("Auth callback URL missing required `code` parameter".into())
 }
 
 /// PKCE path — exchange the auth code for tokens via the website, then
@@ -591,29 +609,6 @@ async fn exchange_code_for_session(code: String, verifier: String) -> Result<Aut
 
     save_auth_session(&session)?;
     info!("Auth session saved via PKCE code exchange");
-
-    Ok(session)
-}
-
-/// Legacy implicit path — tokens already came through the deep link.
-/// We still cryptographically verify the access token before persisting,
-/// so this path is no weaker than PKCE for tampering detection — it just
-/// loses the privacy benefit of keeping tokens out of the URL.
-async fn persist_implicit_session(
-    access_token: String,
-    refresh_token: String,
-) -> Result<AuthSession, String> {
-    let claims = validate_access_token(&access_token).await?;
-
-    let session = AuthSession {
-        access_token,
-        refresh_token,
-        expires_at: claims.exp,
-        user_id: claims.sub,
-    };
-
-    save_auth_session(&session)?;
-    info!("Auth session saved via implicit deep-link callback");
 
     Ok(session)
 }
@@ -872,7 +867,7 @@ mod tests {
         // `access_token` present → must be rejected before any HTTP call.
         let state = "test-missing-payload";
         {
-            let mut map = auth_state_lock().unwrap();
+            let mut map = auth_state_lock();
             map.insert(
                 state.to_string(),
                 PendingAuthFlow {

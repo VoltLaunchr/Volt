@@ -1,6 +1,7 @@
 use crate::commands::apps::AppInfo;
 use crate::launcher::{LaunchRecord, QueryBindingStore};
-use crate::utils::matching::calculate_match_score;
+use crate::utils::matching::calculate_match_score_with_matcher;
+use nucleo_matcher::{Config, Matcher};
 
 /// Calculate frecency score for a launch record.
 /// Combines frequency (launch_count) with recency (time decay).
@@ -32,11 +33,13 @@ pub fn search_applications_with_frecency(
 
     let has_history = !frecency_map.is_empty();
 
+    let mut matcher = Matcher::new(Config::DEFAULT);
     let mut results: Vec<(AppInfo, f32)> = apps
         .into_iter()
         .filter_map(|app| {
             // Match against name first
-            let mut match_score = calculate_match_score(&app.name, query);
+            let mut match_score =
+                calculate_match_score_with_matcher(&app.name, query, &mut matcher);
 
             // If name doesn't match well, try matching against the last two path components
             // (parent dir + filename). Using the full path causes false positives because
@@ -56,7 +59,8 @@ pub fn search_applications_with_frecency(
                 } else {
                     format!("{} {}", parent_name, filename)
                 };
-                let path_score = calculate_match_score(&short_path, query);
+                let path_score =
+                    calculate_match_score_with_matcher(&short_path, query, &mut matcher);
                 if path_score > match_score {
                     match_score = path_score * 0.9; // slightly lower than name match
                 }
@@ -67,7 +71,7 @@ pub fn search_applications_with_frecency(
                 && let Some(ref keywords) = app.keywords
             {
                 for kw in keywords {
-                    let kw_score = calculate_match_score(kw, query);
+                    let kw_score = calculate_match_score_with_matcher(kw, query, &mut matcher);
                     if kw_score > match_score {
                         match_score = kw_score * 0.85;
                     }
@@ -110,12 +114,12 @@ pub fn search_applications(query: &str, apps: Vec<AppInfo>) -> Vec<AppInfo> {
         return Vec::new();
     }
 
+    let mut matcher = Matcher::new(Config::DEFAULT);
     let mut results: Vec<(AppInfo, f32)> = apps
         .into_iter()
         .filter_map(|app| {
-            let score = calculate_match_score(&app.name, query);
+            let score = calculate_match_score_with_matcher(&app.name, query, &mut matcher);
 
-            // Filter out non-matches (score = 0)
             if score > 0.0 {
                 Some((app, score))
             } else {

@@ -295,6 +295,9 @@ pub fn is_oauth_pending() -> Result<bool, String> {
 /// Clear pending OAuth requests for a specific service
 #[tauri::command]
 pub fn clear_oauth_pending(service: String) -> Result<(), String> {
+    if !matches!(service.as_str(), "github" | "notion") {
+        return Err(format!("unknown service: {}", service));
+    }
     debug!("Clearing pending OAuth requests for service: {}", service);
 
     let mut state = lock_state()?;

@@ -5,7 +5,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use tauri::State;
 use uuid::Uuid;
@@ -41,7 +41,7 @@ impl SnippetState {
         }
     }
 
-    fn load_from_file(path: &PathBuf) -> Option<HashMap<String, Snippet>> {
+    fn load_from_file(path: &Path) -> Option<HashMap<String, Snippet>> {
         if !path.exists() {
             return None;
         }

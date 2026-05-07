@@ -88,14 +88,12 @@ class CredentialsService {
   }
 
   /**
-   * Test token validity. The token is sent over IPC to the Rust backend,
-   * which makes the upstream API call — the renderer no longer holds or
-   * transmits bare tokens via window.fetch, so XSS in the settings UI
-   * cannot exfiltrate them through this code path.
+   * Test that the stored credential for a service is valid. The backend reads
+   * the token directly from the OS keyring — no token crosses the IPC boundary.
    */
-  async testToken(service: 'github' | 'notion', token: string): Promise<boolean> {
+  async testToken(service: 'github' | 'notion'): Promise<boolean> {
     try {
-      return await invoke<boolean>('test_credential', { service, token });
+      return await invoke<boolean>('test_credential', { service });
     } catch (error) {
       logger.error(`Token test failed for ${service}:`, error);
       return false;

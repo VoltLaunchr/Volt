@@ -2,9 +2,8 @@
  * Auth types — must match Rust backend (camelCase via serde rename_all)
  */
 
+/** Session status returned by the backend IPC. Tokens stay in the backend. */
 export interface AuthSession {
-  accessToken: string;
-  refreshToken: string;
   expiresAt: number; // Unix timestamp (seconds)
   userId: string;
 }

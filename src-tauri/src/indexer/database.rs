@@ -112,7 +112,13 @@ impl FileIndexDb {
             .map_err(|e| format!("DB lock poisoned: {}", e))?;
 
         let category = serde_json::to_string(&file.category)
-            .unwrap_or_else(|_| "\"other\"".to_string())
+            .unwrap_or_else(|e| {
+                warn!(
+                    "Failed to serialize category for '{}': {} — using 'other'",
+                    file.path, e
+                );
+                "\"other\"".to_string()
+            })
             .trim_matches('"')
             .to_string();
 
@@ -178,11 +184,17 @@ impl FileIndexDb {
 
             for file in files {
                 let category = serde_json::to_string(&file.category)
-                    .unwrap_or_else(|_| "\"other\"".to_string())
+                    .unwrap_or_else(|e| {
+                        warn!(
+                            "Failed to serialize category for '{}': {} — using 'other'",
+                            file.path, e
+                        );
+                        "\"other\"".to_string()
+                    })
                     .trim_matches('"')
                     .to_string();
 
-                if let Err(e) = stmt.execute(params![
+                stmt.execute(params![
                     file.path,
                     file.name,
                     file.extension,
@@ -190,9 +202,8 @@ impl FileIndexDb {
                     file.modified,
                     now,
                     category
-                ]) {
-                    warn!("Failed to upsert '{}': {}", file.path, e);
-                }
+                ])
+                .map_err(|e| format!("Failed to upsert '{}': {}", file.path, e))?;
             }
         }
 
@@ -258,7 +269,13 @@ impl FileIndexDb {
                 Ok((path, name, extension, size, modified, category_str))
             })
             .map_err(|e| format!("Failed to query files: {}", e))?
-            .filter_map(|r| r.ok())
+            .filter_map(|r| match r {
+                Ok(v) => Some(v),
+                Err(e) => {
+                    warn!("Skipping corrupted DB row: {}", e);
+                    None
+                }
+            })
             .map(|(path, name, extension, size, modified, category_str)| {
                 let category = parse_category(&category_str);
                 let id = crate::utils::hash_id(&path);
@@ -313,7 +330,13 @@ impl FileIndexDb {
                 Ok((path, name, extension, size, modified, category_str))
             })
             .map_err(|e| format!("Failed to execute search: {}", e))?
-            .filter_map(|r| r.ok())
+            .filter_map(|r| match r {
+                Ok(v) => Some(v),
+                Err(e) => {
+                    warn!("Skipping corrupted DB row: {}", e);
+                    None
+                }
+            })
             .map(|(path, name, extension, size, modified, category_str)| {
                 let category = parse_category(&category_str);
                 let id = crate::utils::hash_id(&path);
@@ -429,7 +452,12 @@ impl FileIndexDb {
 fn parse_category(s: &str) -> FileCategory {
     // The stored value is the lowercase serde tag, e.g. "application", "game", …
     let json_str = format!("\"{}\"", s);
-    serde_json::from_str::<FileCategory>(&json_str).unwrap_or_default()
+    serde_json::from_str::<FileCategory>(&json_str).unwrap_or_else(|_| {
+        if !s.is_empty() {
+            warn!("Unknown file category {:?} in DB; defaulting to Other", s);
+        }
+        FileCategory::default()
+    })
 }
 
 // ---------------------------------------------------------------------------

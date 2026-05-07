@@ -235,28 +235,64 @@ impl SystemMonitorPlugin {
         *last = Some(Instant::now());
     }
 
+    /// Read only `cpu_usage` from the cache without cloning the full snapshot.
+    pub fn cached_cpu_usage(&self) -> Result<f32, String> {
+        let cache = self
+            .cache
+            .read()
+            .map_err(|e| format!("lock poisoned: {}", e))?;
+        Ok(cache.cpu_usage)
+    }
+
+    /// Read only `memory_usage_percent` from the cache without cloning the full snapshot.
+    pub fn cached_memory_usage(&self) -> Result<f32, String> {
+        let cache = self
+            .cache
+            .read()
+            .map_err(|e| format!("lock poisoned: {}", e))?;
+        Ok(cache.memory_usage_percent)
+    }
+
+    /// Read only the disk scalars needed to compute usage % without cloning the full snapshot.
+    pub fn cached_disk_usage(&self) -> Result<f32, String> {
+        let cache = self
+            .cache
+            .read()
+            .map_err(|e| format!("lock poisoned: {}", e))?;
+        Ok(if cache.disk_total > 0 {
+            ((cache.disk_used as f64 / cache.disk_total as f64) * 100.0) as f32
+        } else {
+            0.0
+        })
+    }
+
+    /// Read only `last_updated` from the cache — used by callers that need to
+    /// check cache freshness without paying for a full snapshot clone.
+    pub fn cached_last_updated(&self) -> Result<Option<Instant>, String> {
+        let cache = self
+            .cache
+            .read()
+            .map_err(|e| format!("lock poisoned: {}", e))?;
+        Ok(cache.last_updated)
+    }
+
     /// Get CPU usage percentage from the cache.
     ///
     /// Returns the global CPU usage as a percentage (0.0 to 100.0). Values are
     /// refreshed by the background ticker; on cache miss the caller should
     /// invoke `refresh_cache()` first (see `get_system_metrics` fallback).
     pub fn cpu_usage(&self) -> Result<f32, String> {
-        Ok(self.cached_metrics()?.cpu_usage)
+        self.cached_cpu_usage()
     }
 
     /// Get memory usage percentage from the cache.
     pub fn memory_usage(&self) -> Result<f32, String> {
-        Ok(self.cached_metrics()?.memory_usage_percent)
+        self.cached_memory_usage()
     }
 
     /// Get disk usage percentage from the cache.
     pub fn disk_usage(&self) -> Result<f32, String> {
-        let cached = self.cached_metrics()?;
-        Ok(if cached.disk_total > 0 {
-            ((cached.disk_used as f64 / cached.disk_total as f64) * 100.0) as f32
-        } else {
-            0.0
-        })
+        self.cached_disk_usage()
     }
 
     /// Get detailed system information via a live sysinfo refresh. Used as a

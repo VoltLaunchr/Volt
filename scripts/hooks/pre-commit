@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Volt pre-commit hook — runs typecheck + cargo fmt check before a commit is recorded.
-# Enable with: bun run setup-hooks
+# Volt pre-commit hook — runs typecheck + cargo fmt check + version sync check
+# before a commit is recorded. Enable with: bun run setup-hooks
 set -e
 
 echo "▸ tsc --noEmit"
@@ -12,5 +12,8 @@ if command -v cargo >/dev/null 2>&1; then
 else
   echo "! cargo not found, skipping cargo fmt check"
 fi
+
+echo "▸ version sync (package.json vs Cargo.toml vs tauri.conf.json)"
+node scripts/sync-version.mjs --check
 
 echo "✓ pre-commit checks passed"

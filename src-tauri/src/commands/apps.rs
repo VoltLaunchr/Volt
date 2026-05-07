@@ -336,7 +336,7 @@ fn detect_app_category(name: &str, path: &str) -> String {
 
 #[derive(Debug, Clone)]
 struct ScanCache {
-    apps: Vec<AppInfo>,
+    apps: Arc<Vec<AppInfo>>,
     timestamp: SystemTime,
 }
 
@@ -381,7 +381,9 @@ async fn scan_applications_with_options(force_refresh: bool) -> VoltResult<Vec<A
             && !cached.is_expired(Duration::from_secs(300))
         {
             info!("Using cached application scan ({} apps)", cached.apps.len());
-            return Ok(cached.apps.clone());
+            let arc = Arc::clone(&cached.apps);
+            drop(cache);
+            return Ok((*arc).clone());
         }
     }
 
@@ -409,14 +411,17 @@ async fn scan_applications_with_options(force_refresh: bool) -> VoltResult<Vec<A
         }
     };
 
-    // Update cache
+    // Update cache; wrap in Arc so future cache hits clone only the pointer.
+    let arc = Arc::new(apps);
+    let result = (*arc).clone();
     let mut cache = SCAN_CACHE.write().await;
     *cache = Some(ScanCache {
-        apps: apps.clone(),
+        apps: arc,
         timestamp: SystemTime::now(),
     });
+    drop(cache);
 
-    Ok(apps)
+    Ok(result)
 }
 
 // ============================================================================
@@ -1429,7 +1434,7 @@ mod tests {
     #[test]
     fn test_scan_cache_expiry() {
         let cache = ScanCache {
-            apps: vec![],
+            apps: Arc::new(vec![]),
             timestamp: SystemTime::now() - Duration::from_secs(600),
         };
         assert!(cache.is_expired(Duration::from_secs(60)));
@@ -1438,7 +1443,7 @@ mod tests {
     #[test]
     fn test_scan_cache_fresh() {
         let cache = ScanCache {
-            apps: vec![],
+            apps: Arc::new(vec![]),
             timestamp: SystemTime::now(),
         };
         assert!(!cache.is_expired(Duration::from_secs(300)));

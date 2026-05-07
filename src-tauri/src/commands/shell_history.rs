@@ -102,10 +102,11 @@ fn truncate_for_log(s: &str, max_len: usize) -> String {
     format!("{}… [truncated]", &s[..cutoff])
 }
 
-/// Serialise the current map and fire-and-forget-persist it on a blocking
-/// thread. The caller must release any Mutex guard before calling to avoid
-/// holding a lock across async state.
-fn spawn_persist(data_dir: Arc<PathBuf>, snapshot: HashMap<String, ShellHistoryRecord>) {
+/// Write a pre-serialized JSON snapshot to disk on a blocking thread.
+/// Callers must serialize inside the Mutex guard (before dropping it) and
+/// pass the resulting `String` here, so the guard is never held across the
+/// async boundary and the expensive allocation happens outside `spawn_blocking`.
+fn spawn_persist(data_dir: Arc<PathBuf>, json: String) {
     tokio::task::spawn_blocking(move || {
         let path = data_dir.join("shell_history.json");
         if let Some(parent) = path.parent()
@@ -114,13 +115,8 @@ fn spawn_persist(data_dir: Arc<PathBuf>, snapshot: HashMap<String, ShellHistoryR
             warn!("shell_history: create_dir_all failed: {}", e);
             return;
         }
-        match serde_json::to_string_pretty(&snapshot) {
-            Ok(json) => {
-                if let Err(e) = fs::write(&path, json) {
-                    warn!("shell_history: fs::write failed: {}", e);
-                }
-            }
-            Err(e) => warn!("shell_history: serialize failed: {}", e),
+        if let Err(e) = fs::write(&path, json) {
+            warn!("shell_history: fs::write failed: {}", e);
         }
     });
 }
@@ -198,7 +194,7 @@ pub fn record_internal(
         return;
     }
 
-    let snapshot = {
+    let json = {
         let mut history = match state.history.lock() {
             Ok(g) => g,
             Err(poisoned) => {
@@ -229,7 +225,13 @@ pub fn record_internal(
         }
 
         evict_if_needed(&mut history);
-        history.clone()
+        match serde_json::to_string_pretty(&*history) {
+            Ok(s) => s,
+            Err(e) => {
+                warn!("shell_history: serialize failed: {}", e);
+                return;
+            }
+        }
     }; // MutexGuard dropped before I/O
 
     debug!(
@@ -237,7 +239,7 @@ pub fn record_internal(
         truncate_for_log(&redacted, LOG_COMMAND_MAX_LEN)
     );
 
-    spawn_persist(Arc::clone(&state.data_dir), snapshot);
+    spawn_persist(Arc::clone(&state.data_dir), json);
 }
 
 // ---------------------------------------------------------------------------
@@ -276,19 +278,22 @@ pub async fn record_shell_command(
 pub async fn get_shell_history(
     state: tauri::State<'_, ShellHistoryState>,
 ) -> Result<Vec<ShellHistoryRecord>, VoltError> {
-    let mut records: Vec<ShellHistoryRecord> = {
+    let records: Vec<ShellHistoryRecord> = {
         let history = state
             .history
             .lock()
             .map_err(|e| VoltError::Unknown(e.to_string()))?;
         history.values().cloned().collect()
     };
-    records.sort_by(|a, b| {
-        shell_frecency(b)
-            .partial_cmp(&shell_frecency(a))
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
-    Ok(records)
+    let mut scored: Vec<(ShellHistoryRecord, f64)> = records
+        .into_iter()
+        .map(|r| {
+            let s = shell_frecency(&r);
+            (r, s)
+        })
+        .collect();
+    scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    Ok(scored.into_iter().map(|(r, _)| r).collect())
 }
 
 /// Fuzzy-match `prefix` against command strings and return top N by frecency.
@@ -316,14 +321,16 @@ pub async fn get_shell_suggestions(
     };
 
     if prefix.is_empty() {
-        let mut all = records;
-        all.sort_by(|a, b| {
-            shell_frecency(b)
-                .partial_cmp(&shell_frecency(a))
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
-        all.truncate(limit);
-        return Ok(all);
+        let mut scored: Vec<(ShellHistoryRecord, f64)> = records
+            .into_iter()
+            .map(|r| {
+                let s = shell_frecency(&r);
+                (r, s)
+            })
+            .collect();
+        scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        scored.truncate(limit);
+        return Ok(scored.into_iter().map(|(r, _)| r).collect());
     }
 
     let mut matcher = Matcher::new(Config::DEFAULT);
@@ -357,7 +364,7 @@ pub async fn pin_shell_command(
     command: String,
     state: tauri::State<'_, ShellHistoryState>,
 ) -> Result<(), VoltError> {
-    let snapshot = {
+    let json = {
         let mut history = state
             .history
             .lock()
@@ -378,9 +385,10 @@ pub async fn pin_shell_command(
                 )));
             }
         }
-        history.clone()
+        serde_json::to_string_pretty(&*history)
+            .map_err(|e| VoltError::Serialization(e.to_string()))?
     };
-    spawn_persist(Arc::clone(&state.data_dir), snapshot);
+    spawn_persist(Arc::clone(&state.data_dir), json);
     Ok(())
 }
 
@@ -389,15 +397,16 @@ pub async fn pin_shell_command(
 pub async fn clear_shell_history(
     state: tauri::State<'_, ShellHistoryState>,
 ) -> Result<(), VoltError> {
-    let snapshot = {
+    let json = {
         let mut history = state
             .history
             .lock()
             .map_err(|e| VoltError::Unknown(e.to_string()))?;
         history.clear();
-        history.clone()
+        serde_json::to_string_pretty(&*history)
+            .map_err(|e| VoltError::Serialization(e.to_string()))?
     };
-    spawn_persist(Arc::clone(&state.data_dir), snapshot);
+    spawn_persist(Arc::clone(&state.data_dir), json);
     info!("Shell history cleared");
     Ok(())
 }
@@ -408,7 +417,7 @@ pub async fn remove_shell_command(
     command: String,
     state: tauri::State<'_, ShellHistoryState>,
 ) -> Result<(), VoltError> {
-    let snapshot = {
+    let json = {
         let mut history = state
             .history
             .lock()
@@ -419,9 +428,10 @@ pub async fn remove_shell_command(
                 truncate_for_log(&redact_command(&command), LOG_COMMAND_MAX_LEN)
             )));
         }
-        history.clone()
+        serde_json::to_string_pretty(&*history)
+            .map_err(|e| VoltError::Serialization(e.to_string()))?
     };
-    spawn_persist(Arc::clone(&state.data_dir), snapshot);
+    spawn_persist(Arc::clone(&state.data_dir), json);
     info!(
         "Removed shell command from history: {}",
         truncate_for_log(&redact_command(&command), LOG_COMMAND_MAX_LEN)

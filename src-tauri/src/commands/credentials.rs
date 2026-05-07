@@ -118,17 +118,24 @@ pub fn delete_credential(service: String) -> Result<(), String> {
     Ok(())
 }
 
-/// Test that an API token is valid by making a single read-only request to
-/// the upstream service. The token never leaves the Rust process — moving
-/// this off the renderer prevents XSS in the settings UI from exfiltrating
-/// the bare token via window.fetch.
+/// Test that a stored API token is valid by making a single read-only request
+/// to the upstream service.
+///
+/// The token is read directly from the OS keyring — it is never accepted from
+/// the renderer. This prevents Volt from being used as a proxy for testing
+/// arbitrary tokens supplied by untrusted IPC callers.
 #[tauri::command]
-pub async fn test_credential(service: String, token: String) -> Result<bool, String> {
+pub async fn test_credential(service: String) -> Result<bool, String> {
     debug!("Testing credential for service: {}", service);
     validate_service(&service)?;
 
+    let token = match load_credential(service.clone())? {
+        Some(t) => t,
+        None => return Err(format!("No credential stored for service: {}", service)),
+    };
+
     if token.trim().is_empty() {
-        return Err("Token cannot be empty".to_string());
+        return Err("Stored token is empty".to_string());
     }
 
     let client = reqwest::Client::builder()
@@ -183,9 +190,15 @@ pub fn get_credential_info(service: String) -> Result<Option<StoredCredential>, 
 
     match keyring_store::retrieve_signed(&meta_account(&service))? {
         Some(meta_json) => {
-            let meta: CredentialMeta = serde_json::from_str(&meta_json).unwrap_or(CredentialMeta {
-                saved_at: "Unknown".to_string(),
-                enabled: true,
+            let meta: CredentialMeta = serde_json::from_str(&meta_json).unwrap_or_else(|e| {
+                warn!(
+                    "Failed to deserialize credential meta for '{}': {} — using defaults",
+                    service, e
+                );
+                CredentialMeta {
+                    saved_at: "Unknown".to_string(),
+                    enabled: true,
+                }
             });
             Ok(Some(StoredCredential {
                 service,

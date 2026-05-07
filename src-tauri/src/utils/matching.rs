@@ -5,8 +5,6 @@ use nucleo_matcher::{Config, Matcher, Utf32Str};
 ///
 /// # Examples
 /// ```
-/// use volt_lib::utils::matching::fuzzy_match;
-///
 /// assert!(fuzzy_match("hello world", "hlo"));
 /// assert!(fuzzy_match("visual studio code", "vsc"));
 /// assert!(!fuzzy_match("hello", "world"));
@@ -28,49 +26,49 @@ pub fn fuzzy_match(text: &str, pattern: &str) -> bool {
     current_pattern_char.is_none()
 }
 
-/// Calculates a match score for search results using nucleo-matcher for fuzzy scoring.
+/// Calculates a match score using a caller-supplied `Matcher` so that the
+/// matcher's internal scratch buffers are reused across loop iterations.
+/// Prefer this in hot loops over [`calculate_match_score`].
 ///
 /// Returns a score from 0-100:
 /// - 100: Exact match
 /// - 90: Starts with query
 /// - 50-89: nucleo fuzzy/substring score (word-boundary aware, position-sensitive)
 /// - 0: No match
-pub fn calculate_match_score(text: &str, query: &str) -> f32 {
+pub fn calculate_match_score_with_matcher(text: &str, query: &str, matcher: &mut Matcher) -> f32 {
     if query.is_empty() {
-        // Empty query: exact match for empty text, contains-at-0 otherwise
         return if text.is_empty() { 100.0 } else { 80.0 };
     }
 
     let text_lower = text.to_lowercase();
     let query_lower = query.to_lowercase();
 
-    // Fast path: exact match
     if text_lower == query_lower {
         return 100.0;
     }
 
-    // Fast path: starts with query
     if text_lower.starts_with(&query_lower) {
         return 90.0;
     }
 
-    // Use nucleo for everything else (contains, fuzzy, word-boundary matches)
     let pattern = Pattern::parse(&query_lower, CaseMatching::Smart, Normalization::Smart);
-    let mut matcher = Matcher::new(Config::DEFAULT);
-
     let text_chars: Vec<char> = text.chars().collect();
     let haystack = Utf32Str::Unicode(&text_chars);
 
-    match pattern.score(haystack, &mut matcher) {
+    match pattern.score(haystack, matcher) {
         Some(raw_score) if raw_score > 0 => {
             let log_score = (raw_score as f32).ln();
-            // Map ln range [0, 10] to [50, 89]
             (50.0 + log_score * (39.0 / 10.0)).clamp(50.0, 89.0)
         }
-        // Some(0) = characters exist in text but spread so far apart the match is meaningless.
-        // Return 0.0 so the caller filters it out, same as None.
         _ => 0.0,
     }
+}
+
+/// Calculates a match score for search results using nucleo-matcher for fuzzy scoring.
+/// Allocates a fresh `Matcher` per call; use [`calculate_match_score_with_matcher`]
+/// in hot loops to reuse the matcher's scratch buffers.
+pub fn calculate_match_score(text: &str, query: &str) -> f32 {
+    calculate_match_score_with_matcher(text, query, &mut Matcher::new(Config::DEFAULT))
 }
 
 #[cfg(test)]

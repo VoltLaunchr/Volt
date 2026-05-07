@@ -377,7 +377,9 @@ fn flatten_single_root_dir(extension_dir: &PathBuf) -> VoltResult<()> {
         })?;
     }
 
-    let _ = fs::remove_dir(&inner);
+    if let Err(e) = fs::remove_dir(&inner) {
+        warn!("Failed to remove inner dir after flatten: {}", e);
+    }
     Ok(())
 }
 
@@ -570,6 +572,7 @@ pub async fn install_extension(
     info!("Downloading extension from: {}", download_url);
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(30))
+        .redirect(reqwest::redirect::Policy::none())
         .build()
         .map_err(|e| VoltError::Unknown(format!("HTTP client build failed: {}", e)))?;
     let response = client
@@ -588,12 +591,24 @@ pub async fn install_extension(
         )));
     }
 
-    let bytes = response
-        .bytes()
-        .await
-        .map_err(|e| VoltError::Unknown(format!("Failed to read extension data: {}", e)))?;
+    const MAX_EXTENSION_SIZE: usize = 50 * 1024 * 1024; // 50MB cap
+    let mut buf: Vec<u8> = Vec::new();
+    {
+        use futures_util::StreamExt;
+        let mut stream = response.bytes_stream();
+        while let Some(chunk) = stream.next().await {
+            let chunk = chunk
+                .map_err(|e| VoltError::Unknown(format!("Failed to read extension data: {}", e)))?;
+            if buf.len() + chunk.len() > MAX_EXTENSION_SIZE {
+                return Err(VoltError::InvalidConfig(
+                    "Extension archive exceeds 50MB limit".to_string(),
+                ));
+            }
+            buf.extend_from_slice(&chunk);
+        }
+    }
 
-    debug!("Downloaded {} bytes", bytes.len());
+    debug!("Downloaded {} bytes", buf.len());
 
     // Detect archive format from the URL. We treat anything ending in .tar.gz
     // or .tgz as a gzipped tar, otherwise fall back to ZIP (the original format).
@@ -601,9 +616,9 @@ pub async fn install_extension(
     let is_tar_gz = url_lower.ends_with(".tar.gz") || url_lower.ends_with(".tgz");
 
     if is_tar_gz {
-        extract_tar_gz(&bytes, &extension_dir)?;
+        extract_tar_gz(&buf, &extension_dir)?;
     } else {
-        extract_zip(&bytes, &extension_dir)?;
+        extract_zip(&buf, &extension_dir)?;
     }
 
     debug!("Extraction complete, checking for manifest...");
@@ -937,18 +952,34 @@ fn read_source_files_recursive(
     current_dir: &PathBuf,
     files: &mut std::collections::HashMap<String, String>,
 ) -> VoltResult<()> {
+    // Fail-closed: if the extension root can't be canonicalized (race,
+    // broken symlink, long path on Windows) we refuse to read anything
+    // rather than falling through with no containment check (mirrors the
+    // C4 fix applied to api.rs::read_cache).
+    let canonical_base = base_dir.canonicalize().map_err(|e| {
+        VoltError::FileSystem(format!(
+            "Cannot resolve extension root {:?}: {}",
+            base_dir, e
+        ))
+    })?;
+
     let entries = fs::read_dir(current_dir)
         .map_err(|e| VoltError::FileSystem(format!("Failed to read directory: {}", e)))?;
 
     for entry in entries.flatten() {
         let path = entry.path();
 
-        // Containment check: canonicalize and verify the path is within base_dir.
-        // This prevents symlinks from escaping the extension root.
-        if let Ok(canonical) = path.canonicalize()
-            && let Ok(canonical_base) = base_dir.canonicalize()
-            && !canonical.starts_with(&canonical_base)
-        {
+        // Containment check: fail-closed — skip any entry whose path cannot
+        // be canonicalized (race, broken symlink) rather than processing it
+        // without a verified containment guarantee.
+        let canonical = match path.canonicalize() {
+            Ok(p) => p,
+            Err(_) => {
+                warn!("Skipping unresolvable path in extension source: {:?}", path);
+                continue;
+            }
+        };
+        if !canonical.starts_with(&canonical_base) {
             warn!("Skipping path that escapes extension root: {:?}", path);
             continue;
         }
@@ -1101,20 +1132,36 @@ fn get_dev_state_path(app: &AppHandle) -> VoltResult<PathBuf> {
 /// Load dev extensions state from disk.
 ///
 /// Also verifies the detached HMAC signature (`dev-extensions.json.sig`).
-/// A missing or mismatching signature is logged but never causes load
-/// failure — see `extension_state_sig` for the rationale.
+/// On `Mismatch`, all dev extensions are disabled (fail-closed, mirrors H4
+/// in `load_installed_state`) so a tampered path cannot auto-activate a
+/// malicious extension on the next launch.
 fn load_dev_state(app: &AppHandle) -> VoltResult<DevExtensionsState> {
     let state_path = get_dev_state_path(app)?;
 
-    let content = extension_state_sig::read_state_with_verification(&state_path, "dev-extensions")
+    let outcome = extension_state_sig::read_state_with_outcome(&state_path, "dev-extensions")
         .map_err(|e| VoltError::FileSystem(format!("Failed to read dev state: {}", e)))?;
 
-    let Some(content) = content else {
+    let Some((content, verify_outcome)) = outcome else {
         return Ok(DevExtensionsState::default());
     };
 
-    serde_json::from_str(&content)
-        .map_err(|e| VoltError::Serialization(format!("Failed to parse dev state: {}", e)))
+    let mut state: DevExtensionsState = serde_json::from_str(&content)
+        .map_err(|e| VoltError::Serialization(format!("Failed to parse dev state: {}", e)))?;
+
+    if matches!(verify_outcome, extension_state_sig::VerifyOutcome::Mismatch) {
+        for ext in state.extensions.iter_mut() {
+            if ext.enabled {
+                warn!(
+                    "Dev extension '{}': disabling due to dev-state signature mismatch \
+                     (A5 fail-closed). Re-enable manually after reviewing the extension.",
+                    ext.manifest.id
+                );
+            }
+            ext.enabled = false;
+        }
+    }
+
+    Ok(state)
 }
 
 /// Save dev extensions state to disk, along with the HMAC signature.
@@ -1375,6 +1422,7 @@ pub async fn link_dev_extension(app: AppHandle, path: String) -> VoltResult<DevE
 /// Unlink a dev extension
 #[tauri::command]
 pub async fn unlink_dev_extension(app: AppHandle, extension_id: String) -> VoltResult<()> {
+    validate_extension_id(&extension_id)?;
     let mut state = load_dev_state(&app)?;
 
     let before_count = state.extensions.len();
@@ -1551,8 +1599,7 @@ pub async fn increment_extension_download(extension_id: String) -> VoltResult<()
         .post(&url)
         .header("apikey", SUPABASE_ANON_KEY)
         .header("Authorization", format!("Bearer {}", SUPABASE_ANON_KEY))
-        .header("Content-Type", "application/json")
-        .body(format!(r#"{{"p_extension_id":"{}"}}"#, extension_id))
+        .json(&serde_json::json!({ "p_extension_id": extension_id }))
         .send()
         .await;
 
