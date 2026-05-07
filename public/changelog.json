@@ -1,6 +1,49 @@
 {
   "versions": [
     {
+      "version": "0.1.8",
+      "date": "2026-05-07",
+      "title": "Security hardening, performance, and stability fixes",
+      "description": "Volt v0.1.8 ships the full follow-up to the v0.1.7 security audit: hardened auth, credentials, and extension state surfaces, plus hot-path performance improvements and several stability fixes.",
+      "sections": [
+        {
+          "type": "security",
+          "title": "Security",
+          "icon": "shield",
+          "items": [
+            "Security hardening and improvements"
+          ]
+        },
+        {
+          "type": "performance",
+          "title": "Performance",
+          "icon": "zap",
+          "items": [
+            "Eliminate hot-path allocations in search, indexing, and matching code paths"
+          ]
+        },
+        {
+          "type": "fixes",
+          "title": "Bug Fixes",
+          "icon": "shield",
+          "items": [
+            "Eliminate transparent-window flash on hot-toggle and cold-start",
+            "Fix blocking I/O on async paths and a polling loop in the indexer",
+            "Restore first-session Rust fallback in the review surface"
+          ]
+        }
+      ],
+      "footer": {
+        "gettingStarted": "Press Ctrl+Space to open Volt anytime. Check out what's new in v0.1.8!",
+        "feedback": "Have feedback or found a bug? Visit our GitHub repository to report issues or request features.",
+        "links": {
+          "github": "https://github.com/VoltLaunchr/Volt",
+          "releases": "https://github.com/VoltLaunchr/Volt/releases",
+          "docs": "https://voltlaunchr.com/docs"
+        }
+      }
+    },
+    {
       "version": "0.1.7",
       "date": "2026-05-06",
       "title": "First release with working CI pipeline",
