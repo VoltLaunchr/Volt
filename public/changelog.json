@@ -1,6 +1,31 @@
 {
   "versions": [
     {
+      "version": "0.1.9",
+      "date": "2026-05-08",
+      "title": "Critical boot fix",
+      "description": "Volt v0.1.9 fixes a vendor-chunk circular import that prevented v0.1.8 from booting. v0.1.8's bundle threw `Cannot read properties of undefined (reading 'createContext')` before any UI rendered, leaving users stuck on the splash screen indefinitely. v0.1.9 reworks the Vite chunking strategy to keep React-consuming libraries on the dependency-graph default path, which is cycle-free by construction.",
+      "sections": [
+        {
+          "type": "fixes",
+          "title": "Bug Fixes",
+          "icon": "shield",
+          "items": [
+            "Fix vendor chunk cycle that left v0.1.8 stuck on splash screen at startup"
+          ]
+        }
+      ],
+      "footer": {
+        "gettingStarted": "Press Ctrl+Space to open Volt anytime.",
+        "feedback": "Have feedback or found a bug? Visit our GitHub repository to report issues or request features.",
+        "links": {
+          "github": "https://github.com/VoltLaunchr/Volt",
+          "releases": "https://github.com/VoltLaunchr/Volt/releases",
+          "docs": "https://voltlaunchr.com/docs"
+        }
+      }
+    },
+    {
       "version": "0.1.8",
       "date": "2026-05-07",
       "title": "Security hardening, performance, and stability fixes",
