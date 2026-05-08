@@ -20,65 +20,53 @@ export default defineConfig(async () => ({
     chunkSizeWarningLimit: 1000, // 1 MB
     rollupOptions: {
       output: {
-        // Manual chunks for better code splitting.
-        // IMPORTANT: anchor matches to /node_modules/<pkg>/ to avoid substring
-        // collisions (e.g. 'react' would otherwise match 'react-snowfall',
-        // 'react-i18next', 'unreact-foo', etc.).
+        // Manual chunking is intentionally minimal.
+        //
+        // History: a previous attempt grouped React, react-i18next, motion,
+        // @radix-ui, @base-ui and friends into a `vendor-react` chunk and
+        // dumped everything else into a `vendor` catchall. That created a
+        // `vendor → vendor-react → vendor` cycle (Rollup splits transitive
+        // utility re-exports across both sides), and at boot the catchall
+        // executed while React's exports were still in the TDZ — throwing
+        // `Cannot read properties of undefined (reading 'createContext')`.
+        // v0.1.8 shipped that broken bundle.
+        //
+        // Rule of thumb: only chunk LEAF libraries (no React deps, no
+        // cross-references back into the rest of the bundle). Anything that
+        // touches React stays unchunked so Vite can route it through the
+        // automatic dependency-graph split, which is cycle-free by
+        // construction.
         manualChunks: (id) => {
           // Normalize Windows backslashes so '/node_modules/<pkg>/' matches.
           const nid = id.replace(/\\/g, '/');
 
-          // Vendor libraries in separate chunks
           if (nid.includes('/node_modules/')) {
-            // React ecosystem + deps that cause circular chunk imports at init.
-            // Each match is anchored to the package directory boundary.
-            if (
-              nid.includes('/node_modules/react/') ||
-              nid.includes('/node_modules/react-dom/') ||
-              nid.includes('/node_modules/scheduler/') ||
-              nid.includes('/node_modules/i18next/') ||
-              nid.includes('/node_modules/react-i18next/') ||
-              nid.includes('/node_modules/zustand/') ||
-              nid.includes('/node_modules/use-sync-external-store/')
-            ) {
-              return 'vendor-react';
-            }
-            // Tauri APIs (scoped @tauri-apps/*)
+            // Tauri APIs — leaf, no React.
             if (nid.includes('/node_modules/@tauri-apps/')) {
               return 'vendor-tauri';
             }
-            // Heavy icon library - separate chunk
-            if (nid.includes('/node_modules/lucide-react/')) {
-              return 'vendor-icons';
-            }
-            // Emoji data - large static data (emojibase, emojibase-data)
+            // Emoji data — large static data, leaf.
             if (
               nid.includes('/node_modules/emojibase/') ||
               nid.includes('/node_modules/emojibase-data/')
             ) {
               return 'vendor-emoji';
             }
-            // Date utilities
-            if (
-              nid.includes('/node_modules/date-fns/') ||
-              nid.includes('/node_modules/date-fns-tz/')
-            ) {
-              return 'vendor-date';
-            }
-            // Sucrase transpiler (for extensions)
+            // Sucrase transpiler — leaf, only used by the extension loader.
             if (nid.includes('/node_modules/sucrase/')) {
               return 'vendor-sucrase';
             }
-            // Other smaller vendor libs
-            return 'vendor';
+            // Anything else: let Vite/Rollup decide. Splitting more here
+            // is what re-introduces the `createContext` cycle.
+            return undefined;
           }
 
-          // Emoji data in separate chunk (large static data)
+          // Emoji data (app-side) — large static JSON.
           if (id.includes('emojiData')) {
             return 'emoji-data';
           }
 
-          // Plugin builtin components
+          // Plugin builtin components.
           if (id.includes('features/plugins/builtin') && !id.includes('emojiData')) {
             return 'plugins-builtin';
           }
