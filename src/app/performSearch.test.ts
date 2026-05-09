@@ -4,7 +4,7 @@ import { pluginRegistry } from '../features/plugins/core';
 import { WebSearchPlugin } from '../features/plugins/builtin/websearch';
 import { CalculatorPlugin } from '../features/plugins/builtin/calculator';
 import { applicationService } from '../features/applications/services/applicationService';
-import type { AppInfo, FileInfo } from '../shared/types/common.types';
+import type { AppInfo, FileInfo, FileSearchResult } from '../shared/types/common.types';
 
 const mockedInvoke = invoke as unknown as ReturnType<typeof vi.fn>;
 
@@ -32,7 +32,9 @@ const fakeFiles: FileInfo[] = [
 async function performSearch(query: string) {
   const [searchedApps, searchedFiles, pluginResults] = await Promise.all([
     applicationService.searchApplications({ query }, fakeApps),
-    invoke<FileInfo[]>('search_files', { query, limit: 8 }).catch(() => [] as FileInfo[]),
+    invoke<FileSearchResult[]>('search_files', { query, limit: 8 }).catch(
+      () => [] as FileSearchResult[],
+    ),
     pluginRegistry.query({ query }).catch(() => []),
   ]);
 
