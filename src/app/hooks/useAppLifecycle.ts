@@ -66,6 +66,10 @@ export function useAppLifecycle(): UseAppLifecycleResult {
 
   const indexingStarted = useRef(false); // Prevent double indexing (StrictMode)
   const updateCheckDone = useRef(false); // Prevent double update check
+  // Tracks the active `indexing-progress` Tauri listener so both effects below
+  // (settings-changed restart + start-indexing-on-mount) can tear it down.
+  // Declared at the top so both effects see the same ref instance.
+  const indexingUnlistenRef = useRef<(() => void) | null>(null);
 
   // Sync app data into store (single effect to avoid cascading re-renders)
   useEffect(() => {
@@ -339,11 +343,13 @@ export function useAppLifecycle(): UseAppLifecycleResult {
     return () => {
       cancelled = true;
       unlistenFn?.();
+      // Tear down any indexing-progress listener installed by an in-flight
+      // restart. Without this, an unmount mid-restart leaks the listener and
+      // fires setIsIndexing/addToast on a torn-down store subscriber.
+      indexingUnlistenRef.current?.();
+      indexingUnlistenRef.current = null;
     };
   }, [setSettings, setIsIndexing]);
-
-  // Ref to track the indexing listener for cleanup on unmount
-  const indexingUnlistenRef = useRef<(() => void) | null>(null);
 
   // Start file indexing if enabled in settings.
   // We deliberately depend only on the narrow indexing knobs and read the
