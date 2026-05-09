@@ -11,6 +11,7 @@ import {
   PluginResult,
   PluginResultType,
 } from '../../plugins/types';
+import { logger } from '../../../shared/utils/logger';
 import {
   fuzzyScore,
   copyToClipboard,
@@ -78,7 +79,7 @@ export function createVoltAPI(): VoltAPIInterface {
     },
 
     notify: (message: string, type: 'info' | 'success' | 'error' = 'info') => {
-      console.log(`[Volt ${type}] ${message}`);
+      logger.info(`[Volt ${type}] ${message}`);
       window.dispatchEvent(
         new CustomEvent('volt:notification', { detail: { message, type } })
       );

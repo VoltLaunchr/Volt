@@ -51,9 +51,9 @@ const notifyMainWindowToReloadExtensions = async (
 ) => {
   try {
     await emit('extension-changed', { action, extensionId });
-    console.log(`✓ Notified main window: ${action} ${extensionId}`);
+    logger.info(`✓ Notified main window: ${action} ${extensionId}`);
   } catch (err) {
-    console.warn('Failed to notify main window:', err);
+    logger.warn('Failed to notify main window:', err);
   }
 };
 

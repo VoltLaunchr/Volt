@@ -131,7 +131,7 @@ export class EmojiPickerPlugin implements Plugin {
     const success = await copyToClipboard(emoji);
 
     if (success) {
-      console.log(`✓ Copied emoji to clipboard: ${emoji}`);
+      logger.info(`✓ Copied emoji to clipboard: ${emoji}`);
 
       // Add to history for frequently used tracking
       addToHistory(emoji);

@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { CalculatorPlugin } from '../index';
 import { copyToClipboard } from '../../../utils/helpers';
 import { addToHistory, clearHistory, getHistory, CalculationHistoryItem } from '../utils/history';
+import { logger } from '../../../../../shared/utils/logger';
 import { cn } from '@/lib/utils';
 
 interface CalculatorViewProps {
@@ -73,7 +74,7 @@ export function CalculatorView({
 
     const success = await copyToClipboard(result);
     if (success) {
-      console.log(`✓ Copied to clipboard: ${result}`);
+      logger.info(`✓ Copied to clipboard: ${result}`);
 
       addToHistory({
         query: expression.trim(),

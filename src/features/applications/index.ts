@@ -26,21 +26,11 @@ export { launcherService } from './services/launcherService';
 export {
   useApplications,
   useApplicationSearch,
-  useFrequentApps,
-  useLauncher,
-  usePinnedApps,
-  useRecentApps,
 } from './hooks';
 export type {
   UseApplicationsReturn,
   UseApplicationSearchOptions,
   UseApplicationSearchReturn,
-  UseFrequentAppsOptions,
-  UseFrequentAppsReturn,
-  UseLauncherReturn,
-  UsePinnedAppsReturn,
-  UseRecentAppsOptions,
-  UseRecentAppsReturn,
 } from './hooks';
 
 // Utils
