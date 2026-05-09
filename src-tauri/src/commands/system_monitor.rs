@@ -63,39 +63,43 @@ pub fn get_disk_usage(monitor_state: State<SystemMonitorState>) -> VoltResult<f3
 /// Reads from the in-memory cache populated by the background ticker.
 /// Falls back to a live `get_system_info()` refresh on cache miss (before the
 /// first ticker iteration completes) so the first user query never returns
-/// zeros while the cache is still cold.
+/// zeros while the cache is still cold. The fallback runs on a blocking
+/// thread so the IPC executor is never stalled.
 #[tauri::command]
-pub fn get_system_metrics(monitor_state: State<SystemMonitorState>) -> VoltResult<SystemMetrics> {
-    let monitor = monitor_state
-        .monitor
-        .lock()
-        .map_err(|e| VoltError::Unknown(format!("Monitor lock poisoned: {}", e)))?;
-
-    let cached = monitor.cached_metrics().map_err(VoltError::Unknown)?;
+pub async fn get_system_metrics(
+    monitor_state: State<'_, SystemMonitorState>,
+) -> VoltResult<SystemMetrics> {
+    let monitor = Arc::clone(&monitor_state.monitor);
 
     let (cpu_usage, memory_total, memory_used, memory_usage_percent, disk_total, disk_used) =
-        if cached.last_updated.is_some() {
-            (
-                cached.cpu_usage,
-                cached.memory_total,
-                cached.memory_used,
-                cached.memory_usage_percent,
-                cached.disk_total,
-                cached.disk_used,
-            )
-        } else {
-            // Cache miss: fall back to a live refresh so the first query
-            // doesn't return zeros before the background ticker fires.
-            let info = monitor.get_system_info().map_err(VoltError::Unknown)?;
-            (
-                info.cpu_usage,
-                info.memory_total,
-                info.memory_used,
-                info.memory_usage_percent,
-                info.disk_total,
-                info.disk_used,
-            )
-        };
+        tokio::task::spawn_blocking(move || -> VoltResult<_> {
+            let monitor = monitor
+                .lock()
+                .map_err(|e| VoltError::Unknown(format!("Monitor lock poisoned: {}", e)))?;
+            let cached = monitor.cached_metrics().map_err(VoltError::Unknown)?;
+            if cached.last_updated.is_some() {
+                Ok((
+                    cached.cpu_usage,
+                    cached.memory_total,
+                    cached.memory_used,
+                    cached.memory_usage_percent,
+                    cached.disk_total,
+                    cached.disk_used,
+                ))
+            } else {
+                let info = monitor.get_system_info().map_err(VoltError::Unknown)?;
+                Ok((
+                    info.cpu_usage,
+                    info.memory_total,
+                    info.memory_used,
+                    info.memory_usage_percent,
+                    info.disk_total,
+                    info.disk_used,
+                ))
+            }
+        })
+        .await
+        .map_err(|e| VoltError::Unknown(format!("spawn_blocking failed: {}", e)))??;
 
     Ok(SystemMetrics {
         cpu_usage,
@@ -141,25 +145,32 @@ pub struct SystemMetricsV2 {
 /// processes, uptime, hardware temperatures).
 ///
 /// Reads the same cache as `get_system_metrics` with the same live-refresh
-/// fallback, so the first query after startup is never empty.
+/// fallback, so the first query after startup is never empty. The cold-boot
+/// `refresh_cache()` (which performs a `thread::sleep(MINIMUM_CPU_UPDATE_INTERVAL)`
+/// dual-sample for meaningful CPU readings) runs on a blocking thread so the
+/// async executor is never stalled by a slow first call.
 #[tauri::command]
-pub fn get_system_metrics_v2(
-    monitor_state: State<SystemMonitorState>,
+pub async fn get_system_metrics_v2(
+    monitor_state: State<'_, SystemMonitorState>,
 ) -> VoltResult<SystemMetricsV2> {
-    let monitor = monitor_state
-        .monitor
-        .lock()
-        .map_err(|e| VoltError::Unknown(format!("Monitor lock poisoned: {}", e)))?;
+    let monitor = Arc::clone(&monitor_state.monitor);
 
-    // Prime the cache on miss so the v2 payload is never hollow on first call.
-    if monitor
-        .cached_last_updated()
-        .map_err(VoltError::Unknown)?
-        .is_none()
-    {
-        monitor.refresh_cache().map_err(VoltError::Unknown)?;
-    }
-    let cached = monitor.cached_metrics().map_err(VoltError::Unknown)?;
+    let cached = tokio::task::spawn_blocking(move || -> VoltResult<_> {
+        let monitor = monitor
+            .lock()
+            .map_err(|e| VoltError::Unknown(format!("Monitor lock poisoned: {}", e)))?;
+        // Prime the cache on miss so the v2 payload is never hollow on first call.
+        if monitor
+            .cached_last_updated()
+            .map_err(VoltError::Unknown)?
+            .is_none()
+        {
+            monitor.refresh_cache().map_err(VoltError::Unknown)?;
+        }
+        monitor.cached_metrics().map_err(VoltError::Unknown)
+    })
+    .await
+    .map_err(|e| VoltError::Unknown(format!("spawn_blocking failed: {}", e)))??;
 
     let disk_usage = if cached.disk_total == 0 {
         0.0
@@ -193,22 +204,30 @@ fn bytes_to_gb(bytes: u64) -> f32 {
 ///
 /// PID 0 is rejected as a safety guard (on some platforms it represents the
 /// kernel/scheduler). Returns `VoltError::NotFound` when the process no longer
-/// exists at the time the kill signal is sent.
+/// exists at the time the kill signal is sent. Runs on a blocking thread so
+/// sysinfo work doesn't stall the async executor.
 #[tauri::command]
-pub fn kill_process_by_pid(pid: u32, monitor_state: State<SystemMonitorState>) -> VoltResult<()> {
+pub async fn kill_process_by_pid(
+    pid: u32,
+    monitor_state: State<'_, SystemMonitorState>,
+) -> VoltResult<()> {
     if pid == 0 {
         return Err(VoltError::InvalidConfig(
             "Refusing to kill pid 0".to_string(),
         ));
     }
-    let monitor = monitor_state
-        .monitor
-        .lock()
-        .map_err(|e| VoltError::Unknown(format!("Monitor lock poisoned: {}", e)))?;
-    match monitor.kill_process(pid).map_err(VoltError::Unknown)? {
-        true => Ok(()),
-        false => Err(VoltError::NotFound(format!("Process {} not found", pid))),
-    }
+    let monitor = Arc::clone(&monitor_state.monitor);
+    tokio::task::spawn_blocking(move || -> VoltResult<()> {
+        let monitor = monitor
+            .lock()
+            .map_err(|e| VoltError::Unknown(format!("Monitor lock poisoned: {}", e)))?;
+        match monitor.kill_process(pid).map_err(VoltError::Unknown)? {
+            true => Ok(()),
+            false => Err(VoltError::NotFound(format!("Process {} not found", pid))),
+        }
+    })
+    .await
+    .map_err(|e| VoltError::Unknown(format!("spawn_blocking failed: {}", e)))?
 }
 
 /// Launch the platform's native system monitor (Task Manager on Windows,
