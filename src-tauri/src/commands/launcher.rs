@@ -8,7 +8,10 @@ use tauri::State;
 use tracing::{info, warn};
 
 use crate::core::error::{VoltError, VoltResult};
-use crate::launcher::{LaunchError, LaunchHistory, LaunchRecord, QueryBindingStore, launch};
+use crate::launcher::{
+    LaunchError, LaunchHistory, LaunchOptions, LaunchRecord, QueryBindingStore, launch,
+    launch_with_options,
+};
 
 /// State wrapper for launch history
 pub struct LaunchHistoryState {
@@ -40,51 +43,80 @@ impl QueryBindingState {
     }
 }
 
-/// Launch an application and track it in history
-#[tauri::command]
-pub async fn launch_app(
-    path: String,
-    history_state: State<'_, LaunchHistoryState>,
+/// Canonical launch routine shared by `launch_app` and `launch_application`.
+///
+/// Validates the path, launches with optional elevation, then records the
+/// launch in history (so frecency / recents stay accurate regardless of which
+/// command the caller used). Returns mapped `VoltError` variants instead of
+/// the raw `LaunchError` so the IPC boundary surfaces typed errors to the
+/// frontend (`isVoltError()`).
+pub(crate) fn execute_launch(
+    path: &str,
+    as_admin: bool,
+    history: &LaunchHistory,
 ) -> VoltResult<()> {
     // Validate the path before launching to block dangerous executables and
     // ensure only legitimate application paths are executed.
-    crate::utils::launch_validation::validate_launch_path(&path).map_err(VoltError::Launch)?;
+    crate::utils::launch_validation::validate_launch_path(path).map_err(VoltError::Launch)?;
 
-    match launch(&path) {
-        Ok(result) => {
-            // Extract app name from path for history
-            let name = PathBuf::from(&path)
+    let result = if as_admin {
+        let opts = LaunchOptions {
+            elevated: true,
+            ..LaunchOptions::default()
+        };
+        launch_with_options(path, opts)
+    } else {
+        launch(path)
+    };
+
+    match result {
+        Ok(launched) => {
+            let name = PathBuf::from(path)
                 .file_stem()
                 .map(|s| s.to_string_lossy().to_string())
                 .unwrap_or_else(|| "Unknown".to_string());
-
-            info!("Launched application: {} (PID: {:?})", name, result.pid);
-
-            // Record in history
-            if let Err(e) = history_state.history.record_launch(&path, &name) {
+            info!(
+                "Launched application: {} (PID: {:?}, elevated: {})",
+                name, launched.pid, as_admin
+            );
+            if let Err(e) = history.record_launch(path, &name) {
                 warn!("Failed to record launch in history: {}", e);
             }
-
             Ok(())
         }
-        Err(e) => match e {
-            LaunchError::NotFound { path } => Err(VoltError::NotFound(format!(
-                "Application not found: {}",
-                path
-            ))),
-            LaunchError::PermissionDenied { path, message } => Err(VoltError::PermissionDenied(
-                format!("Permission denied for '{}': {}", path, message),
-            )),
-            LaunchError::SpawnFailed { path, message } => Err(VoltError::Launch(format!(
-                "Failed to launch '{}': {}",
-                path, message
-            ))),
-            _ => Err(VoltError::Launch(format!(
-                "Failed to launch application: {}",
-                e
-            ))),
-        },
+        Err(e) => Err(map_launch_error(e)),
     }
+}
+
+fn map_launch_error(e: LaunchError) -> VoltError {
+    match e {
+        LaunchError::NotFound { path } => {
+            VoltError::NotFound(format!("Application not found: {}", path))
+        }
+        LaunchError::PermissionDenied { path, message } => VoltError::PermissionDenied(format!(
+            "Permission denied for '{}': {}",
+            path, message
+        )),
+        LaunchError::SpawnFailed { path, message } => {
+            VoltError::Launch(format!("Failed to launch '{}': {}", path, message))
+        }
+        _ => VoltError::Launch(format!("Failed to launch application: {}", e)),
+    }
+}
+
+/// Launch an application and track it in history.
+///
+/// Canonical launch command. Pass `as_admin: Some(true)` to elevate on
+/// Windows (ShellExecuteW "runas"). The legacy `launch_application` command
+/// is a thin wrapper around the same `execute_launch` helper so frecency is
+/// consistent across both call sites.
+#[tauri::command]
+pub async fn launch_app(
+    path: String,
+    as_admin: Option<bool>,
+    history_state: State<'_, LaunchHistoryState>,
+) -> VoltResult<()> {
+    execute_launch(&path, as_admin.unwrap_or(false), &history_state.history)
 }
 
 /// Get recently launched applications

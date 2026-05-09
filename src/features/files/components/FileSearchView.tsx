@@ -3,7 +3,8 @@ import { listen } from '@tauri-apps/api/event';
 import React, { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/utils';
-import { FileInfo } from '../../../shared/types/common.types';
+import { applicationService } from '../../applications';
+import { FileInfo, FileSearchResult } from '../../../shared/types/common.types';
 import { logger } from '../../../shared/utils';
 
 interface FileSearchViewProps {
@@ -77,7 +78,10 @@ export function FileSearchView({ onClose }: FileSearchViewProps): React.JSX.Elem
 
       try {
         setIsLoading(true);
-        const results = await invoke<FileInfo[]>('search_files', {
+        // search_files returns FileSearchResult[] (FileInfo + score + matchedIndices,
+        // flattened via #[serde(flatten)] on the Rust side). Typed accordingly so
+        // future highlight/score-aware UI work doesn't need a cast.
+        const results = await invoke<FileSearchResult[]>('search_files', {
           query,
           limit: 50,
         });
@@ -169,10 +173,15 @@ export function FileSearchView({ onClose }: FileSearchViewProps): React.JSX.Elem
     [selectedIndex, files, recentFiles, selectedFile, searchQuery, onClose]
   );
 
-  // Handle file opening
+  // Handle file opening — routes through `applicationService` so the launch
+  // is recorded in history (frecency stays accurate) and error handling
+  // matches the rest of the app.
   const handleOpenFile = async (file: FileInfo) => {
     try {
-      await invoke<void>('launch_application', { path: file.path });
+      const result = await applicationService.launchApplication(file.path);
+      if (!result.success) {
+        throw new Error(result.error || 'Launch failed');
+      }
       // Track file access for recent files
       await invoke<void>('track_file_access', { path: file.path, name: file.name });
       // Reload recent files for next time

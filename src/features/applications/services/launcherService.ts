@@ -14,12 +14,15 @@ const errorMessage = (err: unknown): string => (err instanceof Error ? err.messa
  */
 export const launcherService = {
   /**
-   * Launch an application with history tracking
+   * Launch an application with history tracking.
    * @param path - Path to the application
+   * @param asAdmin - Run elevated (Windows ShellExecuteW "runas" verb).
+   *                 Falls back to a normal launch on platforms where elevation
+   *                 is not yet implemented.
    */
-  async launchApp(path: string): Promise<void> {
+  async launchApp(path: string, asAdmin = false): Promise<void> {
     try {
-      await invoke<void>('launch_app', { path });
+      await invoke<void>('launch_app', { path, asAdmin });
     } catch (error) {
       logger.error('Failed to launch app:', error);
       throw new Error(`Failed to launch application: ${errorMessage(error)}`);

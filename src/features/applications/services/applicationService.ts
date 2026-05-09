@@ -66,15 +66,21 @@ export const applicationService = {
   },
 
   /**
-   * Launch an application by its path
+   * Launch an application by its path.
+   *
+   * Routes through the canonical `launch_application` Tauri command which
+   * records the launch in history (frecency stays accurate) and supports
+   * elevated launches via `asAdmin`.
+   *
    * @param path - Path to the application executable
+   * @param asAdmin - Run elevated (Shift+Enter on Windows). Default false.
    * @returns Promise resolving to launch result
    */
-  async launchApplication(path: string): Promise<AppLaunchResult> {
+  async launchApplication(path: string, asAdmin = false): Promise<AppLaunchResult> {
     const launchedAt = Date.now();
 
     try {
-      await invoke<void>('launch_application', { path });
+      await invoke<void>('launch_application', { path, asAdmin });
       return {
         success: true,
         path,
