@@ -319,8 +319,8 @@ export function useSearchPipeline({
 
         if (searchId === latestSearchId.current) {
           setResults(allAppResults);
+          setShowSnowEffect(false);
         }
-        setShowSnowEffect(false);
         return;
       }
 
