@@ -54,14 +54,23 @@ export interface AppInfo {
 }
 
 /**
- * Application categories for better organization
+ * Application categories for better organization.
+ *
+ * [SYNC: src-tauri/src/commands/apps.rs::detect_app_category]
+ * Every value here MUST be produced by the Rust detector, and the Rust
+ * detector MUST only produce values listed here. See `appCategoryStrings.test.ts`
+ * for the regression guard.
  */
 export enum AppCategory {
   Development = 'development',
-  Productivity = 'productivity',
+  Browsers = 'browsers',
+  Communication = 'communication',
   Media = 'media',
-  Gaming = 'gaming',
+  Graphics = 'graphics',
+  Office = 'office',
   System = 'system',
+  Gaming = 'gaming',
+  FileManagement = 'fileManagement',
   Other = 'other',
 }
 
@@ -98,7 +107,33 @@ export enum SearchResultType {
 }
 
 /**
- * File information for file search results
+ * File category — mirrors `FileCategory` in `src-tauri/src/indexer/types.rs`.
+ * Rust serializes with `rename_all = "lowercase"`.
+ *
+ * [SYNC: src-tauri/src/indexer/types.rs::FileCategory]
+ */
+export type FileCategory =
+  | 'application'
+  | 'game'
+  | 'executable'
+  | 'folder'
+  | 'document'
+  | 'image'
+  | 'video'
+  | 'audio'
+  | 'archive'
+  | 'code'
+  | 'other';
+
+/**
+ * File information for file search results.
+ *
+ * [SYNC: src-tauri/src/indexer/types.rs::FileInfo]
+ * Rust struct uses `#[serde(rename_all = "camelCase")]`. Optional fields below
+ * mirror `Option<i64>` / `Option<String>` on the Rust side. The trio
+ * `created`/`accessed`/`category` was historically missing from the TS
+ * interface even though Rust serializes them — adding them so highlight UI
+ * and category-aware filters can consume the full payload without casts.
  */
 export interface FileInfo {
   id: string;
@@ -107,11 +142,31 @@ export interface FileInfo {
   extension: string;
   size: number;
   modified: number;
+  created?: number;
+  accessed?: number;
   icon?: string;
+  category?: FileCategory;
 }
 
 /**
- * Plugin result data - Generic plugin result from the plugins system
+ * Search result wrapper returned by `search_files` Tauri command.
+ *
+ * [SYNC: src-tauri/src/commands/files.rs::FileSearchResult]
+ * Rust uses `#[serde(flatten)]` on the inner `FileInfo` so the wire format is
+ * flat: every `FileInfo` field plus `score` and `matchedIndices`. The TS type
+ * mirrors the flattened shape.
+ */
+export interface FileSearchResult extends FileInfo {
+  score: number;
+  matchedIndices: number[];
+}
+
+/**
+ * Plugin result data — generic plugin result from the plugins system.
+ *
+ * [SYNC: src/features/plugins/types/index.ts::PluginResult]
+ * Kept structurally compatible with `PluginResult`; `pluginId` and `badge`
+ * are optional so existing producers without them remain valid.
  */
 export interface PluginResultData {
   id: string;
@@ -119,6 +174,8 @@ export interface PluginResultData {
   title: string;
   subtitle?: string;
   icon?: string;
+  badge?: string;
+  pluginId?: string;
   score: number;
   data?: Record<string, unknown>;
 }

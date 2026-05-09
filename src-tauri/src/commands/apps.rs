@@ -10,10 +10,11 @@ use tracing::info;
 #[cfg(target_os = "windows")]
 use tracing::warn;
 
+use crate::commands::launcher::{LaunchHistoryState, execute_launch};
 use crate::core::error::{VoltError, VoltResult};
-use crate::launcher::{LaunchError, launch};
 use crate::utils::icon::extract_icon;
 use crate::utils::path::find_main_executable;
+use tauri::State;
 
 #[cfg(target_os = "windows")]
 use crate::utils::path::get_local_drives;
@@ -72,7 +73,11 @@ pub struct AppInfo {
     pub category: Option<String>,
 }
 
-/// Detect application category based on path and name
+/// Detect application category based on path and name.
+///
+/// [SYNC: src/shared/types/common.types.ts::AppCategory] — every string
+/// returned here MUST be a value of the TS `AppCategory` enum. The frontend's
+/// category icon/name lookups depend on exact match (lowercase / camelCase).
 fn detect_app_category(name: &str, path: &str) -> String {
     let name_lower = name.to_lowercase();
     let path_lower = path.to_lowercase();
@@ -124,7 +129,7 @@ fn detect_app_category(name: &str, path: &str) -> String {
     if game_keywords.iter().any(|k| name_lower.contains(k))
         || game_paths.iter().any(|p| path_lower.contains(p))
     {
-        return "Games".to_string();
+        return "gaming".to_string();
     }
 
     // Browsers
@@ -142,7 +147,7 @@ fn detect_app_category(name: &str, path: &str) -> String {
         "librewolf",
     ];
     if browser_keywords.iter().any(|k| name_lower.contains(k)) {
-        return "Browsers".to_string();
+        return "browsers".to_string();
     }
 
     // Development tools
@@ -185,7 +190,7 @@ fn detect_app_category(name: &str, path: &str) -> String {
         "godot",
     ];
     if dev_keywords.iter().any(|k| name_lower.contains(k)) {
-        return "Development".to_string();
+        return "development".to_string();
     }
 
     // Communication
@@ -204,7 +209,7 @@ fn detect_app_category(name: &str, path: &str) -> String {
         "meet",
     ];
     if comm_keywords.iter().any(|k| name_lower.contains(k)) {
-        return "Communication".to_string();
+        return "communication".to_string();
     }
 
     // Media & Entertainment
@@ -233,7 +238,7 @@ fn detect_app_category(name: &str, path: &str) -> String {
         "potplayer",
     ];
     if media_keywords.iter().any(|k| name_lower.contains(k)) {
-        return "Media".to_string();
+        return "media".to_string();
     }
 
     // Graphics & Design
@@ -258,7 +263,7 @@ fn detect_app_category(name: &str, path: &str) -> String {
         "coreldraw",
     ];
     if design_keywords.iter().any(|k| name_lower.contains(k)) {
-        return "Graphics".to_string();
+        return "graphics".to_string();
     }
 
     // Office & Productivity
@@ -282,7 +287,7 @@ fn detect_app_category(name: &str, path: &str) -> String {
         "foxit",
     ];
     if office_keywords.iter().any(|k| name_lower.contains(k)) {
-        return "Office".to_string();
+        return "office".to_string();
     }
 
     // System utilities
@@ -315,7 +320,7 @@ fn detect_app_category(name: &str, path: &str) -> String {
         "performance",
     ];
     if system_keywords.iter().any(|k| name_lower.contains(k)) {
-        return "System".to_string();
+        return "system".to_string();
     }
 
     // File managers
@@ -327,11 +332,11 @@ fn detect_app_category(name: &str, path: &str) -> String {
         "files",
     ];
     if file_keywords.iter().any(|k| name_lower.contains(k)) {
-        return "File Management".to_string();
+        return "fileManagement".to_string();
     }
 
-    // Default category
-    "Applications".to_string()
+    // Default category — must match TS `AppCategory.Other`.
+    "other".to_string()
 }
 
 #[derive(Debug, Clone)]
@@ -1129,37 +1134,20 @@ pub struct AppInfoWithScore {
     pub score: f32,
 }
 
-/// Launches an application by its path
+/// Launches an application by its path.
+///
+/// Thin wrapper over `launch_app` (in `commands/launcher.rs`) that records
+/// the launch in history and accepts an optional `as_admin` flag for
+/// elevated launches (Shift+Enter on Windows). Both this command and
+/// `launch_app` route through the same `execute_launch` helper so frecency
+/// scores stay consistent regardless of which command the caller chose.
 #[tauri::command]
-pub async fn launch_application(path: String) -> VoltResult<()> {
-    // Validate the path before launching to block dangerous executables and
-    // ensure only legitimate application paths are executed.
-    crate::utils::launch_validation::validate_launch_path(&path).map_err(VoltError::Launch)?;
-
-    // Use the launcher module for cross-platform launch
-    match launch(&path) {
-        Ok(result) => {
-            info!("Launched application: {} (PID: {:?})", path, result.pid);
-            Ok(())
-        }
-        Err(e) => match e {
-            LaunchError::NotFound { path } => Err(VoltError::NotFound(format!(
-                "Application not found: {}",
-                path
-            ))),
-            LaunchError::PermissionDenied { path, message } => Err(VoltError::PermissionDenied(
-                format!("Permission denied for '{}': {}", path, message),
-            )),
-            LaunchError::SpawnFailed { path, message } => Err(VoltError::Launch(format!(
-                "Failed to launch '{}': {}",
-                path, message
-            ))),
-            _ => Err(VoltError::Launch(format!(
-                "Failed to launch application: {}",
-                e
-            ))),
-        },
-    }
+pub async fn launch_application(
+    path: String,
+    as_admin: Option<bool>,
+    history_state: State<'_, LaunchHistoryState>,
+) -> VoltResult<()> {
+    execute_launch(&path, as_admin.unwrap_or(false), &history_state.history)
 }
 
 // ============================================================================
@@ -1346,13 +1334,18 @@ fn scan_shortcuts(dir_path: &str) -> Result<Vec<AppInfo>, String> {
 mod tests {
     use super::*;
 
+    // Categories are emitted in the lowercase/camelCase form expected by the
+    // TS `AppCategory` enum (`src/shared/types/common.types.ts`). The
+    // appCategoryStrings.test.ts vitest cross-checks the contract against
+    // both sides; keep these literals in sync with that source of truth.
+
     #[test]
     fn test_detect_app_category_games() {
-        assert_eq!(detect_app_category("Steam", "/usr/bin/steam"), "Games");
-        assert_eq!(detect_app_category("Minecraft", "/games/mc"), "Games");
+        assert_eq!(detect_app_category("Steam", "/usr/bin/steam"), "gaming");
+        assert_eq!(detect_app_category("Minecraft", "/games/mc"), "gaming");
         assert_eq!(
             detect_app_category("Anything", "C:/SteamApps/common/foo"),
-            "Games"
+            "gaming"
         );
     }
 
@@ -1360,11 +1353,11 @@ mod tests {
     fn test_detect_app_category_browsers() {
         assert_eq!(
             detect_app_category("Firefox", "/usr/bin/firefox"),
-            "Browsers"
+            "browsers"
         );
         assert_eq!(
             detect_app_category("Google Chrome", "/Applications/Chrome.app"),
-            "Browsers"
+            "browsers"
         );
     }
 
@@ -1372,11 +1365,11 @@ mod tests {
     fn test_detect_app_category_development() {
         assert_eq!(
             detect_app_category("Visual Studio Code", "/usr/bin/code"),
-            "Development"
+            "development"
         );
         assert_eq!(
             detect_app_category("IntelliJ IDEA", "/opt/intellij"),
-            "Development"
+            "development"
         );
     }
 
@@ -1384,25 +1377,22 @@ mod tests {
     fn test_detect_app_category_communication() {
         assert_eq!(
             detect_app_category("Discord", "/usr/bin/discord"),
-            "Communication"
+            "communication"
         );
         assert_eq!(
             detect_app_category("Slack", "/Applications/Slack.app"),
-            "Communication"
+            "communication"
         );
     }
 
     #[test]
     fn test_detect_app_category_default() {
-        assert_eq!(
-            detect_app_category("RandomApp42", "/opt/random"),
-            "Applications"
-        );
+        assert_eq!(detect_app_category("RandomApp42", "/opt/random"), "other");
     }
 
     #[test]
     fn test_detect_app_category_case_insensitive() {
-        assert_eq!(detect_app_category("FIREFOX", "/X"), "Browsers");
+        assert_eq!(detect_app_category("FIREFOX", "/X"), "browsers");
     }
 
     #[cfg(target_os = "windows")]
