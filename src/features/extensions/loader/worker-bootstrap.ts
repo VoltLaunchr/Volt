@@ -16,6 +16,7 @@ export type ActionCommand =
   | { action: 'copyToClipboard'; text: string }
   | { action: 'openUrl'; url: string }
   | { action: 'notify'; message: string; type?: 'info' | 'success' | 'error' }
+  | { action: 'toast'; message: string; subtitle?: string; style?: 'info' | 'success' | 'error'; duration?: number }
   | { action: 'fetch'; url: string; options?: Record<string, unknown> }
   | { action: 'noop' };
 
@@ -76,29 +77,48 @@ export function generateWorkerBootstrap(
 // runs (including top-level IIFEs in bundledModuleCode). Otherwise a malicious
 // extension could invoke importScripts / dynamic code compilation at module
 // import time, before activate() is ever called, and escape the sandbox.
-self.eval = undefined;
-self.Function = undefined;
-self.WebSocket = undefined;
-self.XMLHttpRequest = undefined;
-self.indexedDB = undefined;
-self.caches = undefined;
+//
+// Some properties are getter-only on WorkerGlobalScope in newer WebView2/Chromium
+// builds (e.g. indexedDB, caches). Direct assignment throws a TypeError that
+// crashes the entire Worker. Use defineProperty to shadow with a getter that
+// returns undefined; fall back to a silent swallow if the property is
+// non-configurable (already sealed by the engine).
+function __blockGlobal__(name) {
+  try {
+    Object.defineProperty(self, name, {
+      get: function() { return undefined; },
+      set: function() {},
+      configurable: false,
+      enumerable: false,
+    });
+  } catch (_e) {
+    try { self[name] = undefined; } catch (_e2) { /* already sealed — best-effort */ }
+  }
+}
+
+__blockGlobal__('eval');
+__blockGlobal__('Function');
+__blockGlobal__('WebSocket');
+__blockGlobal__('XMLHttpRequest');
+__blockGlobal__('indexedDB');
+__blockGlobal__('caches');
 // Block nested Worker spawning: a child Worker gets a fresh un-locked-down
 // global realm (pristine Function / WebSocket / importScripts etc.), so a
 // compromised extension could do new Worker('data:text/javascript,...')
 // and escape this sandbox. Must live in the early-override block so user
 // code can't grab a reference to Worker before we null it.
-self.Worker = undefined;
-self.SharedWorker = undefined;
+__blockGlobal__('Worker');
+__blockGlobal__('SharedWorker');
 // Block ServiceWorker registration paths: navigator.serviceWorker is reachable
 // in WorkerGlobalScope on Chromium 105+ (matches WebView2) and can register
 // a background SW with network-interception capability. Also null Worklet
 // variants — each Worklet creates a fresh realm with un-locked-down globals.
-self.ServiceWorker = undefined;
-self.ServiceWorkerContainer = undefined;
-self.AudioWorklet = undefined;
-self.PaintWorklet = undefined;
-self.LayoutWorklet = undefined;
-self.Worklet = undefined;
+__blockGlobal__('ServiceWorker');
+__blockGlobal__('ServiceWorkerContainer');
+__blockGlobal__('AudioWorklet');
+__blockGlobal__('PaintWorklet');
+__blockGlobal__('LayoutWorklet');
+__blockGlobal__('Worklet');
 // navigator is a read-only property on WorkerGlobalScope; we can't reassign it,
 // but we can make the serviceWorker accessor throw so the registration entry
 // point is unreachable even if a child realm exposes ServiceWorker somehow.
@@ -188,6 +208,14 @@ let __pendingActions__ = [];
 let __fetchCounter__ = 10000;
 var __fetchPending__ = {};
 
+// Storage proxy infrastructure
+let __storageCounter__ = 20000;
+var __storagePending__ = {};
+
+// Preferences proxy infrastructure
+let __prefsCounter__ = 30000;
+var __prefsPending__ = {};
+
 // Mock VoltAPI (captures actions instead of executing them)
 const VoltAPI = {
   types: { PluginResultType },
@@ -221,6 +249,59 @@ const VoltAPI = {
   },
   notify: function(message, type) {
     __pendingActions__.push({ action: 'notify', message: message, type: type || 'info' });
+  },
+  showToast: function(opts) {
+    __pendingActions__.push({
+      action: 'toast',
+      message: opts.message || opts.title || '',
+      subtitle: opts.subtitle,
+      style: opts.style,
+      duration: opts.duration,
+    });
+  },
+  storage: {
+    get: function(key) {
+      return new Promise(function(resolve, reject) {
+        var storageId = ++__storageCounter__;
+        __storagePending__[storageId] = { resolve: resolve, reject: reject };
+        self.postMessage({ type: 'storage-request', id: storageId, payload: { op: 'get', key: key } });
+      });
+    },
+    set: function(key, value) {
+      return new Promise(function(resolve, reject) {
+        var storageId = ++__storageCounter__;
+        __storagePending__[storageId] = { resolve: resolve, reject: reject };
+        self.postMessage({ type: 'storage-request', id: storageId, payload: { op: 'set', key: key, value: value } });
+      });
+    },
+    remove: function(key) {
+      return new Promise(function(resolve, reject) {
+        var storageId = ++__storageCounter__;
+        __storagePending__[storageId] = { resolve: resolve, reject: reject };
+        self.postMessage({ type: 'storage-request', id: storageId, payload: { op: 'remove', key: key } });
+      });
+    },
+    clear: function() {
+      return new Promise(function(resolve, reject) {
+        var storageId = ++__storageCounter__;
+        __storagePending__[storageId] = { resolve: resolve, reject: reject };
+        self.postMessage({ type: 'storage-request', id: storageId, payload: { op: 'clear' } });
+      });
+    },
+  },
+  getPreference: function(key, defaultValue) {
+    return new Promise(function(resolve, reject) {
+      var prefsId = ++__prefsCounter__;
+      __prefsPending__[prefsId] = { resolve: resolve, reject: reject };
+      self.postMessage({ type: 'prefs-request', id: prefsId, payload: { op: 'get', key: key, default: defaultValue } });
+    });
+  },
+  setPreference: function(key, value) {
+    return new Promise(function(resolve, reject) {
+      var prefsId = ++__prefsCounter__;
+      __prefsPending__[prefsId] = { resolve: resolve, reject: reject };
+      self.postMessage({ type: 'prefs-request', id: prefsId, payload: { op: 'set', key: key, value: String(value) } });
+    });
   },
   fetch: function(url, options) {
     return new Promise(function(resolve, reject) {
@@ -276,6 +357,32 @@ self.onmessage = function(event) {
   var id = msg.id;
   var type = msg.type;
   var payload = msg.payload;
+
+  if (type === 'storage-response') {
+    var storageReq = __storagePending__[id];
+    if (storageReq) {
+      delete __storagePending__[id];
+      if (payload && payload.error) {
+        storageReq.reject(new Error(payload.error));
+      } else {
+        storageReq.resolve(payload ? payload.value : undefined);
+      }
+    }
+    return;
+  }
+
+  if (type === 'prefs-response') {
+    var prefsReq = __prefsPending__[id];
+    if (prefsReq) {
+      delete __prefsPending__[id];
+      if (payload && payload.error) {
+        prefsReq.reject(new Error(payload.error));
+      } else {
+        prefsReq.resolve(payload ? payload.value : undefined);
+      }
+    }
+    return;
+  }
 
   if (type === 'fetch-response') {
     var fetchReq = __fetchPending__[id];
