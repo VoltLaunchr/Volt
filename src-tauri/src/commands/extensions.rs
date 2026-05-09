@@ -9,6 +9,7 @@
 use crate::core::error::{VoltError, VoltResult};
 use serde::{Deserialize, Serialize};
 use std::fs;
+use std::net::{Ipv4Addr, Ipv6Addr};
 use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Manager};
 use tracing::{debug, info, warn};
@@ -168,18 +169,55 @@ fn validate_extension_id(id: &str) -> VoltResult<()> {
     Ok(())
 }
 
-/// Check if host is in the 172.16.0.0/12 private range (172.16.x.x - 172.31.x.x)
-fn is_private_172(host: &str) -> bool {
-    if let Some(rest) = host.strip_prefix("172.")
-        && let Some(second_octet_str) = rest.split('.').next()
-        && let Ok(second_octet) = second_octet_str.parse::<u8>()
-    {
-        return (16..=31).contains(&second_octet);
+/// Returns true if `addr` is a private/loopback/link-local IPv4 address.
+fn is_private_ipv4(addr: Ipv4Addr) -> bool {
+    addr.is_loopback()              // 127.0.0.0/8
+        || addr.is_private()        // 10/8, 172.16/12, 192.168/16
+        || addr.is_link_local()     // 169.254.0.0/16
+        || addr.is_unspecified()    // 0.0.0.0
+        || addr.is_broadcast()      // 255.255.255.255
+        || addr.is_documentation()  // 192.0.2/24, 198.51.100/24, 203.0.113/24
+        || addr.octets()[0] == 0    // 0/8 reserved
+        || (addr.octets()[0] >= 224) // multicast + reserved
+}
+
+/// Returns true if `addr` is a private/loopback/link-local IPv6 address.
+///
+/// Includes ULA (`fc00::/7`), link-local (`fe80::/10`), loopback (`::1`),
+/// unspecified (`::`), and IPv4-mapped (`::ffff:0:0/96`) — the last is the
+/// trick that lets `[::ffff:127.0.0.1]` pretend to be an IPv6 address while
+/// actually targeting a v4 loopback.
+fn is_private_ipv6(addr: Ipv6Addr) -> bool {
+    if addr.is_loopback() || addr.is_unspecified() {
+        return true;
+    }
+    let segments = addr.segments();
+    // ULA: fc00::/7 → first 7 bits are 1111 110x → segments[0] & 0xfe00 == 0xfc00
+    if (segments[0] & 0xfe00) == 0xfc00 {
+        return true;
+    }
+    // Link-local: fe80::/10 → first 10 bits are 1111 1110 10 → segments[0] & 0xffc0 == 0xfe80
+    if (segments[0] & 0xffc0) == 0xfe80 {
+        return true;
+    }
+    // IPv4-mapped: ::ffff:a.b.c.d → check the embedded v4 address.
+    if let Some(mapped) = addr.to_ipv4_mapped() {
+        return is_private_ipv4(mapped);
+    }
+    // Multicast (ff00::/8) — block all (some are non-routable, some are
+    // site-scoped; cleaner to refuse outright for an HTTP download URL).
+    if (segments[0] & 0xff00) == 0xff00 {
+        return true;
     }
     false
 }
 
-/// Validate download URL to ensure it's a safe HTTPS URL
+/// Validate download URL to ensure it's a safe HTTPS URL.
+///
+/// SSRF defense: rejects loopback, private (RFC1918), link-local, IPv6 ULA
+/// (`fc00::/7`), IPv6 link-local (`fe80::/10`), and IPv4-mapped IPv6 hosts.
+/// Domain names that resolve to private IPs at request time are still possible
+/// — DNS rebinding mitigation lives in the worker fetch proxy, not here.
 fn validate_download_url(url: &str) -> VoltResult<()> {
     if url.is_empty() {
         return Err(VoltError::InvalidConfig(
@@ -187,39 +225,34 @@ fn validate_download_url(url: &str) -> VoltResult<()> {
         ));
     }
 
-    // Parse and validate URL
     let parsed = url::Url::parse(url)
         .map_err(|_| VoltError::InvalidConfig("Invalid URL format".to_string()))?;
 
-    // Only allow HTTPS
     if parsed.scheme() != "https" {
         return Err(VoltError::InvalidConfig(
             "Only HTTPS URLs are allowed for security".to_string(),
         ));
     }
 
-    // Block localhost, private IPs, and link-local addresses
-    if let Some(host) = parsed.host_str() {
-        let host_lower = host.to_lowercase();
-        if host_lower == "localhost"
-            || host_lower == "127.0.0.1"
-            || host_lower == "0.0.0.0"
-            || host_lower == "[::1]"
-            || host_lower == "::1"
-            || host_lower.starts_with("192.168.")
-            || host_lower.starts_with("10.")
-            || host_lower.starts_with("169.254.")
-            || is_private_172(host_lower.as_str())
-            || host_lower.starts_with("fc")
-            || host_lower.starts_with("fd")
-        {
-            return Err(VoltError::InvalidConfig(
-                "Downloads from local/private addresses are not allowed".to_string(),
-            ));
+    let host = parsed
+        .host()
+        .ok_or_else(|| VoltError::InvalidConfig("URL must have a valid host".to_string()))?;
+
+    let blocked = match host {
+        url::Host::Ipv4(addr) => is_private_ipv4(addr),
+        url::Host::Ipv6(addr) => is_private_ipv6(addr),
+        url::Host::Domain(d) => {
+            let lower = d.to_lowercase();
+            // Domain literals that the parser keeps as Domain (not Ipv4): only
+            // refuse the obvious "localhost". Real domain → IP resolution happens
+            // at request time and is out of scope for syntactic validation.
+            lower == "localhost" || lower.ends_with(".localhost")
         }
-    } else {
+    };
+
+    if blocked {
         return Err(VoltError::InvalidConfig(
-            "URL must have a valid host".to_string(),
+            "Downloads from local/private addresses are not allowed".to_string(),
         ));
     }
 
@@ -1620,4 +1653,76 @@ pub async fn get_extension_tamper_alert() -> bool {
 #[tauri::command]
 pub async fn acknowledge_extension_tamper_alert() {
     crate::utils::extension_state_sig::acknowledge_tamper_detected();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn legitimate_domains_starting_with_fc_or_fd_are_allowed() {
+        // Regression: previously `host.starts_with("fc")` / `"fd"` blocked any
+        // hostname whose first two chars were fc/fd, intending to catch IPv6
+        // ULA — but the URL parser puts IPv6 in brackets so that prefix never
+        // matched real ULA, only collateral domains like fc-research.com.
+        assert!(validate_download_url("https://fc-research.com/ext.zip").is_ok());
+        assert!(validate_download_url("https://fc2.com/x.zip").is_ok());
+        assert!(validate_download_url("https://fdental.io/y.zip").is_ok());
+        assert!(validate_download_url("https://feedback.example/z.zip").is_ok());
+    }
+
+    #[test]
+    fn ipv6_ula_is_blocked() {
+        // fc00::/7 — these MUST be refused (the prior string-prefix check
+        // never triggered because url::Url wraps IPv6 in brackets).
+        assert!(validate_download_url("https://[fc00::1]/x.zip").is_err());
+        assert!(validate_download_url("https://[fd12:3456:789a::1]/x.zip").is_err());
+    }
+
+    #[test]
+    fn ipv6_link_local_is_blocked() {
+        assert!(validate_download_url("https://[fe80::1]/x.zip").is_err());
+    }
+
+    #[test]
+    fn ipv4_mapped_ipv6_loopback_is_blocked() {
+        // ::ffff:127.0.0.1 — the trick that lets v4 loopback ride in via v6.
+        assert!(validate_download_url("https://[::ffff:127.0.0.1]/x.zip").is_err());
+    }
+
+    #[test]
+    fn ipv6_loopback_and_unspecified_blocked() {
+        assert!(validate_download_url("https://[::1]/x.zip").is_err());
+        assert!(validate_download_url("https://[::]/x.zip").is_err());
+    }
+
+    #[test]
+    fn private_ipv4_ranges_blocked() {
+        assert!(validate_download_url("https://127.0.0.1/x.zip").is_err());
+        assert!(validate_download_url("https://10.0.0.1/x.zip").is_err());
+        assert!(validate_download_url("https://192.168.1.1/x.zip").is_err());
+        assert!(validate_download_url("https://169.254.1.1/x.zip").is_err());
+        assert!(validate_download_url("https://172.16.0.1/x.zip").is_err());
+        assert!(validate_download_url("https://172.31.255.255/x.zip").is_err());
+        assert!(validate_download_url("https://0.0.0.0/x.zip").is_err());
+        // 172.32 is OUT of the private range — should pass.
+        assert!(validate_download_url("https://172.32.0.1/x.zip").is_ok());
+    }
+
+    #[test]
+    fn localhost_string_blocked() {
+        assert!(validate_download_url("https://localhost/x.zip").is_err());
+        assert!(validate_download_url("https://api.localhost/x.zip").is_err());
+    }
+
+    #[test]
+    fn http_scheme_rejected() {
+        assert!(validate_download_url("http://example.com/x.zip").is_err());
+    }
+
+    #[test]
+    fn empty_or_invalid_rejected() {
+        assert!(validate_download_url("").is_err());
+        assert!(validate_download_url("not a url").is_err());
+    }
 }
