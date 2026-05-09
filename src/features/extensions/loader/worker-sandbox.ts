@@ -12,7 +12,10 @@ import { copyToClipboard, openUrl } from '../../plugins/utils/helpers';
 import { generateWorkerBootstrap, type ActionCommand, type WorkerResponse } from './worker-bootstrap';
 import { logger } from '../../../shared/utils/logger';
 
-const WORKER_TIMEOUT_MS = 500;
+/** Timeout for match() — must cover network round-trips for extensions with `network` permission */
+const WORKER_MATCH_TIMEOUT_MS = 8000;
+/** Timeout for execute() — local side-effects only, should be fast */
+const WORKER_EXECUTE_TIMEOUT_MS = 500;
 
 /**
  * Maximum fetch response body size (10 MB). A malicious endpoint could
@@ -161,17 +164,18 @@ export class WorkerPlugin implements Plugin {
       // response against a pending request.
       const id = crypto.randomUUID();
 
+      const timeoutMs = type === 'match' ? WORKER_MATCH_TIMEOUT_MS : WORKER_EXECUTE_TIMEOUT_MS;
       const timer = setTimeout(() => {
         // Reject ALL pending entries — not just this one. Keeping the others
         // alive past `terminateWorker()` is unsafe: their later timer firings
         // would call `terminateWorker()` again, killing whichever worker the
         // plugin has lazily recreated in the meantime. (M12)
         this.cleanupPending(
-          `Worker reset due to timeout (after ${WORKER_TIMEOUT_MS}ms on ${type})`
+          `Worker reset due to timeout (after ${timeoutMs}ms on ${type})`
         );
         this.terminateWorker();
-        reject(new Error(`Worker timeout after ${WORKER_TIMEOUT_MS}ms for ${type}`));
-      }, WORKER_TIMEOUT_MS);
+        reject(new Error(`Worker timeout after ${timeoutMs}ms for ${type}`));
+      }, timeoutMs);
 
       this.pending.set(id, { resolve: resolve as (v: unknown) => void, reject, timer });
       worker.postMessage({ type, id, payload });
@@ -201,6 +205,18 @@ export class WorkerPlugin implements Plugin {
       // worker-bootstrap); coerce for the handler signature.
       const fetchId = typeof id === 'number' ? id : Number(id);
       void this.handleFetchRequest(fetchId, payload as { url: string; options?: RequestInit });
+      return;
+    }
+
+    if (type === 'storage-request' as string) {
+      const storageId = typeof id === 'number' ? id : Number(id);
+      void this.handleStorageRequest(storageId, payload as { op: string; key?: string; value?: string });
+      return;
+    }
+
+    if (type === 'prefs-request' as string) {
+      const prefsId = typeof id === 'number' ? id : Number(id);
+      void this.handlePrefsRequest(prefsId, payload as { op: string; key: string; value?: string; default?: unknown });
       return;
     }
 
@@ -772,9 +788,116 @@ export class WorkerPlugin implements Plugin {
             })
           );
           break;
+        case 'toast':
+          window.dispatchEvent(
+            new CustomEvent('volt:toast', {
+              detail: {
+                message: action.message,
+                subtitle: action.subtitle,
+                style: action.style ?? 'info',
+                duration: action.duration,
+              },
+            })
+          );
+          break;
         case 'noop':
           break;
       }
+    }
+  }
+
+  /**
+   * Handle preference requests from the Worker.
+   * Non-secret prefs → JSON file via get_extension_preference / set_extension_preference.
+   * Secret prefs → OS keyring via get_extension_secret / set_extension_secret.
+   */
+  private async handlePrefsRequest(
+    requestId: number,
+    payload: { op: string; key: string; value?: string; default?: unknown }
+  ): Promise<void> {
+    const worker = this.worker;
+    if (!worker) return;
+
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+
+      let result: unknown = undefined;
+      if (payload.op === 'get') {
+        result = await invoke<string | null>('get_extension_preference', {
+          extensionId: this.id,
+          key: payload.key,
+        });
+        if (result === null || result === undefined) {
+          result = payload.default ?? null;
+        }
+      } else if (payload.op === 'set') {
+        await invoke('set_extension_preference', {
+          extensionId: this.id,
+          key: payload.key,
+          value: payload.value ?? '',
+        });
+      }
+
+      worker.postMessage({ type: 'prefs-response', id: requestId, payload: { value: result } });
+    } catch (err) {
+      worker.postMessage({ type: 'prefs-response', id: requestId, payload: { error: String(err) } });
+    }
+  }
+
+  /**
+   * Handle storage requests from the Worker.
+   * Executes SQLite CRUD on the main thread via Tauri IPC.
+   */
+  private async handleStorageRequest(
+    requestId: number,
+    payload: { op: string; key?: string; value?: string }
+  ): Promise<void> {
+    const worker = this.worker;
+    if (!worker) return;
+
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      const extensionId = this.id;
+
+      let result: unknown = undefined;
+      switch (payload.op) {
+        case 'get':
+          result = await invoke<string | null>('ext_storage_get', {
+            extensionId,
+            key: payload.key ?? '',
+          });
+          break;
+        case 'set':
+          await invoke('ext_storage_set', {
+            extensionId,
+            key: payload.key ?? '',
+            value: payload.value ?? '',
+          });
+          break;
+        case 'remove':
+          await invoke('ext_storage_remove', {
+            extensionId,
+            key: payload.key ?? '',
+          });
+          break;
+        case 'clear':
+          await invoke('ext_storage_clear', { extensionId });
+          break;
+        default:
+          throw new Error(`Unknown storage op: ${payload.op}`);
+      }
+
+      worker.postMessage({
+        type: 'storage-response',
+        id: requestId,
+        payload: { value: result },
+      });
+    } catch (err) {
+      worker.postMessage({
+        type: 'storage-response',
+        id: requestId,
+        payload: { error: String(err) },
+      });
     }
   }
 
