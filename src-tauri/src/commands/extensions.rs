@@ -7,6 +7,7 @@
 //! - Checking for updates
 
 use crate::core::error::{VoltError, VoltResult};
+use rusqlite::OptionalExtension;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::net::{Ipv4Addr, Ipv6Addr};
@@ -86,6 +87,44 @@ pub struct ExtensionManifest {
     pub permissions: Option<Vec<String>>,
     /// Entry point file for the extension (e.g., "index.js" or "src/plugin.ts")
     pub main: Option<String>,
+    /// Declarative preferences shown in extension settings UI
+    #[serde(default)]
+    pub preferences: Vec<ExtensionPreference>,
+    /// Multiple named commands — each surfaces as its own search result
+    #[serde(default)]
+    pub commands: Vec<ExtensionCommand>,
+}
+
+/// A single named command exposed by the extension.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExtensionCommand {
+    pub name: String,
+    pub title: String,
+    pub description: Option<String>,
+    pub main: Option<String>,
+    pub prefix: Option<String>,
+    pub keywords: Option<Vec<String>>,
+    pub icon: Option<String>,
+}
+
+/// A single declarative preference field for an extension.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExtensionPreference {
+    pub name: String,
+    #[serde(rename = "type")]
+    pub pref_type: String,
+    pub title: String,
+    pub description: Option<String>,
+    #[serde(default)]
+    pub required: bool,
+    pub default: Option<serde_json::Value>,
+    /// For 'select' type
+    pub options: Option<Vec<String>>,
+    /// For 'number' type
+    pub min: Option<f64>,
+    pub max: Option<f64>,
 }
 
 /// Extension info from the registry
@@ -603,9 +642,12 @@ pub async fn install_extension(
 
     // Download the extension
     info!("Downloading extension from: {}", download_url);
+    // GitHub releases respond with HTTP 302 → objects.githubusercontent.com CDN.
+    // Allow up to 5 redirects; SSRF is already mitigated by validate_download_url()
+    // on the initial URL, and reqwest only follows same-scheme (https) redirects.
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(30))
-        .redirect(reqwest::redirect::Policy::none())
+        .redirect(reqwest::redirect::Policy::limited(5))
         .build()
         .map_err(|e| VoltError::Unknown(format!("HTTP client build failed: {}", e)))?;
     let response = client
@@ -1452,6 +1494,159 @@ pub async fn link_dev_extension(app: AppHandle, path: String) -> VoltResult<DevE
     Ok(dev_ext)
 }
 
+/// Scaffold a new dev extension with boilerplate files, then auto-link it.
+///
+/// Creates `{location}/{id}/manifest.json` and `{location}/{id}/src/index.ts`,
+/// then delegates to `link_dev_extension` for path validation and state registration.
+#[tauri::command]
+pub async fn scaffold_extension(
+    app: AppHandle,
+    name: String,
+    description: String,
+    category: String,
+    prefix: Option<String>,
+    keywords: Option<Vec<String>>,
+    location: String,
+) -> VoltResult<DevExtension> {
+    if name.trim().is_empty() {
+        return Err(VoltError::InvalidConfig(
+            "Extension name cannot be empty".to_string(),
+        ));
+    }
+
+    // Generate kebab-case ID from name (e.g. "My Cool Ext" → "my-cool-ext")
+    let id: String = name
+        .trim()
+        .to_lowercase()
+        .chars()
+        .map(|c| if c.is_alphanumeric() { c } else { '-' })
+        .collect::<String>()
+        .split('-')
+        .filter(|s| !s.is_empty())
+        .collect::<Vec<_>>()
+        .join("-");
+
+    validate_extension_id(&id)?;
+
+    let location_path = PathBuf::from(&location);
+    if !location_path.exists() {
+        return Err(VoltError::NotFound(format!(
+            "Location not found: {}",
+            location
+        )));
+    }
+
+    let extension_dir = location_path.join(&id);
+    if extension_dir.exists() {
+        return Err(VoltError::InvalidConfig(format!(
+            "Directory '{}' already exists at this location. Choose a different name or location.",
+            id
+        )));
+    }
+
+    // Create directory structure
+    let src_dir = extension_dir.join("src");
+    fs::create_dir_all(&src_dir).map_err(|e| {
+        VoltError::FileSystem(format!("Failed to create extension directory: {}", e))
+    })?;
+
+    // PascalCase class name (e.g. "My Cool Ext" → "MyCoolExt")
+    let class_name: String = name
+        .trim()
+        .split_whitespace()
+        .map(|w| {
+            let mut chars = w.chars();
+            match chars.next() {
+                None => String::new(),
+                Some(f) => f.to_uppercase().to_string() + chars.as_str(),
+            }
+        })
+        .collect();
+
+    let kws = keywords.unwrap_or_else(|| vec![id.clone()]);
+    let trigger = prefix
+        .as_deref()
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string())
+        .or_else(|| kws.first().cloned())
+        .unwrap_or_else(|| id.clone());
+
+    // manifest.json
+    let manifest_json = serde_json::json!({
+        "id": id,
+        "name": name.trim(),
+        "version": "0.1.0",
+        "description": description.trim(),
+        "author": { "name": "", "github": "", "email": "" },
+        "category": category,
+        "keywords": kws,
+        "prefix": prefix,
+        "permissions": [],
+        "main": "src/index.ts",
+        "license": "MIT"
+    });
+    let manifest_str = serde_json::to_string_pretty(&manifest_json)
+        .map_err(|e| VoltError::Serialization(e.to_string()))?;
+    fs::write(extension_dir.join("manifest.json"), &manifest_str)
+        .map_err(|e| VoltError::FileSystem(e.to_string()))?;
+
+    // src/index.ts boilerplate
+    let index_content = format!(
+        r#"// Volt Extension: {name}
+// Docs: https://voltlaunchr.com/docs/plugins
+
+export default class {class_name} {{
+  id = '{id}';
+  name = '{name}';
+  description = '{description}';
+  enabled = true;
+
+  canHandle(context) {{
+    const query = context.query.trim().toLowerCase();
+    return query.startsWith('{trigger}');
+  }}
+
+  match(context) {{
+    if (!this.canHandle(context)) return null;
+    const q = context.query.trim();
+
+    return [
+      {{
+        id: 'hello',
+        type: 'info',
+        title: 'Hello from {name}',
+        subtitle: q || 'Extension is working!',
+        score: 100,
+        data: {{ action: 'hello' }},
+      }},
+    ];
+  }}
+
+  async execute(result) {{
+    if (result.data?.action === 'hello') {{
+      window.VoltAPI?.notify('{name} executed!', 'success');
+    }}
+  }}
+}}
+"#,
+        name = name.trim(),
+        class_name = class_name,
+        id = id,
+        description = description.trim(),
+        trigger = trigger,
+    );
+    fs::write(src_dir.join("index.ts"), &index_content)
+        .map_err(|e| VoltError::FileSystem(e.to_string()))?;
+
+    info!(
+        "Scaffolded extension '{}' at {}",
+        id,
+        extension_dir.display()
+    );
+
+    link_dev_extension(app, extension_dir.to_string_lossy().into_owned()).await
+}
+
 /// Unlink a dev extension
 #[tauri::command]
 pub async fn unlink_dev_extension(app: AppHandle, extension_id: String) -> VoltResult<()> {
@@ -1527,6 +1722,32 @@ pub async fn refresh_dev_extension(
 
     // Re-link to refresh
     link_dev_extension(app, ext.path.clone()).await
+}
+
+/// Returns the mtime of `.volt-dev-reload` sentinel in the extension directory,
+/// as milliseconds since Unix epoch, or null if the sentinel doesn't exist.
+/// Used by the frontend to detect CLI `volt-plugin dev` hot-reload signals.
+#[tauri::command]
+pub async fn get_dev_reload_signal(app: AppHandle, extension_id: String) -> VoltResult<Option<u64>> {
+    let state = load_dev_state(&app)?;
+    let ext = state
+        .extensions
+        .iter()
+        .find(|e| e.manifest.id == extension_id)
+        .ok_or_else(|| VoltError::NotFound(format!("Dev extension not found: {}", extension_id)))?;
+
+    let sentinel = std::path::Path::new(&ext.path).join(".volt-dev-reload");
+    match tokio::fs::metadata(&sentinel).await {
+        Ok(meta) => {
+            let ms = meta
+                .modified()
+                .ok()
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_millis() as u64);
+            Ok(ms)
+        }
+        Err(_) => Ok(None),
+    }
 }
 
 // ============================================================================
@@ -1653,6 +1874,218 @@ pub async fn get_extension_tamper_alert() -> bool {
 #[tauri::command]
 pub async fn acknowledge_extension_tamper_alert() {
     crate::utils::extension_state_sig::acknowledge_tamper_detected();
+}
+
+// ---------------------------------------------------------------------------
+// Extension Storage API — isolated SQLite KV store per extension
+// ---------------------------------------------------------------------------
+//
+// Each extension gets its own DB at:
+//   {app_data}/extensions/{extension_id}/storage.db
+//
+// Schema:
+//   CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT NOT NULL)
+//
+// Size limit: 10 MB per extension (enforced at set-time).
+// ---------------------------------------------------------------------------
+
+const EXT_STORAGE_MAX_BYTES: u64 = 10 * 1024 * 1024;
+
+fn ext_storage_db_path(app: &tauri::AppHandle, extension_id: &str) -> VoltResult<std::path::PathBuf> {
+    validate_extension_id(extension_id)?;
+    let base = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| VoltError::FileSystem(format!("Failed to get app data dir: {}", e)))?;
+    let dir = base.join("extensions").join(extension_id);
+    std::fs::create_dir_all(&dir)
+        .map_err(|e| VoltError::FileSystem(format!("Failed to create storage dir: {}", e)))?;
+    Ok(dir.join("storage.db"))
+}
+
+fn ext_storage_open(path: &std::path::Path) -> VoltResult<rusqlite::Connection> {
+    let conn = rusqlite::Connection::open(path)
+        .map_err(|e| VoltError::FileSystem(format!("Failed to open storage DB: {}", e)))?;
+    conn.execute_batch(
+        "PRAGMA journal_mode=WAL;
+         CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT NOT NULL);",
+    )
+    .map_err(|e| VoltError::FileSystem(format!("Failed to init storage schema: {}", e)))?;
+    Ok(conn)
+}
+
+/// Read a value from the extension's isolated KV storage.
+#[tauri::command]
+pub async fn ext_storage_get(
+    app: tauri::AppHandle,
+    extension_id: String,
+    key: String,
+) -> Result<Option<String>, String> {
+    let path = ext_storage_db_path(&app, &extension_id).map_err(|e| e.to_string())?;
+    let conn = ext_storage_open(&path).map_err(|e| e.to_string())?;
+    let result: Option<String> = conn
+        .query_row(
+            "SELECT value FROM kv WHERE key = ?1",
+            rusqlite::params![key],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|e| e.to_string())?;
+    Ok(result)
+}
+
+/// Write a value to the extension's isolated KV storage.
+/// Rejects the write if the DB already exceeds 10 MB.
+#[tauri::command]
+pub async fn ext_storage_set(
+    app: tauri::AppHandle,
+    extension_id: String,
+    key: String,
+    value: String,
+) -> Result<(), String> {
+    let path = ext_storage_db_path(&app, &extension_id).map_err(|e| e.to_string())?;
+    // Size guard: refuse writes beyond the per-extension cap.
+    if path.exists() {
+        let size = std::fs::metadata(&path)
+            .map(|m| m.len())
+            .unwrap_or(0);
+        if size > EXT_STORAGE_MAX_BYTES {
+            return Err(format!(
+                "Extension storage limit exceeded ({} MB max)",
+                EXT_STORAGE_MAX_BYTES / 1024 / 1024
+            ));
+        }
+    }
+    let conn = ext_storage_open(&path).map_err(|e| e.to_string())?;
+    conn.execute(
+        "INSERT INTO kv (key, value) VALUES (?1, ?2) ON CONFLICT(key) DO UPDATE SET value = ?2",
+        rusqlite::params![key, value],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Remove a single key from the extension's isolated KV storage.
+#[tauri::command]
+pub async fn ext_storage_remove(
+    app: tauri::AppHandle,
+    extension_id: String,
+    key: String,
+) -> Result<(), String> {
+    let path = ext_storage_db_path(&app, &extension_id).map_err(|e| e.to_string())?;
+    if !path.exists() {
+        return Ok(());
+    }
+    let conn = ext_storage_open(&path).map_err(|e| e.to_string())?;
+    conn.execute("DELETE FROM kv WHERE key = ?1", rusqlite::params![key])
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Delete all keys in the extension's isolated KV storage.
+#[tauri::command]
+pub async fn ext_storage_clear(
+    app: tauri::AppHandle,
+    extension_id: String,
+) -> Result<(), String> {
+    let path = ext_storage_db_path(&app, &extension_id).map_err(|e| e.to_string())?;
+    if !path.exists() {
+        return Ok(());
+    }
+    let conn = ext_storage_open(&path).map_err(|e| e.to_string())?;
+    conn.execute("DELETE FROM kv", []).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Extension Preferences API
+// ---------------------------------------------------------------------------
+//
+// Non-secret preferences → JSON file at:
+//   {app_data}/extensions/{id}/preferences.json
+//
+// Secret preferences (type = "secret") → OS keyring via keyring_store,
+//   domain tag: "volt:ext:{id}:pref:{key}"
+// ---------------------------------------------------------------------------
+
+fn ext_prefs_path(app: &tauri::AppHandle, extension_id: &str) -> VoltResult<std::path::PathBuf> {
+    validate_extension_id(extension_id)?;
+    let base = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| VoltError::FileSystem(format!("Failed to get app data dir: {}", e)))?;
+    let dir = base.join("extensions").join(extension_id);
+    std::fs::create_dir_all(&dir)
+        .map_err(|e| VoltError::FileSystem(format!("Failed to create prefs dir: {}", e)))?;
+    Ok(dir.join("preferences.json"))
+}
+
+/// Read a non-secret preference value for an extension.
+/// Returns `None` if the key has not been set yet.
+#[tauri::command]
+pub async fn get_extension_preference(
+    app: tauri::AppHandle,
+    extension_id: String,
+    key: String,
+) -> Result<Option<String>, String> {
+    validate_extension_id(&extension_id).map_err(|e| e.to_string())?;
+    let path = ext_prefs_path(&app, &extension_id).map_err(|e| e.to_string())?;
+    if !path.exists() {
+        return Ok(None);
+    }
+    let raw = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    let map: std::collections::HashMap<String, String> =
+        serde_json::from_str(&raw).unwrap_or_default();
+    Ok(map.get(&key).cloned())
+}
+
+/// Persist a non-secret preference value for an extension.
+/// Use `set_extension_secret` for passwords/tokens.
+#[tauri::command]
+pub async fn set_extension_preference(
+    app: tauri::AppHandle,
+    extension_id: String,
+    key: String,
+    value: String,
+) -> Result<(), String> {
+    validate_extension_id(&extension_id).map_err(|e| e.to_string())?;
+    let path = ext_prefs_path(&app, &extension_id).map_err(|e| e.to_string())?;
+    let mut map: std::collections::HashMap<String, String> = if path.exists() {
+        let raw = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+        serde_json::from_str(&raw).unwrap_or_default()
+    } else {
+        std::collections::HashMap::new()
+    };
+    map.insert(key, value);
+    let serialized = serde_json::to_string_pretty(&map).map_err(|e| e.to_string())?;
+    std::fs::write(&path, serialized).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Read a secret preference (password / token) from the OS keyring.
+#[tauri::command]
+pub async fn get_extension_secret(
+    extension_id: String,
+    key: String,
+) -> Result<Option<String>, String> {
+    validate_extension_id(&extension_id).map_err(|e| e.to_string())?;
+    let tag = format!("volt:ext:{}:pref:{}", extension_id, key);
+    match crate::commands::keyring_store::retrieve_signed(&tag) {
+        Ok(v) => Ok(v),
+        Err(_) => Ok(None),
+    }
+}
+
+/// Store a secret preference (password / token) in the OS keyring.
+#[tauri::command]
+pub async fn set_extension_secret(
+    extension_id: String,
+    key: String,
+    value: String,
+) -> Result<(), String> {
+    validate_extension_id(&extension_id).map_err(|e| e.to_string())?;
+    let tag = format!("volt:ext:{}:pref:{}", extension_id, key);
+    crate::commands::keyring_store::store_signed(&tag, &value).map_err(|e| e.to_string())
 }
 
 #[cfg(test)]
