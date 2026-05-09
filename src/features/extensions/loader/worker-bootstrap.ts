@@ -18,6 +18,7 @@ export type ActionCommand =
   | { action: 'notify'; message: string; type?: 'info' | 'success' | 'error' }
   | { action: 'toast'; message: string; subtitle?: string; style?: 'info' | 'success' | 'error'; duration?: number }
   | { action: 'fetch'; url: string; options?: Record<string, unknown> }
+  | { action: 'saveCredential'; service: string; token: string }
   | { action: 'noop' };
 
 /**
@@ -302,6 +303,9 @@ const VoltAPI = {
       __prefsPending__[prefsId] = { resolve: resolve, reject: reject };
       self.postMessage({ type: 'prefs-request', id: prefsId, payload: { op: 'set', key: key, value: String(value) } });
     });
+  },
+  saveCredential: function(service, token) {
+    __pendingActions__.push({ action: 'saveCredential', service: service, token: token });
   },
   fetch: function(url, options) {
     return new Promise(function(resolve, reject) {

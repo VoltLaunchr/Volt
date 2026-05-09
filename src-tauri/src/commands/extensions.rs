@@ -563,6 +563,8 @@ const ALLOWED_REGISTRY_HOSTS: &[&str] = &[
     "raw.githubusercontent.com",
     "objects.githubusercontent.com",
     "api.github.com",
+    "voltlauncher.com",
+    "www.voltlauncher.com",
 ];
 
 /// Validate that a registry URL points to an allowed host

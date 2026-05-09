@@ -162,6 +162,9 @@
     "allow-acknowledge-extension-tamper-alert",
     "allow-fetch-extension-downloads",
     "allow-increment-extension-download",
+    "allow-get-extension-preference",
+    "allow-set-extension-preference",
+    "allow-extension-authenticated-fetch",
 
     "allow-get-dev-extensions",
     "allow-link-dev-extension",

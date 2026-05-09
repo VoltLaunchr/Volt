@@ -33,6 +33,16 @@ interface PendingRequest {
  * A Plugin implementation that delegates match() and execute() to a Web Worker.
  * canHandle() is evaluated declaratively on the main thread using keywords/prefix.
  */
+/**
+ * Maps service IDs to the API hostnames that should be handled by the
+ * Rust authenticated fetch proxy instead of the regular sandbox fetch.
+ * Must stay in sync with `service_api_hosts()` in credentials.rs.
+ */
+const SERVICE_API_HOSTS: Record<string, readonly string[]> = {
+  github: ['api.github.com'],
+  notion: ['api.notion.com'],
+};
+
 export class WorkerPlugin implements Plugin {
   id: string;
   name: string;
@@ -606,6 +616,20 @@ export class WorkerPlugin implements Plugin {
     try {
       const safeOptions = this.sanitizeFetchOptions(payload.options);
 
+      // Route requests to known service API hosts through the Rust authenticated
+      // fetch proxy. The token is read from the OS keyring inside Rust and never
+      // crosses the Worker or renderer boundary.
+      try {
+        const parsedUrl = new URL(payload.url);
+        const serviceHosts = SERVICE_API_HOSTS[this.id] ?? [];
+        if ((serviceHosts as string[]).includes(parsedUrl.hostname)) {
+          await this.handleAuthenticatedFetch(requestId, payload.url, safeOptions);
+          return;
+        }
+      } catch {
+        // URL parse error — fall through to regular fetch which will fail naturally
+      }
+
       // Manual redirect loop with re-validation at every hop. The initial URL
       // was already approved by `isUrlSafe` above; we still re-check it inside
       // the loop so a single code path enforces the policy for hop 0..N. (H3)
@@ -707,6 +731,67 @@ export class WorkerPlugin implements Plugin {
   }
 
   /**
+   * Route a fetch through the Rust `extension_authenticated_fetch` command.
+   * The token is read from the OS keyring inside Rust — it never crosses the
+   * Worker or renderer process boundary.
+   */
+  private async handleAuthenticatedFetch(
+    requestId: number,
+    url: string,
+    safeOptions: RequestInit
+  ): Promise<void> {
+    const worker = this.worker;
+    if (!worker) return;
+
+    try {
+      // Flatten sanitized headers to a plain object for Tauri IPC serialisation.
+      const headers: Record<string, string> = {};
+      if (safeOptions.headers) {
+        if (safeOptions.headers instanceof Headers) {
+          safeOptions.headers.forEach((v, k) => { headers[k] = v; });
+        } else if (Array.isArray(safeOptions.headers)) {
+          for (const [k, v] of safeOptions.headers) { headers[String(k)] = String(v); }
+        } else if (typeof safeOptions.headers === 'object') {
+          Object.assign(headers, safeOptions.headers);
+        }
+      }
+
+      const { invoke } = await import('@tauri-apps/api/core');
+      const result = await invoke<{
+        ok: boolean;
+        status: number;
+        statusText: string;
+        body: string;
+        bodyEncoding: string;
+      }>('extension_authenticated_fetch', {
+        extensionId: this.id,
+        url,
+        method: (safeOptions.method as string) ?? 'GET',
+        headers,
+        body: typeof safeOptions.body === 'string' ? safeOptions.body : null,
+      });
+
+      worker.postMessage({
+        type: 'fetch-response',
+        id: requestId,
+        payload: {
+          ok: result.ok,
+          status: result.status,
+          statusText: result.statusText,
+          body: result.body,
+          bodyEncoding: result.bodyEncoding ?? 'utf-8',
+        },
+      });
+    } catch (err) {
+      worker.postMessage({
+        type: 'fetch-response',
+        id: requestId,
+        payload: { error: String(err) },
+      });
+    }
+  }
+
+  /**
    * Handle Worker errors.
    */
   private handleError = (event: ErrorEvent) => {
@@ -775,6 +860,20 @@ export class WorkerPlugin implements Plugin {
             break;
           }
           // Network fetch is handled in match/execute response flow, not here
+          break;
+        }
+        case 'saveCredential': {
+          // Extension may only save a credential for the service matching its own
+          // ID. This prevents a compromised extension from overwriting credentials
+          // belonging to a different service.
+          if (action.service !== this.id) {
+            console.warn(
+              `[WorkerPlugin:${this.id}] Blocked saveCredential for '${action.service}' — must match extension ID`
+            );
+            break;
+          }
+          const { invoke } = await import('@tauri-apps/api/core');
+          await invoke('save_credential', { service: action.service, token: action.token });
           break;
         }
         case 'notify':

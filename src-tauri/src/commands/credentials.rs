@@ -9,6 +9,7 @@
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use tracing::{debug, info, warn};
+use zeroize::Zeroizing;
 
 use super::keyring_store;
 
@@ -54,6 +55,8 @@ pub fn save_credential(service: String, token: String) -> Result<(), String> {
     debug!("Saving credential for service: {}", service);
     validate_service(&service)?;
 
+    let token = Zeroizing::new(token);
+
     if token.trim().is_empty() {
         return Err("Token cannot be empty".to_string());
     }
@@ -98,6 +101,150 @@ pub fn load_credential(service: String) -> Result<Option<String>, String> {
     Ok(token)
 }
 
+/// Maps a service ID to the only API hostnames its extension may reach through
+/// the authenticated fetch proxy. Requests to any other host are rejected.
+fn service_api_hosts(service: &str) -> &'static [&'static str] {
+    match service {
+        "github" => &["api.github.com"],
+        "notion" => &["api.notion.com"],
+        _ => &[],
+    }
+}
+
+/// Perform an authenticated HTTP request on behalf of a sandboxed extension.
+///
+/// Security properties
+/// -------------------
+/// - The raw credential token **never** leaves Rust (not passed to renderer/Worker).
+/// - `extension_id` must match a valid service name (validated by `validate_service`).
+/// - The destination host must be in `service_api_hosts(extension_id)`.
+/// - Only HTTPS is permitted.
+/// - Any `Authorization` header supplied by the extension is unconditionally
+///   stripped and replaced with the keyring value.
+/// - Response body is capped at 10 MB to prevent OOM.
+#[tauri::command]
+pub async fn extension_authenticated_fetch(
+    extension_id: String,
+    url: String,
+    method: String,
+    headers: serde_json::Value,
+    body: Option<String>,
+) -> Result<serde_json::Value, String> {
+    validate_service(&extension_id)?;
+
+    let parsed =
+        url::Url::parse(&url).map_err(|_| "Invalid URL".to_string())?;
+    if parsed.scheme() != "https" {
+        return Err("Only HTTPS URLs are allowed".to_string());
+    }
+    let host = parsed.host_str().unwrap_or("");
+    let allowed = service_api_hosts(&extension_id);
+    if !allowed.contains(&host) {
+        return Err(format!(
+            "Host '{}' is not on the allowlist for service '{}'",
+            host, extension_id
+        ));
+    }
+
+    // Token read from keyring — never returned to caller.
+    // GitHub: if no token is stored, make an unauthenticated request (60 req/hr
+    // rate limit — public endpoints still work). Auth-required endpoints will
+    // return 401, which the extension handles gracefully.
+    // Notion: always requires auth; missing token is a hard error.
+    let maybe_token: Option<Zeroizing<String>> = match extension_id.as_str() {
+        "github" => load_credential(extension_id.clone())?.map(Zeroizing::new),
+        _ => match load_credential(extension_id.clone())? {
+            Some(t) => Some(Zeroizing::new(t)),
+            None => {
+                return Err(format!(
+                    "No credential stored for service: {}",
+                    extension_id
+                ))
+            }
+        },
+    };
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .redirect(reqwest::redirect::Policy::limited(5))
+        .build()
+        .map_err(|e| format!("HTTP client error: {}", e))?;
+
+    let mut req = match method.to_uppercase().as_str() {
+        "POST" => client.post(&url),
+        "PUT" => client.put(&url),
+        "DELETE" => client.delete(&url),
+        "PATCH" => client.patch(&url),
+        _ => client.get(&url),
+    };
+
+    // Forward extension headers, stripping Authorization (injected below).
+    if let Some(map) = headers.as_object() {
+        for (k, v) in map {
+            if k.to_lowercase() == "authorization" {
+                continue;
+            }
+            if let Some(vs) = v.as_str() {
+                req = req.header(k.as_str(), vs);
+            }
+        }
+    }
+
+    // Inject Authorization + service-specific defaults.
+    req = match extension_id.as_str() {
+        "github" => {
+            let mut r = req.header("User-Agent", "Volt-GitHub-Extension/1.2.0");
+            if let Some(ref t) = maybe_token {
+                if !t.trim().is_empty() {
+                    r = r.header("Authorization", format!("Bearer {}", t.trim()));
+                }
+            }
+            r
+        }
+        "notion" => {
+            let t = maybe_token
+                .ok_or_else(|| format!("No credential stored for service: {}", extension_id))?;
+            req.header("Authorization", format!("Bearer {}", t.trim()))
+                .header("Notion-Version", "2022-06-28")
+        }
+        other => return Err(format!("Unsupported service: {}", other)),
+    };
+
+    if let Some(b) = body {
+        req = req.body(b);
+    }
+
+    const MAX_BODY: usize = 10 * 1024 * 1024;
+    let resp = req
+        .send()
+        .await
+        .map_err(|e| format!("Request failed: {}", e))?;
+    let status = resp.status().as_u16();
+    let ok = resp.status().is_success();
+    let status_text = resp
+        .status()
+        .canonical_reason()
+        .unwrap_or("")
+        .to_string();
+
+    let bytes = resp
+        .bytes()
+        .await
+        .map_err(|e| format!("Failed to read response body: {}", e))?;
+    if bytes.len() > MAX_BODY {
+        return Err("Response body exceeds 10 MB limit".to_string());
+    }
+    let body_str = String::from_utf8_lossy(&bytes).to_string();
+
+    Ok(serde_json::json!({
+        "ok": ok,
+        "status": status,
+        "statusText": status_text,
+        "body": body_str,
+        "bodyEncoding": "utf-8",
+    }))
+}
+
 /// Return `true` if a token is stored for this service.
 #[tauri::command]
 pub fn has_credential(service: String) -> Result<bool, String> {
@@ -130,7 +277,7 @@ pub async fn test_credential(service: String) -> Result<bool, String> {
     validate_service(&service)?;
 
     let token = match load_credential(service.clone())? {
-        Some(t) => t,
+        Some(t) => Zeroizing::new(t),
         None => return Err(format!("No credential stored for service: {}", service)),
     };
 
