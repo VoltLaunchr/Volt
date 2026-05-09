@@ -139,6 +139,10 @@ pub struct ExtensionInfo {
     pub featured: bool,
     pub created_at: String,
     pub updated_at: String,
+    #[serde(default)]
+    pub screenshots: Vec<String>,
+    #[serde(default)]
+    pub readme_url: Option<String>,
 }
 
 /// Installed extension info
@@ -410,6 +414,21 @@ fn extract_tar_gz(bytes: &[u8], dest_dir: &Path) -> VoltResult<()> {
         }
 
         let outpath = dest_dir.join(&entry_path);
+
+        if entry_type == tar::EntryType::Directory {
+            fs::create_dir_all(&outpath).map_err(|e| {
+                VoltError::FileSystem(format!("Failed to create tar directory: {}", e))
+            })?;
+            continue;
+        }
+
+        // entry.unpack() does not create parent dirs — do it explicitly.
+        if let Some(parent) = outpath.parent() {
+            fs::create_dir_all(parent).map_err(|e| {
+                VoltError::FileSystem(format!("Failed to create parent directory: {}", e))
+            })?;
+        }
+
         entry
             .unpack(&outpath)
             .map_err(|e| VoltError::FileSystem(format!("Failed to unpack tar entry: {}", e)))?;
@@ -1494,19 +1513,30 @@ pub async fn link_dev_extension(app: AppHandle, path: String) -> VoltResult<DevE
     Ok(dev_ext)
 }
 
+/// A command entry in the scaffold wizard (one file per command).
+#[derive(Debug, Deserialize)]
+pub struct ScaffoldCommand {
+    pub name: String,
+    pub title: String,
+    pub description: Option<String>,
+}
+
 /// Scaffold a new dev extension with boilerplate files, then auto-link it.
 ///
-/// Creates `{location}/{id}/manifest.json` and `{location}/{id}/src/index.ts`,
-/// then delegates to `link_dev_extension` for path validation and state registration.
+/// Creates `{location}/{id}/manifest.json`, `{location}/{id}/src/index.ts`, and
+/// optionally one file per command in `commands`, then delegates to
+/// `link_dev_extension` for path validation and state registration.
 #[tauri::command]
 pub async fn scaffold_extension(
     app: AppHandle,
     name: String,
     description: String,
     category: String,
+    platforms: Option<String>,
     prefix: Option<String>,
     keywords: Option<Vec<String>>,
     location: String,
+    commands: Option<Vec<ScaffoldCommand>>,
 ) -> VoltResult<DevExtension> {
     if name.trim().is_empty() {
         return Err(VoltError::InvalidConfig(
@@ -1571,28 +1601,53 @@ pub async fn scaffold_extension(
         .or_else(|| kws.first().cloned())
         .unwrap_or_else(|| id.clone());
 
+    let platforms_arr = match platforms.as_deref() {
+        Some("windows") => serde_json::json!(["windows"]),
+        Some("macos") => serde_json::json!(["macos"]),
+        _ => serde_json::json!(["windows", "macos"]),
+    };
+
+    let cmds = commands.unwrap_or_default();
+    let commands_json: Vec<serde_json::Value> = cmds
+        .iter()
+        .map(|c| {
+            let file_name = format!("src/{}.ts", c.name);
+            serde_json::json!({
+                "name": c.name,
+                "title": c.title,
+                "description": c.description,
+                "main": file_name,
+            })
+        })
+        .collect();
+
     // manifest.json
-    let manifest_json = serde_json::json!({
+    let mut manifest_json = serde_json::json!({
         "id": id,
         "name": name.trim(),
         "version": "0.1.0",
         "description": description.trim(),
         "author": { "name": "", "github": "", "email": "" },
         "category": category,
+        "platforms": platforms_arr,
         "keywords": kws,
         "prefix": prefix,
         "permissions": [],
         "main": "src/index.ts",
         "license": "MIT"
     });
+    if !commands_json.is_empty() {
+        manifest_json["commands"] = serde_json::json!(commands_json);
+    }
     let manifest_str = serde_json::to_string_pretty(&manifest_json)
         .map_err(|e| VoltError::Serialization(e.to_string()))?;
     fs::write(extension_dir.join("manifest.json"), &manifest_str)
         .map_err(|e| VoltError::FileSystem(e.to_string()))?;
 
-    // src/index.ts boilerplate
-    let index_content = format!(
-        r#"// Volt Extension: {name}
+    // src/index.ts — root boilerplate (or barrel when commands are defined)
+    let index_content = if cmds.is_empty() {
+        format!(
+            r#"// Volt Extension: {name}
 // Docs: https://voltlaunchr.com/docs/plugins
 
 export default class {class_name} {{
@@ -1629,14 +1684,79 @@ export default class {class_name} {{
   }}
 }}
 "#,
-        name = name.trim(),
-        class_name = class_name,
-        id = id,
-        description = description.trim(),
-        trigger = trigger,
-    );
+            name = name.trim(),
+            class_name = class_name,
+            id = id,
+            description = description.trim(),
+            trigger = trigger,
+        )
+    } else {
+        format!(
+            "// Volt Extension: {name}\n// Docs: https://voltlaunchr.com/docs/plugins\n// Commands are defined in separate files — see manifest.json\n",
+            name = name.trim(),
+        )
+    };
     fs::write(src_dir.join("index.ts"), &index_content)
         .map_err(|e| VoltError::FileSystem(e.to_string()))?;
+
+    // Generate one file per command
+    for cmd in &cmds {
+        let cmd_class: String = cmd
+            .name
+            .split('_')
+            .map(|w| {
+                let mut chars = w.chars();
+                match chars.next() {
+                    None => String::new(),
+                    Some(f) => f.to_uppercase().to_string() + chars.as_str(),
+                }
+            })
+            .collect();
+        let cmd_desc = cmd.description.as_deref().unwrap_or("");
+        let cmd_content = format!(
+            r#"// {title} command — {ext_name}
+// Docs: https://voltlaunchr.com/docs/plugins
+
+export default class {cmd_class} {{
+  id = '{ext_id}:{cmd_name}';
+  name = '{title}';
+  description = '{cmd_desc}';
+  enabled = true;
+
+  canHandle(context) {{
+    const query = context.query.trim().toLowerCase();
+    return query.includes('{cmd_name}');
+  }}
+
+  match(context) {{
+    if (!this.canHandle(context)) return null;
+    return [
+      {{
+        id: '{cmd_name}-result',
+        type: 'info',
+        title: '{title}',
+        subtitle: context.query.trim() || '{cmd_desc}',
+        score: 100,
+        data: {{ action: '{cmd_name}' }},
+      }},
+    ];
+  }}
+
+  async execute(_result) {{
+    window.VoltAPI?.notify('{title} executed!', 'success');
+  }}
+}}
+"#,
+            title = cmd.title,
+            ext_name = name.trim(),
+            cmd_class = cmd_class,
+            ext_id = id,
+            cmd_name = cmd.name,
+            cmd_desc = cmd_desc,
+        );
+        fs::write(src_dir.join(format!("{}.ts", cmd.name)), &cmd_content)
+            .map_err(|e| VoltError::FileSystem(e.to_string()))?;
+    }
 
     info!(
         "Scaffolded extension '{}' at {}",
