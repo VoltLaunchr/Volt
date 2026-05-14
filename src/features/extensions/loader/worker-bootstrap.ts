@@ -19,6 +19,11 @@ export type ActionCommand =
   | { action: 'toast'; message: string; subtitle?: string; style?: 'info' | 'success' | 'error'; duration?: number }
   | { action: 'fetch'; url: string; options?: Record<string, unknown> }
   | { action: 'saveCredential'; service: string; token: string }
+  | { action: 'showInFolder'; path: string }
+  | { action: 'moveToTrash'; path: string }
+  | { action: 'hud'; message: string }
+  | { action: 'updateMetadata'; title?: string; subtitle?: string }
+  | { action: 'pasteText'; text: string }
   | { action: 'noop' };
 
 /**
@@ -132,11 +137,19 @@ try {
   }
 } catch (_e) { /* best-effort; some engines have frozen navigator */ }
 
-// Block importScripts to prevent loading remote code (installed early so
-// top-level extension code cannot pull in attacker-controlled scripts).
-self.importScripts = function() {
-  throw new Error('importScripts is blocked in sandboxed extensions');
-};
+// Block importScripts — use defineProperty (non-configurable, non-writable)
+// so extension code cannot reassign it to bypass the block. A plain assignment
+// is writable by default and can be overridden via 'self.importScripts = origRef'. (M3/M9)
+try {
+  Object.defineProperty(self, 'importScripts', {
+    value: function() { throw new Error('importScripts is blocked in sandboxed extensions'); },
+    writable: false,
+    configurable: false,
+    enumerable: false,
+  });
+} catch (_e) {
+  try { self['importScripts'] = function() { throw new Error('importScripts is blocked in sandboxed extensions'); }; } catch (_e2) { /* best-effort */ }
+}
 
 // Block string-based setTimeout/setInterval (dynamic-compile vector)
 var _origSetTimeout = self.setTimeout;
@@ -191,6 +204,13 @@ try {
   try { console.warn('[volt-sandbox] constructor lockdown block failed (generator flavors unavailable?): ' + _e); } catch (_) {}
 }
 
+// Freeze the global scope's prototype chain so extension code cannot add
+// properties to WorkerGlobalScope.prototype that would be visible across all
+// extensions sharing the same realm, and cannot walk the chain to access
+// unblocked globals through prototype references. (M1 — defense in depth)
+try { Object.freeze(Object.getPrototypeOf(self)); } catch (_e) {}
+try { if (typeof globalThis !== 'undefined' && globalThis !== self) { Object.freeze(Object.getPrototypeOf(globalThis)); } } catch (_e) {}
+
 // Secure random number generator (Web Crypto API)
 function __secureRandomInt__(min, max) {
   const range = max - min;
@@ -217,6 +237,22 @@ var __storagePending__ = {};
 let __prefsCounter__ = 30000;
 var __prefsPending__ = {};
 
+// OAuth proxy infrastructure
+let __oauthCounter__ = 40000;
+var __oauthPending__ = {};
+
+// AI proxy infrastructure
+let __aiCounter__ = 50000;
+var __aiPending__ = {};
+
+// System proxy infrastructure
+let __systemCounter__ = 60000;
+var __systemPending__ = {};
+
+// Alert (confirm dialog) proxy infrastructure
+let __alertCounter__ = 70000;
+var __alertPending__ = {};
+
 // Mock VoltAPI (captures actions instead of executing them)
 const VoltAPI = {
   types: { PluginResultType },
@@ -238,6 +274,9 @@ const VoltAPI = {
       if (t.startsWith(q)) return 90;
       if (t.includes(q)) return 80;
       return 0;
+    },
+    pasteText: function(text) {
+      __pendingActions__.push({ action: 'pasteText', text: String(text) });
     },
   },
   invoke: function() {
@@ -306,6 +345,130 @@ const VoltAPI = {
   },
   saveCredential: function(service, token) {
     __pendingActions__.push({ action: 'saveCredential', service: service, token: token });
+  },
+  secrets: {
+    get: function(key) {
+      return new Promise(function(resolve, reject) {
+        var prefsId = ++__prefsCounter__;
+        __prefsPending__[prefsId] = { resolve: resolve, reject: reject };
+        self.postMessage({ type: 'prefs-request', id: prefsId, payload: { op: 'get-secret', key: key } });
+      });
+    },
+    set: function(key, value) {
+      return new Promise(function(resolve, reject) {
+        var prefsId = ++__prefsCounter__;
+        __prefsPending__[prefsId] = { resolve: resolve, reject: reject };
+        self.postMessage({ type: 'prefs-request', id: prefsId, payload: { op: 'set-secret', key: key, value: String(value) } });
+      });
+    },
+    delete: function(key) {
+      return new Promise(function(resolve, reject) {
+        var prefsId = ++__prefsCounter__;
+        __prefsPending__[prefsId] = { resolve: resolve, reject: reject };
+        self.postMessage({ type: 'prefs-request', id: prefsId, payload: { op: 'delete-secret', key: key } });
+      });
+    },
+  },
+  oauth: {
+    authorize: function(opts) {
+      return new Promise(function(resolve, reject) {
+        var oauthId = ++__oauthCounter__;
+        __oauthPending__[oauthId] = { resolve: resolve, reject: reject };
+        self.postMessage({ type: 'oauth-request', id: oauthId, payload: opts });
+      });
+    },
+    getToken: function(provider) {
+      return new Promise(function(resolve, reject) {
+        var oauthId = ++__oauthCounter__;
+        __oauthPending__[oauthId] = { resolve: resolve, reject: reject };
+        self.postMessage({ type: 'oauth-get-token', id: oauthId, payload: { provider: provider } });
+      });
+    },
+    revokeToken: function(provider) {
+      return new Promise(function(resolve, reject) {
+        var oauthId = ++__oauthCounter__;
+        __oauthPending__[oauthId] = { resolve: resolve, reject: reject };
+        self.postMessage({ type: 'oauth-revoke-token', id: oauthId, payload: { provider: provider } });
+      });
+    },
+  },
+  ai: {
+    ask: function(prompt, opts, onChunk) {
+      return new Promise(function(resolve, reject) {
+        var signal = opts && opts.signal;
+
+        // Reject immediately if already aborted
+        if (signal && signal.aborted) {
+          reject(new DOMException('The operation was aborted.', 'AbortError'));
+          return;
+        }
+
+        var aiId = ++__aiCounter__;
+        __aiPending__[aiId] = { resolve: resolve, reject: reject, onChunk: onChunk || null };
+
+        // Listen for abort — reject Promise and discard pending entry
+        if (signal) {
+          signal.addEventListener('abort', function() {
+            var req = __aiPending__[aiId];
+            if (req) {
+              delete __aiPending__[aiId];
+              req.reject(new DOMException('The operation was aborted.', 'AbortError'));
+            }
+          }, { once: true });
+        }
+
+        // Strip non-serializable fields (signal, functions) before postMessage
+        var msgOpts = {
+          provider: opts && opts.provider,
+          apiKeyPreference: opts && opts.apiKeyPreference,
+          model: opts && opts.model,
+          maxTokens: opts && opts.maxTokens,
+          system: opts && opts.system,
+          creativity: opts && opts.creativity,
+          temperature: opts && opts.temperature,
+        };
+        self.postMessage({ type: 'ai-request', id: aiId, payload: { prompt: prompt, options: msgOpts } });
+      });
+    },
+  },
+  system: {
+    getApplications: function() {
+      return new Promise(function(resolve, reject) {
+        var sysId = ++__systemCounter__;
+        __systemPending__[sysId] = { resolve: resolve, reject: reject };
+        self.postMessage({ type: 'system-request', id: sysId, payload: { op: 'getApplications' } });
+      });
+    },
+    showInFolder: function(path) {
+      __pendingActions__.push({ action: 'showInFolder', path: path });
+      return Promise.resolve();
+    },
+    moveToTrash: function(path) {
+      __pendingActions__.push({ action: 'moveToTrash', path: path });
+      return Promise.resolve();
+    },
+  },
+  captureException: function(error, context, severity) {
+    var message = (typeof error === 'string') ? error : (error && error.message ? error.message : String(error));
+    var stack = (error && error.stack) ? error.stack : undefined;
+    self.postMessage({ type: 'capture-exception', id: 0, payload: { message: message, stack: stack, context: context, severity: severity || 'error' } });
+  },
+  showHUD: function(message) {
+    __pendingActions__.push({ action: 'hud', message: String(message) });
+  },
+  confirm: function(message) {
+    return new Promise(function(resolve, reject) {
+      var alertId = ++__alertCounter__;
+      __alertPending__[alertId] = { resolve: resolve, reject: reject };
+      self.postMessage({ type: 'alert-request', id: alertId, payload: { message: String(message) } });
+    });
+  },
+  updateCommandMetadata: function(opts) {
+    __pendingActions__.push({
+      action: 'updateMetadata',
+      title: opts && opts.title,
+      subtitle: opts && opts.subtitle,
+    });
   },
   fetch: function(url, options) {
     return new Promise(function(resolve, reject) {
@@ -384,6 +547,62 @@ self.onmessage = function(event) {
       } else {
         prefsReq.resolve(payload ? payload.value : undefined);
       }
+    }
+    return;
+  }
+
+  if (type === 'oauth-response') {
+    var oauthReq = __oauthPending__[id];
+    if (oauthReq) {
+      delete __oauthPending__[id];
+      if (payload && payload.error) {
+        oauthReq.reject(new Error(payload.error));
+      } else {
+        oauthReq.resolve(payload || {});
+      }
+    }
+    return;
+  }
+
+  if (type === 'ai-chunk') {
+    var chunkReq = __aiPending__[id];
+    if (chunkReq && chunkReq.onChunk && payload && payload.text) {
+      try { chunkReq.onChunk(payload.text); } catch (_e) {}
+    }
+    return;
+  }
+
+  if (type === 'ai-response') {
+    var aiReq = __aiPending__[id];
+    if (aiReq) {
+      delete __aiPending__[id];
+      if (payload && payload.error) {
+        aiReq.reject(new Error(payload.error));
+      } else {
+        aiReq.resolve(payload ? payload.text : '');
+      }
+    }
+    return;
+  }
+
+  if (type === 'system-response') {
+    var sysReq = __systemPending__[id];
+    if (sysReq) {
+      delete __systemPending__[id];
+      if (payload && payload.error) {
+        sysReq.reject(new Error(payload.error));
+      } else {
+        sysReq.resolve(payload ? payload.value : undefined);
+      }
+    }
+    return;
+  }
+
+  if (type === 'alert-response') {
+    var alertReq = __alertPending__[id];
+    if (alertReq) {
+      delete __alertPending__[id];
+      alertReq.resolve(payload ? Boolean(payload.confirmed) : false);
     }
     return;
   }
