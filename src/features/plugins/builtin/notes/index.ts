@@ -1,0 +1,203 @@
+/**
+ * Notes Plugin — builtin launcher integration for the Notes feature.
+ *
+ * Triggers:
+ *   - `n` alone → show the most-recently-touched notes + "Open Notes" action
+ *   - `n <query>` → full-text search via the backend (FTS5) + "Create" action
+ *
+ * All results route to the dedicated Notes window via the `open_notes_window`
+ * Tauri command. Creating a new note here calls `create_note` then opens the
+ * window focused on the fresh note.
+ */
+
+import { invoke } from '@tauri-apps/api/core';
+import type { Plugin, PluginContext, PluginResult } from '../../types';
+import { PluginResultType } from '../../types';
+import { logger } from '../../../../shared/utils/logger';
+
+// Mirrors `Note` from `src/features/notes/types/notes.types.ts`. Duplicated
+// (rather than imported) so the launcher bundle doesn't pull the Notes UI
+// chunk for users who never type the `n` prefix.
+interface Note {
+  id: string;
+  title: string;
+  content: string;
+  tags: string[];
+  pinned: boolean;
+  color: string | null;
+  createdAt: number;
+  updatedAt: number;
+  accessedAt: number;
+  accessCount: number;
+  deletedAt: number | null;
+}
+
+interface NoteHit {
+  note: Note;
+  score: number;
+  /** HTML excerpt with `<mark>…</mark>` — DO NOT render as HTML. */
+  snippet: string;
+}
+
+const MAX_RESULTS = 6;
+const PLUGIN_ID = 'notes';
+const PREFIX_PATTERN = /^n[\s:]*(.*)$/i;
+
+// Result `data` payload shapes — discriminated by `action`.
+type NotesAction = 'open' | 'create' | 'open-window';
+interface NotesActionData extends Record<string, unknown> {
+  action: NotesAction;
+  noteId?: string;
+  draftTitle?: string;
+}
+
+export class NotesPlugin implements Plugin {
+  id = PLUGIN_ID;
+  name = 'Notes';
+  description = 'Search, open, and create markdown notes';
+  enabled = true;
+
+  canHandle(context: PluginContext): boolean {
+    const q = context.query;
+    if (!q) return false;
+    // Exactly `n` (browsing) or starts with `n ` / `n:`.
+    return q === 'n' || q === 'N' || /^n[\s:]/i.test(q);
+  }
+
+  async match(context: PluginContext): Promise<PluginResult[]> {
+    const query = stripPrefix(context.query);
+    const results: PluginResult[] = [];
+
+    if (query.length === 0) {
+      // Browse mode: top recent active notes.
+      let notes: Note[] = [];
+      try {
+        notes = await invoke<Note[]>('get_notes');
+      } catch (err) {
+        logger.warn('NotesPlugin: get_notes failed', err);
+      }
+      notes.slice(0, MAX_RESULTS).forEach((note, idx) => {
+        results.push(buildNoteResult(note, 90 - idx));
+      });
+    } else {
+      // Search mode: FTS5 hits.
+      let hits: NoteHit[] = [];
+      try {
+        hits = await invoke<NoteHit[]>('search_notes', {
+          query,
+          limit: MAX_RESULTS,
+        });
+      } catch (err) {
+        logger.warn('NotesPlugin: search_notes failed', err);
+      }
+      hits.forEach((hit, idx) => {
+        results.push(buildNoteResult(hit.note, 85 - idx, hit.snippet));
+      });
+
+      // "Create" action is offered whenever the query has actual content.
+      // Score below the top hit but above the "Open window" footer.
+      results.push({
+        id: 'notes-create',
+        type: PluginResultType.Info,
+        pluginId: PLUGIN_ID,
+        title: `➕ Create note: ${query}`,
+        subtitle: 'Press Enter to create and open in Notes',
+        badge: 'New',
+        score: 55,
+        data: { action: 'create', draftTitle: query } satisfies NotesActionData,
+      });
+    }
+
+    // Always offer "Open Notes window" as a low-score footer entry.
+    results.push({
+      id: 'notes-open-window',
+      type: PluginResultType.Info,
+      pluginId: PLUGIN_ID,
+      title: '📓 Open Notes',
+      subtitle: 'Open the dedicated Notes window',
+      badge: 'Window',
+      score: 30,
+      data: { action: 'open-window' } satisfies NotesActionData,
+    });
+
+    return results;
+  }
+
+  async execute(result: PluginResult): Promise<void> {
+    const data = result.data as NotesActionData | undefined;
+    if (!data) return;
+
+    switch (data.action) {
+      case 'open':
+        if (!data.noteId) return;
+        await openWindow(data.noteId);
+        break;
+      case 'create': {
+        let created: Note;
+        try {
+          created = await invoke<Note>('create_note', {
+            title: data.draftTitle ?? null,
+            content: null,
+            tags: null,
+          });
+        } catch (err) {
+          logger.error('NotesPlugin: create_note failed', err);
+          return;
+        }
+        await openWindow(created.id);
+        break;
+      }
+      case 'open-window':
+        await openWindow(null);
+        break;
+    }
+  }
+}
+
+function stripPrefix(raw: string): string {
+  // Accept `n`, `n `, `n:`, `n: ` and anything in between.
+  const m = raw.match(PREFIX_PATTERN);
+  if (!m) return raw.trim();
+  return m[1].trim();
+}
+
+function buildNoteResult(note: Note, score: number, snippet?: string): PluginResult {
+  const title = note.title.trim() || 'Untitled';
+  const subtitle = snippet ? stripMarks(snippet) : previewOf(note.content);
+  const badge = note.pinned ? '★ Pinned' : 'Note';
+  return {
+    id: `note-${note.id}`,
+    type: PluginResultType.Info,
+    pluginId: PLUGIN_ID,
+    title,
+    subtitle: subtitle || 'Empty note',
+    badge,
+    score,
+    data: { action: 'open', noteId: note.id } satisfies NotesActionData,
+  };
+}
+
+/** Strip the `<mark>…</mark>` tags from FTS5 snippets — we don't render HTML. */
+function stripMarks(snippet: string): string {
+  return snippet.replace(/<\/?mark>/g, '').replace(/\s+/g, ' ').trim();
+}
+
+/** Tiny markdown stripper for the inline preview — same logic as NoteListItem. */
+function previewOf(content: string, max = 80): string {
+  const cleaned = content
+    .replace(/^#{1,6}\s+/gm, '')
+    .replace(/[*_`~]+/g, '')
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return cleaned.length > max ? `${cleaned.slice(0, max - 1)}…` : cleaned;
+}
+
+async function openWindow(noteId: string | null): Promise<void> {
+  try {
+    await invoke<void>('open_notes_window', { noteId });
+  } catch (err) {
+    logger.error('NotesPlugin: open_notes_window failed', err);
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "title": "Notes",
+  "newNote": "Nouvelle note",
+  "search": "Rechercher des notes…",
+  "clearSearch": "Effacer la recherche",
+  "empty": "Aucune note pour le moment",
+  "noResults": "Aucune note ne correspond",
+  "loading": "Chargement…",
+  "createFirst": "Appuyez sur Cmd+N pour créer votre première note",
+  "untitled": "Sans titre",
+  "pinned": "Épinglée",
+  "titlePlaceholder": "Titre de la note",
+  "writePlaceholder": "Commencez à écrire…",
+  "selectOrCreate": "Sélectionnez une note ou créez-en une",
+  "deleteConfirm": "Supprimer cette note ? Elle sera mise à la corbeille.",
+  "delete": "Supprimer",
+  "pin": "Épingler",
+  "unpin": "Désépingler",
+  "saveStatus": {
+    "idle": "",
+    "saving": "Enregistrement…",
+    "saved": "Enregistré",
+    "error": "Échec de l'enregistrement"
+  }
+}

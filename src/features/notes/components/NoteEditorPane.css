@@ -1,0 +1,106 @@
+/* NoteEditorPane — title input + editor body + save status. */
+
+.note-editor-pane {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.note-editor-pane__head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--color-hairline, rgba(127, 127, 127, 0.18));
+}
+
+.note-editor-pane__title {
+  flex: 1 1 auto;
+  min-width: 0;
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--color-ink, inherit);
+  font-family: inherit;
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  padding: 4px 0;
+  outline: none;
+}
+.note-editor-pane__title::placeholder {
+  color: var(--color-ash, #94a3b8);
+  font-weight: 500;
+}
+
+.note-editor-pane__actions {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.note-editor-pane__status {
+  font-size: 11px;
+  color: var(--color-ash, #94a3b8);
+  font-variant-numeric: tabular-nums;
+  min-width: 70px;
+  text-align: right;
+  transition: color 200ms ease;
+}
+.note-editor-pane__status[data-state='saved'] {
+  color: var(--color-success, #4ade80);
+}
+.note-editor-pane__status[data-state='error'] {
+  color: var(--color-danger, #f87171);
+}
+.note-editor-pane__status[data-state='saving'] {
+  color: var(--color-primary, #60a5fa);
+}
+
+.note-editor-pane__btn {
+  appearance: none;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--color-body, #cbd5e1);
+  width: 30px;
+  height: 30px;
+  border-radius: 6px;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  transition: background 120ms ease;
+}
+.note-editor-pane__btn:hover {
+  background: var(--color-hairline, rgba(127, 127, 127, 0.15));
+  color: var(--color-ink, inherit);
+}
+.note-editor-pane__btn[aria-pressed='true'] {
+  color: var(--color-primary, #fbbf24);
+}
+.note-editor-pane__btn--danger:hover {
+  color: var(--color-danger, #f87171);
+}
+
+.note-editor-pane__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.note-editor-pane__loading {
+  padding: 24px;
+  font-size: 12px;
+  color: var(--color-ash, #94a3b8);
+  text-align: center;
+}
