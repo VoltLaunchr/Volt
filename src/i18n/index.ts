@@ -21,6 +21,9 @@ import enTimer from '../features/plugins/builtin/timer/locales/en.json';
 import enGames from '../features/plugins/builtin/games/locales/en.json';
 import enEmojiPicker from '../features/plugins/builtin/emoji-picker/locales/en.json';
 
+// Feature namespace imports — EN
+import enNotes from '../features/notes/locales/en.json';
+
 // Global namespace imports — FR
 import frCommon from './locales/fr/common.json';
 import frSettings from './locales/fr/settings.json';
@@ -40,6 +43,9 @@ import frSystemMonitor from '../features/plugins/builtin/systemmonitor/locales/f
 import frTimer from '../features/plugins/builtin/timer/locales/fr.json';
 import frGames from '../features/plugins/builtin/games/locales/fr.json';
 import frEmojiPicker from '../features/plugins/builtin/emoji-picker/locales/fr.json';
+
+// Feature namespace imports — FR
+import frNotes from '../features/notes/locales/fr.json';
 
 const SUPPORTED_LANGUAGES = ['en', 'fr'] as const;
 type SupportedLanguage = (typeof SUPPORTED_LANGUAGES)[number];
@@ -94,6 +100,7 @@ export async function initI18n(savedLanguage?: string): Promise<void> {
     ns: [
       'common', 'settings', 'help', 'onboarding', 'results', 'clipboard', 'fileSearch', 'extensions', 'changelog',
       'calculator', 'websearch', 'systemcommands', 'systemmonitor', 'timer', 'games', 'emoji-picker',
+      'notes',
     ],
     defaultNS: 'common',
     interpolation: {
@@ -120,6 +127,7 @@ export async function initI18n(savedLanguage?: string): Promise<void> {
         timer: enTimer,
         games: enGames,
         'emoji-picker': enEmojiPicker,
+        notes: enNotes,
       },
       fr: {
         common: frCommon,
@@ -138,6 +146,7 @@ export async function initI18n(savedLanguage?: string): Promise<void> {
         timer: frTimer,
         games: frGames,
         'emoji-picker': frEmojiPicker,
+        notes: frNotes,
       },
     },
   });

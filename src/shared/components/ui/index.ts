@@ -37,3 +37,6 @@ export { OnboardingModal } from './OnboardingModal';
 export { PreviewPanel } from './PreviewPanel';
 
 export { Keycap } from './Keycap';
+
+export { AlertDialog } from './AlertDialog';
+export type { AlertDialogProps } from './AlertDialog';

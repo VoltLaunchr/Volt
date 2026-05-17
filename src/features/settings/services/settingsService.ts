@@ -1,4 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
+import { extractErrorMessage } from '../../../shared/utils/error';
 import { logger } from '../../../shared/utils/logger';
 import {
   AppearanceSettings,
@@ -11,7 +12,7 @@ import {
   Theme,
 } from '../types/settings.types';
 
-const errorMessage = (err: unknown): string => (err instanceof Error ? err.message : String(err));
+const errorMessage = extractErrorMessage;
 
 /**
  * Settings service for interacting with the Tauri backend

@@ -4,10 +4,10 @@
  */
 
 import { invoke } from '@tauri-apps/api/core';
-import { logger } from '../../../shared/utils';
+import { extractErrorMessage, logger } from '../../../shared/utils';
 import type { LaunchRecord } from '../types/launcher.types';
 
-const errorMessage = (err: unknown): string => (err instanceof Error ? err.message : String(err));
+const errorMessage = extractErrorMessage;
 
 /**
  * Service for launching applications and managing history

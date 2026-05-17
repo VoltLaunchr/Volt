@@ -12,6 +12,7 @@ import {
   Terminal,
   User,
   RefreshCw,
+  StickyNote,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -28,7 +29,10 @@ export type SettingsCategory =
   | 'plugins'
   | 'file-search'
   | 'clipboard'
-  | 'shell';
+  | 'shell'
+  | 'emoji'
+  | 'ai'
+  | 'notes';
 
 export interface CategoryItem {
   id: SettingsCategory;
@@ -58,4 +62,7 @@ export const SETTINGS_CATEGORIES: CategoryItem[] = [
   { id: 'file-search', label: 'File Search', icon: Search, section: 'BUILT-IN', iconSrc: `${APP_ICON}/file_search_icon.svg` },
   { id: 'clipboard', label: 'Clipboard History', icon: Clipboard, section: 'BUILT-IN', iconSrc: `${APP_ICON}/clipboard_history_icon.svg` },
   { id: 'shell', label: 'Shell Commands', icon: Terminal, section: 'BUILT-IN', iconSrc: `${APP_ICON}/shell_icon.svg` },
+  { id: 'emoji', label: 'Emoji & Symbols', icon: Package, section: 'BUILT-IN', iconSrc: `${APP_ICON}/plugin_icon.svg` },
+  { id: 'ai', label: 'AI', icon: Package, section: 'BUILT-IN', iconSrc: `${APP_ICON}/ai_icon.svg` },
+  { id: 'notes', label: 'Notes', icon: StickyNote, section: 'BUILT-IN' },
 ];

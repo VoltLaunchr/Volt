@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { Fragment, useEffect, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { SearchResult, SearchResultType } from '../../../shared/types/common.types';
 import { ResultItem } from './ResultItem';
@@ -154,30 +154,69 @@ export function ResultsList({
                 {section.label}
               </div>
             )}
-            {section.results.map(({ result, globalIndex }) => (
-              <div
-                key={`${result.id}-${globalIndex}`}
-                ref={globalIndex === selectedIndex ? selectedRef : null}
-                id={`result-item-${globalIndex}`}
-                role="option"
-                aria-selected={globalIndex === selectedIndex}
-                aria-label={`${result.title}${result.subtitle ? ` - ${result.subtitle}` : ''}`}
-                tabIndex={globalIndex === selectedIndex ? 0 : -1}
-                onClick={() => onLaunch(result)}
-                onMouseEnter={() => onSelect(globalIndex)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    onLaunch(result);
-                  }
-                }}
-              >
-                <ResultItem
-                  result={result}
-                  isSelected={globalIndex === selectedIndex}
-                />
+            {/* Grid sections: all items in this section use layout='grid' */}
+            {section.results.every(({ result }) => result.layout === 'grid') ? (
+              <div className="grid grid-cols-4 gap-2 px-3 py-2">
+                {section.results.map(({ result, globalIndex }) => (
+                  <div
+                    key={`${result.id}-${globalIndex}`}
+                    ref={globalIndex === selectedIndex ? selectedRef : null}
+                    id={`result-item-${globalIndex}`}
+                    role="option"
+                    aria-selected={globalIndex === selectedIndex}
+                    aria-label={result.title}
+                    tabIndex={globalIndex === selectedIndex ? 0 : -1}
+                    onClick={() => onLaunch(result)}
+                    onMouseEnter={() => onSelect(globalIndex)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        onLaunch(result);
+                      }
+                    }}
+                  >
+                    <ResultItem result={result} isSelected={globalIndex === selectedIndex} />
+                  </div>
+                ))}
               </div>
-            ))}
+            ) : (
+              section.results.map(({ result, globalIndex }, itemIndex) => {
+                const prevSection =
+                  itemIndex > 0 ? section.results[itemIndex - 1].result.section : undefined;
+                const showSubHeader = result.section && result.section !== prevSection;
+
+                return (
+                  <Fragment key={`${result.id}-${globalIndex}`}>
+                    {showSubHeader && (
+                      <div
+                        className="px-3 pt-2 pb-0.5 text-[10px] font-semibold text-stone uppercase tracking-widest select-none"
+                        aria-hidden="true"
+                      >
+                        {result.section}
+                      </div>
+                    )}
+                    <div
+                      ref={globalIndex === selectedIndex ? selectedRef : null}
+                      id={`result-item-${globalIndex}`}
+                      role="option"
+                      aria-selected={globalIndex === selectedIndex}
+                      aria-label={`${result.title}${result.subtitle ? ` - ${result.subtitle}` : ''}`}
+                      tabIndex={globalIndex === selectedIndex ? 0 : -1}
+                      onClick={() => onLaunch(result)}
+                      onMouseEnter={() => onSelect(globalIndex)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          onLaunch(result);
+                        }
+                      }}
+                    >
+                      <ResultItem result={result} isSelected={globalIndex === selectedIndex} />
+                    </div>
+                  </Fragment>
+                );
+              })
+            )}
           </div>
         ))}
       </div>

@@ -1,5 +1,22 @@
 // Plugin system types
 
+export type ActionHandler =
+  | 'openUrl'
+  | 'copyToClipboard'
+  | 'openFile'
+  | 'runCommand'
+  | 'custom';
+
+export interface PluginResultAction {
+  id: string;
+  title: string;
+  icon?: string;
+  /** e.g. "cmd+shift+c" */
+  shortcut?: string;
+  handler: ActionHandler;
+  data?: Record<string, unknown>;
+}
+
 export enum PluginResultType {
   Calculator = 'calculator',
   WebSearch = 'websearch',
@@ -14,6 +31,19 @@ export enum PluginResultType {
   Info = 'info',
   Password = 'password',
   ShellCommand = 'shellcommand',
+  GridItem = 'grid',
+  AiChat = 'aichat',
+}
+
+/**
+ * Raycast-style right-side accessory chip.
+ * [SYNC: src/shared/types/common.types.ts::PluginResultAccessory]
+ */
+export interface PluginResultAccessory {
+  icon?: string;
+  text?: string;
+  color?: string;
+  tag?: boolean;
 }
 
 export interface PluginResult {
@@ -26,6 +56,13 @@ export interface PluginResult {
   score: number;
   data?: Record<string, unknown>;
   pluginId?: string; // ID of the plugin that created this result
+  actions?: PluginResultAction[];
+  /** Raycast-style right-side accessories: CI, review decision, date, stars… */
+  accessories?: PluginResultAccessory[];
+  /** Sub-section label for grouping within the results list */
+  section?: string;
+  /** Render this result in a grid layout (used with PluginResultType.GridItem) */
+  layout?: 'grid';
 }
 
 export interface PluginContext {

@@ -194,10 +194,10 @@ pub async fn extension_authenticated_fetch(
     req = match extension_id.as_str() {
         "github" => {
             let mut r = req.header("User-Agent", "Volt-GitHub-Extension/1.2.0");
-            if let Some(ref t) = maybe_token {
-                if !t.trim().is_empty() {
-                    r = r.header("Authorization", format!("Bearer {}", t.trim()));
-                }
+            if let Some(ref t) = maybe_token
+                && !t.trim().is_empty()
+            {
+                r = r.header("Authorization", format!("Bearer {}", t.trim()));
             }
             r
         }

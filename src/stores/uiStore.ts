@@ -10,7 +10,11 @@ export type ActiveView =
   | { type: 'calculator' }
   | { type: 'games' }
   | { type: 'changelog' }
-  | { type: 'timer' };
+  | { type: 'timer' }
+  | { type: 'create-extension' }
+  | { type: 'manage-extensions' }
+  | { type: 'ai-chat'; initialQuery?: string; systemPrompt?: string }
+  | { type: 'quick-ai'; initialQuery: string; systemPrompt?: string };
 
 export interface ContextMenuState {
   isOpen: boolean;
@@ -24,6 +28,11 @@ export interface PermissionRequest {
   resolve: (granted: ExtensionPermission[]) => void;
 }
 
+export interface AlertRequest {
+  message: string;
+  resolve: (confirmed: boolean) => void;
+}
+
 interface UiState {
   activeView: ActiveView;
   contextMenu: ContextMenuState;
@@ -34,6 +43,7 @@ interface UiState {
   isActionsMenuOpen: boolean;
   actionsMenuResult: SearchResult | null;
   permissionRequest: PermissionRequest | null;
+  alertRequest: AlertRequest | null;
 }
 
 interface UiActions {
@@ -47,6 +57,7 @@ interface UiActions {
   openActionsMenu: (result: SearchResult) => void;
   closeActionsMenu: () => void;
   setPermissionRequest: (request: PermissionRequest | null) => void;
+  setAlertRequest: (request: AlertRequest | null) => void;
 }
 
 export const useUiStore = create<UiState & UiActions>()((set) => ({
@@ -59,6 +70,7 @@ export const useUiStore = create<UiState & UiActions>()((set) => ({
   isActionsMenuOpen: false,
   actionsMenuResult: null,
   permissionRequest: null,
+  alertRequest: null,
 
   setActiveView: (view) => set({ activeView: view }),
   openContextMenu: (position, result) =>
@@ -72,4 +84,5 @@ export const useUiStore = create<UiState & UiActions>()((set) => ({
   openActionsMenu: (result) => set({ isActionsMenuOpen: true, actionsMenuResult: result }),
   closeActionsMenu: () => set({ isActionsMenuOpen: false, actionsMenuResult: null }),
   setPermissionRequest: (request) => set({ permissionRequest: request }),
+  setAlertRequest: (request) => set({ alertRequest: request }),
 }));

@@ -43,11 +43,14 @@ export interface IndexingSettings {
   excludedPaths: string[];
   fileExtensions: string[];
   indexOnStartup: boolean;
+  deepSearch: boolean;
 }
 
 export interface PluginSettings {
   enabledPlugins: string[];
   clipboardMonitoring: boolean;
+  clipboardRetentionDays: number;
+  clipboardDisabledApps: string[];
 }
 
 export interface Integration {
@@ -183,6 +186,7 @@ export const DEFAULT_SETTINGS: Settings = {
     ],
     fileExtensions: ['pdf', 'docx', 'doc', 'txt', 'xlsx', 'xls', 'pptx', 'ppt', 'md', 'csv'],
     indexOnStartup: true,
+    deepSearch: false,
   },
   plugins: {
     enabledPlugins: [
@@ -197,6 +201,8 @@ export const DEFAULT_SETTINGS: Settings = {
       'window-management',
     ],
     clipboardMonitoring: true,
+    clipboardRetentionDays: 30,
+    clipboardDisabledApps: [],
   },
   shortcuts: {
     appShortcuts: [],

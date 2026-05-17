@@ -1,3 +1,4 @@
+export { extractErrorMessage } from './error';
 export { logger } from './logger';
 export type { Logger } from './logger';
 export { highlightMatch } from './highlightMatch';

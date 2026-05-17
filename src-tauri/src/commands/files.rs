@@ -182,6 +182,7 @@ pub async fn start_indexing(
     excluded_paths: Vec<String>,
     file_extensions: Vec<String>,
     force: Option<bool>,
+    deep_search: Option<bool>,
 ) -> VoltResult<()> {
     // Atomically check-and-set `is_indexing` in a single lock acquisition to
     // prevent a TOCTOU race where two concurrent calls both pass the check
@@ -207,11 +208,12 @@ pub async fn start_indexing(
             .config
             .lock()
             .map_err(|e| VoltError::Unknown(e.to_string()))?;
+        let max_depth = if deep_search.unwrap_or(false) { 10 } else { 3 };
         *cfg = IndexConfig {
             folders: folders.clone(),
             excluded_paths: excluded_paths.clone(),
             file_extensions: file_extensions.clone(),
-            max_depth: 10,
+            max_depth,
             max_file_size: 100 * 1024 * 1024,
         };
     }
@@ -230,11 +232,12 @@ pub async fn start_indexing(
         // whether the future completes normally, panics, or is aborted.
         let _guard = IndexingGuard::new(guard_status);
 
+
         let config = IndexConfig {
             folders,
             excluded_paths,
             file_extensions,
-            max_depth: 10,
+            max_depth: if deep_search.unwrap_or(false) { 10 } else { 3 },
             max_file_size: 100 * 1024 * 1024, // 100MB limit
         };
 
@@ -883,6 +886,7 @@ pub async fn invalidate_index(
         // Owned by this future — its Drop clears `is_indexing` regardless of
         // whether the future completes normally, panics, or is aborted.
         let _guard = IndexingGuard::new(guard_status);
+
 
         // Offload the blocking filesystem walk to the dedicated thread pool.
         let scan_result = tokio::task::spawn_blocking(move || scan_files(&config)).await;

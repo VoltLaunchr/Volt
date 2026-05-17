@@ -86,6 +86,12 @@ export interface SearchResult {
   badge?: string; // Badge text displayed on the right (e.g., "Game", "App")
   score: number;
   data: AppInfo | FileInfo | PluginResultData;
+  /** Raycast-style right-side accessories passed through from PluginResult */
+  accessories?: PluginResultAccessory[];
+  /** Sub-section label for grouping plugin results (e.g. "Open", "Review Requested") */
+  section?: string;
+  /** Grid layout hint — render this result as a grid card instead of a list row */
+  layout?: 'grid';
 }
 
 /**
@@ -104,6 +110,8 @@ export enum SearchResultType {
   Game = 'game',
   ShellCommand = 'shellcommand',
   Url = 'url',
+  GridItem = 'grid',
+  AiChat = 'aichat',
 }
 
 /**
@@ -162,6 +170,35 @@ export interface FileSearchResult extends FileInfo {
 }
 
 /**
+ * First-class action attached to a plugin result (e.g. "Open URL", "Copy").
+ * [SYNC: src/features/plugins/types/index.ts::PluginResultAction]
+ */
+export interface PluginResultAction {
+  id: string;
+  title: string;
+  icon?: string;
+  shortcut?: string;
+  handler: 'openUrl' | 'copyToClipboard' | 'openFile' | 'runCommand' | 'custom';
+  data?: Record<string, unknown>;
+}
+
+/**
+ * Raycast-style right-side accessory for a plugin result.
+ * Renders as small chips: [icon] [text] or a colored pill when tag=true.
+ * [SYNC: src/features/plugins/types/index.ts::PluginResultAccessory]
+ */
+export interface PluginResultAccessory {
+  /** Emoji or short glyph rendered as an icon */
+  icon?: string;
+  /** Label text shown next to the icon */
+  text?: string;
+  /** CSS hex color applied to text (and translucent bg when tag=true) */
+  color?: string;
+  /** Render as a colored pill badge instead of plain inline text */
+  tag?: boolean;
+}
+
+/**
  * Plugin result data — generic plugin result from the plugins system.
  *
  * [SYNC: src/features/plugins/types/index.ts::PluginResult]
@@ -178,6 +215,13 @@ export interface PluginResultData {
   pluginId?: string;
   score: number;
   data?: Record<string, unknown>;
+  actions?: PluginResultAction[];
+  /** Raycast-style right-side accessories: CI state, review decision, date, stars… */
+  accessories?: PluginResultAccessory[];
+  /** Optional sub-section label for grouping within a result bucket */
+  section?: string;
+  /** Grid layout hint — render this result as a grid card */
+  layout?: 'grid';
 }
 
 /**

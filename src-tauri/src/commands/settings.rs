@@ -122,6 +122,8 @@ pub struct IndexingSettings {
     pub excluded_paths: Vec<String>,
     pub file_extensions: Vec<String>,
     pub index_on_startup: bool,
+    #[serde(default)]
+    pub deep_search: bool,
 }
 
 /// Standard directory names that are always excluded from the file index.
@@ -179,6 +181,7 @@ impl Default for IndexingSettings {
                 "csv".into(),
             ],
             index_on_startup: true,
+            deep_search: false,
         }
     }
 }
@@ -189,6 +192,14 @@ impl Default for IndexingSettings {
 pub struct PluginSettings {
     pub enabled_plugins: Vec<String>,
     pub clipboard_monitoring: bool,
+    #[serde(default = "default_clipboard_retention_days")]
+    pub clipboard_retention_days: u32,
+    #[serde(default)]
+    pub clipboard_disabled_apps: Vec<String>,
+}
+
+fn default_clipboard_retention_days() -> u32 {
+    30
 }
 
 impl Default for PluginSettings {
@@ -204,6 +215,8 @@ impl Default for PluginSettings {
                 "clipboard-manager".to_string(),
             ],
             clipboard_monitoring: true,
+            clipboard_retention_days: default_clipboard_retention_days(),
+            clipboard_disabled_apps: Vec::new(),
         }
     }
 }
@@ -616,6 +629,66 @@ fn validate_settings_path(path: &str, required_extension: Option<&str>) -> VoltR
     Ok(canonical_parent.join(file_name))
 }
 
+/// Validate a path for *importing* settings.
+///
+/// Applies all checks from `validate_settings_path` and additionally restricts
+/// the path to the user's home directory, excluding application-data
+/// subdirectories (AppData / Library / .config) so that `import_settings`
+/// cannot be abused as a file-read primitive for other apps' JSON configs.
+fn validate_import_path(path: &str) -> VoltResult<PathBuf> {
+    // Base checks: traversal, .json extension, system-dir blocklist, symlink resolution.
+    let validated = validate_settings_path(path, Some("json"))?;
+
+    // `validated` is canonical_parent/filename; .parent() is the resolved dir.
+    let canonical_parent = validated
+        .parent()
+        .ok_or_else(|| VoltError::FileSystem("Invalid path: no parent directory".to_string()))?;
+    let canonical_str = canonical_parent.to_str().unwrap_or_default().to_lowercase();
+
+    let home_dir = dirs::home_dir()
+        .ok_or_else(|| VoltError::FileSystem("Cannot determine home directory".to_string()))?;
+    let home_str = home_dir.to_str().unwrap_or_default().to_lowercase();
+
+    // Must reside under the user's home directory.
+    if !canonical_str.starts_with(&home_str) {
+        return Err(VoltError::PermissionDenied(
+            "Settings import is only allowed from within your home directory".to_string(),
+        ));
+    }
+
+    // Block application-data subdirs to prevent reading other apps' JSON configs.
+    #[cfg(target_os = "windows")]
+    {
+        let appdata = format!("{}\\appdata", home_str);
+        if canonical_str.starts_with(&appdata) {
+            return Err(VoltError::PermissionDenied(
+                "Settings import from AppData directories is not allowed".to_string(),
+            ));
+        }
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let library = format!("{}/library", home_str);
+        if canonical_str.starts_with(&library) {
+            return Err(VoltError::PermissionDenied(
+                "Settings import from Library directories is not allowed".to_string(),
+            ));
+        }
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    {
+        let dot_config = format!("{}/.config", home_str);
+        let dot_local = format!("{}/.local", home_str);
+        if canonical_str.starts_with(&dot_config) || canonical_str.starts_with(&dot_local) {
+            return Err(VoltError::PermissionDenied(
+                "Settings import from config directories is not allowed".to_string(),
+            ));
+        }
+    }
+
+    Ok(validated)
+}
+
 /// Export settings to a JSON file at the given path
 #[tauri::command]
 pub async fn export_settings(app_handle: AppHandle, path: String) -> VoltResult<String> {
@@ -694,8 +767,9 @@ fn sanitize_imported_paths(paths: Vec<String>) -> Vec<String> {
 /// Import settings from a JSON file at the given path
 #[tauri::command]
 pub async fn import_settings(app_handle: AppHandle, path: String) -> VoltResult<Settings> {
-    // Enforce .json extension; reuse the same validator used for export paths.
-    let validated_path = validate_settings_path(&path, Some("json"))?;
+    // Scope-restricted validator: blocks AppData/Library/.config in addition to the
+    // base checks (traversal, .json extension, system dirs, symlink resolution).
+    let validated_path = validate_import_path(&path)?;
 
     // Cap at 1 MiB before parsing to prevent a 2 GB JSON blob from exhausting memory.
     const MAX_IMPORT_BYTES: usize = 1_048_576;

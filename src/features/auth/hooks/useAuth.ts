@@ -5,6 +5,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
+import { extractErrorMessage } from '../../../shared/utils/error';
 import { logger } from '../../../shared/utils/logger';
 import { authService } from '../services/authService';
 import type { AuthSession, UserProfile, UserTier } from '../types';
@@ -54,7 +55,7 @@ export function useAuth(): UseAuthReturn {
       setState({ session, profile, isLoading: false, error: null });
       return session;
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = extractErrorMessage(err);
       logger.error('[useAuth] Failed to load auth state:', msg);
       setState((prev) => ({ ...prev, isLoading: false, error: msg }));
       return null;
@@ -165,7 +166,7 @@ export function useAuth(): UseAuthReturn {
     try {
       await authService.login();
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = extractErrorMessage(err);
       setState((prev) => ({ ...prev, error: msg }));
     }
   }, []);
@@ -178,7 +179,7 @@ export function useAuth(): UseAuthReturn {
         clearTimeout(refreshTimerRef.current);
       }
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = extractErrorMessage(err);
       setState((prev) => ({ ...prev, error: msg }));
     }
   }, []);
@@ -191,7 +192,7 @@ export function useAuth(): UseAuthReturn {
         scheduleRefresh(session);
       }
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = extractErrorMessage(err);
       setState((prev) => ({ ...prev, error: msg }));
     }
   }, [loadAuthState, scheduleRefresh]);

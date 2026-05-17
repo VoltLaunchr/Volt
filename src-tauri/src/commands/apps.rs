@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
-use tokio::sync::RwLock;
+use tokio::sync::{Mutex, RwLock};
 #[cfg(target_os = "windows")]
 use tokio::sync::Semaphore;
 #[cfg(target_os = "windows")]
@@ -358,6 +358,14 @@ impl ScanCache {
 static SCAN_CACHE: once_cell::sync::Lazy<Arc<RwLock<Option<ScanCache>>>> =
     once_cell::sync::Lazy::new(|| Arc::new(RwLock::new(None)));
 
+// Single-flight lock: serializes concurrent fresh scans so a second caller
+// piggybacks on the first's result via the cache instead of running its own
+// scan in parallel. Without this, two simultaneous scan_applications calls
+// would both miss the cache, both run a full scan, and the doubled icon
+// extraction + .lnk parsing can OOM the process.
+static SCAN_LOCK: once_cell::sync::Lazy<Mutex<()>> =
+    once_cell::sync::Lazy::new(|| Mutex::new(()));
+
 /// Scans system for installed applications (cross-platform)
 /// Uses caching to avoid expensive rescans
 #[tauri::command]
@@ -379,13 +387,35 @@ pub async fn scan_applications_fresh() -> VoltResult<Vec<AppInfo>> {
 
 /// Scans applications with option to force refresh cache
 async fn scan_applications_with_options(force_refresh: bool) -> VoltResult<Vec<AppInfo>> {
-    // Check cache first
+    // Fast path: cache hit before acquiring the single-flight lock.
     if !force_refresh {
         let cache = SCAN_CACHE.read().await;
         if let Some(cached) = cache.as_ref()
             && !cached.is_expired(Duration::from_secs(300))
         {
             info!("Using cached application scan ({} apps)", cached.apps.len());
+            let arc = Arc::clone(&cached.apps);
+            drop(cache);
+            return Ok((*arc).clone());
+        }
+    }
+
+    // Serialize concurrent fresh scans. Whoever wins the lock runs the scan;
+    // anyone waiting will fall through to the double-check below and grab the
+    // freshly-written cache instead of running a duplicate scan.
+    let _scan_guard = SCAN_LOCK.lock().await;
+
+    // Double-check the cache: while we were waiting on the lock, another
+    // caller may have already populated it.
+    if !force_refresh {
+        let cache = SCAN_CACHE.read().await;
+        if let Some(cached) = cache.as_ref()
+            && !cached.is_expired(Duration::from_secs(300))
+        {
+            info!(
+                "Using cached application scan after wait ({} apps)",
+                cached.apps.len()
+            );
             let arc = Arc::clone(&cached.apps);
             drop(cache);
             return Ok((*arc).clone());

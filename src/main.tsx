@@ -148,6 +148,11 @@ async function bootstrap(): Promise<void> {
       root.render(wrap(<SystemMonitorPage />));
       break;
     }
+    case 'notes': {
+      const { NotesPage } = await import('./pages/NotesPage');
+      root.render(wrap(<NotesPage />));
+      break;
+    }
     default: {
       const { MainPage } = await import('./pages/MainPage');
       root.render(wrap(<MainPage />));

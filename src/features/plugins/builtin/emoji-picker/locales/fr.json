@@ -18,7 +18,8 @@
       "activity": "Activités",
       "objects": "Objets",
       "symbols": "Symboles",
-      "flags": "Drapeaux"
+      "flags": "Drapeaux",
+      "custom": "Custom (IA)"
     }
   }
 }

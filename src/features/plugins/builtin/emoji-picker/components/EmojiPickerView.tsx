@@ -4,8 +4,10 @@ import { loadEmojiData, getEmojisByGroup } from '../utils/emojiData';
 import { searchEmojis } from '../utils/search';
 import { applyPreferredSkinTone } from '../utils/skinTones';
 import { addToHistory, getFrequentEmojis } from '../utils/history';
+import { getEmojiColumns } from '../utils/emojiSettings';
 import type { SearchableEmoji } from '../types';
 import { EMOJI_GROUPS } from '../types';
+import { CustomEmojiTab } from './CustomEmojiTab';
 import { cn } from '@/lib/utils';
 
 interface EmojiPickerViewProps {
@@ -26,6 +28,7 @@ const CATEGORY_ICONS: Record<string, string> = {
   objects: '💡',
   symbols: '❤️',
   flags: '🏴',
+  custom: '✨',
 };
 
 // Map from emoji group key to i18n translation key
@@ -41,6 +44,7 @@ const CATEGORY_I18N_KEY: Record<string, string> = {
   objects: 'objects',
   symbols: 'symbols',
   flags: 'flags',
+  custom: 'custom',
 };
 
 export function EmojiPickerView({
@@ -56,6 +60,7 @@ export function EmojiPickerView({
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
+  const [gridColumns] = useState(() => getEmojiColumns());
 
   // Load emoji data on mount
   useEffect(() => {
@@ -116,6 +121,15 @@ export function EmojiPickerView({
   // Keyboard navigation
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
+      // On the custom tab, the input + grid handle their own input — only honor Escape.
+      if (selectedCategory === 'custom') {
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          onClose();
+        }
+        return;
+      }
+
       const gridColumns = 7; // Number of columns in the grid (matches CSS)
 
       switch (e.key) {
@@ -125,7 +139,9 @@ export function EmojiPickerView({
           break;
         case 'ArrowDown':
           e.preventDefault();
-          setSelectedIndex((prev) => Math.min(displayedEmojis.length - 1, prev + gridColumns));
+          setSelectedIndex((prev) =>
+            Math.min(displayedEmojis.length - 1, prev + gridColumns)
+          );
           break;
         case 'ArrowLeft':
           e.preventDefault();
@@ -148,7 +164,7 @@ export function EmojiPickerView({
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [displayedEmojis, selectedIndex, onClose]
+    [displayedEmojis, selectedIndex, onClose, selectedCategory]
   );
 
   // Scroll selected emoji into view
@@ -167,7 +183,9 @@ export function EmojiPickerView({
     return category;
   };
 
-  const availableCategories = ['all', 'frequent', ...Object.values(EMOJI_GROUPS)];
+  const availableCategories = ['all', 'frequent', ...Object.values(EMOJI_GROUPS), 'custom'];
+
+  const isCustomTab = selectedCategory === 'custom';
 
   return (
     <div
@@ -203,6 +221,17 @@ export function EmojiPickerView({
           onChange={handleSearchChange}
           autoFocus
         />
+
+        {!isCustomTab && (
+          <button
+            className="flex items-center gap-2 h-11 px-3 rounded-lg text-sm font-medium cursor-pointer whitespace-nowrap transition-all bg-accent/10 border border-accent/30 text-accent hover:bg-accent/15"
+            onClick={() => handleCategoryChange('custom')}
+            title="Generate custom emoji with AI"
+          >
+            <span className="text-lg leading-none">✨</span>
+            <span>Generate</span>
+          </button>
+        )}
 
         <div className="relative">
           <button
@@ -252,12 +281,18 @@ export function EmojiPickerView({
       {/* Category info */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-hairline shrink-0">
         <span className="text-sm font-semibold text-ink">{getCategoryLabel(selectedCategory)}</span>
-        <span className="text-xs text-stone bg-surface px-2 py-0.5 rounded-full">
-          {displayedEmojis.length}
-        </span>
+        {!isCustomTab && (
+          <span className="text-xs text-stone bg-surface px-2 py-0.5 rounded-full">
+            {displayedEmojis.length}
+          </span>
+        )}
       </div>
 
-      {/* Emoji Grid */}
+      {/* Custom AI emoji tab — totally different content area */}
+      {isCustomTab ? (
+        <CustomEmojiTab onAfterAction={onClose} />
+      ) : (
+      /* Emoji Grid */
       <div className="flex-1 overflow-y-auto p-4">
         {isLoading ? (
           <div className="flex flex-col items-center justify-center h-full gap-3 text-mute py-6">
@@ -270,7 +305,10 @@ export function EmojiPickerView({
             <div className="text-sm text-stone">{t('view.tryDifferent')}</div>
           </div>
         ) : (
-          <div className="grid grid-cols-7 gap-2">
+          <div
+            className="grid gap-2"
+            style={{ gridTemplateColumns: `repeat(${gridColumns}, minmax(0, 1fr))` }}
+          >
             {displayedEmojis.map((emoji, index) => {
               const displayEmoji = applyPreferredSkinTone(emoji);
               const isSelected = index === selectedIndex;
@@ -294,6 +332,7 @@ export function EmojiPickerView({
           </div>
         )}
       </div>
+      )}
 
       {/* Footer */}
       <div className="flex items-center justify-between px-4 py-3 border-t border-hairline shrink-0">
