@@ -12,23 +12,25 @@ import type {
   InstalledExtension,
 } from '../types/extension.types';
 
-const REGISTRY_URL =
+const REGISTRY_URL = 'https://voltlauncher.com/api/registry';
+const REGISTRY_FALLBACK_URL =
   'https://raw.githubusercontent.com/VoltLaunchr/volt-extensions/main/registry.json';
 
 class ExtensionService {
   /**
-   * Fetch the extension registry from GitHub
+   * Fetch the extension registry (primary: voltlauncher.com, fallback: GitHub)
    */
   async fetchRegistry(): Promise<ExtensionRegistry> {
-    try {
-      const registry = await invoke<ExtensionRegistry>('fetch_extension_registry', {
-        url: REGISTRY_URL,
-      });
-      return registry;
-    } catch (error) {
-      logger.error('Failed to fetch extension registry:', error);
-      throw error;
+    for (const url of [REGISTRY_URL, REGISTRY_FALLBACK_URL]) {
+      try {
+        const registry = await invoke<ExtensionRegistry>('fetch_extension_registry', { url });
+        return registry;
+      } catch (error) {
+        logger.warn(`Registry fetch failed for ${url}, trying fallback...`, error);
+      }
     }
+    logger.error('All registry sources failed');
+    return { version: '0.0.0', lastUpdated: new Date().toISOString(), extensions: [] };
   }
 
   /**
@@ -90,15 +92,17 @@ class ExtensionService {
   async checkForUpdates(): Promise<
     { extensionId: string; currentVersion: string; newVersion: string }[]
   > {
-    try {
-      const updates = await invoke<
-        { extensionId: string; currentVersion: string; newVersion: string }[]
-      >('check_extension_updates', { registryUrl: REGISTRY_URL });
-      return updates;
-    } catch (error) {
-      logger.error('Failed to check for updates:', error);
-      throw error;
+    for (const url of [REGISTRY_URL, REGISTRY_FALLBACK_URL]) {
+      try {
+        const updates = await invoke<
+          { extensionId: string; currentVersion: string; newVersion: string }[]
+        >('check_extension_updates', { registryUrl: url });
+        return updates;
+      } catch {
+        // try fallback
+      }
     }
+    return [];
   }
 
   /**

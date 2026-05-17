@@ -5,7 +5,7 @@
  * The user can grant all requested permissions or deny (skip loading the extension).
  */
 
-import { Shield, Clipboard, Globe, Bell, ExternalLink } from 'lucide-react';
+import { Shield, Clipboard, Globe, Bell, ExternalLink, KeyRound, BrainCircuit, FolderOpen } from 'lucide-react';
 import { Modal } from '../../../shared/components/ui';
 import { logger } from '../../../shared/utils/logger';
 import type { ExtensionPermission } from '../types/extension.types';
@@ -33,6 +33,21 @@ const PERMISSION_INFO: Record<
     label: 'Open URLs',
     description: 'Open links in your default browser',
     icon: <ExternalLink size={18} />,
+  },
+  oauth: {
+    label: 'OAuth Login',
+    description: 'Authenticate with third-party services via OAuth (PKCE)',
+    icon: <KeyRound size={18} />,
+  },
+  ai: {
+    label: 'AI Inference',
+    description: 'Call AI models using an API key you configure in extension settings',
+    icon: <BrainCircuit size={18} />,
+  },
+  system: {
+    label: 'System Access',
+    description: 'List installed applications, reveal files in Finder / Explorer, move files to Trash',
+    icon: <FolderOpen size={18} />,
   },
 };
 

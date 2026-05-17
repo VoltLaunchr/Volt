@@ -26,10 +26,12 @@ interface AIRequestPayload {
   prompt: string;
   options?: {
     provider: string;
-    apiKeyPreference: string;
+    apiKeyPreference?: string;
     model?: string;
     maxTokens?: number;
     system?: string;
+    creativity?: string | number;
+    temperature?: number;
   };
 }
 

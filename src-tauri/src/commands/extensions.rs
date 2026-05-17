@@ -2651,27 +2651,38 @@ pub async fn ext_ai_ask_stream(
         .filter(|s| !s.is_empty())
         .ok_or("options.provider is required (\"openai\" | \"anthropic\" | \"groq\")")?;
 
-    let api_key_preference = options
-        .api_key_preference
-        .as_deref()
-        .filter(|s| !s.is_empty())
-        .ok_or("options.apiKeyPreference is required")?;
-
     // Rate limit before touching the keyring
     ai_check_rate_limit(&extension_id)
         .inspect_err(|e| {
             let _ = channel.send(AiStreamEvent::Error { error: e.clone() });
         })?;
 
-    let keyring_tag = format!("volt:ext:{}:pref:{}", extension_id, api_key_preference);
-    let api_key = crate::commands::keyring_store::retrieve_signed(&keyring_tag)
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| {
-            format!(
-                "API key not found. Set the '{}' secret preference in extension settings.",
-                api_key_preference
-            )
-        })?;
+    // Resolve API key: extension-scoped preference key → global Volt AI key fallback
+    let api_key = {
+        let from_pref = options
+            .api_key_preference
+            .as_deref()
+            .filter(|s| !s.is_empty())
+            .and_then(|pref| {
+                let tag = format!("volt:ext:{}:pref:{}", extension_id, pref);
+                crate::commands::keyring_store::retrieve_signed(&tag).ok().flatten()
+            });
+
+        if let Some(key) = from_pref {
+            key
+        } else {
+            // Fall back to the global Volt AI key for this provider
+            let global_tag = format!("volt:ai:key:{}", provider);
+            crate::commands::keyring_store::retrieve_signed(&global_tag)
+                .map_err(|e| e.to_string())?
+                .ok_or_else(|| {
+                    format!(
+                        "No API key found for provider '{}'. Add one in Volt Settings → AI.",
+                        provider
+                    )
+                })?
+        }
+    };
 
     let result = match provider {
         "openai" => ext_ai_openai_stream(&api_key, &prompt, &options, &channel).await,
@@ -2928,6 +2939,201 @@ async fn ext_ai_groq_stream(
         .send(AiStreamEvent::Done { full_text: full_text.clone() })
         .map_err(|e| e.to_string())?;
     Ok(())
+}
+
+// ============================================================================
+// Global AI Key Management
+// ============================================================================
+
+/// Known providers for UI validation
+const AI_KNOWN_PROVIDERS: &[&str] = &["openai", "anthropic", "groq"];
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AiProviderStatus {
+    pub provider: String,
+    pub has_key: bool,
+}
+
+/// Store (or overwrite) the global Volt AI key for a provider.
+/// Key is stored in the OS keyring as `volt:ai:key:{provider}` — never in JS memory.
+#[tauri::command]
+pub async fn ai_set_global_key(provider: String, key: String) -> Result<(), String> {
+    if !AI_KNOWN_PROVIDERS.contains(&provider.as_str()) {
+        return Err(format!(
+            "Unknown provider '{}'. Supported: {}",
+            provider,
+            AI_KNOWN_PROVIDERS.join(", ")
+        ));
+    }
+    if key.trim().is_empty() {
+        return Err("API key cannot be empty".to_string());
+    }
+    let tag = format!("volt:ai:key:{}", provider);
+    crate::commands::keyring_store::store_signed(&tag, key.trim())
+        .map_err(|e| e.to_string())
+}
+
+/// Delete the global Volt AI key for a provider.
+#[tauri::command]
+pub async fn ai_delete_global_key(provider: String) -> Result<(), String> {
+    if !AI_KNOWN_PROVIDERS.contains(&provider.as_str()) {
+        return Err(format!("Unknown provider '{}'", provider));
+    }
+    let tag = format!("volt:ai:key:{}", provider);
+    crate::commands::keyring_store::remove_signed(&tag).map_err(|e| e.to_string())
+}
+
+/// Return the set/unset status for each known provider.
+/// The key value is NEVER returned — only a boolean `hasKey`.
+#[tauri::command]
+pub async fn ai_get_providers_status() -> Result<Vec<AiProviderStatus>, String> {
+    let mut statuses = Vec::new();
+    for provider in AI_KNOWN_PROVIDERS {
+        let tag = format!("volt:ai:key:{}", provider);
+        let has_key = crate::commands::keyring_store::retrieve_signed(&tag)
+            .unwrap_or(None)
+            .is_some();
+        statuses.push(AiProviderStatus { provider: provider.to_string(), has_key });
+    }
+    Ok(statuses)
+}
+
+/// Verify that the stored key for a provider is valid by making a minimal API call.
+/// Returns Ok(()) if valid, Err with a message if not.
+#[tauri::command]
+pub async fn ai_verify_key(provider: String) -> Result<(), String> {
+    if !AI_KNOWN_PROVIDERS.contains(&provider.as_str()) {
+        return Err(format!("Unknown provider '{}'", provider));
+    }
+    let tag = format!("volt:ai:key:{}", provider);
+    let api_key = crate::commands::keyring_store::retrieve_signed(&tag)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("No key stored for provider '{}'", provider))?;
+
+    let client = reqwest::Client::new();
+    match provider.as_str() {
+        "openai" => {
+            let resp = client
+                .get("https://api.openai.com/v1/models")
+                .bearer_auth(&api_key)
+                .send()
+                .await
+                .map_err(|e| format!("Network error: {}", e))?;
+            if resp.status().is_success() {
+                Ok(())
+            } else {
+                Err(format!("Invalid key (HTTP {})", resp.status()))
+            }
+        }
+        "anthropic" => {
+            let body = serde_json::json!({
+                "model": "claude-haiku-4-5-20251001",
+                "max_tokens": 1,
+                "messages": [{ "role": "user", "content": "hi" }]
+            });
+            let resp = client
+                .post("https://api.anthropic.com/v1/messages")
+                .header("x-api-key", &api_key)
+                .header("anthropic-version", "2023-06-01")
+                .json(&body)
+                .send()
+                .await
+                .map_err(|e| format!("Network error: {}", e))?;
+            if resp.status().is_success() || resp.status().as_u16() == 529 {
+                Ok(())
+            } else {
+                Err(format!("Invalid key (HTTP {})", resp.status()))
+            }
+        }
+        "groq" => {
+            let resp = client
+                .get("https://api.groq.com/openai/v1/models")
+                .bearer_auth(&api_key)
+                .send()
+                .await
+                .map_err(|e| format!("Network error: {}", e))?;
+            if resp.status().is_success() {
+                Ok(())
+            } else {
+                Err(format!("Invalid key (HTTP {})", resp.status()))
+            }
+        }
+        _ => Err(format!("Unknown provider '{}'", provider)),
+    }
+}
+
+/// Stream an AI response for the built-in AI Chat feature.
+/// No rate limit (the user is the caller), reads from the global OS keyring key.
+///
+/// AI Profile injection: if the user has saved a non-empty profile (see
+/// `commands::ai_profile`), it is prepended to `options.system` as a PREFIX
+/// so every chat send is personalised with their context. AI Commands /
+/// Quick Actions go through a different path and are intentionally not
+/// affected.
+#[tauri::command]
+pub async fn ai_ask_builtin_stream(
+    app: AppHandle,
+    provider: String,
+    prompt: String,
+    mut options: ExtAiOptions,
+    channel: tauri::ipc::Channel<AiStreamEvent>,
+) -> Result<(), String> {
+    if !AI_KNOWN_PROVIDERS.contains(&provider.as_str()) {
+        let _ = channel.send(AiStreamEvent::Error {
+            error: format!("Unknown provider '{}'. Supported: openai, anthropic, groq.", provider),
+        });
+        return Err(format!("Unknown provider '{}'", provider));
+    }
+    if prompt.trim().is_empty() {
+        let _ = channel.send(AiStreamEvent::Error { error: "Prompt cannot be empty".into() });
+        return Err("Prompt cannot be empty".to_string());
+    }
+    if prompt.len() > 100_000 {
+        let _ = channel.send(AiStreamEvent::Error {
+            error: "Prompt exceeds 100 000 character limit".into(),
+        });
+        return Err("Prompt exceeds 100 000 character limit".to_string());
+    }
+
+    // Prepend the persisted AI Profile (if any) to the system prompt.
+    if let Some(profile) = crate::commands::ai_profile::load_profile_blocking(&app) {
+        options.system = Some(match options.system.take() {
+            Some(existing) if !existing.trim().is_empty() => {
+                format!("{}\n\n---\n\n{}", profile, existing)
+            }
+            _ => profile,
+        });
+    }
+
+    let global_tag = format!("volt:ai:key:{}", provider);
+    let api_key = match crate::commands::keyring_store::retrieve_signed(&global_tag) {
+        Ok(Some(key)) => key,
+        Ok(None) => {
+            let msg = format!(
+                "No API key for '{}'. Add one in Volt Settings → AI.",
+                provider
+            );
+            let _ = channel.send(AiStreamEvent::Error { error: msg.clone() });
+            return Err(msg);
+        }
+        Err(e) => {
+            let _ = channel.send(AiStreamEvent::Error { error: e.to_string() });
+            return Err(e.to_string());
+        }
+    };
+
+    let result = match provider.as_str() {
+        "openai" => ext_ai_openai_stream(&api_key, &prompt, &options, &channel).await,
+        "anthropic" => ext_ai_anthropic_stream(&api_key, &prompt, &options, &channel).await,
+        "groq" => ext_ai_groq_stream(&api_key, &prompt, &options, &channel).await,
+        other => Err(format!("Unsupported provider '{}'", other)),
+    };
+
+    if let Err(ref e) = result {
+        let _ = channel.send(AiStreamEvent::Error { error: e.clone() });
+    }
+    result
 }
 
 // ============================================================================

@@ -13,12 +13,61 @@ import {
   DollarSign,
   Gamepad2,
   Folder,
+  Monitor,
 } from 'lucide-react';
 
 export interface ExtensionAuthor {
   name: string;
   github?: string;
   email?: string;
+}
+
+export type ExtensionPreferenceType =
+  | 'text'
+  | 'secret'
+  | 'number'
+  | 'boolean'
+  | 'select'
+  | 'file'
+  | 'directory'
+  | 'oauth';
+
+export interface ExtensionPreference {
+  name: string;
+  type: ExtensionPreferenceType;
+  title: string;
+  description?: string;
+  required?: boolean;
+  default?: string | number | boolean;
+  /** For type 'select' — list of valid values */
+  options?: string[];
+  /** For type 'number' */
+  min?: number;
+  max?: number;
+  /** For type 'oauth' — PKCE OAuth connection config */
+  oauthProvider?: string;
+  oauthAuthUrl?: string;
+  oauthTokenUrl?: string;
+  oauthClientId?: string;
+  oauthScopes?: string[];
+}
+
+/** A single named command exposed by the extension (Raycast-style multi-command). */
+export interface ExtensionCommand {
+  /** Unique name within this extension (snake_case, used as a sub-id) */
+  name: string;
+  /** Human-readable title shown in search results */
+  title: string;
+  /** Short subtitle / description shown below the title */
+  description?: string;
+  /** Entry point file relative to the extension root (overrides manifest.main) */
+  main?: string;
+  /** Trigger prefix for this specific command (overrides manifest.prefix) */
+  prefix?: string;
+  /** Extra keywords for matching this command */
+  keywords?: string[];
+  /** Icon override for this command (URL or data-URI) */
+  icon?: string;
 }
 
 export interface ExtensionManifest {
@@ -39,16 +88,26 @@ export interface ExtensionManifest {
   permissions?: ExtensionPermission[];
   /** Entry point file for the extension (e.g., "index.js" or "src/plugin.ts") */
   main?: string;
+  /** Declarative preferences (API keys, toggles, selects) shown in extension settings */
+  preferences?: ExtensionPreference[];
+  /** Multiple named commands — each gets its own search result and entry point */
+  commands?: ExtensionCommand[];
+  /**
+   * Background refresh — Volt will call match('') on the extension at the given interval
+   * and cache results for instant display. Format: "30s", "5m", "1h".
+   */
+  backgroundRefresh?: { interval: string };
 }
 
 export type ExtensionCategory =
   | 'productivity'
   | 'utilities'
-  | 'development'
+  | 'developer'
   | 'media'
   | 'social'
   | 'finance'
   | 'games'
+  | 'system'
   | 'other';
 
 /**
@@ -64,6 +123,9 @@ export const EXTENSION_PERMISSIONS = [
   'network',
   'notifications',
   'openUrl',
+  'oauth',
+  'ai',
+  'system',
 ] as const;
 
 export type ExtensionPermission = (typeof EXTENSION_PERMISSIONS)[number];
@@ -88,6 +150,10 @@ export interface ExtensionInfo {
   featured: boolean;
   createdAt: string;
   updatedAt: string;
+  /** URLs of screenshot images (800×500 recommended) */
+  screenshots?: string[];
+  /** Path or URL to a Markdown description file */
+  readmeUrl?: string;
 }
 
 export interface InstalledExtension {
@@ -141,10 +207,11 @@ export const EXTENSION_CATEGORIES: {
   { id: 'all', label: 'All', icon: Package },
   { id: 'productivity', label: 'Productivity', icon: Zap },
   { id: 'utilities', label: 'Utilities', icon: Wrench },
-  { id: 'development', label: 'Development', icon: Code },
+  { id: 'developer', label: 'Developer', icon: Code },
   { id: 'media', label: 'Media', icon: Music },
   { id: 'social', label: 'Social', icon: MessageCircle },
   { id: 'finance', label: 'Finance', icon: DollarSign },
   { id: 'games', label: 'Games', icon: Gamepad2 },
+  { id: 'system', label: 'System', icon: Monitor },
   { id: 'other', label: 'Other', icon: Folder },
 ];

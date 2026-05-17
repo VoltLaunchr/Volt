@@ -61,6 +61,19 @@ function sanitizePermissions(
 import '../api';
 
 /**
+ * Parse a background refresh interval string ("30s", "5m", "1h") to milliseconds.
+ * Returns 0 for unrecognised formats.
+ */
+function parseRefreshInterval(s: string): number {
+  const m = s.match(/^(\d+)(s|m|h)$/);
+  if (!m) return 0;
+  const n = parseInt(m[1], 10);
+  if (m[2] === 's') return n * 1_000;
+  if (m[2] === 'm') return n * 60_000;
+  return n * 3_600_000; // 'h'
+}
+
+/**
  * Extension source from backend
  */
 interface ExtensionSource {
@@ -78,6 +91,8 @@ export interface LoadedExtension {
   id: string;
   manifest: ExtensionManifest;
   plugin: Plugin;
+  /** Sub-command plugin IDs registered when manifest.commands[] is present */
+  commandPluginIds?: string[];
 }
 
 /**
@@ -274,6 +289,10 @@ export class ExtensionLoader {
   /**
    * Load extension in a Web Worker sandbox.
    * The Worker gets its own thread — canHandle is declarative on main thread.
+   *
+   * If manifest.commands[] is present, each command gets its own WorkerPlugin
+   * (Raycast-style multi-command). The root plugin is registered only when the
+   * manifest also has top-level keywords/prefix (i.e. a "catch-all" mode).
    */
   private loadInWorker(
     source: ExtensionSource,
@@ -283,31 +302,75 @@ export class ExtensionLoader {
 
     logger.debug(`[ExtensionLoader] Loading ${id} in Worker sandbox`);
 
-    // Bundle the extension modules (reuse existing bundling logic)
+    // Bundle once — all commands share the same module graph
     const bundledCode = this.bundleExtension(source);
-
-    // Extract just the module code (remove the header and return statement
-    // that buildBundleWithOrder adds — the Worker bootstrap generates its own)
     const moduleCode = this.extractModuleCode(bundledCode);
 
-    // Create WorkerPlugin proxy
-    // grantedPermissions will be populated by the consent flow (wired in task #22)
+    const hasCommands = manifest.commands && manifest.commands.length > 0;
+    const commandPluginIds: string[] = [];
+
+    if (hasCommands) {
+      // Register one WorkerPlugin per command
+      for (const cmd of manifest.commands!) {
+        const cmdId = `${id}:${cmd.name}`;
+        const cmdEntryPoint = cmd.main ?? source.entryPoint;
+
+        // Re-bundle with the command-specific entry point if it differs
+        let cmdModuleCode = moduleCode;
+        if (cmd.main && cmd.main !== source.entryPoint) {
+          const cmdBundled = this.bundleExtension({ ...source, entryPoint: cmd.main });
+          cmdModuleCode = this.extractModuleCode(cmdBundled);
+        }
+
+        const cmdPlugin = new WorkerPlugin({
+          id: cmdId,
+          name: cmd.title,
+          description: cmd.description ?? manifest.description ?? '',
+          keywords: cmd.keywords ?? (cmd.prefix ? [] : manifest.keywords ?? []),
+          prefix: cmd.prefix ?? null,
+          bundledModuleCode: cmdModuleCode,
+          entryPoint: cmdEntryPoint,
+          grantedPermissions,
+        });
+
+        pluginRegistry.register(cmdPlugin);
+        commandPluginIds.push(cmdId);
+        logger.debug(`[ExtensionLoader] Registered command plugin: ${cmdId}`);
+      }
+    }
+
+    // Always register the root plugin (handles queries via top-level prefix/keywords
+    // OR acts as the single entry when there are no sub-commands)
     const plugin = new WorkerPlugin({
       id,
       name: manifest.name,
       description: manifest.description || '',
-      keywords: manifest.keywords || [],
-      prefix: manifest.prefix || null,
+      keywords: hasCommands ? [] : (manifest.keywords ?? []),
+      prefix: hasCommands ? null : (manifest.prefix ?? null),
       bundledModuleCode: moduleCode,
       entryPoint: source.entryPoint,
       grantedPermissions,
     });
 
-    // Register with plugin registry
-    pluginRegistry.register(plugin);
+    // Only register the root plugin in the search results if it has its own trigger
+    // (no commands, or it has its own top-level keywords/prefix alongside commands)
+    if (!hasCommands || manifest.keywords?.length || manifest.prefix) {
+      pluginRegistry.register(plugin);
+    }
 
-    const loaded: LoadedExtension = { id, manifest, plugin };
+    const loaded: LoadedExtension = { id, manifest, plugin, commandPluginIds };
     this.loadedExtensions.set(id, loaded);
+
+    // Start background refresh if declared in the manifest
+    if (manifest.backgroundRefresh?.interval) {
+      const intervalMs = parseRefreshInterval(manifest.backgroundRefresh.interval);
+      if (intervalMs > 0) {
+        plugin.startBackgroundRefresh(intervalMs);
+        logger.debug(
+          `[ExtensionLoader] Background refresh started for ${id} every ${manifest.backgroundRefresh.interval}`
+        );
+      }
+    }
 
     logger.debug(`[ExtensionLoader] Successfully loaded in Worker: ${manifest.name}`);
     return loaded;
@@ -671,7 +734,7 @@ return __defaultExport__;
   }
 
   /**
-   * Unload an extension
+   * Unload an extension (including all its command sub-plugins)
    */
   unloadExtension(extensionId: string): boolean {
     const extension = this.loadedExtensions.get(extensionId);
@@ -679,7 +742,16 @@ return __defaultExport__;
       return false;
     }
 
-    // Unregister from plugin registry
+    // Unregister all command sub-plugins
+    for (const cmdId of extension.commandPluginIds ?? []) {
+      const cmdPlugin = pluginRegistry.getPlugin(cmdId);
+      pluginRegistry.unregister(cmdId);
+      if (cmdPlugin && 'destroy' in cmdPlugin) {
+        (cmdPlugin as WorkerPlugin).destroy();
+      }
+    }
+
+    // Unregister root plugin
     pluginRegistry.unregister(extensionId);
 
     // Destroy Worker if it's a WorkerPlugin
@@ -722,6 +794,21 @@ return __defaultExport__;
    */
   isLoaded(extensionId: string): boolean {
     return this.loadedExtensions.has(extensionId);
+  }
+
+  /**
+   * Return captured errors for one extension, or all extensions when no id is given.
+   * Reads `WorkerPlugin.globalLog` — no IPC or async needed.
+   */
+  getExtensionErrors(extensionId?: string): import('./worker-sandbox').ExtensionError[] {
+    if (extensionId !== undefined) {
+      return WorkerPlugin.globalLog.get(extensionId) ?? [];
+    }
+    const all: import('./worker-sandbox').ExtensionError[] = [];
+    for (const errors of WorkerPlugin.globalLog.values()) {
+      all.push(...errors);
+    }
+    return all;
   }
 }
 
