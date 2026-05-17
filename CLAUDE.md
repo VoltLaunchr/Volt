@@ -131,9 +131,13 @@ src/
 - Builtin plugins registered in `App.tsx` on mount
 - Backend plugins: trait-based in `src-tauri/src/plugins/` (async_trait, Send+Sync)
 
-**Extensions** (separate repo: https://github.com/VoltLaunchr/volt-extensions):
-- Community/third-party extensions live in the volt-extensions repo
-- Manifest-based: ExtensionManifest with id, name, version, permissions
+**Extensions** (dual-source registry):
+- **Source 1 — GitHub legacy** (`VoltLaunchr/volt-extensions/registry.json`): extensions historiques (github, notion, password-generator). Toujours servis, pas de migration prévue.
+- **Source 2 — Supabase** (`developer_extensions` table, `status = 'approved'`): nouvelles extensions soumises via le portail developer sur voltlaunchr.com. Workflow: draft → pending → approved/rejected.
+- Les deux sources sont fusionnées dans `/api/extensions` (voltlaunchr.com) avec déduplication par slug. Built-ins toujours prioritaires.
+- **Portail developer** (voltlaunchr.com/developer): les devs créent un compte `developer` tier, gèrent leurs extensions, et génèrent des API keys (`sk_live_*`) pour automatisation future CLI.
+- **API keys** stockées en DB (`api_keys` table) avec SHA-256 hash, jamais en clair. Colonnes: `developer_id`, `key_prefix`, `scopes`, `is_active`.
+- Manifest-based: `ExtensionManifest` with id, name, version, permissions
 - Dynamic loading via ExtensionLoader + Sucrase transpilation
 - Management: `src/features/extensions/` (install, uninstall, toggle)
 - Web Worker sandbox: extensions with `keywords`/`prefix` in manifest run in dedicated Worker
@@ -338,3 +342,139 @@ Les globals suivants sont autorisés dans `eslint.config.js` car absents de l'en
 `atob`, `btoa`, `location`, `history`, `confirm`, `alert`, `prompt`, `requestAnimationFrame`, `cancelAnimationFrame`, `SVGGElement`, `SVGSVGElement`
 
 Ne jamais ajouter un global pour contourner une erreur — si ESLint se plaint d'un symbole, vérifie d'abord s'il est vraiment disponible dans le contexte d'exécution.
+
+---
+
+## Release Process — Checklist obligatoire
+
+**Aucune release ne part sans avoir passé tous les checks ci-dessous.** Les v0.1.7 (CI cassée) et v0.1.8 (bundle cassé, splash infini) sont parties parce que des étapes ont été sautées. Ne pas refaire l'erreur.
+
+### Pré-requis non-négociables sur la branche
+
+1. La branche doit s'appeler **exactement** `release/vX.Y.Z` (semver strict, ex. `release/v0.1.9`).
+   - `auto-tag.yml` ne fire **que** sur ce préfixe (`startsWith(head_ref, 'release/v')`). Une PR depuis `dev` ou autre branche ne tagguera **pas** la release et les binaires ne seront jamais publiés sur la nouvelle version (le tag reste sur l'ancien commit).
+2. Brancher depuis `origin/main` à jour (`git fetch origin main && git checkout -b release/vX.Y.Z origin/main`), pas depuis `dev`.
+
+### Étape 1 — Bump version + changelog
+
+```bash
+node scripts/bump-version.mjs X.Y.Z       # met à jour package.json, Cargo.toml, tauri.conf.json
+node scripts/sync-version.mjs --check     # vérifie l'alignement
+```
+
+Puis **toujours** ajouter manuellement l'entrée `public/changelog.json` (le générateur auto échoue après squash-merge — voir `scripts/generate-changelog.mjs`).
+
+L'entrée doit contenir : `version`, `date` (ISO YYYY-MM-DD), `title`, `description`, `sections[]` (au moins une), `footer`. JSON parsable obligatoire.
+
+### Étape 2 — Validation locale (bloquant)
+
+Aucun commit avant que **toutes** ces commandes passent :
+
+```bash
+bun run lint 2>&1                # 0 error
+bun run build 2>&1               # TS compile + Vite bundle OK
+cd src-tauri && cargo check      # Rust compile OK
+cd src-tauri && cargo clippy -- -D warnings  # 0 warning Rust
+bun run test 2>&1                # Vitest vert
+node scripts/sync-version.mjs --check        # versions alignées
+```
+
+### Étape 3 — Smoke test du bundle de production (BLOQUANT, sinon on revit v0.1.8)
+
+Le frontend peut compiler sans erreur ET être complètement cassé au runtime (cycle de chunks Rollup, top-level throw qui rejette le module entry, etc.). `bun run build` n'attrape **pas** ces bugs. Le seul moyen fiable : **charger le bundle dans un vrai webview**.
+
+Au choix, dans l'ordre de coût croissant :
+
+**A. Cycle scan (rapide, 5 s)** — détecte les imports circulaires entre chunks, cause #1 des bundles morts :
+
+```bash
+bun run build && node -e "
+const fs=require('fs'),dir='dist/assets';
+const files=fs.readdirSync(dir).filter(f=>f.endsWith('.js'));
+const g={}; for(const f of files){const c=fs.readFileSync(dir+'/'+f,'utf8'); g[f]=(c.match(/^import[^;]+from\"\\.\\/([^\"]+)\"/gm)||[]).map(s=>s.match(/\\.\\/([^\"]+)/)[1]);}
+function fc(s){const st=[[s,[s]]],seen=new Set(); while(st.length){const [n,p]=st.pop(); for(const m of g[n]||[]){if(p.includes(m))return [...p,m]; if(!seen.has(n+'->'+m)){seen.add(n+'->'+m); st.push([m,[...p,m]]);}}} return null;}
+let any=false; for(const f of files){const c=fc(f); if(c){console.log('CYCLE:',c.join(' -> ')); any=true; break;}}
+if(!any)console.log('OK: no chunk cycles');
+"
+```
+
+Si "CYCLE:" → ne pas releaser. Cause typique : `manualChunks` qui sépare une lib React-consuming du chunk `vendor-react`.
+
+**B. WebView2 devtools (5 min)** — avec un binaire local. `devtools` est gated en debug feature, donc en release on l'active à la volée :
+
+```powershell
+$env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS="--auto-open-devtools-for-tabs"
+& "C:\Users\<user>\AppData\Local\Volt\volt.exe"
+```
+
+Onglet Console — si rouge, ne pas releaser. Sinon, vérifier que l'UI atteint la barre de recherche (la fenêtre n'est pas figée sur le splash logo).
+
+**C. Build complet local + install (15-30 min)** — le test ultime, mais lourd :
+
+```bash
+bun tauri build
+# Lance le .msi/.exe généré dans src-tauri/target/release/bundle/
+```
+
+### Étape 4 — Push + PR
+
+```bash
+git push -u origin release/vX.Y.Z
+gh pr create --title "chore(release): vX.Y.Z" --body "..."
+```
+
+Body de PR doit contenir : résumé, test plan checklist, lien vers la release notes du changelog.
+
+### Étape 5 — Wait CI
+
+**Aucun merge tant que CI n'est pas verte.** Les jobs critiques :
+- `Check & Build (windows-latest)` (clippy 1.95 strict, fmt check, build)
+- `Check & Build (macos-latest)`, `Check & Build (ubuntu-latest)`
+- `e2e`
+- `lint-pr-title`
+
+`auto-tag` (qui fire au merge) doit aussi passer pour que le tag soit créé.
+
+### Étape 6 — Post-merge : vérifier la release
+
+1. Confirmer que **`auto-tag.yml`** a tourné et créé le tag `vX.Y.Z` :
+   ```bash
+   gh run list --workflow=auto-tag.yml --limit 1
+   git ls-remote --tags origin "vX.Y.Z"
+   ```
+2. Confirmer que **`release.yml`** a publié les artefacts :
+   ```bash
+   gh release view vX.Y.Z --json assets --jq '.assets[].name'
+   # doit lister: latest.json, *.msi, *.exe, *.dmg, *.deb, *.rpm, *.AppImage + .sig
+   ```
+3. **Smoke test du binaire publié** : télécharger l'installeur Windows, installer, lancer. Si splash infini → c'est trop tard, mais au moins on sait. Hot-fix immédiat (cf. cycle v0.1.8 → v0.1.9).
+
+### Erreurs déjà commises — ne pas refaire
+
+| Bug | Symptôme | Cause | Fix |
+|---|---|---|---|
+| v0.1.7 | Binaires sans le contenu de la PR | PR mergée depuis `dev`, pas `release/v*`, donc `auto-tag.yml` n'a pas fire — tag pointait sur l'ancien commit | Toujours brancher depuis `main` avec `release/vX.Y.Z` |
+| v0.1.8 | Splash infini, watchdog ne fire jamais | Cycle `vendor → vendor-react → vendor` (manualChunks `id.includes('react')` → `/node_modules/<pkg>/` a éjecté motion/@base-ui/@radix-ui/@visx du `vendor-react`) → `createContext` undefined au load → entry module rejette | Cycle scan (Étape 3A) avant chaque release |
+| v0.1.7 | CI rouge sur fmt+clippy | Merge `main → dev` a introduit fmt drift + Rust 1.95 a renforcé `collapsible_if` | Toujours `cargo fmt && cargo clippy -- -D warnings` localement avant push |
+
+### Checklist condensée à cocher
+
+```
+[ ] Branche release/vX.Y.Z créée depuis origin/main à jour
+[ ] node scripts/bump-version.mjs X.Y.Z
+[ ] Entrée changelog.json ajoutée manuellement (JSON valide)
+[ ] node scripts/sync-version.mjs --check ✅
+[ ] bun run lint ✅
+[ ] bun run build ✅
+[ ] cd src-tauri && cargo check && cargo clippy -- -D warnings ✅
+[ ] bun run test ✅
+[ ] Cycle scan chunks ✅ (Étape 3A)
+[ ] Au moins UN smoke test webview (3B ou 3C)
+[ ] git commit + push
+[ ] gh pr create vers main
+[ ] CI verte (tous les jobs)
+[ ] Merge
+[ ] Tag vX.Y.Z créé par auto-tag.yml
+[ ] Artefacts publiés par release.yml
+[ ] Install + lancement du .msi téléchargé : atteint la barre de recherche
+```
