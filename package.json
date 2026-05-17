@@ -1,7 +1,7 @@
 {
   "name": "volt",
   "private": true,
-  "version": "0.1.7",
+  "version": "0.1.9",
   "type": "module",
   "description": "Lightning-fast keyboard-driven launcher for Windows, macOS, and Linux. Built with Tauri 2 + React + Rust.",
   "license": "Apache-2.0",
@@ -47,6 +47,18 @@
     "@tauri-apps/plugin-positioner": "~2",
     "@tauri-apps/plugin-process": "^2.3.1",
     "@tauri-apps/plugin-updater": "^2.10.1",
+    "@tiptap/core": "^3.23.4",
+    "@tiptap/extension-character-count": "^3",
+    "@tiptap/extension-code-block-lowlight": "^3",
+    "@tiptap/extension-image": "^3",
+    "@tiptap/extension-link": "^3",
+    "@tiptap/extension-placeholder": "^3",
+    "@tiptap/extension-task-item": "^3",
+    "@tiptap/extension-task-list": "^3",
+    "@tiptap/extension-typography": "^3",
+    "@tiptap/react": "^3",
+    "@tiptap/starter-kit": "^3",
+    "@tiptap/suggestion": "^3.23.4",
     "@visx/curve": "4.0.1-alpha.0",
     "@visx/event": "4.0.1-alpha.0",
     "@visx/responsive": "4.0.1-alpha.0",
@@ -60,6 +72,7 @@
     "emojibase": "^17.0.0",
     "emojibase-data": "^17.0.0",
     "i18next": "^26.0.4",
+    "lowlight": "^3",
     "lucide-react": "^0.561.0",
     "motion": "^12.38.0",
     "react": "^19.1.0",
@@ -69,6 +82,8 @@
     "sucrase": "^3.35.1",
     "tailwind-merge": "^3.5.0",
     "tailwindcss": "^4.2.4",
+    "tippy.js": "^6.3.7",
+    "tiptap-markdown": "^0.9",
     "zustand": "^5.0.12"
   },
   "devDependencies": {
@@ -93,6 +108,6 @@
     "prettier": "^3.7.4",
     "typescript": "~5.8.3",
     "vite": "^7.0.4",
-    "vitest": "^2.1.8"
+    "vitest": "^4.1.5"
   }
 }

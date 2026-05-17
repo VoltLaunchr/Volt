@@ -77,12 +77,14 @@
     "allow-fetch-extension-downloads",
     "allow-increment-extension-download",
 
+    "allow-scaffold-extension",
     "allow-get-dev-extensions",
     "allow-link-dev-extension",
     "allow-unlink-dev-extension",
     "allow-toggle-dev-extension",
     "allow-get-dev-extensions-path",
     "allow-refresh-dev-extension",
+    "allow-get-dev-reload-signal",
 
     "allow-save-credential",
     "allow-has-credential",
@@ -113,6 +115,16 @@
     "allow-import-snippets",
     "allow-export-snippets",
 
+    "allow-get-notes",
+    "allow-get-trash",
+    "allow-create-note",
+    "allow-update-note",
+    "allow-delete-note",
+    "allow-empty-trash",
+    "allow-export-notes",
+    "allow-import-notes",
+    "allow-open-notes-window",
+
     "allow-get-quicklinks",
     "allow-save-quicklink",
     "allow-delete-quicklink",
@@ -142,6 +154,17 @@
     "allow-clear-shell-history",
     "allow-remove-shell-command",
 
-    "allow-get-log-file-path"
+    "allow-get-log-file-path",
+
+    "allow-ai-get-providers-status",
+    "allow-ai-set-global-key",
+    "allow-ai-delete-global-key",
+    "allow-ai-verify-key",
+    "allow-ai-profile-get",
+    "allow-ai-profile-set",
+    "allow-ai-quick-actions-get",
+    "allow-ai-quick-actions-save",
+    "allow-ai-quick-actions-apply-all",
+    "allow-ai-pro-features-enabled"
   ]
 }

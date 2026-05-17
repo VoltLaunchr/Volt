@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-ext-move-to-trash"
+description = "Enables the ext_move_to_trash command without any pre-configured scope."
+commands.allow = ["ext_move_to_trash"]
+
+[[permission]]
+identifier = "deny-ext-move-to-trash"
+description = "Denies the ext_move_to_trash command without any pre-configured scope."
+commands.deny = ["ext_move_to_trash"]

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-ai-get-providers-status"
+description = "Enables the ai_get_providers_status command without any pre-configured scope."
+commands.allow = ["ai_get_providers_status"]
+
+[[permission]]
+identifier = "deny-ai-get-providers-status"
+description = "Denies the ai_get_providers_status command without any pre-configured scope."
+commands.deny = ["ai_get_providers_status"]

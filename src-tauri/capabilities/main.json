@@ -164,14 +164,32 @@
     "allow-increment-extension-download",
     "allow-get-extension-preference",
     "allow-set-extension-preference",
+    "allow-get-extension-secret",
+    "allow-set-extension-secret",
+    "allow-delete-extension-secret",
     "allow-extension-authenticated-fetch",
 
+    "allow-ext-storage-get",
+    "allow-ext-storage-set",
+    "allow-ext-storage-remove",
+    "allow-ext-storage-clear",
+
+    "allow-ext-oauth-start",
+    "allow-ext-oauth-get-token",
+    "allow-ext-oauth-revoke-token",
+
+    "allow-ext-get-applications",
+    "allow-ext-show-in-folder",
+    "allow-ext-move-to-trash",
+
+    "allow-scaffold-extension",
     "allow-get-dev-extensions",
     "allow-link-dev-extension",
     "allow-unlink-dev-extension",
     "allow-toggle-dev-extension",
     "allow-get-dev-extensions-path",
     "allow-refresh-dev-extension",
+    "allow-get-dev-reload-signal",
 
     "allow-save-credential",
     "allow-has-credential",
@@ -211,6 +229,11 @@
     "allow-import-snippets",
     "allow-export-snippets",
 
+    "allow-get-notes",
+    "allow-search-notes",
+    "allow-create-note",
+    "allow-open-notes-window",
+
     "allow-execute-shell-command",
     "allow-execute-shell-command-streaming",
     "allow-cancel-shell-command",
@@ -224,6 +247,25 @@
 
     "allow-search-streaming",
 
-    "allow-snap-window"
+    "allow-snap-window",
+
+    "allow-ext-ai-ask-stream",
+    "allow-ai-ask-builtin-stream",
+    "allow-ai-get-providers-status",
+    "allow-ai-set-global-key",
+    "allow-ai-delete-global-key",
+    "allow-ai-verify-key",
+    "allow-ai-profile-get",
+    "allow-ai-profile-set",
+    "allow-ai-quick-actions-get",
+    "allow-ai-quick-actions-save",
+    "allow-ai-quick-actions-apply-all",
+    "allow-ai-quick-actions-read-clipboard",
+    "allow-ai-pro-features-enabled",
+    "allow-custom-emojis-generate",
+    "allow-custom-emojis-list",
+    "allow-custom-emojis-delete",
+    "allow-custom-emojis-has-token",
+    "allow-custom-emojis-copy-image"
   ]
 }

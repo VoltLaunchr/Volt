@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-ext-oauth-revoke-token"
+description = "Enables the ext_oauth_revoke_token command without any pre-configured scope."
+commands.allow = ["ext_oauth_revoke_token"]
+
+[[permission]]
+identifier = "deny-ext-oauth-revoke-token"
+description = "Denies the ext_oauth_revoke_token command without any pre-configured scope."
+commands.deny = ["ext_oauth_revoke_token"]

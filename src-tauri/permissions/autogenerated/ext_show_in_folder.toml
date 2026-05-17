@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-ext-show-in-folder"
+description = "Enables the ext_show_in_folder command without any pre-configured scope."
+commands.allow = ["ext_show_in_folder"]
+
+[[permission]]
+identifier = "deny-ext-show-in-folder"
+description = "Denies the ext_show_in_folder command without any pre-configured scope."
+commands.deny = ["ext_show_in_folder"]

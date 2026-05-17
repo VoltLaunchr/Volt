@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-custom-emojis-has-token"
+description = "Enables the custom_emojis_has_token command without any pre-configured scope."
+commands.allow = ["custom_emojis_has_token"]
+
+[[permission]]
+identifier = "deny-custom-emojis-has-token"
+description = "Denies the custom_emojis_has_token command without any pre-configured scope."
+commands.deny = ["custom_emojis_has_token"]

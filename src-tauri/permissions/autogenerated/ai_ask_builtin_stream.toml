@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-ai-ask-builtin-stream"
+description = "Enables the ai_ask_builtin_stream command without any pre-configured scope."
+commands.allow = ["ai_ask_builtin_stream"]
+
+[[permission]]
+identifier = "deny-ai-ask-builtin-stream"
+description = "Denies the ai_ask_builtin_stream command without any pre-configured scope."
+commands.deny = ["ai_ask_builtin_stream"]
