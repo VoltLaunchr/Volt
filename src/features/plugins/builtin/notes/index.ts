@@ -43,6 +43,10 @@ const MAX_RESULTS = 6;
 const PLUGIN_ID = 'notes';
 const PREFIX_PATTERN = /^n[\s:]*(.*)$/i;
 
+const NOTE_ICON = '/icons/app/volt_note_icons.svg';
+const CREATE_NOTE_ICON = '/icons/app/create_note_icons.svg';
+const SEARCH_NOTE_ICON = '/icons/app/search_note_icons.svg';
+
 // Result `data` payload shapes — discriminated by `action`.
 type NotesAction = 'open' | 'create' | 'open-window';
 interface NotesActionData extends Record<string, unknown> {
@@ -91,7 +95,9 @@ export class NotesPlugin implements Plugin {
         logger.warn('NotesPlugin: search_notes failed', err);
       }
       hits.forEach((hit, idx) => {
-        results.push(buildNoteResult(hit.note, 85 - idx, hit.snippet));
+        // Search hits use the magnifier-overlay variant so users can visually
+        // distinguish FTS5 results from the "all notes" browse list.
+        results.push(buildNoteResult(hit.note, 85 - idx, hit.snippet, SEARCH_NOTE_ICON));
       });
 
       // "Create" action is offered whenever the query has actual content.
@@ -100,8 +106,9 @@ export class NotesPlugin implements Plugin {
         id: 'notes-create',
         type: PluginResultType.Info,
         pluginId: PLUGIN_ID,
-        title: `➕ Create note: ${query}`,
+        title: `Create note: ${query}`,
         subtitle: 'Press Enter to create and open in Notes',
+        icon: CREATE_NOTE_ICON,
         badge: 'New',
         score: 55,
         data: { action: 'create', draftTitle: query } satisfies NotesActionData,
@@ -113,8 +120,9 @@ export class NotesPlugin implements Plugin {
       id: 'notes-open-window',
       type: PluginResultType.Info,
       pluginId: PLUGIN_ID,
-      title: '📓 Open Notes',
+      title: 'Open Notes',
       subtitle: 'Open the dedicated Notes window',
+      icon: NOTE_ICON,
       badge: 'Window',
       score: 30,
       data: { action: 'open-window' } satisfies NotesActionData,
@@ -161,7 +169,12 @@ function stripPrefix(raw: string): string {
   return m[1].trim();
 }
 
-function buildNoteResult(note: Note, score: number, snippet?: string): PluginResult {
+function buildNoteResult(
+  note: Note,
+  score: number,
+  snippet?: string,
+  icon: string = NOTE_ICON,
+): PluginResult {
   const title = note.title.trim() || 'Untitled';
   const subtitle = snippet ? stripMarks(snippet) : previewOf(note.content);
   const badge = note.pinned ? '★ Pinned' : 'Note';
@@ -171,6 +184,7 @@ function buildNoteResult(note: Note, score: number, snippet?: string): PluginRes
     pluginId: PLUGIN_ID,
     title,
     subtitle: subtitle || 'Empty note',
+    icon,
     badge,
     score,
     data: { action: 'open', noteId: note.id } satisfies NotesActionData,

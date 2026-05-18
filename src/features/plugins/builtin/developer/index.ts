@@ -12,6 +12,7 @@ export class DeveloperCommandsPlugin implements Plugin {
       aliases: ['developer', 'dev', 'extension', 'scaffold', 'new extension', 'new ext'],
       title: 'Create Extension',
       subtitle: 'Developer',
+      icon: '/icons/app/create_extension_icon.svg',
       action: 'create-extension',
     },
     {
@@ -19,6 +20,7 @@ export class DeveloperCommandsPlugin implements Plugin {
       aliases: ['developer', 'dev', 'extensions', 'ext store', 'extension store'],
       title: 'Manage Extensions',
       subtitle: 'Developer',
+      icon: '/icons/app/manage_extensions_icon.svg',
       action: 'manage-extensions',
     },
   ];
@@ -55,6 +57,7 @@ export class DeveloperCommandsPlugin implements Plugin {
           type: PluginResultType.SystemCommand,
           title: cmd.title,
           subtitle: cmd.subtitle,
+          icon: cmd.icon,
           score,
           data: { action: cmd.action },
         });
