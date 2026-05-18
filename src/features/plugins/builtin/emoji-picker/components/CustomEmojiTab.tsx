@@ -1,6 +1,6 @@
 import { invoke, convertFileSrc } from '@tauri-apps/api/core';
 import { useCallback, useState } from 'react';
-import { Sparkles, Trash2, Link as LinkIcon, Loader2, AlertCircle, Check } from 'lucide-react';
+import { Sparkles, Trash2, Loader2, AlertCircle } from 'lucide-react';
 import { useCustomEmojis } from '../../../../custom-emojis';
 import { useToastStore } from '../../../../../shared/components/ui/toast-store';
 import { cn } from '@/lib/utils';
@@ -13,9 +13,15 @@ interface CustomEmojiTabProps {
  * "Custom (AI)" category content for the Emoji Picker.
  * Renders the SDXL-Emoji generator input + a grid of user-generated emojis.
  *
- * Click an emoji card        → copies the image to the clipboard (primary)
- * Click the chain-link icon → copies the file path instead (secondary)
- * Click the trash icon       → deletes the emoji from disk + index
+ * Click an emoji card  → copies the rendered image to the clipboard (primary action)
+ * Click the trash icon → deletes the emoji from disk + index
+ *
+ * The trash icon lives top-right where users expect destructive controls.
+ * "Copy file path" used to live next to it but was removed: it shared the
+ * same hover overlay with trash and competed for clicks with the main
+ * card, so users were accidentally pasting `C:\...\<uuid>.png` into chat
+ * apps instead of the actual image. Path-copy can come back later via a
+ * right-click context menu where it can't be misclicked.
  *
  * Picker closes on any successful action via `onAfterAction()`.
  */
@@ -23,7 +29,6 @@ export function CustomEmojiTab({ onAfterAction }: CustomEmojiTabProps) {
   const { emojis, loading, generating, hasToken, error, generate, remove } = useCustomEmojis();
   const [prompt, setPrompt] = useState('');
   const [actingOn, setActingOn] = useState<string | null>(null);
-  const [copiedPath, setCopiedPath] = useState<string | null>(null);
   const addToast = useToastStore((s) => s.addToast);
 
   const handleGenerate = useCallback(async () => {
@@ -47,21 +52,6 @@ export function CustomEmojiTab({ onAfterAction }: CustomEmojiTabProps) {
       }
     },
     [actingOn, addToast, onAfterAction]
-  );
-
-  const handleCopyPath = useCallback(
-    async (id: string, path: string) => {
-      if (actingOn) return;
-      try {
-        await navigator.clipboard.writeText(path);
-        setCopiedPath(id);
-        setTimeout(() => setCopiedPath(null), 1200);
-        addToast('File path copied', 'success', 2000);
-      } catch {
-        addToast('Could not copy path to clipboard', 'error', 3000);
-      }
-    },
-    [actingOn, addToast]
   );
 
   const handleDelete = useCallback(
@@ -136,7 +126,9 @@ export function CustomEmojiTab({ onAfterAction }: CustomEmojiTabProps) {
           <AlertCircle size={13} className="text-accent shrink-0" />
           <span>
             Custom emoji generation requires Volt Pro (or a dev build with{' '}
-            <code className="font-mono text-ink">REPLICATE_TOKEN</code> in <code className="font-mono text-ink">.env</code>).
+            <code className="font-mono text-ink">HF_TOKEN</code> or{' '}
+            <code className="font-mono text-ink">REPLICATE_TOKEN</code> in{' '}
+            <code className="font-mono text-ink">.env</code>).
           </span>
         </div>
       )}
@@ -168,7 +160,6 @@ export function CustomEmojiTab({ onAfterAction }: CustomEmojiTabProps) {
         <div className="grid grid-cols-7 gap-2">
           {emojis.map((emoji) => {
             const src = convertFileSrc(emoji.path);
-            const isPathCopied = copiedPath === emoji.id;
             const isActing = actingOn === emoji.id;
             return (
               <div
@@ -193,34 +184,26 @@ export function CustomEmojiTab({ onAfterAction }: CustomEmojiTabProps) {
                   />
                 </button>
 
-                {/* Hover overlay with secondary actions */}
-                <div
+                {/* Delete control — top-right, away from the natural click
+                    landing zone for the main "copy image" action. Hidden
+                    until hover so the grid stays visually clean. */}
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    void handleDelete(emoji.id);
+                  }}
                   className={cn(
-                    'absolute bottom-1 right-1 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity',
-                    'pointer-events-none group-hover:pointer-events-auto'
+                    'absolute top-1 right-1 w-6 h-6 flex items-center justify-center rounded',
+                    'bg-surface/90 backdrop-blur-sm border border-hairline text-accent-red',
+                    'opacity-0 group-hover:opacity-100 transition-opacity',
+                    'pointer-events-none group-hover:pointer-events-auto',
+                    'hover:bg-accent-red/15'
                   )}
+                  title="Delete emoji"
+                  aria-label={`Delete ${emoji.prompt}`}
                 >
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      void handleCopyPath(emoji.id, emoji.path);
-                    }}
-                    className="w-6 h-6 flex items-center justify-center rounded bg-surface border border-hairline text-mute hover:text-ink hover:bg-surface-elevated"
-                    title="Copy file path"
-                  >
-                    {isPathCopied ? <Check size={11} /> : <LinkIcon size={11} />}
-                  </button>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      void handleDelete(emoji.id);
-                    }}
-                    className="w-6 h-6 flex items-center justify-center rounded bg-surface border border-hairline text-accent-red hover:bg-accent-red/10"
-                    title="Delete"
-                  >
-                    <Trash2 size={11} />
-                  </button>
-                </div>
+                  <Trash2 size={11} />
+                </button>
               </div>
             );
           })}

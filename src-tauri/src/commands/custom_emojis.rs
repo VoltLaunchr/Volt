@@ -1,28 +1,40 @@
-//! Custom Emoji Generation via Replicate's `fofr/sdxl-emoji` LoRA.
+//! Custom Emoji Generation — HuggingFace → Replicate → Pollinations fallback.
 //!
 //! ## Routing model (Volt Pro)
 //!
 //! The desktop client **must not** carry Volt's paid API tokens in production.
-//! Two paths are wired here, selected at runtime by [`EmojiProxy::select`]:
+//! Providers are selected at runtime by [`select_providers`] and tried in
+//! priority order by [`generate_with_fallback`]:
 //!
-//! - **DirectReplicate** — dev-only. Reads `REPLICATE_TOKEN` from the process env
-//!   (loaded by `dotenvy` in `main.rs`). Used when `cfg!(debug_assertions)` is
-//!   true *and* the env var is set. This is the path the maintainer uses while
-//!   iterating; the user's machine is the only one ever charged.
+//! - **HuggingFace** — dev-only. Reads `HF_TOKEN`. Calls the Inference
+//!   Providers router (`router.huggingface.co/hf-inference/models/...`) on
+//!   `black-forest-labs/FLUX.1-schnell` (distilled FLUX, 4-step). The legacy
+//!   `api-inference.huggingface.co/models/<X>` endpoint was retired in 2025 —
+//!   it now returns a bare 404 "Cannot POST" for every model. The token must
+//!   carry the **Inference Providers** permission scope; old "Inference API"
+//!   tokens no longer authorize this route. FLUX is generalist, so the
+//!   prompt embeds an explicit "emoji sticker" style hint to substitute for
+//!   the LoRA trigger phrase we used with the previous model.
+//! - **Replicate** — dev-only. Reads `REPLICATE_TOKEN`. Calls `fofr/sdxl-emoji`
+//!   LoRA. Highest quality but paid (no free tier — credits required).
+//! - **Pollinations** — dev-only. No auth, no token, no env var. Hits
+//!   `image.pollinations.ai/prompt/...` via GET, returns the PNG directly.
+//!   Lowest quality of the three (and the prompt transits a public service),
+//!   but always available — the safety net so the feature still works when
+//!   the paid chains are down or out of credit. Always enabled in debug
+//!   builds; deliberately omitted from release builds where prompts must
+//!   stay on the Volt Pro backend.
+//! - **VoltBackend** (implicit) — prod path. Release builds carry no direct
+//!   provider; the chain returns the "Volt Pro" placeholder error until the
+//!   server-side proxy at voltlaunchr.com ships (it will verify the user's
+//!   Supabase JWT + Pro tier and pick a provider server-side).
 //!
-//! - **VoltBackend** — prod path. Will call the Volt backend (voltlaunchr.com)
-//!   which verifies the user's Supabase JWT, checks their Pro tier, then proxies
-//!   to Replicate using Volt's server-side token. Today this variant returns a
-//!   "not yet available" error — backend implementation is Phase 2.
+//! ## Flow
 //!
-//! ## Flow (DirectReplicate)
-//!
-//! 1. POST to `https://api.replicate.com/v1/models/fofr/sdxl-emoji/predictions`
-//!    with `Prefer: wait` (blocks server-side up to 60 s; if it times out the API
-//!    returns the in-progress prediction and we poll).
-//! 2. Once `status == "succeeded"`, GET the first output URL.
-//! 3. Save the PNG bytes to `app_data_dir/custom_emojis/{id}.png`.
-//! 4. Persist a tiny index JSON so the UI can list/manage them.
+//! 1. Each provider returns the generated PNG as `Vec<u8>` (HF emits bytes
+//!    directly; Replicate returns a URL we download internally).
+//! 2. We save the bytes to `app_data_dir/custom_emojis/{id}.png`.
+//! 3. We persist a tiny index JSON so the UI can list/manage them.
 
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -34,7 +46,35 @@ use tracing::{info, warn};
 /// The `fofr/sdxl-emoji` LoRA was trained with the trigger phrase
 /// `A TOK emoji of …`. Prepending it consistently produces sticker-style emojis;
 /// without it, the model defaults to base SDXL.
-const PROMPT_PREFIX: &str = "A TOK emoji of ";
+const REPLICATE_PROMPT_PREFIX: &str = "A TOK emoji of ";
+
+/// HuggingFace Inference Providers router endpoint for
+/// `black-forest-labs/FLUX.1-schnell`.
+///
+/// The legacy `api-inference.huggingface.co/models/<X>` endpoint was retired
+/// in 2025 — it now returns 404 "Cannot POST /models/..." for every model,
+/// including the ones HF still officially recommends. Text-to-image lives on
+/// the new router at `router.huggingface.co/<provider>/models/<X>`; the JS/
+/// Python SDKs both target this URL pattern.
+///
+/// FLUX is a generalist text-to-image model with no emoji-specific LoRA, so
+/// the prompt encodes the visual style explicitly. The 4-step schnell variant
+/// is distilled and runs without classifier-free guidance (`guidance_scale: 0`).
+const HUGGINGFACE_INFERENCE_ENDPOINT: &str =
+    "https://router.huggingface.co/hf-inference/models/black-forest-labs/FLUX.1-schnell";
+const HUGGINGFACE_PROMPT_PREFIX: &str =
+    "A cute emoji sticker, flat vector illustration, bold outline, vibrant colors, centered on a plain white background, of ";
+
+/// Pollinations.ai — free, auth-less image generation. GET the URL and you
+/// get a PNG back. Used as the last-resort fallback in the provider chain.
+/// We URL-encode the prompt into the path and pin the model to `flux` for
+/// consistent results with the same style hint we send to HF.
+const POLLINATIONS_BASE_URL: &str = "https://image.pollinations.ai/prompt/";
+
+/// Cold-start retry: HF serverless spins up the model on first hit and may
+/// return 503 with `estimated_time` even when `wait_for_model: true` is set.
+/// We re-POST once after a short wait.
+const HUGGINGFACE_COLD_START_WAIT_SECS: u64 = 15;
 
 /// Replicate API endpoints.
 ///
@@ -120,45 +160,104 @@ fn write_index(app: &AppHandle, entries: &[CustomEmoji]) -> Result<(), String> {
     fs::write(&path, json).map_err(|e| format!("Failed to write index: {}", e))
 }
 
-/// Routes the emoji generation request to the correct backend.
+/// Routes the emoji generation request to a concrete provider.
 ///
-/// See module-level docs for the rationale. Selection is performed once per
-/// command invocation (cheap — just an env read).
-enum EmojiProxy {
-    /// Dev-only: hits Replicate directly using a maintainer-supplied token.
-    DirectReplicate { token: String },
-    /// Prod: hits the Volt backend which proxies to Replicate using Volt's
-    /// own token after authenticating + authorising the user. Phase 2.
-    VoltBackend,
+/// See module-level docs for the rationale. Each variant returns the final
+/// PNG as `Vec<u8>` — HF emits bytes directly, Replicate downloads its own
+/// output URL internally — so callers never see the URL-vs-bytes split.
+enum EmojiProvider {
+    HuggingFace { token: String },
+    Replicate { token: String },
+    /// Free, no-auth fallback. Pollinations does not need any state — we
+    /// keep the variant unit-like so adding it to the chain is just
+    /// `providers.push(EmojiProvider::Pollinations)` with no env-var dance.
+    Pollinations,
 }
 
-impl EmojiProxy {
-    /// Decide which path to use:
-    /// - Debug build **and** `REPLICATE_TOKEN` set → DirectReplicate (dev).
-    /// - Otherwise → VoltBackend (today returns "not yet available").
-    fn select() -> Self {
-        if cfg!(debug_assertions)
-            && let Ok(token) = std::env::var("REPLICATE_TOKEN")
-        {
-            let trimmed = token.trim();
-            if !trimmed.is_empty() {
-                return Self::DirectReplicate {
-                    token: trimmed.to_string(),
-                };
-            }
+impl EmojiProvider {
+    fn name(&self) -> &'static str {
+        match self {
+            Self::HuggingFace { .. } => "huggingface",
+            Self::Replicate { .. } => "replicate",
+            Self::Pollinations => "pollinations",
         }
-        Self::VoltBackend
     }
 
-    async fn generate(&self, prompt: &str) -> Result<String, String> {
+    async fn generate(&self, prompt: &str) -> Result<Vec<u8>, String> {
         match self {
-            Self::DirectReplicate { token } => run_replicate_prediction(token, prompt).await,
-            Self::VoltBackend => Err(
-                "Custom emoji generation requires Volt Pro. This will be enabled once Volt Pro launches."
-                    .to_string(),
-            ),
+            Self::HuggingFace { token } => run_huggingface_inference(token, prompt).await,
+            Self::Replicate { token } => run_replicate_prediction(token, prompt).await,
+            Self::Pollinations => run_pollinations(prompt).await,
         }
     }
+}
+
+/// Build the provider chain (dev builds only). Paid providers first when
+/// configured, then Pollinations as a free safety net so the feature works
+/// even when both paid quotas are exhausted. Release builds return an empty
+/// chain — generation must go through the Volt Pro backend proxy instead of
+/// shipping prompts to public services from the user's machine.
+fn select_providers() -> Vec<EmojiProvider> {
+    if !cfg!(debug_assertions) {
+        return Vec::new();
+    }
+    let mut providers = Vec::new();
+    if let Ok(t) = std::env::var("HF_TOKEN") {
+        let trimmed = t.trim();
+        if !trimmed.is_empty() {
+            providers.push(EmojiProvider::HuggingFace {
+                token: trimmed.to_string(),
+            });
+        }
+    }
+    if let Ok(t) = std::env::var("REPLICATE_TOKEN") {
+        let trimmed = t.trim();
+        if !trimmed.is_empty() {
+            providers.push(EmojiProvider::Replicate {
+                token: trimmed.to_string(),
+            });
+        }
+    }
+    // Always end the chain with Pollinations in dev — keeps the feature
+    // working when paid providers are out of credit / mis-configured.
+    providers.push(EmojiProvider::Pollinations);
+    providers
+}
+
+/// Try each provider in order. First success wins; if all fail, return the
+/// aggregated error so the UI can show which providers were attempted.
+async fn generate_with_fallback(
+    providers: &[EmojiProvider],
+    prompt: &str,
+) -> Result<Vec<u8>, String> {
+    if providers.is_empty() {
+        return Err(
+            "Custom emoji generation requires Volt Pro. This will be enabled once Volt Pro launches."
+                .into(),
+        );
+    }
+    let mut errors = Vec::with_capacity(providers.len());
+    for provider in providers {
+        info!("Custom emoji: trying provider '{}'", provider.name());
+        match provider.generate(prompt).await {
+            Ok(bytes) => {
+                info!(
+                    "Custom emoji: provider '{}' succeeded ({} bytes)",
+                    provider.name(),
+                    bytes.len()
+                );
+                return Ok(bytes);
+            }
+            Err(e) => {
+                warn!("Custom emoji: provider '{}' failed: {}", provider.name(), e);
+                errors.push(format!("{}: {}", provider.name(), e));
+            }
+        }
+    }
+    Err(format!(
+        "All emoji providers failed.\n{}",
+        errors.join("\n")
+    ))
 }
 
 /// Resolve the latest version SHA for the configured Replicate community model.
@@ -190,8 +289,136 @@ async fn fetch_latest_version(client: &reqwest::Client, token: &str) -> Result<S
     Ok(info.latest_version.id)
 }
 
-/// Kick off a prediction and poll until it terminates. Returns the first output URL.
-async fn run_replicate_prediction(token: &str, prompt: &str) -> Result<String, String> {
+/// POST a prompt to HF's serverless Inference API and return the PNG bytes.
+///
+/// Success path returns `Content-Type: image/png` and the raw bytes.
+/// Failure cases:
+/// - 503 with JSON `{ error, estimated_time }` → cold start; we retry once
+///   after a short pause despite `wait_for_model: true`, which HF doesn't
+///   always honour for community SD checkpoints.
+/// - 404 → model not on serverless tier (common for SD community fine-tunes).
+///   Caller's responsibility to fall back to Replicate.
+/// - 401/429 → bad token or rate-limited; surfaced directly.
+async fn run_huggingface_inference(token: &str, prompt: &str) -> Result<Vec<u8>, String> {
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(120))
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    // FLUX.1-schnell is distilled (4-step turbo) and trained without classifier-
+    // free guidance — `num_inference_steps: 4` matches HF's quickstart and
+    // `guidance_scale: 0` avoids artefact-prone CFG. Bumping steps higher
+    // doesn't improve quality with this checkpoint, it just wastes credits.
+    let body = serde_json::json!({
+        "inputs": format!("{}{}", HUGGINGFACE_PROMPT_PREFIX, prompt),
+        "options": { "wait_for_model": true },
+        "parameters": {
+            "num_inference_steps": 4,
+            "guidance_scale": 0.0,
+            "width": 1024,
+            "height": 1024,
+        }
+    });
+
+    for attempt in 0..2 {
+        let resp = client
+            .post(HUGGINGFACE_INFERENCE_ENDPOINT)
+            .bearer_auth(token)
+            .header("Content-Type", "application/json")
+            .header("x-wait-for-model", "true")
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| format!("HuggingFace POST failed: {}", e))?;
+
+        let status = resp.status();
+        let content_type = resp
+            .headers()
+            .get("content-type")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("")
+            .to_string();
+
+        if status.is_success() && content_type.starts_with("image/") {
+            return resp
+                .bytes()
+                .await
+                .map(|b| b.to_vec())
+                .map_err(|e| format!("HuggingFace body read failed: {}", e));
+        }
+
+        let txt = resp.text().await.unwrap_or_default();
+        if status.as_u16() == 503 && attempt == 0 {
+            warn!("HuggingFace cold-start (503), retrying once: {}", txt);
+            tokio::time::sleep(Duration::from_secs(HUGGINGFACE_COLD_START_WAIT_SECS)).await;
+            continue;
+        }
+        return Err(format!("HuggingFace returned HTTP {}: {}", status, txt));
+    }
+    Err("HuggingFace: exhausted retries on cold start".into())
+}
+
+/// Free, auth-less fallback: hit pollinations.ai with the prompt URL-encoded
+/// into the path. Returns the PNG bytes directly. We pin `model=flux` for
+/// consistency with HF's FLUX.1-schnell choice and pass the same emoji-style
+/// hint we use for HF. `nologo=true` strips the watermark.
+///
+/// Quality is generally below paid SDXL emoji LoRAs but adequate as a safety
+/// net, and it removes the "feature is just broken" UX when both paid
+/// providers fail. We don't expose a knob for this in the UI yet — the chain
+/// resolution is implicit.
+async fn run_pollinations(prompt: &str) -> Result<Vec<u8>, String> {
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(120))
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    // Pollinations parses the prompt out of the URL path, so the prompt MUST
+    // be percent-encoded. `url::form_urlencoded` over-encodes commas/spaces
+    // exactly the way the service expects.
+    let styled_prompt = format!("{}{}", HUGGINGFACE_PROMPT_PREFIX, prompt);
+    let encoded: String =
+        url::form_urlencoded::byte_serialize(styled_prompt.as_bytes()).collect();
+    let url = format!(
+        "{}{}?model=flux&width=1024&height=1024&nologo=true",
+        POLLINATIONS_BASE_URL, encoded
+    );
+
+    let resp = client
+        .get(&url)
+        .send()
+        .await
+        .map_err(|e| format!("Pollinations GET failed: {}", e))?;
+
+    let status = resp.status();
+    if !status.is_success() {
+        let txt = resp.text().await.unwrap_or_default();
+        return Err(format!("Pollinations returned HTTP {}: {}", status, txt));
+    }
+
+    let content_type = resp
+        .headers()
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("")
+        .to_string();
+    if !content_type.starts_with("image/") {
+        let txt = resp.text().await.unwrap_or_default();
+        return Err(format!(
+            "Pollinations succeeded but returned non-image content-type '{}': {}",
+            content_type, txt
+        ));
+    }
+
+    resp.bytes()
+        .await
+        .map(|b| b.to_vec())
+        .map_err(|e| format!("Pollinations body read failed: {}", e))
+}
+
+/// Kick off a Replicate prediction, poll until it terminates, download the
+/// resulting PNG and return its bytes.
+async fn run_replicate_prediction(token: &str, prompt: &str) -> Result<Vec<u8>, String> {
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(90))
         .build()
@@ -202,7 +429,7 @@ async fn run_replicate_prediction(token: &str, prompt: &str) -> Result<String, S
     let body = serde_json::json!({
         "version": version,
         "input": {
-            "prompt": format!("{}{}", PROMPT_PREFIX, prompt),
+            "prompt": format!("{}{}", REPLICATE_PROMPT_PREFIX, prompt),
             "width": 1024,
             "height": 1024,
             "num_outputs": 1,
@@ -276,26 +503,24 @@ async fn run_replicate_prediction(token: &str, prompt: &str) -> Result<String, S
         serde_json::Value::Array(arr) => arr.first().and_then(|v| v.as_str()).map(String::from),
         serde_json::Value::String(s) => Some(s.clone()),
         _ => None,
-    };
-    first_url.ok_or_else(|| "Replicate succeeded but returned no output URL".to_string())
-}
+    }
+    .ok_or_else(|| "Replicate succeeded but returned no output URL".to_string())?;
 
-async fn download_to_file(url: &str, dest: &PathBuf) -> Result<(), String> {
-    // 120 s total ceiling — Replicate CDN occasionally lags right after a
-    // prediction succeeds, but anything past two minutes is a stuck request.
-    let client = reqwest::Client::builder()
+    // Download the PNG. 120 s ceiling — Replicate's CDN occasionally lags right
+    // after a prediction succeeds, but anything past two minutes is stuck.
+    let download_client = reqwest::Client::builder()
         .timeout(Duration::from_secs(120))
         .build()
         .map_err(|e| e.to_string())?;
-    let bytes = client
-        .get(url)
+    let bytes = download_client
+        .get(&first_url)
         .send()
         .await
-        .map_err(|e| format!("Download failed: {}", e))?
+        .map_err(|e| format!("Replicate download failed: {}", e))?
         .bytes()
         .await
-        .map_err(|e| format!("Download body read failed: {}", e))?;
-    fs::write(dest, &bytes).map_err(|e| format!("File write failed: {}", e))
+        .map_err(|e| format!("Replicate body read failed: {}", e))?;
+    Ok(bytes.to_vec())
 }
 
 /// Generate a new custom emoji from a free-text prompt.
@@ -312,22 +537,38 @@ pub async fn custom_emojis_generate(app: AppHandle, prompt: String) -> Result<Cu
         return Err("Prompt is too long (max 300 chars)".into());
     }
 
-    let proxy = EmojiProxy::select();
+    let providers = select_providers();
     info!(
-        "Custom emoji: starting generation (proxy={}) for prompt='{}'",
-        match &proxy {
-            EmojiProxy::DirectReplicate { .. } => "direct",
-            EmojiProxy::VoltBackend => "backend",
-        },
+        "Custom emoji: generating with chain [{}] for prompt='{}'",
+        providers
+            .iter()
+            .map(|p| p.name())
+            .collect::<Vec<_>>()
+            .join(","),
         trimmed
     );
 
-    let output_url = proxy.generate(trimmed).await?;
+    let bytes = generate_with_fallback(&providers, trimmed).await?;
+
+    // Normalize whatever the provider returned to PNG bytes. Pollinations
+    // emits JPEG even when the route looks PNG-ish, and the index promises
+    // a `.png` file. Re-encoding once at write-time keeps the rest of the
+    // pipeline (preview, copy-as-image, future thumbnail cache) free of
+    // format-sniffing branches. Round-trip cost is negligible for a single
+    // 1024² image.
+    let png_bytes = {
+        let img = image::load_from_memory(&bytes)
+            .map_err(|e| format!("Provider returned undecodable image bytes: {}", e))?;
+        let mut buf = std::io::Cursor::new(Vec::with_capacity(bytes.len()));
+        img.write_to(&mut buf, image::ImageFormat::Png)
+            .map_err(|e| format!("Failed to re-encode emoji as PNG: {}", e))?;
+        buf.into_inner()
+    };
 
     let id = uuid::Uuid::new_v4().to_string();
     let dir = emoji_dir(&app)?;
     let dest = dir.join(format!("{}.png", id));
-    download_to_file(&output_url, &dest).await?;
+    fs::write(&dest, &png_bytes).map_err(|e| format!("Failed to write emoji PNG: {}", e))?;
 
     let emoji = CustomEmoji {
         id: id.clone(),
@@ -371,6 +612,66 @@ pub async fn custom_emojis_delete(app: AppHandle, id: String) -> Result<(), Stri
     write_index(&app, &entries)
 }
 
+/// Set an RGBA image on the OS clipboard with retry on Windows clipboard
+/// contention.
+///
+/// `SetClipboardData` returns `ERROR_CLIPBOARD_NOT_OPEN` (os error 1418) when
+/// another process owns the clipboard at the moment arboard tries to call
+/// `OpenClipboard`. Volt's own clipboard-history monitor polls the clipboard
+/// every ~500 ms via the `clipboard_manager` plugin, and any other clipboard
+/// manager the user has installed (Ditto, Windows clipboard history, etc.)
+/// will compete for the same lock. The contention window is short — usually
+/// under a few milliseconds — so a small retry budget recovers cleanly.
+///
+/// We rebuild `arboard::ImageData` inside the loop because its `bytes` field
+/// is `Cow<[u8]>` and the cheapest way to avoid borrow-checker grief across
+/// retry boundaries is to construct it fresh each attempt (the RGBA slice
+/// itself is borrowed, no copy).
+fn set_clipboard_image_with_retry(
+    width: usize,
+    height: usize,
+    rgba: &[u8],
+) -> Result<(), String> {
+    const MAX_ATTEMPTS: u32 = 8;
+    let mut last_err = String::new();
+
+    for attempt in 0..MAX_ATTEMPTS {
+        if attempt > 0 {
+            // Linear backoff 25, 50, 75, … ms. Total worst case ≈ 700 ms,
+            // well under any user-perceptible threshold for a copy action.
+            std::thread::sleep(std::time::Duration::from_millis(25 * attempt as u64));
+        }
+
+        let clipboard = match arboard::Clipboard::new() {
+            Ok(cb) => cb,
+            Err(e) => {
+                last_err = format!("Clipboard init failed: {}", e);
+                continue;
+            }
+        };
+
+        let image = arboard::ImageData {
+            width,
+            height,
+            bytes: std::borrow::Cow::Borrowed(rgba),
+        };
+
+        // arboard moves the clipboard handle on `set_image`; the next attempt
+        // gets a fresh one via `Clipboard::new()`. This is intentional —
+        // re-opening clears any half-stuck state on the previous failure.
+        let mut cb = clipboard;
+        match cb.set_image(image) {
+            Ok(()) => return Ok(()),
+            Err(e) => last_err = format!("set_image attempt {}: {}", attempt + 1, e),
+        }
+    }
+
+    Err(format!(
+        "Clipboard set_image failed after {} attempts: {}",
+        MAX_ATTEMPTS, last_err
+    ))
+}
+
 /// Copy a generated emoji's PNG to the OS clipboard as an **image** (not a path).
 ///
 /// Decoded to RGBA so it can be pasted into Slack, Discord, Photoshop, etc.
@@ -384,23 +685,20 @@ pub async fn custom_emojis_copy_image(app: AppHandle, id: String) -> Result<(), 
         .find(|e| e.id == id)
         .ok_or_else(|| format!("Emoji '{}' not found", id))?;
 
-    let img =
-        image::open(&entry.path).map_err(|e| format!("Failed to decode {}: {}", entry.path, e))?;
+    // We can't trust the `.png` file extension: some providers (notably
+    // Pollinations.ai) reply with JPEG bytes even when the URL implies PNG,
+    // and `image::open` picks its decoder from the file extension. Read the
+    // bytes ourselves and let the image crate sniff the format from the
+    // magic header so we decode whatever was actually written to disk.
+    let bytes = fs::read(&entry.path)
+        .map_err(|e| format!("Failed to read {}: {}", entry.path, e))?;
+    let img = image::load_from_memory(&bytes)
+        .map_err(|e| format!("Failed to decode {}: {}", entry.path, e))?;
     let rgba = img.to_rgba8();
     let (width, height) = rgba.dimensions();
-    let bytes = rgba.into_raw();
+    let rgba_bytes = rgba.into_raw();
 
-    let clipboard_image = arboard::ImageData {
-        width: width as usize,
-        height: height as usize,
-        bytes: std::borrow::Cow::Owned(bytes),
-    };
-
-    let mut clipboard =
-        arboard::Clipboard::new().map_err(|e| format!("Clipboard init failed: {}", e))?;
-    clipboard
-        .set_image(clipboard_image)
-        .map_err(|e| format!("Clipboard set_image failed: {}", e))?;
+    set_clipboard_image_with_retry(width as usize, height as usize, &rgba_bytes)?;
 
     info!(
         "Custom emoji {} copied to clipboard as {}x{} image",
@@ -411,16 +709,12 @@ pub async fn custom_emojis_copy_image(app: AppHandle, id: String) -> Result<(), 
 
 /// Whether this build can actually run a generation right now.
 ///
-/// Returns `true` if either:
-/// - we're in a debug build with `REPLICATE_TOKEN` available (dev path); or
-/// - the VoltBackend proxy is fully wired (Phase 2 — not yet).
+/// True when at least one direct provider (HF or Replicate) is wired up via
+/// env. The VoltBackend proxy is stubbed until the server-side route exists,
+/// so release builds always return `false`.
 #[tauri::command]
 pub async fn custom_emojis_has_token() -> bool {
-    match EmojiProxy::select() {
-        EmojiProxy::DirectReplicate { .. } => true,
-        // VoltBackend proxy is stubbed until the server-side route exists.
-        EmojiProxy::VoltBackend => false,
-    }
+    !select_providers().is_empty()
 }
 
 /// Whether the current build exposes AI Pro features (custom emoji generation,
