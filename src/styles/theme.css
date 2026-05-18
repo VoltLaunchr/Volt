@@ -55,15 +55,13 @@
   --radius-xl:   20px;
   --radius-full: 9999px;
 
-  /* ── Spacing ── */
-  --spacing-xxs:     2px;
-  --spacing-xs:      4px;
-  --spacing-sm:      8px;
-  --spacing-md:      12px;
-  --spacing-lg:      16px;
-  --spacing-xl:      24px;
-  --spacing-xxl:     32px;
-  --spacing-section: 96px;
+  /* NOTE: legacy --spacing-{xs|sm|md|lg|xl|xxl} design tokens are defined
+     in the :root block below — NOT here. Tailwind v4 picks up any
+     --spacing-{name} inside @theme and uses it to generate `max-w-{name}`
+     / `w-{name}` / `min-w-{name}` utilities, which BREAKS `max-w-sm`
+     (it would be 8 px instead of the canonical 24 rem container width).
+     Tailwind's default --container-{name} scale takes over once these
+     are no longer in @theme. */
 
   /* ── Transitions ── */
   --ease-default: cubic-bezier(0.4, 0, 0.2, 1);
@@ -76,6 +74,25 @@
   --z-modal:    2000;
   --z-overlay:  3000;
   --z-tooltip:  4000;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Legacy pixel-sized spacing design tokens.
+   Kept OUT of @theme so Tailwind v4 does not pick them up and
+   generate broken max-w-* / w-* utilities (--spacing-sm = 8 px
+   would clobber the canonical max-w-sm = 24 rem).
+   Consumed by raw CSS via var(--spacing-*) — currently used in
+   src/features/results/components/ResultItem.css.
+   ───────────────────────────────────────────────────────────── */
+:root {
+  --spacing-xxs:     2px;
+  --spacing-xs:      4px;
+  --spacing-sm:      8px;
+  --spacing-md:      12px;
+  --spacing-lg:      16px;
+  --spacing-xl:      24px;
+  --spacing-xxl:     32px;
+  --spacing-section: 96px;
 }
 
 /* ─────────────────────────────────────────────────────────────
