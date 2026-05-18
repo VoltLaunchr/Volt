@@ -1172,11 +1172,14 @@ function ExtensionPreferencesDialog({
   const [savedMsg, setSavedMsg] = useState(false);
   const overlayRef = useRef<HTMLDivElement>(null);
 
-  // Load existing values on mount (skip 'oauth' prefs — handled by OAuthPreferenceField)
+  // Load existing values on mount (skip 'oauth' prefs — handled by OAuthPreferenceField).
+  // Derive the pref list inside the effect so we depend only on the manifest's
+  // own properties; the outer `prefs` reference allocates `[]` on every render.
   useEffect(() => {
     const load = async () => {
+      const prefList = manifest.preferences ?? [];
       const loaded: Record<string, string> = {};
-      for (const pref of prefs) {
+      for (const pref of prefList) {
         if (pref.type === 'oauth') continue;
         try {
           if (pref.type === 'secret') {
@@ -1199,9 +1202,7 @@ function ExtensionPreferencesDialog({
       setValues(loaded);
     };
     void load();
-  // prefs array identity is stable (from manifest object) — only run on mount
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [manifest.id]);
+  }, [manifest.id, manifest.preferences]);
 
   const handleSave = async () => {
     setSaving(true);

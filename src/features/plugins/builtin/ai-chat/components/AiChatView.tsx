@@ -209,21 +209,32 @@ export function AiChatView({ onClose, initialQuery, systemPrompt }: AiChatViewPr
 
   const { messages, isStreaming, send, clear } = useAiChat({ provider, model });
 
-  // Load which providers have keys
+  // Load which providers have keys. We read `provider` via the functional
+  // setState form so this effect doesn't need it in its deps — otherwise the
+  // effect would re-fire every time the user switches providers and clobber
+  // their choice with the "first configured" fallback.
   useEffect(() => {
+    let cancelled = false;
     invoke<ProviderStatus[]>('ai_get_providers_status')
       .then((statuses) => {
+        if (cancelled) return;
         setProviders(statuses);
         const configured = statuses.filter((s) => s.hasKey).map((s) => s.provider);
         setConfiguredProviders(configured);
-        if (configured.length > 0 && !configured.includes(provider)) {
-          const first = configured[0];
-          setProvider(first);
-          setModel(PROVIDER_MODELS[first]?.[0]?.id ?? '');
-        }
+        setProvider((curr) => {
+          if (configured.length > 0 && !configured.includes(curr)) {
+            const first = configured[0];
+            setModel(PROVIDER_MODELS[first]?.[0]?.id ?? '');
+            return first;
+          }
+          return curr;
+        });
       })
       .catch(() => {});
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Auto-send initial query once providers are loaded
   useEffect(() => {
@@ -239,10 +250,11 @@ export function AiChatView({ onClose, initialQuery, systemPrompt }: AiChatViewPr
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // Focus input on mount
+  // Focus input on mount (or when the initial query changes — in practice it
+  // is set once by the parent, so this still behaves as a mount-time focus).
   useEffect(() => {
     if (!initialQuery) inputRef.current?.focus();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [initialQuery]);
 
   const handleSend = useCallback(() => {
     if (!input.trim() || isStreaming) return;

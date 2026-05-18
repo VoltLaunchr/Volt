@@ -72,7 +72,12 @@ export function SystemMonitorDetail(): React.JSX.Element {
   const rxPoints   = useMemo(() => toPoints(history, (s) => s.networkRxBps), [history]);
   const txPoints   = useMemo(() => toPoints(history, (s) => s.networkTxBps), [history]);
 
-  const showHighCpuAlert = !alertDismissed && isHighCpuSustained(history);
+  // `isHighCpuSustained` reads `Date.now()`, so we anchor the computation to
+  // the history identity via useMemo. That keeps the call out of the render
+  // body (which would violate react-hooks/purity) and lets React Compiler
+  // memoize the rest of the component.
+  const highCpuSustained = useMemo(() => isHighCpuSustained(history), [history]);
+  const showHighCpuAlert = !alertDismissed && highCpuSustained;
   useEffect(() => {
     if (alertDismissed && metrics && metrics.cpuUsage < HIGH_CPU_THRESHOLD) {
       setAlertDismissed(false);
