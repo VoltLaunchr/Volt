@@ -187,37 +187,41 @@ export function CreateExtensionView({ onClose }: Props): React.JSX.Element {
           </span>
         </div>
 
-        <div className="flex flex-col items-center justify-center flex-1 gap-5 text-center px-8">
+        <div className="flex flex-1 flex-col items-center justify-center gap-6 px-8 text-center">
           <div className="relative">
-            <div className="w-16 h-16 rounded-full bg-surface-elevated border border-hairline flex items-center justify-center">
+            <div className="flex h-16 w-16 items-center justify-center rounded-full border border-hairline bg-surface-elevated">
               <User size={28} className="text-ash" />
             </div>
-            <div className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-red-500 flex items-center justify-center text-white text-xs">
+            <div className="absolute -bottom-1 -right-1 flex h-6 w-6 items-center justify-center rounded-full bg-red-500 text-xs font-semibold text-white">
               !
             </div>
           </div>
-          <div>
-            <p className="font-semibold text-on-dark text-base">Sign In Required</p>
-            <p className="text-xs text-ash mt-1.5 max-w-xs">
-              You must be signed in to create an Extension.
+
+          <div className="flex w-full max-w-sm flex-col gap-2">
+            <p className="text-base font-semibold text-on-dark">Sign In Required</p>
+            <p className="text-sm leading-relaxed text-ash">
+              You must be signed in to create an extension. We use your account to
+              link the extension to your developer profile on voltlaunchr.com.
             </p>
           </div>
+
           <button
             onClick={() => {
               void login();
             }}
-            className="px-5 py-2 text-sm rounded-md border border-hairline hover:bg-surface-elevated transition-colors text-on-dark"
+            className="rounded-md border border-hairline px-5 py-2 text-sm text-on-dark transition-colors hover:bg-surface-elevated"
           >
             Sign In
           </button>
+
           <button
             onClick={() => {
               void openUrl('https://voltlaunchr.com/auth');
             }}
-            className="text-xs text-ash hover:text-accent-blue transition-colors"
+            className="text-xs text-ash transition-colors hover:text-accent-blue"
           >
-            Need to open in another browser?{' '}
-            <span className="text-accent-blue underline">Copy authorization link</span>
+            Sign-in window didn&apos;t open?{' '}
+            <span className="text-accent-blue underline">Open auth in browser</span>
           </button>
         </div>
       </div>
