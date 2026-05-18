@@ -232,32 +232,69 @@ impl LaunchHistory {
         records.values().cloned().collect()
     }
 
-    /// Get most recently launched apps
+    /// Get most recently launched apps.
+    ///
+    /// Uses [`select_nth_unstable_by_key`] to partition top-K in O(n) average
+    /// time without sorting the entire history. The previous implementation
+    /// cloned the full `Vec` then full-sorted it (O(n log n)) only to discard
+    /// everything past index `limit`. For a 1000-launch history that's a 1000-
+    /// string clone + ~10 k comparisons per keystroke when the predictive
+    /// suggestion query is empty.
     pub fn get_recent(&self, limit: usize) -> Vec<LaunchRecord> {
+        if limit == 0 {
+            return Vec::new();
+        }
         let mut records = self.get_all();
-        records.sort_by_key(|b| std::cmp::Reverse(b.last_launched));
-        records.truncate(limit);
+        if records.len() > limit {
+            records.select_nth_unstable_by_key(limit, |r| std::cmp::Reverse(r.last_launched));
+            records.truncate(limit);
+        }
+        records.sort_by_key(|r| std::cmp::Reverse(r.last_launched));
         records
     }
 
-    /// Get most frequently launched apps
+    /// Get most frequently launched apps. See [`get_recent`] for the
+    /// partial-sort rationale.
     pub fn get_frequent(&self, limit: usize) -> Vec<LaunchRecord> {
+        if limit == 0 {
+            return Vec::new();
+        }
         let mut records = self.get_all();
-        records.sort_by_key(|b| std::cmp::Reverse(b.launch_count));
-        records.truncate(limit);
+        if records.len() > limit {
+            records.select_nth_unstable_by_key(limit, |r| std::cmp::Reverse(r.launch_count));
+            records.truncate(limit);
+        }
+        records.sort_by_key(|r| std::cmp::Reverse(r.launch_count));
         records
     }
 
-    /// Get pinned apps
+    /// Get pinned apps. Filters under the lock to avoid materialising the
+    /// full record set just to throw most of it away.
     pub fn get_pinned(&self) -> Vec<LaunchRecord> {
-        self.get_all().into_iter().filter(|r| r.pinned).collect()
+        let records = self.records.lock().unwrap_or_else(|poisoned| {
+            log::error!(
+                "Launch history mutex poisoned in get_pinned(): {:?}",
+                poisoned
+            );
+            poisoned.into_inner()
+        });
+        records.values().filter(|r| r.pinned).cloned().collect()
     }
 
-    /// Get apps by tag
+    /// Get apps by tag. Filters under the lock so non-matching records never
+    /// allocate a clone.
     pub fn get_by_tag(&self, tag: &str) -> Vec<LaunchRecord> {
-        self.get_all()
-            .into_iter()
-            .filter(|r| r.tags.contains(&tag.to_string()))
+        let records = self.records.lock().unwrap_or_else(|poisoned| {
+            log::error!(
+                "Launch history mutex poisoned in get_by_tag(): {:?}",
+                poisoned
+            );
+            poisoned.into_inner()
+        });
+        records
+            .values()
+            .filter(|r| r.tags.iter().any(|t| t == tag))
+            .cloned()
             .collect()
     }
 

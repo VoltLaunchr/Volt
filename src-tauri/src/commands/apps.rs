@@ -987,6 +987,15 @@ async fn scan_applications_linux() -> Result<Vec<AppInfo>, String> {
     let local_bin = format!("{}/.local/bin", home);
     let bin_paths = vec!["/usr/bin", "/usr/local/bin", &local_bin];
 
+    // Seed a HashSet with the paths we already collected from .desktop files so
+    // the dedup check stays O(1) instead of the previous `apps.iter().any(...)`
+    // pattern. On a typical Ubuntu the bin loop visits 2000+ entries and `apps`
+    // already holds 200+ from the .desktop scan — the old quadratic check was
+    // 200 * 2000 = 400 000 string comparisons before we even reached the unrelated
+    // `sort + dedup_by` pass below.
+    let mut seen_paths: std::collections::HashSet<String> =
+        apps.iter().map(|a| a.path.clone()).collect();
+
     for bin_path in bin_paths {
         if let Ok(entries) = std::fs::read_dir(bin_path) {
             for entry in entries.flatten() {
@@ -996,11 +1005,12 @@ async fn scan_applications_linux() -> Result<Vec<AppInfo>, String> {
                     && is_executable(&path)
                     && let Some(name) = path.file_name()
                 {
-                    let name_str = name.to_string_lossy().to_string();
-                    let path_str = path.to_string_lossy().to_string();
+                    let name_str = name.to_string_lossy().into_owned();
+                    let path_str = path.to_string_lossy().into_owned();
 
-                    // Skip if already found via .desktop file
-                    if !apps.iter().any(|a| a.path == path_str) {
+                    // `HashSet::insert` returns false if the value was already
+                    // present — single-lookup dedup.
+                    if seen_paths.insert(path_str.clone()) {
                         let category = detect_app_category(&name_str, &path_str);
                         apps.push(AppInfo {
                             id: crate::utils::hash_id(&path_str),
@@ -1019,7 +1029,8 @@ async fn scan_applications_linux() -> Result<Vec<AppInfo>, String> {
         }
     }
 
-    // Remove duplicates
+    // Defense-in-depth: the HashSet above guarantees no duplicates from the
+    // bin scan, but the .desktop pass may have produced its own duplicates.
     apps.sort_by(|a, b| a.path.cmp(&b.path));
     apps.dedup_by(|a, b| a.path == b.path);
 
