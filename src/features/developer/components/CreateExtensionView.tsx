@@ -267,7 +267,7 @@ export function CreateExtensionView({ onClose }: Props): React.JSX.Element {
               Done
             </button>
           </div>
-          <p className="text-xs text-ash max-w-xs">
+          <p className="w-full max-w-sm text-xs leading-relaxed text-ash">
             The extension has been linked as a dev extension. Reload Volt to activate it.
           </p>
         </div>

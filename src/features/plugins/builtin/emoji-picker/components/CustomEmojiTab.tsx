@@ -155,11 +155,13 @@ export function CustomEmojiTab({ onAfterAction }: CustomEmojiTabProps) {
           <span className="text-sm">Loading library…</span>
         </div>
       ) : emojis.length === 0 ? (
-        <div className="flex flex-col items-center justify-center text-mute py-16 gap-3">
+        <div className="flex flex-col items-center justify-center gap-3 py-16 text-mute">
           <div className="text-[48px] opacity-40">✨</div>
-          <div className="text-base font-medium text-body">No custom emojis yet</div>
-          <div className="text-sm text-stone max-w-xs text-center">
-            Type a short prompt above and hit Generate. Newly created emojis appear here.
+          <div className="flex w-full max-w-sm flex-col items-center gap-1.5 text-center">
+            <p className="text-base font-medium text-body">No custom emojis yet</p>
+            <p className="text-sm leading-relaxed text-stone">
+              Type a short prompt above and hit Generate. Newly created emojis appear here.
+            </p>
           </div>
         </div>
       ) : (
