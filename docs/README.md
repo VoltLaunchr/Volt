@@ -1,152 +1,120 @@
-# Documentation Volt - Index
+# Volt Documentation
 
-Bienvenue dans la documentation de Volt ! Ce dossier contient toutes les ressources pour comprendre et contribuer au projet.
+Welcome to Volt's documentation. This directory is the source of truth for understanding the project, contributing code, building plugins, and shipping releases.
+
+> **Current version**: v0.2.0 (2026-05-18) — Notes, AI Chat / Quick Actions / Profile, Custom Emojis, Developer portal, extension sandbox hardening. See [`changelog/CHANGELOG.md`](./changelog/CHANGELOG.md) and [`public/changelog.json`](../public/changelog.json).
 
 ## 📂 Structure
 
 ```
 docs/
-├── architecture/      # Architecture technique & features
-├── user-guide/        # Guides utilisateur (raccourcis, etc.)
-├── plugins/           # Développement et publication de plugins
-├── build-release/     # CI/CD, distribution, roadmap
-└── changelog/         # Historique des versions
+├── architecture/      Technical architecture · features reference · OAuth design
+├── user-guide/        End-user shortcuts and guides
+├── plugins/           Plugin / extension development & publishing
+├── build-release/     CI/CD · distribution · signing · release roadmap
+├── changelog/         Version history
+├── security/          Audits, accepted risks, key custody
+├── roadmap/           Product roadmap, competitive analysis, ecosystem plan
+└── superpowers/       Internal specs & plans (work-in-progress)
 ```
 
 ---
 
-## 👤 Guide Utilisateur
+## ⭐ Start here
 
-### [Features Guide](./architecture/FEATURES.md) ⭐
-
-**Guide complet de toutes les fonctionnalités** — recherche, navigation, plugins intégrés, extensions, paramètres, support multi-plateformes.
-
-### [Keyboard Shortcuts](./user-guide/SHORTCUTS.md) ⭐
-
-**Référence complète des raccourcis clavier** — hotkeys globaux, contrôle des vues, navigation, actions sur les résultats, raccourcis des plugins.
-
-### Preview Panel
-
-**Panneau de prévisualisation** — aperçu en temps réel des fichiers, applications et résultats directement dans Volt sans quitter le launcher.
-
-### Snippets System
-
-**Système de snippets** — créez, gérez et insérez rapidement des fragments de texte réutilisables via le plugin snippets.
-
-### Power-user Operators
-
-**Opérateurs avancés** — syntaxe de recherche étendue pour filtrer par type, chemin, extension et combiner des critères (ex: `>`, `~`, `ext:`).
-
-### Windows Native Integration
-
-**Intégration native Windows** — recherche Windows Search, extraction d'icônes Shell, découverte d'applications UWP/MSIX, intégration registre.
-
-### Plugin SDK CLI (`volt-plugin`)
-
-**Outil CLI pour le développement de plugins** — scaffolding, validation, build et publication de plugins et extensions Volt.
+| Document | What it covers |
+|---|---|
+| [Features](./architecture/FEATURES.md) | Every user-visible capability of Volt v0.2.0 — search, plugins, AI, notes, extensions, security |
+| [Architecture](./architecture/ARCHITECTURE.md) | Backend modules, Tauri commands, frontend layout, search pipeline, embeddings, security model |
+| [Keyboard Shortcuts](./user-guide/SHORTCUTS.md) | Global + view + plugin hotkeys |
+| [Plugin Development](./plugins/DEVELOPMENT.md) | Build your own plugin or extension |
+| [Roadmap](./roadmap/PRODUCT_ROADMAP.md) | Where we're heading next |
 
 ---
 
 ## 🏗️ Architecture
 
-### [Architecture & Technical Documentation](./architecture/ARCHITECTURE.md)
+- [**Architecture overview**](./architecture/ARCHITECTURE.md) — entry points, ~30 Tauri command modules, frontend feature folders, search & indexing pipeline, embeddings, extension sandbox, auth security model.
+- [**Features reference**](./architecture/FEATURES.md) — every user-facing capability, built-in plugin, settings panel.
+- [**OAuth implementation**](./architecture/OAUTH_IMPLEMENTATION.md) — provider integration details (GitHub, Notion).
 
-Vue d'ensemble de l'architecture technique de Volt :
-
-- Structure frontend/backend
-- Organisation des modules Rust
-- Système de commandes Tauri
-- Gestion des fenêtres et hotkeys
+Additional backend reference:
+- [`src-tauri/README.md`](../src-tauri/README.md) · [`src-tauri/ARCHITECTURE.md`](../src-tauri/ARCHITECTURE.md) · [`src-tauri/MODULES.md`](../src-tauri/MODULES.md)
+- [`src-tauri/src/plugins/README.md`](../src-tauri/src/plugins/README.md) — backend plugin trait & API
 
 ---
 
-## 🔌 Plugins
+## 🔌 Plugins & Extensions
 
-### [Plugin Development Guide](./plugins/DEVELOPMENT.md) ⭐
+| Document | When to read it |
+|---|---|
+| [Plugin Development Guide](./plugins/DEVELOPMENT.md) ⭐ | Start here for any plugin or extension work |
+| [API Reference](./plugins/API_REFERENCE.md) | `Plugin` / `PluginContext` / `PluginResult`, backend trait, events |
+| [Examples](./plugins/EXAMPLES.md) | Cache, external API, dedicated React view, hybrid plugins |
+| [Template](./plugins/TEMPLATE.md) | Boilerplate to copy |
+| [Quick Reference](./plugins/QUICK_REFERENCE.md) | Cheat sheet |
+| [Publishing Guide](./plugins/PUBLISHING_GUIDE.md) | Docs site (Docusaurus / VitePress / Next.js) |
+| [Next.js Secure API](./plugins/NEXTJS_SECURE_API.md) | Backing API for a private extension registry |
+| [Extension Registry Template](./plugins/EXTENSION_REGISTRY_TEMPLATE.json) | JSON template for the registry |
+| [Summary](./plugins/SUMMARY.md) | Index of plugin docs |
 
-**Guide complet pour créer vos propres plugins** (recommandé pour débuter) — architecture, plugins Frontend (TS/React), plugins Backend (Rust), exemples pas-à-pas, meilleures pratiques, FAQ.
+**Plugin vs Extension**
+- **Plugin** = in-repo (`src/features/plugins/builtin/`). Registered in `useAppLifecycle.ts`. Communicates via `volt:*` DOM events and Tauri commands.
+- **Extension** = third-party, dynamic. Dual-source registry (GitHub legacy + Supabase via the **voltlaunchr.com/developer** portal). Loaded with Sucrase, sandboxed in a Web Worker, network proxied through Rust.
 
-### [Plugin API Reference](./plugins/API_REFERENCE.md)
-
-**Documentation technique de l'API des plugins** — interface `Plugin`, types `PluginContext`/`PluginResult`, API Backend Rust, commandes Tauri, système d'événements.
-
-### [Plugin Examples](./plugins/EXAMPLES.md)
-
-**Collection d'exemples avancés** — cache, API externe, interface React dédiée, plugin hybride, paramètres utilisateur, historique, multi-sources.
-
-### [Plugin Template](./plugins/TEMPLATE.md)
-
-**Template prêt à l'emploi** — structure complète, code de base commenté, checklist de création.
-
-### [Quick Reference](./plugins/QUICK_REFERENCE.md)
-
-**Référence rapide** pour le développement de plugins — à garder sous la main.
-
-### [Publishing Guide](./plugins/PUBLISHING_GUIDE.md)
-
-**Guide pour publier la documentation** — conversion Markdown → Web, Docusaurus/VitePress/Next.js, SEO, déploiement.
-
-### [Next.js Secure API](./plugins/NEXTJS_SECURE_API.md)
-
-**API Next.js sécurisée pour repo privé** — architecture et bonnes pratiques.
-
-### [Extension Registry Template](./plugins/EXTENSION_REGISTRY_TEMPLATE.json)
-
-Template JSON pour le registre d'extensions.
-
-### [Plugin Docs Summary](./plugins/SUMMARY.md)
-
-Récapitulatif des documents plugins disponibles.
+See the [Extensions](./architecture/FEATURES.md#-extension-ecosystem) section in FEATURES.md for the full security model.
 
 ---
 
 ## 🚀 Build & Release
 
-### [Roadmap](./build-release/ROADMAP.md) ⭐
+| Document | Purpose |
+|---|---|
+| [CI/CD Pipeline](./build-release/CICD.md) | GitHub Actions workflows (`check`, `release`, `auto-tag`, `changelog`, `e2e`, `pr-title`, `version-bump`) |
+| [Distribution](./build-release/DISTRIBUTION.md) | Multi-platform packaging, installers, code signing, auto-updates |
+| [Signing Setup](./build-release/SIGNING_SETUP.md) | Windows Authenticode + macOS notarization — certs, `.pfx`/`.p12` export, GitHub secrets |
+| [Roadmap](./build-release/ROADMAP.md) | Release phases & milestones |
+| [Implementation Plan (history)](./build-release/IMPLEMENTATION_PLAN.md) | Journal of past milestones |
 
-**Roadmap actuelle** — phases ship-ready → quality → platform → features, avec milestones, tâches concrètes et estimations.
-
-### [Distribution Guide](./build-release/DISTRIBUTION.md)
-
-Packaging multi-plateformes, installateurs, signature de code, auto-updates.
-
-### [Signing Setup](./build-release/SIGNING_SETUP.md)
-
-Guide opérationnel pour activer Windows Authenticode + macOS notarization — options de certs, export `.pfx`/`.p12`, secrets GitHub, tests de validation.
-
-### [CI/CD Pipeline](./build-release/CICD.md)
-
-GitHub Actions workflows, tests automatisés, releases automatiques, déploiement.
-
-### [Implementation Plan (historique)](./build-release/IMPLEMENTATION_PLAN.md)
-
-Journal des milestones M0-M5 déjà livrés (stabilité, fichiers, plugins, hotkeys, OS integration).
+> The **mandatory release checklist** (branch naming, cycle scan, smoke test, post-merge verification) lives in [`CLAUDE.md`](../CLAUDE.md) at the repo root — don't skip it.
 
 ---
 
-## 📋 Changelog & Release Notes
+## 🔐 Security
 
-### [Changelog](./changelog/CHANGELOG.md)
+- [Accepted Risks](./security/ACCEPTED_RISKS.md)
+- [Rust Code Review 2025](./security/RUST_CODE_REVIEW_2025.md)
+- [Updater Key Custody](./security/updater-key-custody.md)
 
-Historique complet des versions de Volt.
-
-### [Updates 2025-01](./changelog/UPDATES_2025-01.md)
-
-Résumé des mises à jour de janvier 2025.
-
-### [Changelog View (feature)](../src/features/changelog/README.md)
-
-Système intégré d'affichage du changelog dans l'app — accessible via les suggestions ("See what's new").
+Operational security details (auth CSRF, JWT validation, keyring HMAC, extension sandbox, SSRF prevention, LOLBIN denylist, deep-link rate-limit) are described in [`ARCHITECTURE.md`](./architecture/ARCHITECTURE.md) §7–§8.
 
 ---
 
-## 🚀 Quick Start - Créer un Plugin
+## 📋 Changelog
 
-### 1. Plugin Frontend Simple
+- [Changelog](./changelog/CHANGELOG.md) — full version history
+- [Updates 2025-01](./changelog/UPDATES_2025-01.md)
+- [In-app changelog feed](../public/changelog.json) — source for the "See what's new" suggestion (see [`src/features/changelog/README.md`](../src/features/changelog/README.md))
+
+---
+
+## 🗺️ Roadmap
+
+- [Product Roadmap](./roadmap/PRODUCT_ROADMAP.md)
+- [Competitive Analysis](./roadmap/COMPETITIVE_ANALYSIS.md)
+- [Extension Ecosystem Plan](./roadmap/EXTENSION_ECOSYSTEM_PLAN.md)
+- [Roadmap README](./roadmap/README.md)
+
+---
+
+## 🚀 Quick start — create a plugin
+
+### 1. Minimal frontend plugin
 
 ```typescript
 // src/features/plugins/builtin/my-plugin/index.ts
-import { Plugin, PluginContext, PluginResult, PluginResultType } from '../../types';
+import type { Plugin, PluginContext, PluginResult } from '../../types';
+import { PluginResultType } from '../../types';
 
 export class MyPlugin implements Plugin {
   id = 'my-plugin';
@@ -160,7 +128,6 @@ export class MyPlugin implements Plugin {
 
   match(context: PluginContext): PluginResult[] | null {
     const query = context.query.substring(3);
-
     return [
       {
         id: 'result-1',
@@ -178,144 +145,105 @@ export class MyPlugin implements Plugin {
 }
 ```
 
-### 2. Enregistrer le Plugin
+### 2. Register the plugin
 
 ```typescript
-// src/app/App.tsx (dans useEffect)
-import { MyPlugin } from '../features/plugins/builtin/my-plugin';
-
+// src/app/hooks/useAppLifecycle.ts (inside the registration block)
+import { MyPlugin } from '../../features/plugins/builtin/my-plugin';
 pluginRegistry.register(new MyPlugin());
 ```
 
-### 3. Consulter les exemples
+### 3. Inspiration — read existing plugins
 
-Plugins existants pour inspiration :
-
-- **Calculator** : [src/features/plugins/builtin/calculator/](../src/features/plugins/builtin/calculator/)
-- **Web Search** : [src/features/plugins/builtin/websearch/](../src/features/plugins/builtin/websearch/)
-- **System Commands** : [src/features/plugins/builtin/systemcommands/](../src/features/plugins/builtin/systemcommands/)
-
----
-
-## 📖 Ressources par Catégorie
-
-### Pour les développeurs de plugins
-
-| Document                                              | Description                          | Niveau        |
-| ----------------------------------------------------- | ------------------------------------ | ------------- |
-| [Plugin Development Guide](./plugins/DEVELOPMENT.md)  | Guide complet de création de plugins | Débutant      |
-| [Plugin API Reference](./plugins/API_REFERENCE.md)    | Documentation technique de l'API     | Intermédiaire |
-| [Plugin Examples](./plugins/EXAMPLES.md)              | Exemples avancés et patterns         | Avancé        |
-| [Plugin Template](./plugins/TEMPLATE.md)              | Template prêt à l'emploi             | Tous niveaux  |
-| [Quick Reference](./plugins/QUICK_REFERENCE.md)       | Référence rapide                     | Tous niveaux  |
-
-### Pour les contributeurs
-
-| Document                                                   | Description                         |
-| ---------------------------------------------------------- | ----------------------------------- |
-| [Architecture](./architecture/ARCHITECTURE.md)             | Comprendre l'architecture du projet |
-| [Implementation Plan](./build-release/IMPLEMENTATION_PLAN.md) | Roadmap et priorités                |
-| [CI/CD](./build-release/CICD.md)                           | Processus de build et release       |
-
-### Pour la distribution
-
-| Document                                           | Description                 |
-| -------------------------------------------------- | --------------------------- |
-| [Distribution Guide](./build-release/DISTRIBUTION.md) | Packaging et distribution   |
-| [CI/CD](./build-release/CICD.md)                   | Automatisation des releases |
+- Calculator: [`src/features/plugins/builtin/calculator/`](../src/features/plugins/builtin/calculator/)
+- Web Search: [`src/features/plugins/builtin/websearch/`](../src/features/plugins/builtin/websearch/)
+- System Commands: [`src/features/plugins/builtin/systemcommands/`](../src/features/plugins/builtin/systemcommands/)
+- AI Chat: [`src/features/plugins/builtin/ai-chat/`](../src/features/plugins/builtin/ai-chat/)
+- Notes: [`src/features/plugins/builtin/notes/`](../src/features/plugins/builtin/notes/)
 
 ---
 
-## 🛠️ Outils de Développement
-
-### Installation
-
-```bash
-# Installer les dépendances
-bun install
-
-# Lancer en mode dev (Tauri + Vite)
-bun tauri dev
-
-# Build production
-bun run build
-bun tauri build
-```
-
-### Structure du Projet
+## 🛠️ Project layout
 
 ```
 Volt/
-├── src/                          # Frontend (React 19/TypeScript 5.8)
-│   ├── app/                      # Application principale
-│   │   ├── App.tsx              # Main component (~197 lines)
-│   │   └── hooks/               # Extracted hooks
-│   │       ├── useSearchPipeline.ts
-│   │       ├── useAppLifecycle.ts
-│   │       ├── useGlobalHotkey.ts
-│   │       └── useResultActions.ts
-│   ├── features/                 # Features organisées par domaine
-│   │   ├── plugins/             # Système de plugins
-│   │   │   ├── builtin/         # 10 plugins intégrés
-│   │   │   ├── core/            # Registry et infrastructure
-│   │   │   └── types/           # Types TypeScript
-│   │   ├── applications/        # Gestion des applications
-│   │   ├── search/              # Barre de recherche
-│   │   ├── results/             # Affichage des résultats
-│   │   └── settings/            # Paramètres
-│   └── shared/                  # Composants partagés
+├── src/                                 Frontend (React 19, TS 5.8, Vite 7)
+│   ├── app/                             App component + hooks (useAppLifecycle, useSearchPipeline, …)
+│   ├── features/
+│   │   ├── plugins/builtin/             16 built-in plugins (ai-chat, calculator, …)
+│   │   ├── applications/                App discovery & launching
+│   │   ├── search/                      SearchBar (150 ms debounce)
+│   │   ├── results/                     ResultsList, grouping
+│   │   ├── settings/                    Settings window
+│   │   ├── extensions/                  Loader (Sucrase + Web Worker)
+│   │   ├── notes/                       Tiptap-based notes
+│   │   ├── ai-profile/ ai-quick-actions/ Personalization & hotkey-bound AI
+│   │   ├── custom-emojis/               SDXL Emoji generator (Pro)
+│   │   ├── auth/ changelog/ developer/ window/ files/ clipboard/ suggestions/
+│   │   └── …
+│   ├── shared/                          Types, hooks, UI primitives, utils
+│   ├── stores/                          Zustand: appStore · searchStore · uiStore
+│   ├── pages/                           Multi-page entries (settings · onboarding · system-monitor · notes)
+│   ├── i18n/                            i18next (en · fr)
+│   └── styles/                          Tailwind v4 + theme.css
 │
-├── src-tauri/                   # Backend (Rust)
+├── src-tauri/                           Backend (Rust, edition 2024)
 │   ├── src/
-│   │   ├── commands/            # 13 command files (Tauri commands)
-│   │   ├── plugins/             # 3 backend plugins
-│   │   ├── indexer/             # Indexation de fichiers
-│   │   ├── core/                # VoltResult, VoltError, types
-│   │   └── hotkey/              # Hotkeys globales
+│   │   ├── commands/                    ~30 Tauri command modules
+│   │   ├── plugins/                     Backend plugin system + builtin (clipboard, games, system_monitor)
+│   │   ├── indexer/                     SQLite-backed file index + notify watcher + windows_search
+│   │   ├── launcher/                    History, process, launch_validation
+│   │   ├── search/                      Aggregation
+│   │   ├── embeddings/                  fastembed + multilingual-e5-small (lazy ONNX)
+│   │   ├── core/                        VoltError, VoltResult, traits, types, constants
+│   │   ├── hotkey/ window/ utils/
+│   │   └── lib.rs / main.rs
 │   └── Cargo.toml
 │
-└── docs/                        # 📚 Documentation (vous êtes ici)
-    ├── architecture/
-    ├── user-guide/
-    ├── plugins/
-    ├── build-release/
-    └── changelog/
+├── public/                              changelog.json, icons, onboarding assets
+├── scripts/                             bump-version, sync-version, generate-changelog, build.ps1
+├── .github/workflows/                   CI/CD (check, release, auto-tag, changelog, e2e, pr-title, version-bump)
+└── docs/                                📚 You are here
 ```
 
 ---
 
-## 🤝 Contribuer
+## 🤝 Contributing
 
-### Créer un nouveau plugin
+### Add a plugin
+1. Read the [Plugin Development Guide](./plugins/DEVELOPMENT.md).
+2. Create `src/features/plugins/builtin/<your-plugin>/index.ts`.
+3. Register it in [`src/app/hooks/useAppLifecycle.ts`](../src/app/hooks/useAppLifecycle.ts).
+4. Test locally: `bun tauri dev`.
+5. Open a PR. Community extensions go in [`volt-extensions`](https://github.com/VoltLaunchr/volt-extensions) or through the **developer portal**.
 
-1. Lisez le [Plugin Development Guide](./plugins/DEVELOPMENT.md)
-2. Créez votre plugin dans `src/features/plugins/builtin/`
-3. Enregistrez-le dans `src/app/App.tsx`
-4. Testez localement avec `bun tauri dev`
-5. Soumettez une Pull Request (or submit community extensions to [volt-extensions](https://github.com/VoltLaunchr/volt-extensions))
+### Validate before committing
+```bash
+bun run lint               # 0 errors, 0 disabled rules
+bun run build              # tsc + Vite bundle
+cd src-tauri && cargo check && cargo clippy -- -D warnings
+bun run test
+```
 
-### Contribuer à la doc
+See the **Lint & Code Quality** section of [`CLAUDE.md`](../CLAUDE.md) — no `eslint-disable`, no `@ts-ignore`, no `as any`. Fix the code, not the rule.
 
-Si vous trouvez des erreurs ou souhaitez améliorer la documentation :
-
-1. Éditez le fichier concerné
-2. Assurez-vous que les liens fonctionnent
-3. Vérifiez l'orthographe et la clarté
-4. Soumettez une Pull Request
+### Editing docs
+1. Keep paths relative and verify links.
+2. Date updates with `_Last updated: YYYY-MM-DD_` when the file is feature-current.
+3. Run `bun prettier --write docs/` before submitting.
 
 ---
 
 ## 📞 Support
 
-- **Issues** : [GitHub Issues](https://github.com/VoltLaunchr/Volt/issues)
-- **Discussions** : [GitHub Discussions](https://github.com/VoltLaunchr/Volt/discussions)
+- **Issues**: [GitHub Issues](https://github.com/VoltLaunchr/Volt/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/VoltLaunchr/Volt/discussions)
+- **Website**: [voltlaunchr.com](https://voltlaunchr.com)
 
 ---
 
 ## 📝 License
 
-Volt est un projet open-source. Consultez le fichier [LICENSE](../LICENSE) pour plus de détails.
+Volt is open-source under Apache-2.0 — see [LICENSE](../LICENSE).
 
----
-
-**Bon développement ! 🚀**
+_Last updated: 2026-05-18 (v0.2.0)_
