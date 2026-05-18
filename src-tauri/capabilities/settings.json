@@ -86,6 +86,10 @@
     "allow-refresh-dev-extension",
     "allow-get-dev-reload-signal",
 
+    "allow-set-extension-preference",
+    "allow-set-extension-secret",
+    "allow-ext-oauth-revoke-token",
+
     "allow-save-credential",
     "allow-has-credential",
     "allow-delete-credential",

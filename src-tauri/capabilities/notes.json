@@ -30,7 +30,6 @@
 
     "allow-embeddings-is-ready",
     "allow-embeddings-prepare",
-    "allow-embeddings-test",
 
     "allow-open-notes-window"
   ]
