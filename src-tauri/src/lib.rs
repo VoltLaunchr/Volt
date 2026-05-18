@@ -526,6 +526,11 @@ pub fn run() {
             // in Tauri lifecycle instead of living in a process-global static).
             app.manage(ClipboardManagerState::new());
 
+            // Tracks the in-flight paste task so rapid paste invocations don't
+            // accumulate orphan SendInput timers. Replaces the previous
+            // `tokio::spawn(...)` fire-and-forget pattern in `paste_text`.
+            app.manage(commands::clipboard::PasteState::new());
+
             // Store persistent system monitor instance for accurate CPU readings
             app.manage(ShellExecutionState::new());
 

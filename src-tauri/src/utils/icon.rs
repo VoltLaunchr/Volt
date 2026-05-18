@@ -12,6 +12,75 @@ pub fn extract_icon(path: &str) -> Option<String> {
     }
 }
 
+/// Maximum icon dimension we accept before bailing out. Windows shell icons
+/// top out at 256×256; anything beyond that is either a malformed `.ico` or a
+/// path that resolves to a huge bitmap we have no business decoding into
+/// memory. Without this guard, a forged executable can report `bmWidth = 65535`
+/// and force a ~16 GB allocation that panics or OOM-kills the app.
+#[cfg(target_os = "windows")]
+const MAX_ICON_DIM: u32 = 1024;
+
+/// RAII wrapper around an `HICON`. `DestroyIcon` runs unconditionally on drop,
+/// including the panic path — without this, every `?`/`return None` between
+/// `SHGetFileInfoW` and the explicit `DestroyIcon` would leak a GDI handle.
+/// Windows caps the per-process GDI handle table at 10 000, so a tight loop
+/// over icons (initial app scan) could exhaust the table system-wide.
+#[cfg(target_os = "windows")]
+struct HiconGuard(winapi::shared::windef::HICON);
+
+#[cfg(target_os = "windows")]
+impl Drop for HiconGuard {
+    fn drop(&mut self) {
+        unsafe {
+            winapi::um::winuser::DestroyIcon(self.0);
+        }
+    }
+}
+
+/// RAII wrapper around an `HDC` created via `CreateCompatibleDC` — released
+/// via `DeleteDC` on drop.
+#[cfg(target_os = "windows")]
+struct CompatDcGuard(winapi::shared::windef::HDC);
+
+#[cfg(target_os = "windows")]
+impl Drop for CompatDcGuard {
+    fn drop(&mut self) {
+        unsafe {
+            winapi::um::wingdi::DeleteDC(self.0);
+        }
+    }
+}
+
+/// RAII wrapper around a screen `HDC` acquired via `GetDC(NULL)` — released
+/// via `ReleaseDC(NULL, _)`.
+#[cfg(target_os = "windows")]
+struct ScreenDcGuard(winapi::shared::windef::HDC);
+
+#[cfg(target_os = "windows")]
+impl Drop for ScreenDcGuard {
+    fn drop(&mut self) {
+        unsafe {
+            winapi::um::winuser::ReleaseDC(std::ptr::null_mut(), self.0);
+        }
+    }
+}
+
+/// RAII wrapper for `HBITMAP` handles owned by an `ICONINFO`. `GetIconInfo`
+/// returns two bitmaps the caller must release via `DeleteObject`.
+#[cfg(target_os = "windows")]
+struct HBitmapGuard(winapi::shared::windef::HBITMAP);
+
+#[cfg(target_os = "windows")]
+impl Drop for HBitmapGuard {
+    fn drop(&mut self) {
+        if !self.0.is_null() {
+            unsafe {
+                winapi::um::wingdi::DeleteObject(self.0 as *mut _);
+            }
+        }
+    }
+}
+
 /// Windows-specific icon extraction
 #[cfg(target_os = "windows")]
 fn extract_icon_windows(path: &str) -> Option<String> {
@@ -19,7 +88,6 @@ fn extract_icon_windows(path: &str) -> Option<String> {
     use std::mem;
     use std::os::windows::ffi::OsStrExt;
     use winapi::um::shellapi::{SHFILEINFOW, SHGFI_ICON, SHGFI_LARGEICON, SHGetFileInfoW};
-    use winapi::um::winuser::DestroyIcon;
 
     // SHGetFileInfoW rejects paths that mix '/' and '\\' even when they
     // reference the same file on disk (Path::exists returns true either way).
@@ -33,59 +101,52 @@ fn extract_icon_windows(path: &str) -> Option<String> {
         .chain(std::iter::once(0))
         .collect();
 
-    unsafe {
-        let mut file_info: SHFILEINFOW = mem::zeroed();
-
-        // Get file icon using SHGetFileInfoW
+    let file_info: SHFILEINFOW = unsafe {
+        let mut info: SHFILEINFOW = mem::zeroed();
         let result = SHGetFileInfoW(
             wide_path.as_ptr(),
             0,
-            &mut file_info,
+            &mut info,
             mem::size_of::<SHFILEINFOW>() as u32,
             SHGFI_ICON | SHGFI_LARGEICON,
         );
-
-        // Check if we got an icon
-        if result == 0 || file_info.hIcon.is_null() {
+        if result == 0 || info.hIcon.is_null() {
             return None;
         }
+        info
+    };
 
-        // Convert HICON to base64 PNG
-        let png_data = match hicon_to_png_base64(file_info.hIcon) {
-            Some(data) => data,
-            None => {
-                DestroyIcon(file_info.hIcon);
-                return None;
-            }
-        };
-
-        // Clean up the icon handle
-        DestroyIcon(file_info.hIcon);
-
-        Some(format!("data:image/png;base64,{}", png_data))
-    }
+    // Take ownership of the HICON immediately so any early return from the
+    // PNG-encoding path still triggers DestroyIcon via Drop.
+    let _hicon_guard = HiconGuard(file_info.hIcon);
+    let png_data = hicon_to_png_base64(file_info.hIcon)?;
+    Some(format!("data:image/png;base64,{}", png_data))
 }
 
 /// Convert HICON to base64-encoded PNG
 #[cfg(target_os = "windows")]
 fn hicon_to_png_base64(hicon: winapi::shared::windef::HICON) -> Option<String> {
+    use base64::Engine as _;
+    use base64::engine::general_purpose::STANDARD;
     use std::mem;
     use std::ptr;
     use winapi::um::wingdi::{
-        BI_RGB, BITMAP, BITMAPINFO, BITMAPINFOHEADER, CreateCompatibleDC, DIB_RGB_COLORS, DeleteDC,
-        DeleteObject, GetDIBits, GetObjectW,
+        BI_RGB, BITMAP, BITMAPINFO, BITMAPINFOHEADER, CreateCompatibleDC, DIB_RGB_COLORS,
+        GetDIBits, GetObjectW,
     };
     use winapi::um::winuser::ICONINFO;
-    use winapi::um::winuser::{GetDC, GetIconInfo, ReleaseDC};
+    use winapi::um::winuser::{GetDC, GetIconInfo};
 
-    unsafe {
-        // Get icon info
+    // 1. Get icon info — wrap the returned HBITMAPs in RAII guards so they
+    //    are released even if any later step bails out.
+    let (hbm_color_guard, _hbm_mask_guard, bitmap) = unsafe {
         let mut icon_info: ICONINFO = mem::zeroed();
         if GetIconInfo(hicon, &mut icon_info) == 0 {
             return None;
         }
+        let hbm_color = HBitmapGuard(icon_info.hbmColor);
+        let hbm_mask = HBitmapGuard(icon_info.hbmMask);
 
-        // Get bitmap info
         let mut bitmap: BITMAP = mem::zeroed();
         if GetObjectW(
             icon_info.hbmColor as *mut _,
@@ -93,105 +154,90 @@ fn hicon_to_png_base64(hicon: winapi::shared::windef::HICON) -> Option<String> {
             &mut bitmap as *mut _ as *mut _,
         ) == 0
         {
-            DeleteObject(icon_info.hbmColor as *mut _);
-            DeleteObject(icon_info.hbmMask as *mut _);
             return None;
         }
+        (hbm_color, hbm_mask, bitmap)
+    };
 
-        let width = bitmap.bmWidth as u32;
-        let height = bitmap.bmHeight as u32;
+    // 2. Validate dimensions. `bmWidth` is a signed LONG on the WinAPI side —
+    //    casting straight to `u32` on a malformed bitmap wraps to a huge value
+    //    and `(w*h*4) as usize` then either overflows in debug or allocates
+    //    several GB before panicking. We bound to MAX_ICON_DIM and use
+    //    checked_mul on the buffer size.
+    if bitmap.bmWidth <= 0
+        || bitmap.bmHeight <= 0
+        || bitmap.bmWidth as u32 > MAX_ICON_DIM
+        || bitmap.bmHeight as u32 > MAX_ICON_DIM
+    {
+        return None;
+    }
+    let width = bitmap.bmWidth as u32;
+    let height = bitmap.bmHeight as u32;
+    let buf_size = (width as usize)
+        .checked_mul(height as usize)
+        .and_then(|n| n.checked_mul(4))?;
 
-        // Create device context
-        let hdc_screen = GetDC(ptr::null_mut());
-        let hdc = CreateCompatibleDC(hdc_screen);
+    // 3. Create device contexts behind RAII guards.
+    let screen_dc = unsafe { GetDC(ptr::null_mut()) };
+    if screen_dc.is_null() {
+        return None;
+    }
+    let screen_guard = ScreenDcGuard(screen_dc);
+    let compat_dc = unsafe { CreateCompatibleDC(screen_guard.0) };
+    if compat_dc.is_null() {
+        return None;
+    }
+    let compat_guard = CompatDcGuard(compat_dc);
 
-        // Setup BITMAPINFO
-        let mut bmi: BITMAPINFO = mem::zeroed();
-        bmi.bmiHeader.biSize = mem::size_of::<BITMAPINFOHEADER>() as u32;
-        bmi.bmiHeader.biWidth = width as i32;
-        bmi.bmiHeader.biHeight = -(height as i32); // Top-down DIB
-        bmi.bmiHeader.biPlanes = 1;
-        bmi.bmiHeader.biBitCount = 32;
-        bmi.bmiHeader.biCompression = BI_RGB;
+    // 4. Pull bitmap bits via GetDIBits.
+    let mut bmi: BITMAPINFO = unsafe { mem::zeroed() };
+    bmi.bmiHeader.biSize = mem::size_of::<BITMAPINFOHEADER>() as u32;
+    bmi.bmiHeader.biWidth = width as i32;
+    bmi.bmiHeader.biHeight = -(height as i32); // Top-down DIB
+    bmi.bmiHeader.biPlanes = 1;
+    bmi.bmiHeader.biBitCount = 32;
+    bmi.bmiHeader.biCompression = BI_RGB;
 
-        // Get bitmap bits
-        let mut buffer = vec![0u8; (width * height * 4) as usize];
-        let result = GetDIBits(
-            hdc,
-            icon_info.hbmColor,
+    let mut buffer = vec![0u8; buf_size];
+    let result = unsafe {
+        GetDIBits(
+            compat_guard.0,
+            hbm_color_guard.0,
             0,
             height,
             buffer.as_mut_ptr() as *mut _,
             &mut bmi,
             DIB_RGB_COLORS,
-        );
+        )
+    };
+    if result == 0 {
+        return None;
+    }
 
-        // Clean up
-        DeleteDC(hdc);
-        ReleaseDC(ptr::null_mut(), hdc_screen);
-        DeleteObject(icon_info.hbmColor as *mut _);
-        DeleteObject(icon_info.hbmMask as *mut _);
+    // 5. BGRA → RGBA in place. `chunks_exact_mut(4)` enforces the 4-byte
+    //    stride invariant and never panics; the previous `step_by(4) + swap`
+    //    pattern silently assumed `buffer.len() % 4 == 0`.
+    for px in buffer.chunks_exact_mut(4) {
+        px.swap(0, 2);
+    }
 
-        if result == 0 {
+    // 6. Encode as PNG into an in-memory buffer.
+    let mut png_data = Vec::new();
+    {
+        let mut encoder = png::Encoder::new(&mut png_data, width, height);
+        encoder.set_color(png::ColorType::Rgba);
+        encoder.set_depth(png::BitDepth::Eight);
+
+        let mut writer = encoder.write_header().ok()?;
+        if writer.write_image_data(&buffer).is_err() {
             return None;
         }
-
-        // Convert BGRA to RGBA
-        for i in (0..buffer.len()).step_by(4) {
-            buffer.swap(i, i + 2); // Swap B and R channels
-        }
-
-        // Encode as PNG
-        let mut png_data = Vec::new();
-        {
-            let mut encoder = png::Encoder::new(&mut png_data, width, height);
-            encoder.set_color(png::ColorType::Rgba);
-            encoder.set_depth(png::BitDepth::Eight);
-
-            let mut writer = match encoder.write_header() {
-                Ok(w) => w,
-                Err(_) => return None,
-            };
-
-            if writer.write_image_data(&buffer).is_err() {
-                return None;
-            }
-        }
-
-        // Convert to base64
-        Some(base64_encode(&png_data))
-    }
-}
-
-/// Simple base64 encoding
-#[cfg(target_os = "windows")]
-fn base64_encode(data: &[u8]) -> String {
-    const BASE64_CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut result = String::new();
-
-    for chunk in data.chunks(3) {
-        let mut buf = [0u8; 3];
-        for (i, &byte) in chunk.iter().enumerate() {
-            buf[i] = byte;
-        }
-
-        result.push(BASE64_CHARS[(buf[0] >> 2) as usize] as char);
-        result.push(BASE64_CHARS[(((buf[0] & 0x03) << 4) | (buf[1] >> 4)) as usize] as char);
-
-        if chunk.len() > 1 {
-            result.push(BASE64_CHARS[(((buf[1] & 0x0F) << 2) | (buf[2] >> 6)) as usize] as char);
-        } else {
-            result.push('=');
-        }
-
-        if chunk.len() > 2 {
-            result.push(BASE64_CHARS[(buf[2] & 0x3F) as usize] as char);
-        } else {
-            result.push('=');
-        }
     }
 
-    result
+    // 7. Base64. The `base64` crate is already a workspace dependency (used
+    //    elsewhere); the previous handwritten encoder used a per-byte `push`
+    //    loop that was ~10× slower on the icon scan hot path.
+    Some(STANDARD.encode(&png_data))
 }
 
 /// Try to resolve icon name to a full path on Linux

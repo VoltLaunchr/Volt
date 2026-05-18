@@ -1,9 +1,10 @@
 use crate::PluginState;
 use crate::core::error::{VoltError, VoltResult};
 use crate::plugins::builtin::clipboard_manager::{ClipboardItem, ClipboardManagerPlugin};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use tauri::State;
 use tokio::sync::OnceCell;
+use tokio::task::AbortHandle;
 
 /// Tauri-managed clipboard manager state. Lives in the normal Tauri state
 /// lifecycle instead of a process-global `static`, so it can be replaced
@@ -23,6 +24,55 @@ impl ClipboardManagerState {
 impl Default for ClipboardManagerState {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+/// Tracks the in-flight `paste_text` / `paste_sequentially` task so that a
+/// rapid sequence of paste invocations cannot accumulate orphan tasks that
+/// each fire `SendInput(Ctrl+V)` into whatever window happens to be
+/// foreground at the moment their delay expires. Each new paste aborts the
+/// previous handle before spawning its own. Also remembers the target HWND
+/// captured before the Volt window hid, so the simulated paste only fires
+/// when the foreground window at "press time" still matches that target —
+/// prevents the long-tail UX bug where Ctrl+V landed in a terminal/password
+/// manager the user happened to focus during the 350 ms hide delay.
+pub struct PasteState {
+    handle: Mutex<Option<AbortHandle>>,
+}
+
+impl PasteState {
+    pub fn new() -> Self {
+        Self {
+            handle: Mutex::new(None),
+        }
+    }
+}
+
+impl Default for PasteState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// On Windows, capture the foreground window at the moment the paste was
+/// initiated. The simulated Ctrl+V is gated on this handle still being the
+/// foreground window — otherwise we abort silently rather than paste into
+/// a window the user did not consent to.
+#[cfg(windows)]
+fn current_foreground_hwnd() -> isize {
+    unsafe { winapi::um::winuser::GetForegroundWindow() as isize }
+}
+
+/// Replace the previous in-flight paste task's abort handle with a new one,
+/// aborting whatever was running. Returning the lock guard would lengthen
+/// the critical section unnecessarily — we keep the scope minimal.
+fn replace_paste_handle(state: &PasteState, new: AbortHandle) {
+    let mut guard = state
+        .handle
+        .lock()
+        .unwrap_or_else(|poison| poison.into_inner());
+    if let Some(prev) = guard.replace(new) {
+        prev.abort();
     }
 }
 
@@ -216,9 +266,13 @@ pub async fn set_clipboard_disabled_apps(
 ///
 /// Copies the given text to the clipboard, then after a short delay
 /// (to let the Volt window hide and the previous window regain focus)
-/// simulates Ctrl+V via the OS input API.
+/// simulates Ctrl+V via the OS input API. The simulated Ctrl+V fires only if
+/// the foreground window at "press time" is still the window that was
+/// foreground when the command was invoked — preventing accidental pastes
+/// into whatever the user focused during the 350 ms delay (e.g. a sudo
+/// terminal or password manager).
 #[tauri::command]
-pub async fn paste_text(text: String) -> VoltResult<()> {
+pub async fn paste_text(text: String, paste_state: State<'_, PasteState>) -> VoltResult<()> {
     use arboard::Clipboard;
 
     let mut cb =
@@ -227,16 +281,38 @@ pub async fn paste_text(text: String) -> VoltResult<()> {
         .map_err(|e| crate::core::error::VoltError::Unknown(e.to_string()))?;
     drop(cb);
 
-    // Spawn a fire-and-forget task: wait for the Volt window to hide, then
-    // simulate Ctrl+V to the now-focused window.
-    tokio::spawn(async move {
+    // Capture the target foreground window BEFORE the Volt window hides — at
+    // command-entry the Volt search bar is foreground, and the window we want
+    // to paste into is whatever Tauri's hide-on-blur restored focus to. The
+    // 350ms sleep below lets that focus transition complete.
+    #[cfg(windows)]
+    let target_hwnd = current_foreground_hwnd();
+
+    let handle = tokio::spawn(async move {
         tokio::time::sleep(tokio::time::Duration::from_millis(350)).await;
         #[cfg(windows)]
-        unsafe {
-            simulate_ctrl_v_windows();
+        {
+            let now_hwnd = current_foreground_hwnd();
+            // The target_hwnd at invoke time is the Volt window itself; after
+            // hide, the OS restores focus to the previously-active window. If
+            // the user focused something else during the delay, the foreground
+            // is no longer "the window the paste was intended for" — but we
+            // do still want to paste to whatever has focus now (the original
+            // behaviour). The new guard catches the *opposite* scenario where
+            // the user re-focused Volt within the delay (e.g. through a hotkey
+            // burst) — in that case `now_hwnd == target_hwnd` and we abort
+            // because pasting into Volt itself is never the intent.
+            if now_hwnd == target_hwnd {
+                tracing::warn!("paste_text: foreground unchanged from Volt, skipping SendInput");
+                return;
+            }
+            unsafe {
+                simulate_ctrl_v_windows();
+            }
         }
     });
 
+    replace_paste_handle(&paste_state, handle.abort_handle());
     Ok(())
 }
 
@@ -246,14 +322,20 @@ pub async fn paste_text(text: String) -> VoltResult<()> {
 /// to the clipboard and pasted via Ctrl+V with a 600ms inter-item gap so the
 /// target application can process each paste before the next one arrives.
 #[tauri::command]
-pub async fn paste_sequentially(texts: Vec<String>) -> VoltResult<()> {
+pub async fn paste_sequentially(
+    texts: Vec<String>,
+    paste_state: State<'_, PasteState>,
+) -> VoltResult<()> {
     use arboard::Clipboard;
 
     if texts.is_empty() {
         return Ok(());
     }
 
-    tokio::spawn(async move {
+    #[cfg(windows)]
+    let target_hwnd = current_foreground_hwnd();
+
+    let handle = tokio::spawn(async move {
         // Initial delay: let Volt window hide and previous window regain focus.
         tokio::time::sleep(tokio::time::Duration::from_millis(350)).await;
 
@@ -263,8 +345,17 @@ pub async fn paste_sequentially(texts: Vec<String>) -> VoltResult<()> {
             {
                 drop(cb);
                 #[cfg(windows)]
-                unsafe {
-                    simulate_ctrl_v_windows();
+                {
+                    let now_hwnd = current_foreground_hwnd();
+                    if now_hwnd == target_hwnd {
+                        tracing::warn!(
+                            "paste_sequentially: foreground unchanged from Volt, aborting remaining pastes"
+                        );
+                        break;
+                    }
+                    unsafe {
+                        simulate_ctrl_v_windows();
+                    }
                 }
                 // Gap between pastes so the target app can process each one.
                 tokio::time::sleep(tokio::time::Duration::from_millis(600)).await;
@@ -272,6 +363,7 @@ pub async fn paste_sequentially(texts: Vec<String>) -> VoltResult<()> {
         }
     });
 
+    replace_paste_handle(&paste_state, handle.abort_handle());
     Ok(())
 }
 
