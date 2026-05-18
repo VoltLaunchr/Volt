@@ -176,14 +176,25 @@ impl NoteState {
                     VALUES (new.rowid, new.title, new.content, new.tags);
             END;
 
-            CREATE TRIGGER IF NOT EXISTS notes_ad AFTER DELETE ON notes BEGIN
+            -- Only emit a FTS5 'delete' command for rows that were actually in
+            -- the index (i.e. not trashed). Issuing 'delete' for a row that the
+            -- FTS5 contentless index doesn't have corrupts the index with
+            -- "database disk image is malformed" — see notes_au below for the
+            -- same constraint on the UPDATE path.
+            CREATE TRIGGER IF NOT EXISTS notes_ad AFTER DELETE ON notes
+                WHEN old.deleted_at IS NULL
+            BEGIN
                 INSERT INTO notes_fts(notes_fts, rowid, title, content, tags)
                     VALUES('delete', old.rowid, old.title, old.content, old.tags);
             END;
 
             CREATE TRIGGER IF NOT EXISTS notes_au AFTER UPDATE ON notes BEGIN
+                -- Only remove from FTS if the OLD row was actually indexed
+                -- (i.e. wasn't trashed). Restoring a trashed note would
+                -- otherwise try to delete an absent FTS row and corrupt it.
                 INSERT INTO notes_fts(notes_fts, rowid, title, content, tags)
-                    VALUES('delete', old.rowid, old.title, old.content, old.tags);
+                    SELECT 'delete', old.rowid, old.title, old.content, old.tags
+                    WHERE old.deleted_at IS NULL;
                 INSERT INTO notes_fts(rowid, title, content, tags)
                     SELECT new.rowid, new.title, new.content, new.tags
                     WHERE new.deleted_at IS NULL;
@@ -825,6 +836,7 @@ mod tests {
 
     /// Direct SQL insert bypassing the command layer — used to seed time-
     /// sensitive fixtures (custom `accessed_at`, pre-trashed rows).
+    #[allow(clippy::too_many_arguments)] // 1-to-1 mirror of the notes table columns we care about
     fn raw_insert(
         state: &NoteState,
         id: &str,
@@ -959,7 +971,14 @@ mod tests {
 
         // Patch only the title; everything else must remain.
         let updated = state
-            .patch(&created.id, Some("new title".into()), None, None, None, None)
+            .patch(
+                &created.id,
+                Some("new title".into()),
+                None,
+                None,
+                None,
+                None,
+            )
             .unwrap();
 
         assert_eq!(updated.title, "new title");
@@ -1022,8 +1041,26 @@ mod tests {
         let state = test_state();
         let now = now_millis();
         // Three notes in trash with varying deleted_at timestamps.
-        raw_insert(&state, "old", "old", "", 0, now, Some(now - 60 * 86400 * 1000), false);
-        raw_insert(&state, "mid", "mid", "", 0, now, Some(now - 5 * 86400 * 1000), false);
+        raw_insert(
+            &state,
+            "old",
+            "old",
+            "",
+            0,
+            now,
+            Some(now - 60 * 86400 * 1000),
+            false,
+        );
+        raw_insert(
+            &state,
+            "mid",
+            "mid",
+            "",
+            0,
+            now,
+            Some(now - 5 * 86400 * 1000),
+            false,
+        );
         raw_insert(&state, "new", "new", "", 0, now, Some(now - 60_000), false);
         // One active note, must NOT be touched.
         raw_insert(&state, "active", "active", "", 0, now, None, false);
@@ -1044,8 +1081,26 @@ mod tests {
         let state = test_state();
         let now = now_millis();
         let one_day_ms = 86_400_000;
-        raw_insert(&state, "old", "old", "", 0, now, Some(now - 31 * one_day_ms), false);
-        raw_insert(&state, "fresh", "fresh", "", 0, now, Some(now - 5 * one_day_ms), false);
+        raw_insert(
+            &state,
+            "old",
+            "old",
+            "",
+            0,
+            now,
+            Some(now - 31 * one_day_ms),
+            false,
+        );
+        raw_insert(
+            &state,
+            "fresh",
+            "fresh",
+            "",
+            0,
+            now,
+            Some(now - 5 * one_day_ms),
+            false,
+        );
         raw_insert(&state, "active", "active", "", 0, now, None, false);
 
         let removed = state.purge_old_trashed(30).unwrap();
@@ -1129,7 +1184,9 @@ mod tests {
         // Limit clamps to 100 and 0 inputs round up to 1.
         let state = test_state();
         for i in 0..5 {
-            state.insert(Some(format!("n{i}")), Some("alpha".into()), None).unwrap();
+            state
+                .insert(Some(format!("n{i}")), Some("alpha".into()), None)
+                .unwrap();
         }
         // Cap of 2 must return exactly 2.
         let hits = state.search("alpha", 2).unwrap();
@@ -1143,7 +1200,9 @@ mod tests {
     #[test]
     fn test_search_no_crash_on_special_chars() {
         let state = test_state();
-        state.insert(Some("hello world".into()), None, None).unwrap();
+        state
+            .insert(Some("hello world".into()), None, None)
+            .unwrap();
 
         for evil in &[
             "hello \"world\"",
@@ -1222,7 +1281,16 @@ mod tests {
         // Recent + many accesses but unpinned.
         raw_insert(&state, "hot", "hot", "", 1000, now, None, false);
         // Old + few accesses but PINNED.
-        raw_insert(&state, "pinned", "pinned", "", 1, now - 30 * 86_400_000, None, true);
+        raw_insert(
+            &state,
+            "pinned",
+            "pinned",
+            "",
+            1,
+            now - 30 * 86_400_000,
+            None,
+            true,
+        );
 
         let notes = state.list_active().unwrap();
         assert_eq!(notes.len(), 2);
@@ -1235,10 +1303,7 @@ mod tests {
         assert_eq!(sanitize_fts_query(""), "");
         assert_eq!(sanitize_fts_query("   "), "");
         assert_eq!(sanitize_fts_query("hello"), r#""hello""#);
-        assert_eq!(
-            sanitize_fts_query("hello world"),
-            r#""hello" OR "world""#
-        );
+        assert_eq!(sanitize_fts_query("hello world"), r#""hello" OR "world""#);
         // Special chars become whitespace.
         assert_eq!(sanitize_fts_query("a*b"), r#""a" OR "b""#);
         assert_eq!(
