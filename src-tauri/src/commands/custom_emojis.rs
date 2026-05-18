@@ -116,14 +116,14 @@ impl EmojiProxy {
     /// - Debug build **and** `REPLICATE_TOKEN` set → DirectReplicate (dev).
     /// - Otherwise → VoltBackend (today returns "not yet available").
     fn select() -> Self {
-        if cfg!(debug_assertions) {
-            if let Ok(token) = std::env::var("REPLICATE_TOKEN") {
-                let trimmed = token.trim();
-                if !trimmed.is_empty() {
-                    return Self::DirectReplicate {
-                        token: trimmed.to_string(),
-                    };
-                }
+        if cfg!(debug_assertions)
+            && let Ok(token) = std::env::var("REPLICATE_TOKEN")
+        {
+            let trimmed = token.trim();
+            if !trimmed.is_empty() {
+                return Self::DirectReplicate {
+                    token: trimmed.to_string(),
+                };
             }
         }
         Self::VoltBackend
@@ -164,7 +164,7 @@ async fn run_replicate_prediction(token: &str, prompt: &str) -> Result<String, S
     // Initial request — `Prefer: wait` blocks up to 60 s server-side.
     let resp = client
         .post(REPLICATE_ENDPOINT)
-        .bearer_auth(&token)
+        .bearer_auth(token)
         .header("Content-Type", "application/json")
         .header("Prefer", "wait")
         .json(&body)
@@ -199,7 +199,7 @@ async fn run_replicate_prediction(token: &str, prompt: &str) -> Result<String, S
                 tokio::time::sleep(Duration::from_millis(POLL_INTERVAL_MS)).await;
                 let poll = client
                     .get(&prediction.urls.get)
-                    .bearer_auth(&token)
+                    .bearer_auth(token)
                     .send()
                     .await
                     .map_err(|e| format!("Poll attempt {} failed: {}", attempt, e))?;
@@ -228,7 +228,12 @@ async fn run_replicate_prediction(token: &str, prompt: &str) -> Result<String, S
 }
 
 async fn download_to_file(url: &str, dest: &PathBuf) -> Result<(), String> {
-    let client = reqwest::Client::new();
+    // 120 s total ceiling — Replicate CDN occasionally lags right after a
+    // prediction succeeds, but anything past two minutes is a stuck request.
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(120))
+        .build()
+        .map_err(|e| e.to_string())?;
     let bytes = client
         .get(url)
         .send()
@@ -326,8 +331,8 @@ pub async fn custom_emojis_copy_image(app: AppHandle, id: String) -> Result<(), 
         .find(|e| e.id == id)
         .ok_or_else(|| format!("Emoji '{}' not found", id))?;
 
-    let img = image::open(&entry.path)
-        .map_err(|e| format!("Failed to decode {}: {}", entry.path, e))?;
+    let img =
+        image::open(&entry.path).map_err(|e| format!("Failed to decode {}: {}", entry.path, e))?;
     let rgba = img.to_rgba8();
     let (width, height) = rgba.dimensions();
     let bytes = rgba.into_raw();
@@ -344,7 +349,10 @@ pub async fn custom_emojis_copy_image(app: AppHandle, id: String) -> Result<(), 
         .set_image(clipboard_image)
         .map_err(|e| format!("Clipboard set_image failed: {}", e))?;
 
-    info!("Custom emoji {} copied to clipboard as {}x{} image", id, width, height);
+    info!(
+        "Custom emoji {} copied to clipboard as {}x{} image",
+        id, width, height
+    );
     Ok(())
 }
 

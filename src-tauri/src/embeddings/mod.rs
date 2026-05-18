@@ -276,7 +276,10 @@ mod tests {
         let a = vec![0.0, 0.0, 0.0];
         let b = vec![1.0, 2.0, 3.0];
         let s = cosine_similarity(&a, &b);
-        assert!(s.is_finite(), "cosine sim of zero vector must be finite, got {s}");
+        assert!(
+            s.is_finite(),
+            "cosine sim of zero vector must be finite, got {s}"
+        );
         assert_eq!(s, 0.0);
     }
 

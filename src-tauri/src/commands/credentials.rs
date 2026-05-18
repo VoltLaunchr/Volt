@@ -132,8 +132,7 @@ pub async fn extension_authenticated_fetch(
 ) -> Result<serde_json::Value, String> {
     validate_service(&extension_id)?;
 
-    let parsed =
-        url::Url::parse(&url).map_err(|_| "Invalid URL".to_string())?;
+    let parsed = url::Url::parse(&url).map_err(|_| "Invalid URL".to_string())?;
     if parsed.scheme() != "https" {
         return Err("Only HTTPS URLs are allowed".to_string());
     }
@@ -159,7 +158,7 @@ pub async fn extension_authenticated_fetch(
                 return Err(format!(
                     "No credential stored for service: {}",
                     extension_id
-                ))
+                ));
             }
         },
     };
@@ -221,11 +220,7 @@ pub async fn extension_authenticated_fetch(
         .map_err(|e| format!("Request failed: {}", e))?;
     let status = resp.status().as_u16();
     let ok = resp.status().is_success();
-    let status_text = resp
-        .status()
-        .canonical_reason()
-        .unwrap_or("")
-        .to_string();
+    let status_text = resp.status().canonical_reason().unwrap_or("").to_string();
 
     let bytes = resp
         .bytes()

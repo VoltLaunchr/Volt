@@ -194,8 +194,15 @@ pub struct InstalledExtensionsState {
 /// and the backend rejects anything not in this list at IPC time so a
 /// compromised frontend or replayed IPC cannot smuggle bogus / future /
 /// misspelled permissions into `granted_permissions`. (M1)
-const ALLOWED_PERMISSIONS: &[&str] =
-    &["clipboard", "network", "notifications", "openUrl", "oauth", "ai", "system"];
+const ALLOWED_PERMISSIONS: &[&str] = &[
+    "clipboard",
+    "network",
+    "notifications",
+    "openUrl",
+    "oauth",
+    "ai",
+    "system",
+];
 
 /// Validate extension ID to prevent path traversal attacks
 fn validate_extension_id(id: &str) -> VoltResult<()> {
@@ -1864,7 +1871,10 @@ pub async fn refresh_dev_extension(
 /// as milliseconds since Unix epoch, or null if the sentinel doesn't exist.
 /// Used by the frontend to detect CLI `volt-plugin dev` hot-reload signals.
 #[tauri::command]
-pub async fn get_dev_reload_signal(app: AppHandle, extension_id: String) -> VoltResult<Option<u64>> {
+pub async fn get_dev_reload_signal(
+    app: AppHandle,
+    extension_id: String,
+) -> VoltResult<Option<u64>> {
     let state = load_dev_state(&app)?;
     let ext = state
         .extensions
@@ -2027,7 +2037,10 @@ pub async fn acknowledge_extension_tamper_alert() {
 
 const EXT_STORAGE_MAX_BYTES: u64 = 10 * 1024 * 1024;
 
-fn ext_storage_db_path(app: &tauri::AppHandle, extension_id: &str) -> VoltResult<std::path::PathBuf> {
+fn ext_storage_db_path(
+    app: &tauri::AppHandle,
+    extension_id: &str,
+) -> VoltResult<std::path::PathBuf> {
     validate_extension_id(extension_id)?;
     let base = app
         .path()
@@ -2082,9 +2095,7 @@ pub async fn ext_storage_set(
     let path = ext_storage_db_path(&app, &extension_id).map_err(|e| e.to_string())?;
     // Size guard: refuse writes beyond the per-extension cap.
     if path.exists() {
-        let size = std::fs::metadata(&path)
-            .map(|m| m.len())
-            .unwrap_or(0);
+        let size = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
         if size > EXT_STORAGE_MAX_BYTES {
             return Err(format!(
                 "Extension storage limit exceeded ({} MB max)",
@@ -2120,16 +2131,14 @@ pub async fn ext_storage_remove(
 
 /// Delete all keys in the extension's isolated KV storage.
 #[tauri::command]
-pub async fn ext_storage_clear(
-    app: tauri::AppHandle,
-    extension_id: String,
-) -> Result<(), String> {
+pub async fn ext_storage_clear(app: tauri::AppHandle, extension_id: String) -> Result<(), String> {
     let path = ext_storage_db_path(&app, &extension_id).map_err(|e| e.to_string())?;
     if !path.exists() {
         return Ok(());
     }
     let conn = ext_storage_open(&path).map_err(|e| e.to_string())?;
-    conn.execute("DELETE FROM kv", []).map_err(|e| e.to_string())?;
+    conn.execute("DELETE FROM kv", [])
+        .map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -2226,10 +2235,7 @@ pub async fn set_extension_secret(
 
 /// Delete a secret preference from the OS keyring.
 #[tauri::command]
-pub async fn delete_extension_secret(
-    extension_id: String,
-    key: String,
-) -> Result<(), String> {
+pub async fn delete_extension_secret(extension_id: String, key: String) -> Result<(), String> {
     validate_extension_id(&extension_id).map_err(|e| e.to_string())?;
     let tag = format!("volt:ext:{}:pref:{}", extension_id, key);
     crate::commands::keyring_store::remove_signed(&tag).map_err(|e| e.to_string())
@@ -2321,16 +2327,15 @@ pub async fn ext_oauth_start(
 
     // code_challenge = BASE64URL(SHA256(ASCII(code_verifier)))  §4.2
     let hash = sha2::Sha256::digest(code_verifier.as_bytes());
-    let code_challenge =
-        base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(hash);
+    let code_challenge = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(hash);
 
     // State UUID — binds this auth request to its callback.
     let state = uuid::Uuid::new_v4().to_string();
 
     // Build the full authorization URL using the `url` crate so all params
     // are correctly percent-encoded.
-    let mut auth_url = url::Url::parse(&base_auth_url)
-        .map_err(|e| format!("Invalid authUrl: {}", e))?;
+    let mut auth_url =
+        url::Url::parse(&base_auth_url).map_err(|e| format!("Invalid authUrl: {}", e))?;
     {
         let mut q = auth_url.query_pairs_mut();
         q.append_pair("client_id", &client_id);
@@ -2347,9 +2352,7 @@ pub async fn ext_oauth_start(
 
     // Store the pending flow (prune stale + cap at 32 entries).
     {
-        let mut map = EXT_OAUTH_PENDING
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let mut map = EXT_OAUTH_PENDING.lock().unwrap_or_else(|e| e.into_inner());
         let cutoff = chrono::Local::now() - chrono::Duration::minutes(10);
         map.retain(|_, v| v.initiated_at > cutoff);
         if map.len() >= 32
@@ -2393,8 +2396,7 @@ pub async fn handle_ext_oauth_deep_link(
         return Err("Unexpected deep-link host for ext OAuth callback".to_string());
     }
 
-    let params: HashMap<String, String> =
-        parsed.query_pairs().into_owned().collect();
+    let params: HashMap<String, String> = parsed.query_pairs().into_owned().collect();
 
     let code = params
         .get("code")
@@ -2407,14 +2409,9 @@ pub async fn handle_ext_oauth_deep_link(
 
     // Look up and remove the pending flow entry.
     let pending = {
-        let mut map = EXT_OAUTH_PENDING
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let mut map = EXT_OAUTH_PENDING.lock().unwrap_or_else(|e| e.into_inner());
         map.remove(&state).ok_or_else(|| {
-            warn!(
-                "ext OAuth callback with unknown state (hint: {:.8})",
-                state
-            );
+            warn!("ext OAuth callback with unknown state (hint: {:.8})", state);
             "Invalid or expired ext OAuth state parameter".to_string()
         })?
     };
@@ -2499,10 +2496,7 @@ pub async fn ext_oauth_get_token(
 
 /// Remove a stored ext OAuth access token from the OS keyring.
 #[tauri::command]
-pub async fn ext_oauth_revoke_token(
-    extension_id: String,
-    provider: String,
-) -> Result<(), String> {
+pub async fn ext_oauth_revoke_token(extension_id: String, provider: String) -> Result<(), String> {
     validate_extension_id(&extension_id).map_err(|e| e.to_string())?;
     validate_ext_provider(&provider)?;
     let key = format!("volt:ext:{}:oauth:{}", extension_id, provider);
@@ -2565,14 +2559,16 @@ const AI_RATE_LIMIT_PER_MIN: usize = 10;
 const AI_RATE_WINDOW_SECS: u64 = 60;
 
 fn ai_check_rate_limit(extension_id: &str) -> Result<(), String> {
-    let limiter =
-        AI_RATE_LIMITER.get_or_init(|| Mutex::new(HashMap::new()));
+    let limiter = AI_RATE_LIMITER.get_or_init(|| Mutex::new(HashMap::new()));
     let mut map = limiter.lock().unwrap_or_else(|p| p.into_inner());
     let now = Instant::now();
     let window = std::time::Duration::from_secs(AI_RATE_WINDOW_SECS);
 
     let queue = map.entry(extension_id.to_string()).or_default();
-    while queue.front().is_some_and(|t| now.duration_since(*t) > window) {
+    while queue
+        .front()
+        .is_some_and(|t| now.duration_since(*t) > window)
+    {
         queue.pop_front();
     }
 
@@ -2594,21 +2590,19 @@ fn ai_check_rate_limit(extension_id: &str) -> Result<(), String> {
 /// - `scale` = max temperature accepted by the provider (OpenAI/Groq: 2.0, Anthropic: 1.0)
 /// - Raw `temperature` overrides `creativity`; both are clamped to `[0, scale]`
 fn resolve_temperature(opts: &ExtAiOptions, scale: f64) -> Option<f64> {
-    let raw = opts
-        .temperature
-        .or_else(|| {
-            opts.creativity.as_ref().map(|c| match c {
-                Creativity::Named(s) => match s.as_str() {
-                    "none" => 0.0,
-                    "low" => 0.33,
-                    "medium" => 1.0,
-                    "high" => 1.67,
-                    "maximum" => 2.0,
-                    _ => 1.0,
-                },
-                Creativity::Raw(n) => *n,
-            })
-        });
+    let raw = opts.temperature.or_else(|| {
+        opts.creativity.as_ref().map(|c| match c {
+            Creativity::Named(s) => match s.as_str() {
+                "none" => 0.0,
+                "low" => 0.33,
+                "medium" => 1.0,
+                "high" => 1.67,
+                "maximum" => 2.0,
+                _ => 1.0,
+            },
+            Creativity::Raw(n) => *n,
+        })
+    });
     // Scale from 0–2 creative range to provider range
     raw.map(|t| (t * scale / 2.0).clamp(0.0, scale))
 }
@@ -2635,7 +2629,9 @@ pub async fn ext_ai_ask_stream(
     validate_extension_id(&extension_id).map_err(|e| e.to_string())?;
 
     if prompt.trim().is_empty() {
-        let _ = channel.send(AiStreamEvent::Error { error: "Prompt cannot be empty".into() });
+        let _ = channel.send(AiStreamEvent::Error {
+            error: "Prompt cannot be empty".into(),
+        });
         return Err("Prompt cannot be empty".to_string());
     }
     if prompt.len() > 100_000 {
@@ -2652,10 +2648,9 @@ pub async fn ext_ai_ask_stream(
         .ok_or("options.provider is required (\"openai\" | \"anthropic\" | \"groq\")")?;
 
     // Rate limit before touching the keyring
-    ai_check_rate_limit(&extension_id)
-        .inspect_err(|e| {
-            let _ = channel.send(AiStreamEvent::Error { error: e.clone() });
-        })?;
+    ai_check_rate_limit(&extension_id).inspect_err(|e| {
+        let _ = channel.send(AiStreamEvent::Error { error: e.clone() });
+    })?;
 
     // Resolve API key: extension-scoped preference key → global Volt AI key fallback
     let api_key = {
@@ -2665,7 +2660,9 @@ pub async fn ext_ai_ask_stream(
             .filter(|s| !s.is_empty())
             .and_then(|pref| {
                 let tag = format!("volt:ext:{}:pref:{}", extension_id, pref);
-                crate::commands::keyring_store::retrieve_signed(&tag).ok().flatten()
+                crate::commands::keyring_store::retrieve_signed(&tag)
+                    .ok()
+                    .flatten()
             });
 
         if let Some(key) = from_pref {
@@ -2768,7 +2765,9 @@ async fn ext_ai_openai_stream(
         for data in drain_sse_lines(&mut buf, &bytes) {
             if data == "[DONE]" {
                 channel
-                    .send(AiStreamEvent::Done { full_text: full_text.clone() })
+                    .send(AiStreamEvent::Done {
+                        full_text: full_text.clone(),
+                    })
                     .map_err(|e| e.to_string())?;
                 return Ok(());
             }
@@ -2778,7 +2777,9 @@ async fn ext_ai_openai_stream(
             {
                 full_text.push_str(text);
                 channel
-                    .send(AiStreamEvent::Chunk { text: text.to_owned() })
+                    .send(AiStreamEvent::Chunk {
+                        text: text.to_owned(),
+                    })
                     .map_err(|e| e.to_string())?;
             }
         }
@@ -2786,7 +2787,9 @@ async fn ext_ai_openai_stream(
 
     // Stream ended without [DONE] — still resolve with what we have
     channel
-        .send(AiStreamEvent::Done { full_text: full_text.clone() })
+        .send(AiStreamEvent::Done {
+            full_text: full_text.clone(),
+        })
         .map_err(|e| e.to_string())?;
     Ok(())
 }
@@ -2847,11 +2850,15 @@ async fn ext_ai_anthropic_stream(
                 {
                     full_text.push_str(text);
                     channel
-                        .send(AiStreamEvent::Chunk { text: text.to_owned() })
+                        .send(AiStreamEvent::Chunk {
+                            text: text.to_owned(),
+                        })
                         .map_err(|e| e.to_string())?;
                 } else if json["type"] == "message_stop" {
                     channel
-                        .send(AiStreamEvent::Done { full_text: full_text.clone() })
+                        .send(AiStreamEvent::Done {
+                            full_text: full_text.clone(),
+                        })
                         .map_err(|e| e.to_string())?;
                     return Ok(());
                 }
@@ -2860,7 +2867,9 @@ async fn ext_ai_anthropic_stream(
     }
 
     channel
-        .send(AiStreamEvent::Done { full_text: full_text.clone() })
+        .send(AiStreamEvent::Done {
+            full_text: full_text.clone(),
+        })
         .map_err(|e| e.to_string())?;
     Ok(())
 }
@@ -2919,7 +2928,9 @@ async fn ext_ai_groq_stream(
         for data in drain_sse_lines(&mut buf, &bytes) {
             if data == "[DONE]" {
                 channel
-                    .send(AiStreamEvent::Done { full_text: full_text.clone() })
+                    .send(AiStreamEvent::Done {
+                        full_text: full_text.clone(),
+                    })
                     .map_err(|e| e.to_string())?;
                 return Ok(());
             }
@@ -2929,14 +2940,18 @@ async fn ext_ai_groq_stream(
             {
                 full_text.push_str(text);
                 channel
-                    .send(AiStreamEvent::Chunk { text: text.to_owned() })
+                    .send(AiStreamEvent::Chunk {
+                        text: text.to_owned(),
+                    })
                     .map_err(|e| e.to_string())?;
             }
         }
     }
 
     channel
-        .send(AiStreamEvent::Done { full_text: full_text.clone() })
+        .send(AiStreamEvent::Done {
+            full_text: full_text.clone(),
+        })
         .map_err(|e| e.to_string())?;
     Ok(())
 }
@@ -2970,8 +2985,7 @@ pub async fn ai_set_global_key(provider: String, key: String) -> Result<(), Stri
         return Err("API key cannot be empty".to_string());
     }
     let tag = format!("volt:ai:key:{}", provider);
-    crate::commands::keyring_store::store_signed(&tag, key.trim())
-        .map_err(|e| e.to_string())
+    crate::commands::keyring_store::store_signed(&tag, key.trim()).map_err(|e| e.to_string())
 }
 
 /// Delete the global Volt AI key for a provider.
@@ -2994,7 +3008,10 @@ pub async fn ai_get_providers_status() -> Result<Vec<AiProviderStatus>, String> 
         let has_key = crate::commands::keyring_store::retrieve_signed(&tag)
             .unwrap_or(None)
             .is_some();
-        statuses.push(AiProviderStatus { provider: provider.to_string(), has_key });
+        statuses.push(AiProviderStatus {
+            provider: provider.to_string(),
+            has_key,
+        });
     }
     Ok(statuses)
 }
@@ -3081,12 +3098,17 @@ pub async fn ai_ask_builtin_stream(
 ) -> Result<(), String> {
     if !AI_KNOWN_PROVIDERS.contains(&provider.as_str()) {
         let _ = channel.send(AiStreamEvent::Error {
-            error: format!("Unknown provider '{}'. Supported: openai, anthropic, groq.", provider),
+            error: format!(
+                "Unknown provider '{}'. Supported: openai, anthropic, groq.",
+                provider
+            ),
         });
         return Err(format!("Unknown provider '{}'", provider));
     }
     if prompt.trim().is_empty() {
-        let _ = channel.send(AiStreamEvent::Error { error: "Prompt cannot be empty".into() });
+        let _ = channel.send(AiStreamEvent::Error {
+            error: "Prompt cannot be empty".into(),
+        });
         return Err("Prompt cannot be empty".to_string());
     }
     if prompt.len() > 100_000 {
@@ -3118,7 +3140,9 @@ pub async fn ai_ask_builtin_stream(
             return Err(msg);
         }
         Err(e) => {
-            let _ = channel.send(AiStreamEvent::Error { error: e.to_string() });
+            let _ = channel.send(AiStreamEvent::Error {
+                error: e.to_string(),
+            });
             return Err(e.to_string());
         }
     };
@@ -3241,11 +3265,9 @@ pub async fn ext_move_to_trash(path: String) -> Result<(), String> {
     #[cfg(not(target_os = "windows"))]
     {
         let owned = path_obj.to_path_buf();
-        tokio::task::spawn_blocking(move || {
-            trash::delete(&owned).map_err(|e| e.to_string())
-        })
-        .await
-        .map_err(|e| e.to_string())??;
+        tokio::task::spawn_blocking(move || trash::delete(&owned).map_err(|e| e.to_string()))
+            .await
+            .map_err(|e| e.to_string())??;
     }
 
     Ok(())

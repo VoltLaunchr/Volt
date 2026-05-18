@@ -232,7 +232,6 @@ pub async fn start_indexing(
         // whether the future completes normally, panics, or is aborted.
         let _guard = IndexingGuard::new(guard_status);
 
-
         let config = IndexConfig {
             folders,
             excluded_paths,
@@ -886,7 +885,6 @@ pub async fn invalidate_index(
         // Owned by this future — its Drop clears `is_indexing` regardless of
         // whether the future completes normally, panics, or is aborted.
         let _guard = IndexingGuard::new(guard_status);
-
 
         // Offload the blocking filesystem walk to the dedicated thread pool.
         let scan_result = tokio::task::spawn_blocking(move || scan_files(&config)).await;

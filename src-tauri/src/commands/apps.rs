@@ -1,9 +1,9 @@
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
-use tokio::sync::{Mutex, RwLock};
 #[cfg(target_os = "windows")]
 use tokio::sync::Semaphore;
+use tokio::sync::{Mutex, RwLock};
 #[cfg(target_os = "windows")]
 use tokio::time::timeout;
 use tracing::info;
@@ -363,8 +363,7 @@ static SCAN_CACHE: once_cell::sync::Lazy<Arc<RwLock<Option<ScanCache>>>> =
 // scan in parallel. Without this, two simultaneous scan_applications calls
 // would both miss the cache, both run a full scan, and the doubled icon
 // extraction + .lnk parsing can OOM the process.
-static SCAN_LOCK: once_cell::sync::Lazy<Mutex<()>> =
-    once_cell::sync::Lazy::new(|| Mutex::new(()));
+static SCAN_LOCK: once_cell::sync::Lazy<Mutex<()>> = once_cell::sync::Lazy::new(|| Mutex::new(()));
 
 /// Scans system for installed applications (cross-platform)
 /// Uses caching to avoid expensive rescans

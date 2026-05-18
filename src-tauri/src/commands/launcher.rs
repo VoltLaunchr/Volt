@@ -93,10 +93,9 @@ fn map_launch_error(e: LaunchError) -> VoltError {
         LaunchError::NotFound { path } => {
             VoltError::NotFound(format!("Application not found: {}", path))
         }
-        LaunchError::PermissionDenied { path, message } => VoltError::PermissionDenied(format!(
-            "Permission denied for '{}': {}",
-            path, message
-        )),
+        LaunchError::PermissionDenied { path, message } => {
+            VoltError::PermissionDenied(format!("Permission denied for '{}': {}", path, message))
+        }
         LaunchError::SpawnFailed { path, message } => {
             VoltError::Launch(format!("Failed to launch '{}': {}", path, message))
         }

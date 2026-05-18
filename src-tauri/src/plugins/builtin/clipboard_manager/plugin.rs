@@ -601,19 +601,19 @@ impl ClipboardManagerPlugin {
 
                                     if should_add {
                                         // Skip if the source app is in the disabled list
-                                        let blocked =
-                                            if let Ok(disabled) = disabled_apps_filter.lock() {
-                                                if disabled.is_empty() {
-                                                    false
-                                                } else if let Some(app) = get_foreground_app_name()
-                                                {
-                                                    disabled.iter().any(|d| app.contains(d.as_str()))
-                                                } else {
-                                                    false
-                                                }
+                                        let blocked = if let Ok(disabled) =
+                                            disabled_apps_filter.lock()
+                                        {
+                                            if disabled.is_empty() {
+                                                false
+                                            } else if let Some(app) = get_foreground_app_name() {
+                                                disabled.iter().any(|d| app.contains(d.as_str()))
                                             } else {
                                                 false
-                                            };
+                                            }
+                                        } else {
+                                            false
+                                        };
                                         if !blocked {
                                             *last_hash_guard = Some(current_hash.clone());
                                             drop(last_hash_guard);
@@ -1086,15 +1086,18 @@ pub(crate) fn get_foreground_app_name() -> Option<String> {
             return None;
         }
 
-        let handle =
-            OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, 0, pid);
+        let handle = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, 0, pid);
         if handle.is_null() {
             return None;
         }
 
         let mut buf = vec![0u16; 512];
-        let len =
-            GetModuleFileNameExW(handle, std::ptr::null_mut(), buf.as_mut_ptr(), buf.len() as u32);
+        let len = GetModuleFileNameExW(
+            handle,
+            std::ptr::null_mut(),
+            buf.as_mut_ptr(),
+            buf.len() as u32,
+        );
         CloseHandle(handle);
 
         if len == 0 {

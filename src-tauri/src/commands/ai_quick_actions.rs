@@ -162,11 +162,7 @@ fn unregister_all(app: &AppHandle, state: &State<'_, QuickActionHotkeyState>) {
 
 /// Register one hotkey for an action; on press, emit `volt://ai-quick-action`
 /// with the action payload so the frontend can react.
-fn register_one(
-    app: &AppHandle,
-    action: &AiQuickAction,
-    hotkey_str: &str,
-) -> Result<(), String> {
+fn register_one(app: &AppHandle, action: &AiQuickAction, hotkey_str: &str) -> Result<(), String> {
     let sc: Shortcut = hotkey_str
         .parse()
         .map_err(|e| format!("Invalid hotkey '{}': {}", hotkey_str, e))?;
