@@ -36,8 +36,19 @@ use tracing::{info, warn};
 /// without it, the model defaults to base SDXL.
 const PROMPT_PREFIX: &str = "A TOK emoji of ";
 
-/// Replicate API endpoint for the model (latest version is auto-selected).
-const REPLICATE_ENDPOINT: &str = "https://api.replicate.com/v1/models/fofr/sdxl-emoji/predictions";
+/// Replicate API endpoints.
+///
+/// We previously POSTed to `/v1/models/fofr/sdxl-emoji/predictions`, which is
+/// the dedicated "run-the-latest-version" endpoint. Replicate reserves that
+/// endpoint for *official* models — community models like `fofr/sdxl-emoji`
+/// return HTTP 404 on it. The portable way is a two-step flow:
+///
+/// 1. GET `/v1/models/{owner}/{name}` to resolve `latest_version.id`.
+/// 2. POST `/v1/predictions` with `{ "version": "<sha256>", "input": ... }`.
+///
+/// See <https://replicate.com/docs/reference/http>.
+const REPLICATE_MODEL_INFO_ENDPOINT: &str = "https://api.replicate.com/v1/models/fofr/sdxl-emoji";
+const REPLICATE_PREDICTIONS_ENDPOINT: &str = "https://api.replicate.com/v1/predictions";
 
 /// Maximum poll attempts after the initial `Prefer: wait` request returns
 /// without a terminal state. 1.5 s per attempt → ~90 s ceiling.
@@ -68,6 +79,16 @@ struct ReplicatePrediction {
 #[derive(Debug, Deserialize)]
 struct ReplicateUrls {
     get: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct ReplicateModelInfo {
+    latest_version: ReplicateModelVersion,
+}
+
+#[derive(Debug, Deserialize)]
+struct ReplicateModelVersion {
+    id: String,
 }
 
 fn emoji_dir(app: &AppHandle) -> Result<PathBuf, String> {
@@ -140,6 +161,35 @@ impl EmojiProxy {
     }
 }
 
+/// Resolve the latest version SHA for the configured Replicate community model.
+///
+/// `POST /v1/predictions` requires a concrete version identifier; the
+/// `owner/name` shorthand only works for official models. We look it up here
+/// so the rest of the flow can target a stable version for each generation.
+async fn fetch_latest_version(client: &reqwest::Client, token: &str) -> Result<String, String> {
+    let resp = client
+        .get(REPLICATE_MODEL_INFO_ENDPOINT)
+        .bearer_auth(token)
+        .send()
+        .await
+        .map_err(|e| format!("Replicate model fetch failed: {}", e))?;
+
+    let status = resp.status();
+    if !status.is_success() {
+        let txt = resp.text().await.unwrap_or_default();
+        return Err(format!(
+            "Replicate model lookup returned HTTP {}: {}",
+            status, txt
+        ));
+    }
+
+    let info: ReplicateModelInfo = resp
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse Replicate model info: {}", e))?;
+    Ok(info.latest_version.id)
+}
+
 /// Kick off a prediction and poll until it terminates. Returns the first output URL.
 async fn run_replicate_prediction(token: &str, prompt: &str) -> Result<String, String> {
     let client = reqwest::Client::builder()
@@ -147,7 +197,10 @@ async fn run_replicate_prediction(token: &str, prompt: &str) -> Result<String, S
         .build()
         .map_err(|e| e.to_string())?;
 
+    let version = fetch_latest_version(&client, token).await?;
+
     let body = serde_json::json!({
+        "version": version,
         "input": {
             "prompt": format!("{}{}", PROMPT_PREFIX, prompt),
             "width": 1024,
@@ -163,7 +216,7 @@ async fn run_replicate_prediction(token: &str, prompt: &str) -> Result<String, S
 
     // Initial request — `Prefer: wait` blocks up to 60 s server-side.
     let resp = client
-        .post(REPLICATE_ENDPOINT)
+        .post(REPLICATE_PREDICTIONS_ENDPOINT)
         .bearer_auth(token)
         .header("Content-Type", "application/json")
         .header("Prefer", "wait")
