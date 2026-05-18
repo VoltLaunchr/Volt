@@ -64,5 +64,5 @@ export const SETTINGS_CATEGORIES: CategoryItem[] = [
   { id: 'shell', label: 'Shell Commands', icon: Terminal, section: 'BUILT-IN', iconSrc: `${APP_ICON}/shell_icon.svg` },
   { id: 'emoji', label: 'Emoji & Symbols', icon: Package, section: 'BUILT-IN', iconSrc: `${APP_ICON}/plugin_icon.svg` },
   { id: 'ai', label: 'AI', icon: Package, section: 'BUILT-IN', iconSrc: `${APP_ICON}/ai_icon.svg` },
-  { id: 'notes', label: 'Notes', icon: StickyNote, section: 'BUILT-IN' },
+  { id: 'notes', label: 'Notes', icon: StickyNote, section: 'BUILT-IN', iconSrc: `${APP_ICON}/volt_note_icons.svg` },
 ];
