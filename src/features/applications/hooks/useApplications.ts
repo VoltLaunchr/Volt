@@ -5,6 +5,7 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { extractErrorMessage } from '../../../shared/utils/error';
 import type { AppInfo } from '../../../shared/types/common.types';
 import { applicationService } from '../services/applicationService';
 import type { ApplicationsState, ScanStatus } from '../types';
@@ -47,6 +48,11 @@ export interface UseApplicationsReturn {
 export function useApplications(autoLoad = true): UseApplicationsReturn {
   const [state, setState] = useState<ApplicationsState>(INITIAL_APPLICATIONS_STATE);
   const iconLoadAbort = useRef<AbortController | null>(null);
+  // Guard against React 19 StrictMode double-invoke in dev. Without this, two
+  // concurrent scan_applications calls fire at the same time, the backend cache
+  // can't dedupe them (both see an empty cache before either writes), and the
+  // 2× icon extraction + .lnk parse pressure can OOM the Rust process.
+  const scanStarted = useRef(false);
 
   const refresh = useCallback(async () => {
     // Abort any in-progress icon loading
@@ -113,7 +119,7 @@ export function useApplications(autoLoad = true): UseApplicationsReturn {
         });
       }
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : String(err);
+      const errorMessage = extractErrorMessage(err);
 
       setState((prev) => ({
         ...prev,
@@ -141,7 +147,8 @@ export function useApplications(autoLoad = true): UseApplicationsReturn {
 
   // Auto-load on mount if enabled
   useEffect(() => {
-    if (autoLoad) {
+    if (autoLoad && !scanStarted.current) {
+      scanStarted.current = true;
       void refresh();
     }
   }, [autoLoad, refresh]);

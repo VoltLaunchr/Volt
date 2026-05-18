@@ -1,16 +1,21 @@
 /// Shared OS keyring abstraction (used by `auth` and `credentials`).
 pub mod keyring_store;
 
+pub mod ai_profile;
+pub mod ai_quick_actions;
 pub mod apps;
 pub mod auth;
 pub mod autostart;
 pub mod clipboard;
 pub mod credentials;
+pub mod custom_emojis;
+pub mod embeddings;
 pub mod extensions;
 pub mod files;
 pub mod games;
 pub mod launcher;
 pub mod logging;
+pub mod notes;
 pub mod oauth;
 pub mod plugins;
 pub mod preview;
@@ -35,6 +40,7 @@ pub use files::*;
 pub use games::*;
 pub use launcher::*;
 pub use logging::*;
+pub use notes::*;
 pub use oauth::*;
 pub use plugins::*;
 pub use preview::*;

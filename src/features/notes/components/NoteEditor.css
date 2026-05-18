@@ -1,0 +1,229 @@
+/* NoteEditor — minimal prose styling.
+ *
+ * Scoped under `.note-editor` to avoid bleeding into the rest of the launcher.
+ * Uses CSS custom properties from the global theme so light/dark/auto themes
+ * apply automatically (see src/styles/themes.css). Falls back to safe defaults
+ * if a token is missing so this component remains usable in isolation
+ * (Storybook, tests, etc.).
+ */
+
+.note-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  width: 100%;
+  height: 100%;
+  min-height: 200px;
+  padding: 1rem 1.25rem;
+  font-family:
+    var(--font-sans),
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    Roboto,
+    Oxygen,
+    Ubuntu,
+    Cantarell,
+    sans-serif;
+  font-size: 0.95rem;
+  line-height: 1.6;
+  color: var(--color-foreground, #e5e7eb);
+  background: var(--color-background, transparent);
+}
+
+.note-editor__content {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* The actual contenteditable host TipTap injects. */
+.note-editor .ProseMirror {
+  outline: none;
+  min-height: 100%;
+  caret-color: var(--color-primary, #60a5fa);
+}
+
+/* Placeholder for the very first empty paragraph. */
+.note-editor .ProseMirror p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  pointer-events: none;
+  color: var(--color-muted-foreground, #9ca3af);
+  opacity: 0.7;
+}
+
+/* Headings — prose hierarchy without going overboard. */
+.note-editor .ProseMirror h1,
+.note-editor .ProseMirror h2,
+.note-editor .ProseMirror h3,
+.note-editor .ProseMirror h4 {
+  font-weight: 600;
+  line-height: 1.25;
+  margin: 1.25em 0 0.5em;
+}
+.note-editor .ProseMirror h1 {
+  font-size: 1.6rem;
+}
+.note-editor .ProseMirror h2 {
+  font-size: 1.35rem;
+}
+.note-editor .ProseMirror h3 {
+  font-size: 1.15rem;
+}
+.note-editor .ProseMirror h4 {
+  font-size: 1rem;
+}
+.note-editor .ProseMirror > :first-child {
+  margin-top: 0;
+}
+
+/* Lists. */
+.note-editor .ProseMirror ul,
+.note-editor .ProseMirror ol {
+  padding-left: 1.5rem;
+  margin: 0.5em 0;
+}
+.note-editor .ProseMirror ul {
+  list-style: disc;
+}
+.note-editor .ProseMirror ol {
+  list-style: decimal;
+}
+
+/* Task lists (checklists). */
+.note-editor .ProseMirror ul[data-type='taskList'] {
+  list-style: none;
+  padding-left: 0.25rem;
+}
+.note-editor .ProseMirror ul[data-type='taskList'] li {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  margin: 0.15em 0;
+}
+.note-editor .ProseMirror ul[data-type='taskList'] li > label {
+  flex: 0 0 auto;
+  margin-top: 0.25rem;
+  user-select: none;
+}
+.note-editor .ProseMirror ul[data-type='taskList'] li > div {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.note-editor .ProseMirror ul[data-type='taskList'] input[type='checkbox'] {
+  width: 1rem;
+  height: 1rem;
+  margin: 0;
+  accent-color: var(--color-primary, #60a5fa);
+  cursor: pointer;
+}
+.note-editor .ProseMirror ul[data-type='taskList'] li[data-checked='true'] > div {
+  color: var(--color-muted-foreground, #9ca3af);
+  text-decoration: line-through;
+}
+
+/* Inline code. */
+.note-editor .ProseMirror code {
+  font-family:
+    var(--font-mono), ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono',
+    monospace;
+  font-size: 0.875em;
+  padding: 0.125em 0.375em;
+  border-radius: 4px;
+  background: rgba(127, 127, 127, 0.18);
+}
+
+/* Code blocks (CodeBlockLowlight). */
+.note-editor .ProseMirror pre {
+  font-family:
+    var(--font-mono), ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono',
+    monospace;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  margin: 0.75em 0;
+  padding: 0.85rem 1rem;
+  border-radius: 8px;
+  background: var(--color-code-background, #0f172a);
+  color: var(--color-code-foreground, #e2e8f0);
+  overflow-x: auto;
+}
+.note-editor .ProseMirror pre code {
+  background: transparent;
+  padding: 0;
+  font-size: inherit;
+  color: inherit;
+}
+
+/* lowlight syntax tokens — minimal palette tuned for dark backgrounds.
+ * Light themes can override these via custom props. */
+.note-editor .ProseMirror .hljs-keyword,
+.note-editor .ProseMirror .hljs-selector-tag {
+  color: #c084fc;
+}
+.note-editor .ProseMirror .hljs-string,
+.note-editor .ProseMirror .hljs-attr {
+  color: #86efac;
+}
+.note-editor .ProseMirror .hljs-number,
+.note-editor .ProseMirror .hljs-literal {
+  color: #fbbf24;
+}
+.note-editor .ProseMirror .hljs-comment {
+  color: #94a3b8;
+  font-style: italic;
+}
+.note-editor .ProseMirror .hljs-title,
+.note-editor .ProseMirror .hljs-name {
+  color: #60a5fa;
+}
+
+/* Blockquote. */
+.note-editor .ProseMirror blockquote {
+  border-left: 3px solid var(--color-border, rgba(127, 127, 127, 0.4));
+  padding-left: 1rem;
+  margin: 0.75em 0;
+  color: var(--color-muted-foreground, #cbd5e1);
+}
+
+/* Links. */
+.note-editor .ProseMirror a {
+  color: var(--color-primary, #60a5fa);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* Images. */
+.note-editor .ProseMirror img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 6px;
+  margin: 0.5em 0;
+}
+
+/* Horizontal rule. */
+.note-editor .ProseMirror hr {
+  border: none;
+  border-top: 1px solid var(--color-border, rgba(127, 127, 127, 0.3));
+  margin: 1.25em 0;
+}
+
+/* Footer (character count). */
+.note-editor__footer {
+  flex: 0 0 auto;
+  text-align: right;
+  font-size: 0.75rem;
+  color: var(--color-muted-foreground, #9ca3af);
+  font-variant-numeric: tabular-nums;
+  padding-top: 0.25rem;
+  border-top: 1px solid var(--color-border, rgba(127, 127, 127, 0.15));
+}
+
+/* Read-only state — soften the cursor and dim the footer. */
+.note-editor[data-readonly='true'] .ProseMirror {
+  caret-color: transparent;
+}
+.note-editor[data-readonly='true'] .note-editor__footer {
+  opacity: 0.6;
+}

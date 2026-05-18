@@ -7,13 +7,22 @@
 //! - Checking for updates
 
 use crate::core::error::{VoltError, VoltResult};
+use futures_util::StreamExt;
+use rusqlite::OptionalExtension;
 use serde::{Deserialize, Serialize};
 use std::fs;
+use std::net::{Ipv4Addr, Ipv6Addr};
 use std::path::{Path, PathBuf};
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 use tracing::{debug, info, warn};
 
 use crate::utils::extension_state_sig;
+use base64::Engine as _;
+use once_cell::sync::Lazy;
+use sha2::Digest as _;
+use std::collections::{HashMap, VecDeque};
+use std::sync::{Mutex, OnceLock};
+use std::time::Instant;
 
 /// Reject paths that escape `root` (via `..` or symlink resolution).
 /// Returns the canonical path on success.
@@ -85,6 +94,50 @@ pub struct ExtensionManifest {
     pub permissions: Option<Vec<String>>,
     /// Entry point file for the extension (e.g., "index.js" or "src/plugin.ts")
     pub main: Option<String>,
+    /// Declarative preferences shown in extension settings UI
+    #[serde(default)]
+    pub preferences: Vec<ExtensionPreference>,
+    /// Multiple named commands — each surfaces as its own search result
+    #[serde(default)]
+    pub commands: Vec<ExtensionCommand>,
+}
+
+/// A single named command exposed by the extension.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExtensionCommand {
+    pub name: String,
+    pub title: String,
+    pub description: Option<String>,
+    pub main: Option<String>,
+    pub prefix: Option<String>,
+    pub keywords: Option<Vec<String>>,
+    pub icon: Option<String>,
+}
+
+/// A single declarative preference field for an extension.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExtensionPreference {
+    pub name: String,
+    #[serde(rename = "type")]
+    pub pref_type: String,
+    pub title: String,
+    pub description: Option<String>,
+    #[serde(default)]
+    pub required: bool,
+    pub default: Option<serde_json::Value>,
+    /// For 'select' type
+    pub options: Option<Vec<String>>,
+    /// For 'number' type
+    pub min: Option<f64>,
+    pub max: Option<f64>,
+    /// For 'oauth' type — PKCE OAuth connection config
+    pub oauth_provider: Option<String>,
+    pub oauth_auth_url: Option<String>,
+    pub oauth_token_url: Option<String>,
+    pub oauth_client_id: Option<String>,
+    pub oauth_scopes: Option<Vec<String>>,
 }
 
 /// Extension info from the registry
@@ -99,6 +152,10 @@ pub struct ExtensionInfo {
     pub featured: bool,
     pub created_at: String,
     pub updated_at: String,
+    #[serde(default)]
+    pub screenshots: Vec<String>,
+    #[serde(default)]
+    pub readme_url: Option<String>,
 }
 
 /// Installed extension info
@@ -137,7 +194,15 @@ pub struct InstalledExtensionsState {
 /// and the backend rejects anything not in this list at IPC time so a
 /// compromised frontend or replayed IPC cannot smuggle bogus / future /
 /// misspelled permissions into `granted_permissions`. (M1)
-const ALLOWED_PERMISSIONS: &[&str] = &["clipboard", "network", "notifications", "openUrl"];
+const ALLOWED_PERMISSIONS: &[&str] = &[
+    "clipboard",
+    "network",
+    "notifications",
+    "openUrl",
+    "oauth",
+    "ai",
+    "system",
+];
 
 /// Validate extension ID to prevent path traversal attacks
 fn validate_extension_id(id: &str) -> VoltResult<()> {
@@ -168,18 +233,55 @@ fn validate_extension_id(id: &str) -> VoltResult<()> {
     Ok(())
 }
 
-/// Check if host is in the 172.16.0.0/12 private range (172.16.x.x - 172.31.x.x)
-fn is_private_172(host: &str) -> bool {
-    if let Some(rest) = host.strip_prefix("172.")
-        && let Some(second_octet_str) = rest.split('.').next()
-        && let Ok(second_octet) = second_octet_str.parse::<u8>()
-    {
-        return (16..=31).contains(&second_octet);
+/// Returns true if `addr` is a private/loopback/link-local IPv4 address.
+fn is_private_ipv4(addr: Ipv4Addr) -> bool {
+    addr.is_loopback()              // 127.0.0.0/8
+        || addr.is_private()        // 10/8, 172.16/12, 192.168/16
+        || addr.is_link_local()     // 169.254.0.0/16
+        || addr.is_unspecified()    // 0.0.0.0
+        || addr.is_broadcast()      // 255.255.255.255
+        || addr.is_documentation()  // 192.0.2/24, 198.51.100/24, 203.0.113/24
+        || addr.octets()[0] == 0    // 0/8 reserved
+        || (addr.octets()[0] >= 224) // multicast + reserved
+}
+
+/// Returns true if `addr` is a private/loopback/link-local IPv6 address.
+///
+/// Includes ULA (`fc00::/7`), link-local (`fe80::/10`), loopback (`::1`),
+/// unspecified (`::`), and IPv4-mapped (`::ffff:0:0/96`) — the last is the
+/// trick that lets `[::ffff:127.0.0.1]` pretend to be an IPv6 address while
+/// actually targeting a v4 loopback.
+fn is_private_ipv6(addr: Ipv6Addr) -> bool {
+    if addr.is_loopback() || addr.is_unspecified() {
+        return true;
+    }
+    let segments = addr.segments();
+    // ULA: fc00::/7 → first 7 bits are 1111 110x → segments[0] & 0xfe00 == 0xfc00
+    if (segments[0] & 0xfe00) == 0xfc00 {
+        return true;
+    }
+    // Link-local: fe80::/10 → first 10 bits are 1111 1110 10 → segments[0] & 0xffc0 == 0xfe80
+    if (segments[0] & 0xffc0) == 0xfe80 {
+        return true;
+    }
+    // IPv4-mapped: ::ffff:a.b.c.d → check the embedded v4 address.
+    if let Some(mapped) = addr.to_ipv4_mapped() {
+        return is_private_ipv4(mapped);
+    }
+    // Multicast (ff00::/8) — block all (some are non-routable, some are
+    // site-scoped; cleaner to refuse outright for an HTTP download URL).
+    if (segments[0] & 0xff00) == 0xff00 {
+        return true;
     }
     false
 }
 
-/// Validate download URL to ensure it's a safe HTTPS URL
+/// Validate download URL to ensure it's a safe HTTPS URL.
+///
+/// SSRF defense: rejects loopback, private (RFC1918), link-local, IPv6 ULA
+/// (`fc00::/7`), IPv6 link-local (`fe80::/10`), and IPv4-mapped IPv6 hosts.
+/// Domain names that resolve to private IPs at request time are still possible
+/// — DNS rebinding mitigation lives in the worker fetch proxy, not here.
 fn validate_download_url(url: &str) -> VoltResult<()> {
     if url.is_empty() {
         return Err(VoltError::InvalidConfig(
@@ -187,39 +289,34 @@ fn validate_download_url(url: &str) -> VoltResult<()> {
         ));
     }
 
-    // Parse and validate URL
     let parsed = url::Url::parse(url)
         .map_err(|_| VoltError::InvalidConfig("Invalid URL format".to_string()))?;
 
-    // Only allow HTTPS
     if parsed.scheme() != "https" {
         return Err(VoltError::InvalidConfig(
             "Only HTTPS URLs are allowed for security".to_string(),
         ));
     }
 
-    // Block localhost, private IPs, and link-local addresses
-    if let Some(host) = parsed.host_str() {
-        let host_lower = host.to_lowercase();
-        if host_lower == "localhost"
-            || host_lower == "127.0.0.1"
-            || host_lower == "0.0.0.0"
-            || host_lower == "[::1]"
-            || host_lower == "::1"
-            || host_lower.starts_with("192.168.")
-            || host_lower.starts_with("10.")
-            || host_lower.starts_with("169.254.")
-            || is_private_172(host_lower.as_str())
-            || host_lower.starts_with("fc")
-            || host_lower.starts_with("fd")
-        {
-            return Err(VoltError::InvalidConfig(
-                "Downloads from local/private addresses are not allowed".to_string(),
-            ));
+    let host = parsed
+        .host()
+        .ok_or_else(|| VoltError::InvalidConfig("URL must have a valid host".to_string()))?;
+
+    let blocked = match host {
+        url::Host::Ipv4(addr) => is_private_ipv4(addr),
+        url::Host::Ipv6(addr) => is_private_ipv6(addr),
+        url::Host::Domain(d) => {
+            let lower = d.to_lowercase();
+            // Domain literals that the parser keeps as Domain (not Ipv4): only
+            // refuse the obvious "localhost". Real domain → IP resolution happens
+            // at request time and is out of scope for syntactic validation.
+            lower == "localhost" || lower.ends_with(".localhost")
         }
-    } else {
+    };
+
+    if blocked {
         return Err(VoltError::InvalidConfig(
-            "URL must have a valid host".to_string(),
+            "Downloads from local/private addresses are not allowed".to_string(),
         ));
     }
 
@@ -338,6 +435,21 @@ fn extract_tar_gz(bytes: &[u8], dest_dir: &Path) -> VoltResult<()> {
         }
 
         let outpath = dest_dir.join(&entry_path);
+
+        if entry_type == tar::EntryType::Directory {
+            fs::create_dir_all(&outpath).map_err(|e| {
+                VoltError::FileSystem(format!("Failed to create tar directory: {}", e))
+            })?;
+            continue;
+        }
+
+        // entry.unpack() does not create parent dirs — do it explicitly.
+        if let Some(parent) = outpath.parent() {
+            fs::create_dir_all(parent).map_err(|e| {
+                VoltError::FileSystem(format!("Failed to create parent directory: {}", e))
+            })?;
+        }
+
         entry
             .unpack(&outpath)
             .map_err(|e| VoltError::FileSystem(format!("Failed to unpack tar entry: {}", e)))?;
@@ -472,6 +584,8 @@ const ALLOWED_REGISTRY_HOSTS: &[&str] = &[
     "raw.githubusercontent.com",
     "objects.githubusercontent.com",
     "api.github.com",
+    "voltlauncher.com",
+    "www.voltlauncher.com",
 ];
 
 /// Validate that a registry URL points to an allowed host
@@ -570,9 +684,12 @@ pub async fn install_extension(
 
     // Download the extension
     info!("Downloading extension from: {}", download_url);
+    // GitHub releases respond with HTTP 302 → objects.githubusercontent.com CDN.
+    // Allow up to 5 redirects; SSRF is already mitigated by validate_download_url()
+    // on the initial URL, and reqwest only follows same-scheme (https) redirects.
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(30))
-        .redirect(reqwest::redirect::Policy::none())
+        .redirect(reqwest::redirect::Policy::limited(5))
         .build()
         .map_err(|e| VoltError::Unknown(format!("HTTP client build failed: {}", e)))?;
     let response = client
@@ -1419,6 +1536,260 @@ pub async fn link_dev_extension(app: AppHandle, path: String) -> VoltResult<DevE
     Ok(dev_ext)
 }
 
+/// A command entry in the scaffold wizard (one file per command).
+#[derive(Debug, Deserialize)]
+pub struct ScaffoldCommand {
+    pub name: String,
+    pub title: String,
+    pub description: Option<String>,
+}
+
+/// Scaffold a new dev extension with boilerplate files, then auto-link it.
+///
+/// Creates `{location}/{id}/manifest.json`, `{location}/{id}/src/index.ts`, and
+/// optionally one file per command in `commands`, then delegates to
+/// `link_dev_extension` for path validation and state registration.
+#[allow(clippy::too_many_arguments)]
+#[tauri::command]
+pub async fn scaffold_extension(
+    app: AppHandle,
+    name: String,
+    description: String,
+    category: String,
+    platforms: Option<String>,
+    prefix: Option<String>,
+    keywords: Option<Vec<String>>,
+    location: String,
+    commands: Option<Vec<ScaffoldCommand>>,
+) -> VoltResult<DevExtension> {
+    if name.trim().is_empty() {
+        return Err(VoltError::InvalidConfig(
+            "Extension name cannot be empty".to_string(),
+        ));
+    }
+
+    // Generate kebab-case ID from name (e.g. "My Cool Ext" → "my-cool-ext")
+    let id: String = name
+        .trim()
+        .to_lowercase()
+        .chars()
+        .map(|c| if c.is_alphanumeric() { c } else { '-' })
+        .collect::<String>()
+        .split('-')
+        .filter(|s| !s.is_empty())
+        .collect::<Vec<_>>()
+        .join("-");
+
+    validate_extension_id(&id)?;
+
+    let location_path = PathBuf::from(&location);
+    if !location_path.exists() {
+        return Err(VoltError::NotFound(format!(
+            "Location not found: {}",
+            location
+        )));
+    }
+
+    let extension_dir = location_path.join(&id);
+    if extension_dir.exists() {
+        return Err(VoltError::InvalidConfig(format!(
+            "Directory '{}' already exists at this location. Choose a different name or location.",
+            id
+        )));
+    }
+
+    // Create directory structure
+    let src_dir = extension_dir.join("src");
+    fs::create_dir_all(&src_dir).map_err(|e| {
+        VoltError::FileSystem(format!("Failed to create extension directory: {}", e))
+    })?;
+
+    // PascalCase class name (e.g. "My Cool Ext" → "MyCoolExt")
+    let class_name: String = name
+        .split_whitespace()
+        .map(|w| {
+            let mut chars = w.chars();
+            match chars.next() {
+                None => String::new(),
+                Some(f) => f.to_uppercase().to_string() + chars.as_str(),
+            }
+        })
+        .collect();
+
+    let kws = keywords.unwrap_or_else(|| vec![id.clone()]);
+    let trigger = prefix
+        .as_deref()
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string())
+        .or_else(|| kws.first().cloned())
+        .unwrap_or_else(|| id.clone());
+
+    let platforms_arr = match platforms.as_deref() {
+        Some("windows") => serde_json::json!(["windows"]),
+        Some("macos") => serde_json::json!(["macos"]),
+        _ => serde_json::json!(["windows", "macos"]),
+    };
+
+    let cmds = commands.unwrap_or_default();
+    let commands_json: Vec<serde_json::Value> = cmds
+        .iter()
+        .map(|c| {
+            let file_name = format!("src/{}.ts", c.name);
+            serde_json::json!({
+                "name": c.name,
+                "title": c.title,
+                "description": c.description,
+                "main": file_name,
+            })
+        })
+        .collect();
+
+    // manifest.json
+    let mut manifest_json = serde_json::json!({
+        "id": id,
+        "name": name.trim(),
+        "version": "0.1.0",
+        "description": description.trim(),
+        "author": { "name": "", "github": "", "email": "" },
+        "category": category,
+        "platforms": platforms_arr,
+        "keywords": kws,
+        "prefix": prefix,
+        "permissions": [],
+        "main": "src/index.ts",
+        "license": "MIT"
+    });
+    if !commands_json.is_empty() {
+        manifest_json["commands"] = serde_json::json!(commands_json);
+    }
+    let manifest_str = serde_json::to_string_pretty(&manifest_json)
+        .map_err(|e| VoltError::Serialization(e.to_string()))?;
+    fs::write(extension_dir.join("manifest.json"), &manifest_str)
+        .map_err(|e| VoltError::FileSystem(e.to_string()))?;
+
+    // src/index.ts — root boilerplate (or barrel when commands are defined)
+    let index_content = if cmds.is_empty() {
+        format!(
+            r#"// Volt Extension: {name}
+// Docs: https://voltlaunchr.com/docs/plugins
+
+export default class {class_name} {{
+  id = '{id}';
+  name = '{name}';
+  description = '{description}';
+  enabled = true;
+
+  canHandle(context) {{
+    const query = context.query.trim().toLowerCase();
+    return query.startsWith('{trigger}');
+  }}
+
+  match(context) {{
+    if (!this.canHandle(context)) return null;
+    const q = context.query.trim();
+
+    return [
+      {{
+        id: 'hello',
+        type: 'info',
+        title: 'Hello from {name}',
+        subtitle: q || 'Extension is working!',
+        score: 100,
+        data: {{ action: 'hello' }},
+      }},
+    ];
+  }}
+
+  async execute(result) {{
+    if (result.data?.action === 'hello') {{
+      window.VoltAPI?.notify('{name} executed!', 'success');
+    }}
+  }}
+}}
+"#,
+            name = name.trim(),
+            class_name = class_name,
+            id = id,
+            description = description.trim(),
+            trigger = trigger,
+        )
+    } else {
+        format!(
+            "// Volt Extension: {name}\n// Docs: https://voltlaunchr.com/docs/plugins\n// Commands are defined in separate files — see manifest.json\n",
+            name = name.trim(),
+        )
+    };
+    fs::write(src_dir.join("index.ts"), &index_content)
+        .map_err(|e| VoltError::FileSystem(e.to_string()))?;
+
+    // Generate one file per command
+    for cmd in &cmds {
+        let cmd_class: String = cmd
+            .name
+            .split('_')
+            .map(|w| {
+                let mut chars = w.chars();
+                match chars.next() {
+                    None => String::new(),
+                    Some(f) => f.to_uppercase().to_string() + chars.as_str(),
+                }
+            })
+            .collect();
+        let cmd_desc = cmd.description.as_deref().unwrap_or("");
+        let cmd_content = format!(
+            r#"// {title} command — {ext_name}
+// Docs: https://voltlaunchr.com/docs/plugins
+
+export default class {cmd_class} {{
+  id = '{ext_id}:{cmd_name}';
+  name = '{title}';
+  description = '{cmd_desc}';
+  enabled = true;
+
+  canHandle(context) {{
+    const query = context.query.trim().toLowerCase();
+    return query.includes('{cmd_name}');
+  }}
+
+  match(context) {{
+    if (!this.canHandle(context)) return null;
+    return [
+      {{
+        id: '{cmd_name}-result',
+        type: 'info',
+        title: '{title}',
+        subtitle: context.query.trim() || '{cmd_desc}',
+        score: 100,
+        data: {{ action: '{cmd_name}' }},
+      }},
+    ];
+  }}
+
+  async execute(_result) {{
+    window.VoltAPI?.notify('{title} executed!', 'success');
+  }}
+}}
+"#,
+            title = cmd.title,
+            ext_name = name.trim(),
+            cmd_class = cmd_class,
+            ext_id = id,
+            cmd_name = cmd.name,
+            cmd_desc = cmd_desc,
+        );
+        fs::write(src_dir.join(format!("{}.ts", cmd.name)), &cmd_content)
+            .map_err(|e| VoltError::FileSystem(e.to_string()))?;
+    }
+
+    info!(
+        "Scaffolded extension '{}' at {}",
+        id,
+        extension_dir.display()
+    );
+
+    link_dev_extension(app, extension_dir.to_string_lossy().into_owned()).await
+}
+
 /// Unlink a dev extension
 #[tauri::command]
 pub async fn unlink_dev_extension(app: AppHandle, extension_id: String) -> VoltResult<()> {
@@ -1494,6 +1865,35 @@ pub async fn refresh_dev_extension(
 
     // Re-link to refresh
     link_dev_extension(app, ext.path.clone()).await
+}
+
+/// Returns the mtime of `.volt-dev-reload` sentinel in the extension directory,
+/// as milliseconds since Unix epoch, or null if the sentinel doesn't exist.
+/// Used by the frontend to detect CLI `volt-plugin dev` hot-reload signals.
+#[tauri::command]
+pub async fn get_dev_reload_signal(
+    app: AppHandle,
+    extension_id: String,
+) -> VoltResult<Option<u64>> {
+    let state = load_dev_state(&app)?;
+    let ext = state
+        .extensions
+        .iter()
+        .find(|e| e.manifest.id == extension_id)
+        .ok_or_else(|| VoltError::NotFound(format!("Dev extension not found: {}", extension_id)))?;
+
+    let sentinel = std::path::Path::new(&ext.path).join(".volt-dev-reload");
+    match tokio::fs::metadata(&sentinel).await {
+        Ok(meta) => {
+            let ms = meta
+                .modified()
+                .ok()
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_millis() as u64);
+            Ok(ms)
+        }
+        Err(_) => Ok(None),
+    }
 }
 
 // ============================================================================
@@ -1620,4 +2020,1327 @@ pub async fn get_extension_tamper_alert() -> bool {
 #[tauri::command]
 pub async fn acknowledge_extension_tamper_alert() {
     crate::utils::extension_state_sig::acknowledge_tamper_detected();
+}
+
+// ---------------------------------------------------------------------------
+// Extension Storage API — isolated SQLite KV store per extension
+// ---------------------------------------------------------------------------
+//
+// Each extension gets its own DB at:
+//   {app_data}/extensions/{extension_id}/storage.db
+//
+// Schema:
+//   CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT NOT NULL)
+//
+// Size limit: 10 MB per extension (enforced at set-time).
+// ---------------------------------------------------------------------------
+
+const EXT_STORAGE_MAX_BYTES: u64 = 10 * 1024 * 1024;
+
+fn ext_storage_db_path(
+    app: &tauri::AppHandle,
+    extension_id: &str,
+) -> VoltResult<std::path::PathBuf> {
+    validate_extension_id(extension_id)?;
+    let base = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| VoltError::FileSystem(format!("Failed to get app data dir: {}", e)))?;
+    let dir = base.join("extensions").join(extension_id);
+    std::fs::create_dir_all(&dir)
+        .map_err(|e| VoltError::FileSystem(format!("Failed to create storage dir: {}", e)))?;
+    Ok(dir.join("storage.db"))
+}
+
+fn ext_storage_open(path: &std::path::Path) -> VoltResult<rusqlite::Connection> {
+    let conn = rusqlite::Connection::open(path)
+        .map_err(|e| VoltError::FileSystem(format!("Failed to open storage DB: {}", e)))?;
+    conn.execute_batch(
+        "PRAGMA journal_mode=WAL;
+         CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT NOT NULL);",
+    )
+    .map_err(|e| VoltError::FileSystem(format!("Failed to init storage schema: {}", e)))?;
+    Ok(conn)
+}
+
+/// Read a value from the extension's isolated KV storage.
+#[tauri::command]
+pub async fn ext_storage_get(
+    app: tauri::AppHandle,
+    extension_id: String,
+    key: String,
+) -> Result<Option<String>, String> {
+    let path = ext_storage_db_path(&app, &extension_id).map_err(|e| e.to_string())?;
+    let conn = ext_storage_open(&path).map_err(|e| e.to_string())?;
+    let result: Option<String> = conn
+        .query_row(
+            "SELECT value FROM kv WHERE key = ?1",
+            rusqlite::params![key],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|e| e.to_string())?;
+    Ok(result)
+}
+
+/// Write a value to the extension's isolated KV storage.
+/// Rejects the write if the DB already exceeds 10 MB.
+#[tauri::command]
+pub async fn ext_storage_set(
+    app: tauri::AppHandle,
+    extension_id: String,
+    key: String,
+    value: String,
+) -> Result<(), String> {
+    let path = ext_storage_db_path(&app, &extension_id).map_err(|e| e.to_string())?;
+    // Size guard: refuse writes beyond the per-extension cap.
+    if path.exists() {
+        let size = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+        if size > EXT_STORAGE_MAX_BYTES {
+            return Err(format!(
+                "Extension storage limit exceeded ({} MB max)",
+                EXT_STORAGE_MAX_BYTES / 1024 / 1024
+            ));
+        }
+    }
+    let conn = ext_storage_open(&path).map_err(|e| e.to_string())?;
+    conn.execute(
+        "INSERT INTO kv (key, value) VALUES (?1, ?2) ON CONFLICT(key) DO UPDATE SET value = ?2",
+        rusqlite::params![key, value],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Remove a single key from the extension's isolated KV storage.
+#[tauri::command]
+pub async fn ext_storage_remove(
+    app: tauri::AppHandle,
+    extension_id: String,
+    key: String,
+) -> Result<(), String> {
+    let path = ext_storage_db_path(&app, &extension_id).map_err(|e| e.to_string())?;
+    if !path.exists() {
+        return Ok(());
+    }
+    let conn = ext_storage_open(&path).map_err(|e| e.to_string())?;
+    conn.execute("DELETE FROM kv WHERE key = ?1", rusqlite::params![key])
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Delete all keys in the extension's isolated KV storage.
+#[tauri::command]
+pub async fn ext_storage_clear(app: tauri::AppHandle, extension_id: String) -> Result<(), String> {
+    let path = ext_storage_db_path(&app, &extension_id).map_err(|e| e.to_string())?;
+    if !path.exists() {
+        return Ok(());
+    }
+    let conn = ext_storage_open(&path).map_err(|e| e.to_string())?;
+    conn.execute("DELETE FROM kv", [])
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Extension Preferences API
+// ---------------------------------------------------------------------------
+//
+// Non-secret preferences → JSON file at:
+//   {app_data}/extensions/{id}/preferences.json
+//
+// Secret preferences (type = "secret") → OS keyring via keyring_store,
+//   domain tag: "volt:ext:{id}:pref:{key}"
+// ---------------------------------------------------------------------------
+
+fn ext_prefs_path(app: &tauri::AppHandle, extension_id: &str) -> VoltResult<std::path::PathBuf> {
+    validate_extension_id(extension_id)?;
+    let base = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| VoltError::FileSystem(format!("Failed to get app data dir: {}", e)))?;
+    let dir = base.join("extensions").join(extension_id);
+    std::fs::create_dir_all(&dir)
+        .map_err(|e| VoltError::FileSystem(format!("Failed to create prefs dir: {}", e)))?;
+    Ok(dir.join("preferences.json"))
+}
+
+/// Read a non-secret preference value for an extension.
+/// Returns `None` if the key has not been set yet.
+#[tauri::command]
+pub async fn get_extension_preference(
+    app: tauri::AppHandle,
+    extension_id: String,
+    key: String,
+) -> Result<Option<String>, String> {
+    validate_extension_id(&extension_id).map_err(|e| e.to_string())?;
+    let path = ext_prefs_path(&app, &extension_id).map_err(|e| e.to_string())?;
+    if !path.exists() {
+        return Ok(None);
+    }
+    let raw = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    let map: std::collections::HashMap<String, String> =
+        serde_json::from_str(&raw).unwrap_or_default();
+    Ok(map.get(&key).cloned())
+}
+
+/// Persist a non-secret preference value for an extension.
+/// Use `set_extension_secret` for passwords/tokens.
+#[tauri::command]
+pub async fn set_extension_preference(
+    app: tauri::AppHandle,
+    extension_id: String,
+    key: String,
+    value: String,
+) -> Result<(), String> {
+    validate_extension_id(&extension_id).map_err(|e| e.to_string())?;
+    let path = ext_prefs_path(&app, &extension_id).map_err(|e| e.to_string())?;
+    let mut map: std::collections::HashMap<String, String> = if path.exists() {
+        let raw = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+        serde_json::from_str(&raw).unwrap_or_default()
+    } else {
+        std::collections::HashMap::new()
+    };
+    map.insert(key, value);
+    let serialized = serde_json::to_string_pretty(&map).map_err(|e| e.to_string())?;
+    std::fs::write(&path, serialized).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Read a secret preference (password / token) from the OS keyring.
+#[tauri::command]
+pub async fn get_extension_secret(
+    extension_id: String,
+    key: String,
+) -> Result<Option<String>, String> {
+    validate_extension_id(&extension_id).map_err(|e| e.to_string())?;
+    let tag = format!("volt:ext:{}:pref:{}", extension_id, key);
+    match crate::commands::keyring_store::retrieve_signed(&tag) {
+        Ok(v) => Ok(v),
+        Err(_) => Ok(None),
+    }
+}
+
+/// Store a secret preference (password / token) in the OS keyring.
+#[tauri::command]
+pub async fn set_extension_secret(
+    extension_id: String,
+    key: String,
+    value: String,
+) -> Result<(), String> {
+    validate_extension_id(&extension_id).map_err(|e| e.to_string())?;
+    let tag = format!("volt:ext:{}:pref:{}", extension_id, key);
+    crate::commands::keyring_store::store_signed(&tag, &value).map_err(|e| e.to_string())
+}
+
+/// Delete a secret preference from the OS keyring.
+#[tauri::command]
+pub async fn delete_extension_secret(extension_id: String, key: String) -> Result<(), String> {
+    validate_extension_id(&extension_id).map_err(|e| e.to_string())?;
+    let tag = format!("volt:ext:{}:pref:{}", extension_id, key);
+    crate::commands::keyring_store::remove_signed(&tag).map_err(|e| e.to_string())
+}
+
+// ============================================================================
+// Extension OAuth API (PKCE flow)
+// ============================================================================
+
+/// Pending ext OAuth state entries — keyed by state UUID.
+struct ExtOAuthPending {
+    extension_id: String,
+    provider: String,
+    token_url: String,
+    client_id: String,
+    code_verifier: String,
+    initiated_at: chrono::DateTime<chrono::Local>,
+}
+
+static EXT_OAUTH_PENDING: Lazy<Mutex<HashMap<String, ExtOAuthPending>>> =
+    Lazy::new(|| Mutex::new(HashMap::new()));
+
+/// Emitted on every webview after a successful ext OAuth callback.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExtOAuthCallbackEvent {
+    pub extension_id: String,
+    pub provider: String,
+    pub state: String,
+    pub token: Option<String>,
+    pub error: Option<String>,
+}
+
+/// Validate a URL used in extension OAuth: must be HTTPS, no private IPs.
+fn validate_ext_oauth_url(url: &str) -> Result<(), String> {
+    validate_download_url(url).map_err(|e| e.to_string())
+}
+
+/// Validate a provider name to prevent injection (alphanumeric + dash/underscore).
+fn validate_ext_provider(provider: &str) -> Result<(), String> {
+    if provider.is_empty() || provider.len() > 64 {
+        return Err("Provider name must be 1–64 characters".to_string());
+    }
+    if !provider
+        .chars()
+        .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
+    {
+        return Err(
+            "Provider name may only contain alphanumeric characters, dashes, and underscores"
+                .to_string(),
+        );
+    }
+    Ok(())
+}
+
+/// Start a PKCE OAuth flow for an extension.
+///
+/// Generates the code_verifier and code_challenge in Rust so the secret
+/// material never reaches the JS sandbox. Returns the complete authorization
+/// URL (with all PKCE params appended) and the state UUID. The frontend
+/// opens the URL in the default browser and waits for the `ext-oauth-{id}`
+/// Tauri event emitted by `handle_ext_oauth_deep_link` after the callback.
+#[tauri::command]
+pub async fn ext_oauth_start(
+    extension_id: String,
+    provider: String,
+    base_auth_url: String,
+    token_url: String,
+    client_id: String,
+    scopes: Vec<String>,
+) -> Result<serde_json::Value, String> {
+    validate_extension_id(&extension_id).map_err(|e| e.to_string())?;
+    validate_ext_provider(&provider)?;
+    validate_ext_oauth_url(&base_auth_url)?;
+    validate_ext_oauth_url(&token_url)?;
+
+    if client_id.is_empty() || client_id.len() > 256 {
+        return Err("clientId must be 1–256 characters".to_string());
+    }
+
+    // code_verifier: two UUID simple-format strings = 64 lowercase hex chars.
+    // Valid PKCE alphabet (subset of BASE64URL unreserved chars). Length is
+    // within the 43–128 char requirement of RFC 7636 §4.1.
+    let code_verifier = format!(
+        "{}{}",
+        uuid::Uuid::new_v4().simple(),
+        uuid::Uuid::new_v4().simple()
+    );
+
+    // code_challenge = BASE64URL(SHA256(ASCII(code_verifier)))  §4.2
+    let hash = sha2::Sha256::digest(code_verifier.as_bytes());
+    let code_challenge = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(hash);
+
+    // State UUID — binds this auth request to its callback.
+    let state = uuid::Uuid::new_v4().to_string();
+
+    // Build the full authorization URL using the `url` crate so all params
+    // are correctly percent-encoded.
+    let mut auth_url =
+        url::Url::parse(&base_auth_url).map_err(|e| format!("Invalid authUrl: {}", e))?;
+    {
+        let mut q = auth_url.query_pairs_mut();
+        q.append_pair("client_id", &client_id);
+        q.append_pair("redirect_uri", "volt://ext-oauth-callback");
+        q.append_pair("response_type", "code");
+        if !scopes.is_empty() {
+            q.append_pair("scope", &scopes.join(" "));
+        }
+        q.append_pair("state", &state);
+        q.append_pair("code_challenge", &code_challenge);
+        q.append_pair("code_challenge_method", "S256");
+    }
+    let full_auth_url = auth_url.to_string();
+
+    // Store the pending flow (prune stale + cap at 32 entries).
+    {
+        let mut map = EXT_OAUTH_PENDING.lock().unwrap_or_else(|e| e.into_inner());
+        let cutoff = chrono::Local::now() - chrono::Duration::minutes(10);
+        map.retain(|_, v| v.initiated_at > cutoff);
+        if map.len() >= 32
+            && let Some(oldest) = map
+                .iter()
+                .min_by_key(|(_, v)| v.initiated_at)
+                .map(|(k, _)| k.clone())
+        {
+            warn!("ext OAuth pending map full; evicting oldest entry");
+            map.remove(&oldest);
+        }
+        map.insert(
+            state.clone(),
+            ExtOAuthPending {
+                extension_id,
+                provider,
+                token_url,
+                client_id,
+                code_verifier,
+                initiated_at: chrono::Local::now(),
+            },
+        );
+    }
+
+    info!("ext OAuth started, state_hint: {:.8}", state);
+    Ok(serde_json::json!({ "authUrl": full_auth_url, "state": state }))
+}
+
+/// Called from the `volt://ext-oauth-callback` deep-link handler in lib.rs.
+/// Exchanges the authorization code for an access token, stores it in the OS
+/// keyring, and emits `ext-oauth-{extensionId}` so the WorkerPlugin listener
+/// can resolve the extension's `VoltAPI.oauth.authorize()` promise.
+pub async fn handle_ext_oauth_deep_link(
+    app: &tauri::AppHandle,
+    url_str: &str,
+) -> Result<ExtOAuthCallbackEvent, String> {
+    let parsed = url::Url::parse(url_str)
+        .map_err(|e| format!("Failed to parse ext OAuth deep link: {}", e))?;
+
+    if parsed.host_str() != Some("ext-oauth-callback") {
+        return Err("Unexpected deep-link host for ext OAuth callback".to_string());
+    }
+
+    let params: HashMap<String, String> = parsed.query_pairs().into_owned().collect();
+
+    let code = params
+        .get("code")
+        .cloned()
+        .ok_or("Missing 'code' in ext OAuth callback URL")?;
+    let state = params
+        .get("state")
+        .cloned()
+        .ok_or("Missing 'state' in ext OAuth callback URL")?;
+
+    // Look up and remove the pending flow entry.
+    let pending = {
+        let mut map = EXT_OAUTH_PENDING.lock().unwrap_or_else(|e| e.into_inner());
+        map.remove(&state).ok_or_else(|| {
+            warn!("ext OAuth callback with unknown state (hint: {:.8})", state);
+            "Invalid or expired ext OAuth state parameter".to_string()
+        })?
+    };
+
+    // Exchange the authorization code for an access token.
+    let client = reqwest::Client::new();
+    let response = client
+        .post(&pending.token_url)
+        .header("Accept", "application/json")
+        .form(&[
+            ("grant_type", "authorization_code"),
+            ("code", &code),
+            ("redirect_uri", "volt://ext-oauth-callback"),
+            ("client_id", &pending.client_id),
+            ("code_verifier", &pending.code_verifier),
+        ])
+        .send()
+        .await
+        .map_err(|e| format!("Token exchange request failed: {}", e))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        return Err(format!("Token exchange failed ({}): {}", status, body));
+    }
+
+    let body: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse token response: {}", e))?;
+
+    let access_token = body
+        .get("access_token")
+        .and_then(|v| v.as_str())
+        .ok_or("No access_token in token response")?
+        .to_string();
+
+    // Store token in keyring under a namespaced key.
+    let keyring_key = format!(
+        "volt:ext:{}:oauth:{}",
+        pending.extension_id, pending.provider
+    );
+    crate::commands::keyring_store::store_signed(&keyring_key, &access_token)
+        .map_err(|e| format!("Failed to store OAuth token in keyring: {}", e))?;
+
+    // Token is already stored in the keyring above. The broadcast event
+    // MUST NOT carry the token — any other extension listening on the same
+    // channel name could intercept it. The renderer calls ext_oauth_get_token
+    // to retrieve the token from the keyring after receiving this event. (H2)
+    let event = ExtOAuthCallbackEvent {
+        extension_id: pending.extension_id.clone(),
+        provider: pending.provider.clone(),
+        state: state.clone(),
+        token: None,
+        error: None,
+    };
+
+    // Emit per-extension event so the WorkerPlugin listener resolves.
+    let event_name = format!("ext-oauth-{}", pending.extension_id);
+    if let Err(e) = app.emit(&event_name, &event) {
+        warn!("Failed to emit {}: {}", event_name, e);
+    }
+
+    info!(
+        "ext OAuth complete for extension '{}', provider '{}'",
+        pending.extension_id, pending.provider
+    );
+    Ok(event)
+}
+
+/// Retrieve a previously-stored ext OAuth access token from the OS keyring.
+#[tauri::command]
+pub async fn ext_oauth_get_token(
+    extension_id: String,
+    provider: String,
+) -> Result<Option<String>, String> {
+    validate_extension_id(&extension_id).map_err(|e| e.to_string())?;
+    validate_ext_provider(&provider)?;
+    let key = format!("volt:ext:{}:oauth:{}", extension_id, provider);
+    crate::commands::keyring_store::retrieve_signed(&key)
+}
+
+/// Remove a stored ext OAuth access token from the OS keyring.
+#[tauri::command]
+pub async fn ext_oauth_revoke_token(extension_id: String, provider: String) -> Result<(), String> {
+    validate_extension_id(&extension_id).map_err(|e| e.to_string())?;
+    validate_ext_provider(&provider)?;
+    let key = format!("volt:ext:{}:oauth:{}", extension_id, provider);
+    crate::commands::keyring_store::remove_signed(&key)
+}
+
+// ============================================================================
+// Extension AI API
+// ============================================================================
+
+/// Event emitted on the streaming Channel for each AI response chunk.
+#[derive(Clone, Serialize)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub enum AiStreamEvent {
+    /// A token or partial token received from the provider's SSE stream.
+    Chunk { text: String },
+    /// Stream finished — carries the full concatenated text.
+    Done { full_text: String },
+    /// The provider returned an error mid-stream.
+    Error { error: String },
+}
+
+/// Creativity level — either a named preset or a raw 0–2 number.
+/// Matches the `VoltAICreativity` TS type.
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+pub enum Creativity {
+    Named(String),
+    Raw(f64),
+}
+
+/// Options forwarded from the Worker's `VoltAPI.ai.ask(prompt, options)` call.
+///
+/// All fields are `Option` so Rust's serde never panics when an extension
+/// passes a partial/empty object; validation happens inside `ext_ai_ask_stream`.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExtAiOptions {
+    pub provider: Option<String>,
+    /// Name of the secret preference key where the user has stored the API key.
+    /// The key is read from the OS keyring — it never crosses the JS boundary.
+    pub api_key_preference: Option<String>,
+    /// Optional model ID — provider prefix (`openai:`, `anthropic:`, `groq:`) is stripped.
+    pub model: Option<String>,
+    pub max_tokens: Option<u32>,
+    pub system: Option<String>,
+    /// Named or numeric creativity level (0–2). Overridden by `temperature` if set.
+    pub creativity: Option<Creativity>,
+    /// Raw temperature (0–2). Takes precedence over `creativity`.
+    pub temperature: Option<f64>,
+}
+
+// ── Rate limiting ────────────────────────────────────────────────────────────
+// Simple sliding-window rate limiter: 10 requests per 60 s per extension.
+// Uses process-wide state (OnceLock) so limits survive across async tasks.
+
+static AI_RATE_LIMITER: OnceLock<Mutex<HashMap<String, VecDeque<Instant>>>> = OnceLock::new();
+
+const AI_RATE_LIMIT_PER_MIN: usize = 10;
+const AI_RATE_WINDOW_SECS: u64 = 60;
+
+fn ai_check_rate_limit(extension_id: &str) -> Result<(), String> {
+    let limiter = AI_RATE_LIMITER.get_or_init(|| Mutex::new(HashMap::new()));
+    let mut map = limiter.lock().unwrap_or_else(|p| p.into_inner());
+    let now = Instant::now();
+    let window = std::time::Duration::from_secs(AI_RATE_WINDOW_SECS);
+
+    let queue = map.entry(extension_id.to_string()).or_default();
+    while queue
+        .front()
+        .is_some_and(|t| now.duration_since(*t) > window)
+    {
+        queue.pop_front();
+    }
+
+    if queue.len() >= AI_RATE_LIMIT_PER_MIN {
+        let oldest = queue.front().unwrap();
+        let retry_in = AI_RATE_WINDOW_SECS.saturating_sub(now.duration_since(*oldest).as_secs());
+        return Err(format!(
+            "Rate limit exceeded: max {} AI requests per minute. Retry in {}s.",
+            AI_RATE_LIMIT_PER_MIN, retry_in
+        ));
+    }
+
+    queue.push_back(now);
+    Ok(())
+}
+
+/// Resolve `creativity` / `temperature` options to a concrete temperature value for a provider.
+///
+/// - `scale` = max temperature accepted by the provider (OpenAI/Groq: 2.0, Anthropic: 1.0)
+/// - Raw `temperature` overrides `creativity`; both are clamped to `[0, scale]`
+fn resolve_temperature(opts: &ExtAiOptions, scale: f64) -> Option<f64> {
+    let raw = opts.temperature.or_else(|| {
+        opts.creativity.as_ref().map(|c| match c {
+            Creativity::Named(s) => match s.as_str() {
+                "none" => 0.0,
+                "low" => 0.33,
+                "medium" => 1.0,
+                "high" => 1.67,
+                "maximum" => 2.0,
+                _ => 1.0,
+            },
+            Creativity::Raw(n) => *n,
+        })
+    });
+    // Scale from 0–2 creative range to provider range
+    raw.map(|t| (t * scale / 2.0).clamp(0.0, scale))
+}
+
+/// Strip provider prefix from model ID (e.g., `"openai:gpt-4o"` → `"gpt-4o"`).
+fn strip_model_prefix<'a>(model: &'a str, provider: &str) -> &'a str {
+    model
+        .strip_prefix(&format!("{}:", provider))
+        .unwrap_or(model)
+}
+
+/// Stream an AI model response on behalf of an extension.
+///
+/// The API key is read from the OS keyring — it never crosses the JS boundary.
+/// Emits `AiStreamEvent::Chunk` for each token and `AiStreamEvent::Done` when complete.
+/// On error, emits `AiStreamEvent::Error` and returns `Err`.
+#[tauri::command]
+pub async fn ext_ai_ask_stream(
+    extension_id: String,
+    prompt: String,
+    options: ExtAiOptions,
+    channel: tauri::ipc::Channel<AiStreamEvent>,
+) -> Result<(), String> {
+    validate_extension_id(&extension_id).map_err(|e| e.to_string())?;
+
+    if prompt.trim().is_empty() {
+        let _ = channel.send(AiStreamEvent::Error {
+            error: "Prompt cannot be empty".into(),
+        });
+        return Err("Prompt cannot be empty".to_string());
+    }
+    if prompt.len() > 100_000 {
+        let _ = channel.send(AiStreamEvent::Error {
+            error: "Prompt exceeds 100 000 character limit".into(),
+        });
+        return Err("Prompt exceeds 100 000 character limit".to_string());
+    }
+
+    let provider = options
+        .provider
+        .as_deref()
+        .filter(|s| !s.is_empty())
+        .ok_or("options.provider is required (\"openai\" | \"anthropic\" | \"groq\")")?;
+
+    // Rate limit before touching the keyring
+    ai_check_rate_limit(&extension_id).inspect_err(|e| {
+        let _ = channel.send(AiStreamEvent::Error { error: e.clone() });
+    })?;
+
+    // Resolve API key: extension-scoped preference key → global Volt AI key fallback
+    let api_key = {
+        let from_pref = options
+            .api_key_preference
+            .as_deref()
+            .filter(|s| !s.is_empty())
+            .and_then(|pref| {
+                let tag = format!("volt:ext:{}:pref:{}", extension_id, pref);
+                crate::commands::keyring_store::retrieve_signed(&tag)
+                    .ok()
+                    .flatten()
+            });
+
+        if let Some(key) = from_pref {
+            key
+        } else {
+            // Fall back to the global Volt AI key for this provider
+            let global_tag = format!("volt:ai:key:{}", provider);
+            crate::commands::keyring_store::retrieve_signed(&global_tag)
+                .map_err(|e| e.to_string())?
+                .ok_or_else(|| {
+                    format!(
+                        "No API key found for provider '{}'. Add one in Volt Settings → AI.",
+                        provider
+                    )
+                })?
+        }
+    };
+
+    let result = match provider {
+        "openai" => ext_ai_openai_stream(&api_key, &prompt, &options, &channel).await,
+        "anthropic" => ext_ai_anthropic_stream(&api_key, &prompt, &options, &channel).await,
+        "groq" => ext_ai_groq_stream(&api_key, &prompt, &options, &channel).await,
+        other => Err(format!(
+            "Unsupported AI provider '{}'. Supported: openai, anthropic, groq.",
+            other
+        )),
+    };
+
+    if let Err(ref e) = result {
+        let _ = channel.send(AiStreamEvent::Error { error: e.clone() });
+    }
+    result
+}
+
+/// Parse SSE lines from a raw bytes chunk, draining complete `data: …` lines.
+/// Returns a list of extracted data payloads. `buf` is updated in place.
+fn drain_sse_lines(buf: &mut String, raw: &[u8]) -> Vec<String> {
+    buf.push_str(&String::from_utf8_lossy(raw));
+    let mut out = Vec::new();
+    while let Some(nl) = buf.find('\n') {
+        let line = buf[..nl].trim_end_matches('\r').to_owned();
+        *buf = buf[nl + 1..].to_owned();
+        if let Some(data) = line.strip_prefix("data: ") {
+            out.push(data.to_owned());
+        }
+    }
+    out
+}
+
+async fn ext_ai_openai_stream(
+    api_key: &str,
+    prompt: &str,
+    opts: &ExtAiOptions,
+    channel: &tauri::ipc::Channel<AiStreamEvent>,
+) -> Result<(), String> {
+    let model = opts
+        .model
+        .as_deref()
+        .map(|m| strip_model_prefix(m, "openai"))
+        .unwrap_or("gpt-4o-mini");
+    let max_tokens = opts.max_tokens.unwrap_or(1024);
+
+    let mut messages = vec![];
+    if let Some(system) = &opts.system {
+        messages.push(serde_json::json!({ "role": "system", "content": system }));
+    }
+    messages.push(serde_json::json!({ "role": "user", "content": prompt }));
+
+    // OpenAI temperature range: 0–2
+    let mut body = serde_json::json!({
+        "model": model,
+        "messages": messages,
+        "max_tokens": max_tokens,
+        "stream": true,
+    });
+    if let Some(temp) = resolve_temperature(opts, 2.0) {
+        body["temperature"] = serde_json::json!(temp);
+    }
+
+    let response = reqwest::Client::new()
+        .post("https://api.openai.com/v1/chat/completions")
+        .bearer_auth(api_key)
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("OpenAI request failed: {}", e))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let text = response.text().await.unwrap_or_default();
+        return Err(format!("OpenAI API error {}: {}", status, text));
+    }
+
+    let mut stream = response.bytes_stream();
+    let mut buf = String::new();
+    let mut full_text = String::new();
+
+    while let Some(chunk) = stream.next().await {
+        let bytes = chunk.map_err(|e| format!("OpenAI stream read error: {}", e))?;
+        for data in drain_sse_lines(&mut buf, &bytes) {
+            if data == "[DONE]" {
+                channel
+                    .send(AiStreamEvent::Done {
+                        full_text: full_text.clone(),
+                    })
+                    .map_err(|e| e.to_string())?;
+                return Ok(());
+            }
+            if let Ok(json) = serde_json::from_str::<serde_json::Value>(&data)
+                && let Some(text) = json["choices"][0]["delta"]["content"].as_str()
+                && !text.is_empty()
+            {
+                full_text.push_str(text);
+                channel
+                    .send(AiStreamEvent::Chunk {
+                        text: text.to_owned(),
+                    })
+                    .map_err(|e| e.to_string())?;
+            }
+        }
+    }
+
+    // Stream ended without [DONE] — still resolve with what we have
+    channel
+        .send(AiStreamEvent::Done {
+            full_text: full_text.clone(),
+        })
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+async fn ext_ai_anthropic_stream(
+    api_key: &str,
+    prompt: &str,
+    opts: &ExtAiOptions,
+    channel: &tauri::ipc::Channel<AiStreamEvent>,
+) -> Result<(), String> {
+    let model = opts
+        .model
+        .as_deref()
+        .map(|m| strip_model_prefix(m, "anthropic"))
+        .unwrap_or("claude-haiku-4-5-20251001");
+    let max_tokens = opts.max_tokens.unwrap_or(1024);
+
+    // Anthropic temperature range: 0–1 (scale from our 0–2 creative range)
+    let mut body = serde_json::json!({
+        "model": model,
+        "max_tokens": max_tokens,
+        "messages": [{ "role": "user", "content": prompt }],
+        "stream": true,
+    });
+    if let Some(temp) = resolve_temperature(opts, 1.0) {
+        body["temperature"] = serde_json::json!(temp);
+    }
+    if let Some(system) = &opts.system {
+        body["system"] = serde_json::json!(system);
+    }
+
+    let response = reqwest::Client::new()
+        .post("https://api.anthropic.com/v1/messages")
+        .header("x-api-key", api_key)
+        .header("anthropic-version", "2023-06-01")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("Anthropic request failed: {}", e))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let text = response.text().await.unwrap_or_default();
+        return Err(format!("Anthropic API error {}: {}", status, text));
+    }
+
+    let mut stream = response.bytes_stream();
+    let mut buf = String::new();
+    let mut full_text = String::new();
+
+    while let Some(chunk) = stream.next().await {
+        let bytes = chunk.map_err(|e| format!("Anthropic stream read error: {}", e))?;
+        for data in drain_sse_lines(&mut buf, &bytes) {
+            if let Ok(json) = serde_json::from_str::<serde_json::Value>(&data) {
+                if json["type"] == "content_block_delta"
+                    && let Some(text) = json["delta"]["text"].as_str()
+                    && !text.is_empty()
+                {
+                    full_text.push_str(text);
+                    channel
+                        .send(AiStreamEvent::Chunk {
+                            text: text.to_owned(),
+                        })
+                        .map_err(|e| e.to_string())?;
+                } else if json["type"] == "message_stop" {
+                    channel
+                        .send(AiStreamEvent::Done {
+                            full_text: full_text.clone(),
+                        })
+                        .map_err(|e| e.to_string())?;
+                    return Ok(());
+                }
+            }
+        }
+    }
+
+    channel
+        .send(AiStreamEvent::Done {
+            full_text: full_text.clone(),
+        })
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Groq uses the same SSE format as OpenAI (OpenAI-compatible API).
+async fn ext_ai_groq_stream(
+    api_key: &str,
+    prompt: &str,
+    opts: &ExtAiOptions,
+    channel: &tauri::ipc::Channel<AiStreamEvent>,
+) -> Result<(), String> {
+    let model = opts
+        .model
+        .as_deref()
+        .map(|m| strip_model_prefix(m, "groq"))
+        .unwrap_or("llama-3.1-8b-instant");
+    let max_tokens = opts.max_tokens.unwrap_or(1024);
+
+    let mut messages = vec![];
+    if let Some(system) = &opts.system {
+        messages.push(serde_json::json!({ "role": "system", "content": system }));
+    }
+    messages.push(serde_json::json!({ "role": "user", "content": prompt }));
+
+    // Groq temperature range: 0–2 (OpenAI-compatible)
+    let mut body = serde_json::json!({
+        "model": model,
+        "messages": messages,
+        "max_tokens": max_tokens,
+        "stream": true,
+    });
+    if let Some(temp) = resolve_temperature(opts, 2.0) {
+        body["temperature"] = serde_json::json!(temp);
+    }
+
+    let response = reqwest::Client::new()
+        .post("https://api.groq.com/openai/v1/chat/completions")
+        .bearer_auth(api_key)
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("Groq request failed: {}", e))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let text = response.text().await.unwrap_or_default();
+        return Err(format!("Groq API error {}: {}", status, text));
+    }
+
+    let mut stream = response.bytes_stream();
+    let mut buf = String::new();
+    let mut full_text = String::new();
+
+    while let Some(chunk) = stream.next().await {
+        let bytes = chunk.map_err(|e| format!("Groq stream read error: {}", e))?;
+        for data in drain_sse_lines(&mut buf, &bytes) {
+            if data == "[DONE]" {
+                channel
+                    .send(AiStreamEvent::Done {
+                        full_text: full_text.clone(),
+                    })
+                    .map_err(|e| e.to_string())?;
+                return Ok(());
+            }
+            if let Ok(json) = serde_json::from_str::<serde_json::Value>(&data)
+                && let Some(text) = json["choices"][0]["delta"]["content"].as_str()
+                && !text.is_empty()
+            {
+                full_text.push_str(text);
+                channel
+                    .send(AiStreamEvent::Chunk {
+                        text: text.to_owned(),
+                    })
+                    .map_err(|e| e.to_string())?;
+            }
+        }
+    }
+
+    channel
+        .send(AiStreamEvent::Done {
+            full_text: full_text.clone(),
+        })
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+// ============================================================================
+// Global AI Key Management
+// ============================================================================
+
+/// Known providers for UI validation
+const AI_KNOWN_PROVIDERS: &[&str] = &["openai", "anthropic", "groq"];
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AiProviderStatus {
+    pub provider: String,
+    pub has_key: bool,
+}
+
+/// Store (or overwrite) the global Volt AI key for a provider.
+/// Key is stored in the OS keyring as `volt:ai:key:{provider}` — never in JS memory.
+#[tauri::command]
+pub async fn ai_set_global_key(provider: String, key: String) -> Result<(), String> {
+    if !AI_KNOWN_PROVIDERS.contains(&provider.as_str()) {
+        return Err(format!(
+            "Unknown provider '{}'. Supported: {}",
+            provider,
+            AI_KNOWN_PROVIDERS.join(", ")
+        ));
+    }
+    if key.trim().is_empty() {
+        return Err("API key cannot be empty".to_string());
+    }
+    let tag = format!("volt:ai:key:{}", provider);
+    crate::commands::keyring_store::store_signed(&tag, key.trim()).map_err(|e| e.to_string())
+}
+
+/// Delete the global Volt AI key for a provider.
+#[tauri::command]
+pub async fn ai_delete_global_key(provider: String) -> Result<(), String> {
+    if !AI_KNOWN_PROVIDERS.contains(&provider.as_str()) {
+        return Err(format!("Unknown provider '{}'", provider));
+    }
+    let tag = format!("volt:ai:key:{}", provider);
+    crate::commands::keyring_store::remove_signed(&tag).map_err(|e| e.to_string())
+}
+
+/// Return the set/unset status for each known provider.
+/// The key value is NEVER returned — only a boolean `hasKey`.
+#[tauri::command]
+pub async fn ai_get_providers_status() -> Result<Vec<AiProviderStatus>, String> {
+    let mut statuses = Vec::new();
+    for provider in AI_KNOWN_PROVIDERS {
+        let tag = format!("volt:ai:key:{}", provider);
+        let has_key = crate::commands::keyring_store::retrieve_signed(&tag)
+            .unwrap_or(None)
+            .is_some();
+        statuses.push(AiProviderStatus {
+            provider: provider.to_string(),
+            has_key,
+        });
+    }
+    Ok(statuses)
+}
+
+/// Verify that the stored key for a provider is valid by making a minimal API call.
+/// Returns Ok(()) if valid, Err with a message if not.
+#[tauri::command]
+pub async fn ai_verify_key(provider: String) -> Result<(), String> {
+    if !AI_KNOWN_PROVIDERS.contains(&provider.as_str()) {
+        return Err(format!("Unknown provider '{}'", provider));
+    }
+    let tag = format!("volt:ai:key:{}", provider);
+    let api_key = crate::commands::keyring_store::retrieve_signed(&tag)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("No key stored for provider '{}'", provider))?;
+
+    let client = reqwest::Client::new();
+    match provider.as_str() {
+        "openai" => {
+            let resp = client
+                .get("https://api.openai.com/v1/models")
+                .bearer_auth(&api_key)
+                .send()
+                .await
+                .map_err(|e| format!("Network error: {}", e))?;
+            if resp.status().is_success() {
+                Ok(())
+            } else {
+                Err(format!("Invalid key (HTTP {})", resp.status()))
+            }
+        }
+        "anthropic" => {
+            let body = serde_json::json!({
+                "model": "claude-haiku-4-5-20251001",
+                "max_tokens": 1,
+                "messages": [{ "role": "user", "content": "hi" }]
+            });
+            let resp = client
+                .post("https://api.anthropic.com/v1/messages")
+                .header("x-api-key", &api_key)
+                .header("anthropic-version", "2023-06-01")
+                .json(&body)
+                .send()
+                .await
+                .map_err(|e| format!("Network error: {}", e))?;
+            if resp.status().is_success() || resp.status().as_u16() == 529 {
+                Ok(())
+            } else {
+                Err(format!("Invalid key (HTTP {})", resp.status()))
+            }
+        }
+        "groq" => {
+            let resp = client
+                .get("https://api.groq.com/openai/v1/models")
+                .bearer_auth(&api_key)
+                .send()
+                .await
+                .map_err(|e| format!("Network error: {}", e))?;
+            if resp.status().is_success() {
+                Ok(())
+            } else {
+                Err(format!("Invalid key (HTTP {})", resp.status()))
+            }
+        }
+        _ => Err(format!("Unknown provider '{}'", provider)),
+    }
+}
+
+/// Stream an AI response for the built-in AI Chat feature.
+/// No rate limit (the user is the caller), reads from the global OS keyring key.
+///
+/// AI Profile injection: if the user has saved a non-empty profile (see
+/// `commands::ai_profile`), it is prepended to `options.system` as a PREFIX
+/// so every chat send is personalised with their context. AI Commands /
+/// Quick Actions go through a different path and are intentionally not
+/// affected.
+#[tauri::command]
+pub async fn ai_ask_builtin_stream(
+    app: AppHandle,
+    provider: String,
+    prompt: String,
+    mut options: ExtAiOptions,
+    channel: tauri::ipc::Channel<AiStreamEvent>,
+) -> Result<(), String> {
+    if !AI_KNOWN_PROVIDERS.contains(&provider.as_str()) {
+        let _ = channel.send(AiStreamEvent::Error {
+            error: format!(
+                "Unknown provider '{}'. Supported: openai, anthropic, groq.",
+                provider
+            ),
+        });
+        return Err(format!("Unknown provider '{}'", provider));
+    }
+    if prompt.trim().is_empty() {
+        let _ = channel.send(AiStreamEvent::Error {
+            error: "Prompt cannot be empty".into(),
+        });
+        return Err("Prompt cannot be empty".to_string());
+    }
+    if prompt.len() > 100_000 {
+        let _ = channel.send(AiStreamEvent::Error {
+            error: "Prompt exceeds 100 000 character limit".into(),
+        });
+        return Err("Prompt exceeds 100 000 character limit".to_string());
+    }
+
+    // Prepend the persisted AI Profile (if any) to the system prompt.
+    if let Some(profile) = crate::commands::ai_profile::load_profile_blocking(&app) {
+        options.system = Some(match options.system.take() {
+            Some(existing) if !existing.trim().is_empty() => {
+                format!("{}\n\n---\n\n{}", profile, existing)
+            }
+            _ => profile,
+        });
+    }
+
+    let global_tag = format!("volt:ai:key:{}", provider);
+    let api_key = match crate::commands::keyring_store::retrieve_signed(&global_tag) {
+        Ok(Some(key)) => key,
+        Ok(None) => {
+            let msg = format!(
+                "No API key for '{}'. Add one in Volt Settings → AI.",
+                provider
+            );
+            let _ = channel.send(AiStreamEvent::Error { error: msg.clone() });
+            return Err(msg);
+        }
+        Err(e) => {
+            let _ = channel.send(AiStreamEvent::Error {
+                error: e.to_string(),
+            });
+            return Err(e.to_string());
+        }
+    };
+
+    let result = match provider.as_str() {
+        "openai" => ext_ai_openai_stream(&api_key, &prompt, &options, &channel).await,
+        "anthropic" => ext_ai_anthropic_stream(&api_key, &prompt, &options, &channel).await,
+        "groq" => ext_ai_groq_stream(&api_key, &prompt, &options, &channel).await,
+        other => Err(format!("Unsupported provider '{}'", other)),
+    };
+
+    if let Err(ref e) = result {
+        let _ = channel.send(AiStreamEvent::Error { error: e.clone() });
+    }
+    result
+}
+
+// ============================================================================
+// Extension System API
+// ============================================================================
+
+/// Return the list of installed applications for an extension.
+/// Delegates to the existing cached scanner — no re-scan triggered.
+/// Requires `system` permission.
+#[tauri::command]
+pub async fn ext_get_applications() -> Result<Vec<crate::commands::apps::AppInfo>, String> {
+    crate::commands::apps::scan_applications()
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Reveal a path in the system file manager (Explorer / Finder / Nautilus).
+/// Requires `system` permission.
+#[tauri::command]
+pub async fn ext_show_in_folder(path: String) -> Result<(), String> {
+    if path.is_empty() {
+        return Err("Path cannot be empty".to_string());
+    }
+    // Basic path traversal guard
+    if path.contains("..") {
+        return Err("Path must not contain '..'".to_string());
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("explorer")
+            .args(["/select,", &path])
+            .spawn()
+            .map_err(|e| format!("Failed to open Explorer: {}", e))?;
+    }
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .args(["-R", &path])
+            .spawn()
+            .map_err(|e| format!("Failed to open Finder: {}", e))?;
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    {
+        // On Linux, open the parent directory
+        let parent = std::path::Path::new(&path)
+            .parent()
+            .map(|p| p.to_string_lossy().into_owned())
+            .unwrap_or_else(|| path.clone());
+        std::process::Command::new("xdg-open")
+            .arg(&parent)
+            .spawn()
+            .map_err(|e| format!("Failed to open file manager: {}", e))?;
+    }
+    Ok(())
+}
+
+/// Move a file or directory to the system trash.
+/// Requires `system` permission.
+///
+/// Windows: SHFileOperationW (native undo support).
+/// macOS/Linux: `trash` crate — NSFileManager.trashItem(at:) on macOS,
+/// FreeDesktop.org spec on Linux (no external tool dependency).
+#[tauri::command]
+pub async fn ext_move_to_trash(path: String) -> Result<(), String> {
+    if path.is_empty() {
+        return Err("Path cannot be empty".to_string());
+    }
+    if path.contains("..") {
+        return Err("Path must not contain '..'".to_string());
+    }
+
+    let path_obj = std::path::Path::new(&path);
+    if !path_obj.exists() {
+        return Err(format!("Path does not exist: {}", path));
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::ffi::OsStrExt;
+        let mut wide: Vec<u16> = path_obj.as_os_str().encode_wide().collect();
+        wide.push(0);
+        wide.push(0);
+
+        let result = unsafe {
+            #[allow(clippy::cast_possible_truncation)]
+            winapi::um::shellapi::SHFileOperationW(&mut winapi::um::shellapi::SHFILEOPSTRUCTW {
+                hwnd: std::ptr::null_mut(),
+                wFunc: u32::from(winapi::um::shellapi::FO_DELETE),
+                pFrom: wide.as_ptr(),
+                pTo: std::ptr::null(),
+                fFlags: winapi::um::shellapi::FOF_ALLOWUNDO
+                    | winapi::um::shellapi::FOF_NOCONFIRMATION
+                    | winapi::um::shellapi::FOF_SILENT,
+                fAnyOperationsAborted: 0,
+                hNameMappings: std::ptr::null_mut(),
+                lpszProgressTitle: std::ptr::null(),
+            })
+        };
+        if result != 0 {
+            return Err(format!("SHFileOperationW failed with code {}", result));
+        }
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let owned = path_obj.to_path_buf();
+        tokio::task::spawn_blocking(move || trash::delete(&owned).map_err(|e| e.to_string()))
+            .await
+            .map_err(|e| e.to_string())??;
+    }
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn legitimate_domains_starting_with_fc_or_fd_are_allowed() {
+        // Regression: previously `host.starts_with("fc")` / `"fd"` blocked any
+        // hostname whose first two chars were fc/fd, intending to catch IPv6
+        // ULA — but the URL parser puts IPv6 in brackets so that prefix never
+        // matched real ULA, only collateral domains like fc-research.com.
+        assert!(validate_download_url("https://fc-research.com/ext.zip").is_ok());
+        assert!(validate_download_url("https://fc2.com/x.zip").is_ok());
+        assert!(validate_download_url("https://fdental.io/y.zip").is_ok());
+        assert!(validate_download_url("https://feedback.example/z.zip").is_ok());
+    }
+
+    #[test]
+    fn ipv6_ula_is_blocked() {
+        // fc00::/7 — these MUST be refused (the prior string-prefix check
+        // never triggered because url::Url wraps IPv6 in brackets).
+        assert!(validate_download_url("https://[fc00::1]/x.zip").is_err());
+        assert!(validate_download_url("https://[fd12:3456:789a::1]/x.zip").is_err());
+    }
+
+    #[test]
+    fn ipv6_link_local_is_blocked() {
+        assert!(validate_download_url("https://[fe80::1]/x.zip").is_err());
+    }
+
+    #[test]
+    fn ipv4_mapped_ipv6_loopback_is_blocked() {
+        // ::ffff:127.0.0.1 — the trick that lets v4 loopback ride in via v6.
+        assert!(validate_download_url("https://[::ffff:127.0.0.1]/x.zip").is_err());
+    }
+
+    #[test]
+    fn ipv6_loopback_and_unspecified_blocked() {
+        assert!(validate_download_url("https://[::1]/x.zip").is_err());
+        assert!(validate_download_url("https://[::]/x.zip").is_err());
+    }
+
+    #[test]
+    fn private_ipv4_ranges_blocked() {
+        assert!(validate_download_url("https://127.0.0.1/x.zip").is_err());
+        assert!(validate_download_url("https://10.0.0.1/x.zip").is_err());
+        assert!(validate_download_url("https://192.168.1.1/x.zip").is_err());
+        assert!(validate_download_url("https://169.254.1.1/x.zip").is_err());
+        assert!(validate_download_url("https://172.16.0.1/x.zip").is_err());
+        assert!(validate_download_url("https://172.31.255.255/x.zip").is_err());
+        assert!(validate_download_url("https://0.0.0.0/x.zip").is_err());
+        // 172.32 is OUT of the private range — should pass.
+        assert!(validate_download_url("https://172.32.0.1/x.zip").is_ok());
+    }
+
+    #[test]
+    fn localhost_string_blocked() {
+        assert!(validate_download_url("https://localhost/x.zip").is_err());
+        assert!(validate_download_url("https://api.localhost/x.zip").is_err());
+    }
+
+    #[test]
+    fn http_scheme_rejected() {
+        assert!(validate_download_url("http://example.com/x.zip").is_err());
+    }
+
+    #[test]
+    fn empty_or_invalid_rejected() {
+        assert!(validate_download_url("").is_err());
+        assert!(validate_download_url("not a url").is_err());
+    }
 }

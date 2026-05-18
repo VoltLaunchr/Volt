@@ -1,4 +1,6 @@
+export { AiChatPlugin, AiChatView, QuickAiView } from './ai-chat';
 export { CalculatorPlugin, CalculatorView } from './calculator';
+export { DeveloperCommandsPlugin } from './developer';
 export { WebSearchPlugin } from './websearch';
 export { SystemCommandsPlugin } from './systemcommands';
 export { TimerPlugin, TimerDisplay, TimerView, useTimers, timerStore, tasksStore } from './timer';
@@ -6,6 +8,7 @@ export { SystemMonitorPlugin } from './systemmonitor';
 export { GamesPlugin, GameView } from './games';
 export { EmojiPickerPlugin, EmojiPickerView } from './emoji-picker';
 export { QuicklinksPlugin } from './quicklinks';
+export { NotesPlugin } from './notes';
 export { WindowManagementPlugin } from './window-management';
 export { ShellCommandPlugin } from './shell';
 export type { ShellOutputData } from './shell';

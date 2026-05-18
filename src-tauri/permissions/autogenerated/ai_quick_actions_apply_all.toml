@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-ai-quick-actions-apply-all"
+description = "Enables the ai_quick_actions_apply_all command without any pre-configured scope."
+commands.allow = ["ai_quick_actions_apply_all"]
+
+[[permission]]
+identifier = "deny-ai-quick-actions-apply-all"
+description = "Denies the ai_quick_actions_apply_all command without any pre-configured scope."
+commands.deny = ["ai_quick_actions_apply_all"]

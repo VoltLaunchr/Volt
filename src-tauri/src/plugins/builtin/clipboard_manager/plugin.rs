@@ -6,7 +6,7 @@ use base64::{Engine as _, engine::general_purpose};
 use chrono::Utc;
 use rusqlite::{Connection, params};
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use tokio::time::{Duration, interval};
 
@@ -27,6 +27,10 @@ pub struct ClipboardManagerPlugin {
     enabled: bool,
     api: Option<Arc<VoltPluginAPI>>,
     config: ClipboardConfig,
+    /// Runtime-configurable retention override (days). 0 = use config.max_days.
+    retention_days_override: Arc<AtomicU32>,
+    /// Apps (executable names, case-insensitive) whose clipboard changes are not recorded.
+    disabled_apps_filter: Arc<Mutex<Vec<String>>>,
     conn: Arc<Mutex<Option<Connection>>>,
     clipboard: Arc<Mutex<Option<Clipboard>>>,
     last_content_hash: Arc<Mutex<Option<String>>>,
@@ -94,14 +98,30 @@ pub struct ClipboardItem {
 
 impl ClipboardManagerPlugin {
     pub fn new() -> Self {
+        let default_days = ClipboardConfig::default().max_days;
         Self {
             enabled: true,
             api: None,
             config: ClipboardConfig::default(),
+            retention_days_override: Arc::new(AtomicU32::new(default_days)),
+            disabled_apps_filter: Arc::new(Mutex::new(Vec::new())),
             conn: Arc::new(Mutex::new(None)),
             clipboard: Arc::new(Mutex::new(None)),
             last_content_hash: Arc::new(Mutex::new(None)),
             monitoring: Arc::new(AtomicBool::new(false)),
+        }
+    }
+
+    /// Update retention period at runtime (called when user changes settings)
+    pub fn set_retention_days(&self, days: u32) {
+        self.retention_days_override.store(days, Ordering::Relaxed);
+    }
+
+    /// Update the list of apps whose clipboard changes should not be recorded.
+    /// `apps` contains executable basenames (e.g. "1password", "keepass"), case-insensitive.
+    pub fn set_disabled_apps(&self, apps: Vec<String>) {
+        if let Ok(mut guard) = self.disabled_apps_filter.lock() {
+            *guard = apps.into_iter().map(|a| a.to_lowercase()).collect();
         }
     }
 
@@ -185,7 +205,7 @@ impl ClipboardManagerPlugin {
             &content,
             &content_hash,
             self.config.max_items,
-            self.config.max_days,
+            self.retention_days_override.load(Ordering::Relaxed),
         )
     }
 
@@ -515,7 +535,8 @@ impl ClipboardManagerPlugin {
         // Clone additional config values for image monitoring
         let max_image_size = self.config.max_image_size;
         let max_items = self.config.max_items;
-        let max_days = self.config.max_days;
+        let retention_days_override = self.retention_days_override.clone();
+        let disabled_apps_filter = self.disabled_apps_filter.clone();
 
         // Spawn background monitoring task
         tokio::spawn(async move {
@@ -579,27 +600,46 @@ impl ClipboardManagerPlugin {
                                         };
 
                                     if should_add {
-                                        *last_hash_guard = Some(current_hash.clone());
-                                        drop(last_hash_guard);
-                                        drop(clipboard_guard);
-
-                                        // Add to database
-                                        if let Err(e) = Self::add_to_db_static(
-                                            &conn,
-                                            ClipboardType::Image,
-                                            base64_content,
-                                            current_hash,
-                                            max_items,
-                                            max_days,
-                                        ) && let Some(api) = &api
+                                        // Skip if the source app is in the disabled list
+                                        let blocked = if let Ok(disabled) =
+                                            disabled_apps_filter.lock()
                                         {
-                                            api.log(
-                                                &plugin_id,
-                                                LogLevel::Error,
-                                                &format!("Failed to add clipboard image: {}", e),
-                                            );
+                                            if disabled.is_empty() {
+                                                false
+                                            } else if let Some(app) = get_foreground_app_name() {
+                                                disabled.iter().any(|d| app.contains(d.as_str()))
+                                            } else {
+                                                false
+                                            }
+                                        } else {
+                                            false
+                                        };
+                                        if !blocked {
+                                            *last_hash_guard = Some(current_hash.clone());
+                                            drop(last_hash_guard);
+                                            drop(clipboard_guard);
+
+                                            // Add to database
+                                            if let Err(e) = Self::add_to_db_static(
+                                                &conn,
+                                                ClipboardType::Image,
+                                                base64_content,
+                                                current_hash,
+                                                max_items,
+                                                retention_days_override.load(Ordering::Relaxed),
+                                            ) && let Some(api) = &api
+                                            {
+                                                api.log(
+                                                    &plugin_id,
+                                                    LogLevel::Error,
+                                                    &format!(
+                                                        "Failed to add clipboard image: {}",
+                                                        e
+                                                    ),
+                                                );
+                                            }
+                                            image_processed = true;
                                         }
-                                        image_processed = true;
                                     }
                                 }
                             }
@@ -646,6 +686,22 @@ impl ClipboardManagerPlugin {
                         };
 
                         if should_add {
+                            // Skip if the source app is in the disabled list
+                            let blocked = if let Ok(disabled) = disabled_apps_filter.lock() {
+                                if disabled.is_empty() {
+                                    false
+                                } else if let Some(app) = get_foreground_app_name() {
+                                    disabled.iter().any(|d| app.contains(d.as_str()))
+                                } else {
+                                    false
+                                }
+                            } else {
+                                false
+                            };
+                            if blocked {
+                                continue;
+                            }
+
                             *last_hash_guard = Some(current_hash.clone());
                             drop(last_hash_guard);
                             drop(clipboard_guard);
@@ -657,7 +713,7 @@ impl ClipboardManagerPlugin {
                                 text,
                                 current_hash,
                                 max_items,
-                                max_days,
+                                retention_days_override.load(Ordering::Relaxed),
                             ) && let Some(api) = &api
                             {
                                 api.log(
@@ -978,7 +1034,8 @@ impl Plugin for ClipboardManagerPlugin {
                     LogLevel::Info,
                     &format!(
                         "Clipboard Manager initialized (max items: {}, max days: {})",
-                        self.config.max_items, self.config.max_days
+                        self.config.max_items,
+                        self.retention_days_override.load(Ordering::Relaxed)
                     ),
                 );
             }
@@ -1003,4 +1060,60 @@ impl Plugin for ClipboardManagerPlugin {
 
         Ok(())
     }
+}
+
+/// Return the lowercase executable basename of the current foreground window's process,
+/// or `None` if it cannot be determined.
+#[cfg(windows)]
+pub(crate) fn get_foreground_app_name() -> Option<String> {
+    use std::ffi::OsString;
+    use std::os::windows::ffi::OsStringExt;
+    use winapi::um::handleapi::CloseHandle;
+    use winapi::um::processthreadsapi::OpenProcess;
+    use winapi::um::psapi::GetModuleFileNameExW;
+    use winapi::um::winnt::{PROCESS_QUERY_INFORMATION, PROCESS_VM_READ};
+    use winapi::um::winuser::{GetForegroundWindow, GetWindowThreadProcessId};
+
+    unsafe {
+        let hwnd = GetForegroundWindow();
+        if hwnd.is_null() {
+            return None;
+        }
+
+        let mut pid: u32 = 0;
+        GetWindowThreadProcessId(hwnd, &mut pid as *mut u32);
+        if pid == 0 {
+            return None;
+        }
+
+        let handle = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, 0, pid);
+        if handle.is_null() {
+            return None;
+        }
+
+        let mut buf = vec![0u16; 512];
+        let len = GetModuleFileNameExW(
+            handle,
+            std::ptr::null_mut(),
+            buf.as_mut_ptr(),
+            buf.len() as u32,
+        );
+        CloseHandle(handle);
+
+        if len == 0 {
+            return None;
+        }
+
+        let path = OsString::from_wide(&buf[..len as usize]);
+        let path_str = path.to_string_lossy().to_lowercase();
+        // Extract just the filename without extension
+        std::path::Path::new(&path_str)
+            .file_stem()
+            .map(|s| s.to_string_lossy().to_string())
+    }
+}
+
+#[cfg(not(windows))]
+pub(crate) fn get_foreground_app_name() -> Option<String> {
+    None
 }

@@ -4,6 +4,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { extractErrorMessage } from '../../../shared/utils/error';
 import type { AppInfo } from '../../../shared/types/common.types';
 import { applicationService } from '../services/applicationService';
 import type { AppSearchOptions } from '../types';
@@ -103,7 +104,7 @@ export function useApplicationSearch(
       } catch (err) {
         // Only update error if this is still the latest search
         if (searchId === searchIdRef.current) {
-          const errorMessage = err instanceof Error ? err.message : String(err);
+          const errorMessage = extractErrorMessage(err);
           setError(errorMessage);
           setResults([]);
           setIsSearching(false);

@@ -16,7 +16,14 @@ export type ActionCommand =
   | { action: 'copyToClipboard'; text: string }
   | { action: 'openUrl'; url: string }
   | { action: 'notify'; message: string; type?: 'info' | 'success' | 'error' }
+  | { action: 'toast'; message: string; subtitle?: string; style?: 'info' | 'success' | 'error'; duration?: number }
   | { action: 'fetch'; url: string; options?: Record<string, unknown> }
+  | { action: 'saveCredential'; service: string; token: string }
+  | { action: 'showInFolder'; path: string }
+  | { action: 'moveToTrash'; path: string }
+  | { action: 'hud'; message: string }
+  | { action: 'updateMetadata'; title?: string; subtitle?: string }
+  | { action: 'pasteText'; text: string }
   | { action: 'noop' };
 
 /**
@@ -76,29 +83,48 @@ export function generateWorkerBootstrap(
 // runs (including top-level IIFEs in bundledModuleCode). Otherwise a malicious
 // extension could invoke importScripts / dynamic code compilation at module
 // import time, before activate() is ever called, and escape the sandbox.
-self.eval = undefined;
-self.Function = undefined;
-self.WebSocket = undefined;
-self.XMLHttpRequest = undefined;
-self.indexedDB = undefined;
-self.caches = undefined;
+//
+// Some properties are getter-only on WorkerGlobalScope in newer WebView2/Chromium
+// builds (e.g. indexedDB, caches). Direct assignment throws a TypeError that
+// crashes the entire Worker. Use defineProperty to shadow with a getter that
+// returns undefined; fall back to a silent swallow if the property is
+// non-configurable (already sealed by the engine).
+function __blockGlobal__(name) {
+  try {
+    Object.defineProperty(self, name, {
+      get: function() { return undefined; },
+      set: function() {},
+      configurable: false,
+      enumerable: false,
+    });
+  } catch (_e) {
+    try { self[name] = undefined; } catch (_e2) { /* already sealed — best-effort */ }
+  }
+}
+
+__blockGlobal__('eval');
+__blockGlobal__('Function');
+__blockGlobal__('WebSocket');
+__blockGlobal__('XMLHttpRequest');
+__blockGlobal__('indexedDB');
+__blockGlobal__('caches');
 // Block nested Worker spawning: a child Worker gets a fresh un-locked-down
 // global realm (pristine Function / WebSocket / importScripts etc.), so a
 // compromised extension could do new Worker('data:text/javascript,...')
 // and escape this sandbox. Must live in the early-override block so user
 // code can't grab a reference to Worker before we null it.
-self.Worker = undefined;
-self.SharedWorker = undefined;
+__blockGlobal__('Worker');
+__blockGlobal__('SharedWorker');
 // Block ServiceWorker registration paths: navigator.serviceWorker is reachable
 // in WorkerGlobalScope on Chromium 105+ (matches WebView2) and can register
 // a background SW with network-interception capability. Also null Worklet
 // variants — each Worklet creates a fresh realm with un-locked-down globals.
-self.ServiceWorker = undefined;
-self.ServiceWorkerContainer = undefined;
-self.AudioWorklet = undefined;
-self.PaintWorklet = undefined;
-self.LayoutWorklet = undefined;
-self.Worklet = undefined;
+__blockGlobal__('ServiceWorker');
+__blockGlobal__('ServiceWorkerContainer');
+__blockGlobal__('AudioWorklet');
+__blockGlobal__('PaintWorklet');
+__blockGlobal__('LayoutWorklet');
+__blockGlobal__('Worklet');
 // navigator is a read-only property on WorkerGlobalScope; we can't reassign it,
 // but we can make the serviceWorker accessor throw so the registration entry
 // point is unreachable even if a child realm exposes ServiceWorker somehow.
@@ -111,11 +137,19 @@ try {
   }
 } catch (_e) { /* best-effort; some engines have frozen navigator */ }
 
-// Block importScripts to prevent loading remote code (installed early so
-// top-level extension code cannot pull in attacker-controlled scripts).
-self.importScripts = function() {
-  throw new Error('importScripts is blocked in sandboxed extensions');
-};
+// Block importScripts — use defineProperty (non-configurable, non-writable)
+// so extension code cannot reassign it to bypass the block. A plain assignment
+// is writable by default and can be overridden via 'self.importScripts = origRef'. (M3/M9)
+try {
+  Object.defineProperty(self, 'importScripts', {
+    value: function() { throw new Error('importScripts is blocked in sandboxed extensions'); },
+    writable: false,
+    configurable: false,
+    enumerable: false,
+  });
+} catch (_e) {
+  try { self['importScripts'] = function() { throw new Error('importScripts is blocked in sandboxed extensions'); }; } catch (_e2) { /* best-effort */ }
+}
 
 // Block string-based setTimeout/setInterval (dynamic-compile vector)
 var _origSetTimeout = self.setTimeout;
@@ -170,6 +204,13 @@ try {
   try { console.warn('[volt-sandbox] constructor lockdown block failed (generator flavors unavailable?): ' + _e); } catch (_) {}
 }
 
+// Freeze the global scope's prototype chain so extension code cannot add
+// properties to WorkerGlobalScope.prototype that would be visible across all
+// extensions sharing the same realm, and cannot walk the chain to access
+// unblocked globals through prototype references. (M1 — defense in depth)
+try { Object.freeze(Object.getPrototypeOf(self)); } catch (_e) {}
+try { if (typeof globalThis !== 'undefined' && globalThis !== self) { Object.freeze(Object.getPrototypeOf(globalThis)); } } catch (_e) {}
+
 // Secure random number generator (Web Crypto API)
 function __secureRandomInt__(min, max) {
   const range = max - min;
@@ -187,6 +228,30 @@ let __pendingActions__ = [];
 // Fetch proxy infrastructure
 let __fetchCounter__ = 10000;
 var __fetchPending__ = {};
+
+// Storage proxy infrastructure
+let __storageCounter__ = 20000;
+var __storagePending__ = {};
+
+// Preferences proxy infrastructure
+let __prefsCounter__ = 30000;
+var __prefsPending__ = {};
+
+// OAuth proxy infrastructure
+let __oauthCounter__ = 40000;
+var __oauthPending__ = {};
+
+// AI proxy infrastructure
+let __aiCounter__ = 50000;
+var __aiPending__ = {};
+
+// System proxy infrastructure
+let __systemCounter__ = 60000;
+var __systemPending__ = {};
+
+// Alert (confirm dialog) proxy infrastructure
+let __alertCounter__ = 70000;
+var __alertPending__ = {};
 
 // Mock VoltAPI (captures actions instead of executing them)
 const VoltAPI = {
@@ -210,6 +275,9 @@ const VoltAPI = {
       if (t.includes(q)) return 80;
       return 0;
     },
+    pasteText: function(text) {
+      __pendingActions__.push({ action: 'pasteText', text: String(text) });
+    },
   },
   invoke: function() {
     console.warn('[Worker] invoke() is not available in sandboxed extensions');
@@ -221,6 +289,186 @@ const VoltAPI = {
   },
   notify: function(message, type) {
     __pendingActions__.push({ action: 'notify', message: message, type: type || 'info' });
+  },
+  showToast: function(opts) {
+    __pendingActions__.push({
+      action: 'toast',
+      message: opts.message || opts.title || '',
+      subtitle: opts.subtitle,
+      style: opts.style,
+      duration: opts.duration,
+    });
+  },
+  storage: {
+    get: function(key) {
+      return new Promise(function(resolve, reject) {
+        var storageId = ++__storageCounter__;
+        __storagePending__[storageId] = { resolve: resolve, reject: reject };
+        self.postMessage({ type: 'storage-request', id: storageId, payload: { op: 'get', key: key } });
+      });
+    },
+    set: function(key, value) {
+      return new Promise(function(resolve, reject) {
+        var storageId = ++__storageCounter__;
+        __storagePending__[storageId] = { resolve: resolve, reject: reject };
+        self.postMessage({ type: 'storage-request', id: storageId, payload: { op: 'set', key: key, value: value } });
+      });
+    },
+    remove: function(key) {
+      return new Promise(function(resolve, reject) {
+        var storageId = ++__storageCounter__;
+        __storagePending__[storageId] = { resolve: resolve, reject: reject };
+        self.postMessage({ type: 'storage-request', id: storageId, payload: { op: 'remove', key: key } });
+      });
+    },
+    clear: function() {
+      return new Promise(function(resolve, reject) {
+        var storageId = ++__storageCounter__;
+        __storagePending__[storageId] = { resolve: resolve, reject: reject };
+        self.postMessage({ type: 'storage-request', id: storageId, payload: { op: 'clear' } });
+      });
+    },
+  },
+  getPreference: function(key, defaultValue) {
+    return new Promise(function(resolve, reject) {
+      var prefsId = ++__prefsCounter__;
+      __prefsPending__[prefsId] = { resolve: resolve, reject: reject };
+      self.postMessage({ type: 'prefs-request', id: prefsId, payload: { op: 'get', key: key, default: defaultValue } });
+    });
+  },
+  setPreference: function(key, value) {
+    return new Promise(function(resolve, reject) {
+      var prefsId = ++__prefsCounter__;
+      __prefsPending__[prefsId] = { resolve: resolve, reject: reject };
+      self.postMessage({ type: 'prefs-request', id: prefsId, payload: { op: 'set', key: key, value: String(value) } });
+    });
+  },
+  saveCredential: function(service, token) {
+    __pendingActions__.push({ action: 'saveCredential', service: service, token: token });
+  },
+  secrets: {
+    get: function(key) {
+      return new Promise(function(resolve, reject) {
+        var prefsId = ++__prefsCounter__;
+        __prefsPending__[prefsId] = { resolve: resolve, reject: reject };
+        self.postMessage({ type: 'prefs-request', id: prefsId, payload: { op: 'get-secret', key: key } });
+      });
+    },
+    set: function(key, value) {
+      return new Promise(function(resolve, reject) {
+        var prefsId = ++__prefsCounter__;
+        __prefsPending__[prefsId] = { resolve: resolve, reject: reject };
+        self.postMessage({ type: 'prefs-request', id: prefsId, payload: { op: 'set-secret', key: key, value: String(value) } });
+      });
+    },
+    delete: function(key) {
+      return new Promise(function(resolve, reject) {
+        var prefsId = ++__prefsCounter__;
+        __prefsPending__[prefsId] = { resolve: resolve, reject: reject };
+        self.postMessage({ type: 'prefs-request', id: prefsId, payload: { op: 'delete-secret', key: key } });
+      });
+    },
+  },
+  oauth: {
+    authorize: function(opts) {
+      return new Promise(function(resolve, reject) {
+        var oauthId = ++__oauthCounter__;
+        __oauthPending__[oauthId] = { resolve: resolve, reject: reject };
+        self.postMessage({ type: 'oauth-request', id: oauthId, payload: opts });
+      });
+    },
+    getToken: function(provider) {
+      return new Promise(function(resolve, reject) {
+        var oauthId = ++__oauthCounter__;
+        __oauthPending__[oauthId] = { resolve: resolve, reject: reject };
+        self.postMessage({ type: 'oauth-get-token', id: oauthId, payload: { provider: provider } });
+      });
+    },
+    revokeToken: function(provider) {
+      return new Promise(function(resolve, reject) {
+        var oauthId = ++__oauthCounter__;
+        __oauthPending__[oauthId] = { resolve: resolve, reject: reject };
+        self.postMessage({ type: 'oauth-revoke-token', id: oauthId, payload: { provider: provider } });
+      });
+    },
+  },
+  ai: {
+    ask: function(prompt, opts, onChunk) {
+      return new Promise(function(resolve, reject) {
+        var signal = opts && opts.signal;
+
+        // Reject immediately if already aborted
+        if (signal && signal.aborted) {
+          reject(new DOMException('The operation was aborted.', 'AbortError'));
+          return;
+        }
+
+        var aiId = ++__aiCounter__;
+        __aiPending__[aiId] = { resolve: resolve, reject: reject, onChunk: onChunk || null };
+
+        // Listen for abort — reject Promise and discard pending entry
+        if (signal) {
+          signal.addEventListener('abort', function() {
+            var req = __aiPending__[aiId];
+            if (req) {
+              delete __aiPending__[aiId];
+              req.reject(new DOMException('The operation was aborted.', 'AbortError'));
+            }
+          }, { once: true });
+        }
+
+        // Strip non-serializable fields (signal, functions) before postMessage
+        var msgOpts = {
+          provider: opts && opts.provider,
+          apiKeyPreference: opts && opts.apiKeyPreference,
+          model: opts && opts.model,
+          maxTokens: opts && opts.maxTokens,
+          system: opts && opts.system,
+          creativity: opts && opts.creativity,
+          temperature: opts && opts.temperature,
+        };
+        self.postMessage({ type: 'ai-request', id: aiId, payload: { prompt: prompt, options: msgOpts } });
+      });
+    },
+  },
+  system: {
+    getApplications: function() {
+      return new Promise(function(resolve, reject) {
+        var sysId = ++__systemCounter__;
+        __systemPending__[sysId] = { resolve: resolve, reject: reject };
+        self.postMessage({ type: 'system-request', id: sysId, payload: { op: 'getApplications' } });
+      });
+    },
+    showInFolder: function(path) {
+      __pendingActions__.push({ action: 'showInFolder', path: path });
+      return Promise.resolve();
+    },
+    moveToTrash: function(path) {
+      __pendingActions__.push({ action: 'moveToTrash', path: path });
+      return Promise.resolve();
+    },
+  },
+  captureException: function(error, context, severity) {
+    var message = (typeof error === 'string') ? error : (error && error.message ? error.message : String(error));
+    var stack = (error && error.stack) ? error.stack : undefined;
+    self.postMessage({ type: 'capture-exception', id: 0, payload: { message: message, stack: stack, context: context, severity: severity || 'error' } });
+  },
+  showHUD: function(message) {
+    __pendingActions__.push({ action: 'hud', message: String(message) });
+  },
+  confirm: function(message) {
+    return new Promise(function(resolve, reject) {
+      var alertId = ++__alertCounter__;
+      __alertPending__[alertId] = { resolve: resolve, reject: reject };
+      self.postMessage({ type: 'alert-request', id: alertId, payload: { message: String(message) } });
+    });
+  },
+  updateCommandMetadata: function(opts) {
+    __pendingActions__.push({
+      action: 'updateMetadata',
+      title: opts && opts.title,
+      subtitle: opts && opts.subtitle,
+    });
   },
   fetch: function(url, options) {
     return new Promise(function(resolve, reject) {
@@ -276,6 +524,88 @@ self.onmessage = function(event) {
   var id = msg.id;
   var type = msg.type;
   var payload = msg.payload;
+
+  if (type === 'storage-response') {
+    var storageReq = __storagePending__[id];
+    if (storageReq) {
+      delete __storagePending__[id];
+      if (payload && payload.error) {
+        storageReq.reject(new Error(payload.error));
+      } else {
+        storageReq.resolve(payload ? payload.value : undefined);
+      }
+    }
+    return;
+  }
+
+  if (type === 'prefs-response') {
+    var prefsReq = __prefsPending__[id];
+    if (prefsReq) {
+      delete __prefsPending__[id];
+      if (payload && payload.error) {
+        prefsReq.reject(new Error(payload.error));
+      } else {
+        prefsReq.resolve(payload ? payload.value : undefined);
+      }
+    }
+    return;
+  }
+
+  if (type === 'oauth-response') {
+    var oauthReq = __oauthPending__[id];
+    if (oauthReq) {
+      delete __oauthPending__[id];
+      if (payload && payload.error) {
+        oauthReq.reject(new Error(payload.error));
+      } else {
+        oauthReq.resolve(payload || {});
+      }
+    }
+    return;
+  }
+
+  if (type === 'ai-chunk') {
+    var chunkReq = __aiPending__[id];
+    if (chunkReq && chunkReq.onChunk && payload && payload.text) {
+      try { chunkReq.onChunk(payload.text); } catch (_e) {}
+    }
+    return;
+  }
+
+  if (type === 'ai-response') {
+    var aiReq = __aiPending__[id];
+    if (aiReq) {
+      delete __aiPending__[id];
+      if (payload && payload.error) {
+        aiReq.reject(new Error(payload.error));
+      } else {
+        aiReq.resolve(payload ? payload.text : '');
+      }
+    }
+    return;
+  }
+
+  if (type === 'system-response') {
+    var sysReq = __systemPending__[id];
+    if (sysReq) {
+      delete __systemPending__[id];
+      if (payload && payload.error) {
+        sysReq.reject(new Error(payload.error));
+      } else {
+        sysReq.resolve(payload ? payload.value : undefined);
+      }
+    }
+    return;
+  }
+
+  if (type === 'alert-response') {
+    var alertReq = __alertPending__[id];
+    if (alertReq) {
+      delete __alertPending__[id];
+      alertReq.resolve(payload ? Boolean(payload.confirmed) : false);
+    }
+    return;
+  }
 
   if (type === 'fetch-response') {
     var fetchReq = __fetchPending__[id];

@@ -131,9 +131,13 @@ src/
 - Builtin plugins registered in `App.tsx` on mount
 - Backend plugins: trait-based in `src-tauri/src/plugins/` (async_trait, Send+Sync)
 
-**Extensions** (separate repo: https://github.com/VoltLaunchr/volt-extensions):
-- Community/third-party extensions live in the volt-extensions repo
-- Manifest-based: ExtensionManifest with id, name, version, permissions
+**Extensions** (dual-source registry):
+- **Source 1 — GitHub legacy** (`VoltLaunchr/volt-extensions/registry.json`): extensions historiques (github, notion, password-generator). Toujours servis, pas de migration prévue.
+- **Source 2 — Supabase** (`developer_extensions` table, `status = 'approved'`): nouvelles extensions soumises via le portail developer sur voltlaunchr.com. Workflow: draft → pending → approved/rejected.
+- Les deux sources sont fusionnées dans `/api/extensions` (voltlaunchr.com) avec déduplication par slug. Built-ins toujours prioritaires.
+- **Portail developer** (voltlaunchr.com/developer): les devs créent un compte `developer` tier, gèrent leurs extensions, et génèrent des API keys (`sk_live_*`) pour automatisation future CLI.
+- **API keys** stockées en DB (`api_keys` table) avec SHA-256 hash, jamais en clair. Colonnes: `developer_id`, `key_prefix`, `scopes`, `is_active`.
+- Manifest-based: `ExtensionManifest` with id, name, version, permissions
 - Dynamic loading via ExtensionLoader + Sucrase transpilation
 - Management: `src/features/extensions/` (install, uninstall, toggle)
 - Web Worker sandbox: extensions with `keywords`/`prefix` in manifest run in dedicated Worker

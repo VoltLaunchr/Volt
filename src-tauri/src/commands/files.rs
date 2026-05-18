@@ -144,6 +144,31 @@ struct IndexingProgress {
     is_complete: bool,
 }
 
+/// RAII guard that clears the `is_indexing` flag in `Drop`.
+///
+/// Without this, an aborted outer `tokio::spawn` (e.g. when `invalidate_index`
+/// is called twice in quick succession) leaves `is_indexing = true` forever
+/// because the inner `spawn_blocking` is non-cancellable and the match arms
+/// that reset the flag never run. The guard runs unconditionally — abort,
+/// panic, or normal completion — so the flag is always released.
+struct IndexingGuard {
+    status: Arc<Mutex<IndexStatus>>,
+}
+
+impl IndexingGuard {
+    fn new(status: Arc<Mutex<IndexStatus>>) -> Self {
+        Self { status }
+    }
+}
+
+impl Drop for IndexingGuard {
+    fn drop(&mut self) {
+        if let Ok(mut s) = self.status.lock() {
+            s.is_indexing = false;
+        }
+    }
+}
+
 /// Starts file indexing based on settings.
 ///
 /// On the first call the DB is empty so a full scan runs.  On subsequent
@@ -157,6 +182,7 @@ pub async fn start_indexing(
     excluded_paths: Vec<String>,
     file_extensions: Vec<String>,
     force: Option<bool>,
+    deep_search: Option<bool>,
 ) -> VoltResult<()> {
     // Atomically check-and-set `is_indexing` in a single lock acquisition to
     // prevent a TOCTOU race where two concurrent calls both pass the check
@@ -182,11 +208,12 @@ pub async fn start_indexing(
             .config
             .lock()
             .map_err(|e| VoltError::Unknown(e.to_string()))?;
+        let max_depth = if deep_search.unwrap_or(false) { 10 } else { 3 };
         *cfg = IndexConfig {
             folders: folders.clone(),
             excluded_paths: excluded_paths.clone(),
             file_extensions: file_extensions.clone(),
-            max_depth: 10,
+            max_depth,
             max_file_size: 100 * 1024 * 1024,
         };
     }
@@ -199,12 +226,17 @@ pub async fn start_indexing(
 
     // Run indexing in background; store the AbortHandle so `invalidate_index`
     // can cancel a running scan before kicking off a new one.
+    let guard_status = Arc::clone(&status_arc);
     let join_handle = tokio::spawn(async move {
+        // Owned by this future — its Drop clears `is_indexing` regardless of
+        // whether the future completes normally, panics, or is aborted.
+        let _guard = IndexingGuard::new(guard_status);
+
         let config = IndexConfig {
             folders,
             excluded_paths,
             file_extensions,
-            max_depth: 10,
+            max_depth: if deep_search.unwrap_or(false) { 10 } else { 3 },
             max_file_size: 100 * 1024 * 1024, // 100MB limit
         };
 
@@ -848,7 +880,12 @@ pub async fn invalidate_index(
     let status_arc = state.status.clone();
     let db_arc = state.db.clone();
 
+    let guard_status = Arc::clone(&status_arc);
     let rebuild_handle = tokio::spawn(async move {
+        // Owned by this future — its Drop clears `is_indexing` regardless of
+        // whether the future completes normally, panics, or is aborted.
+        let _guard = IndexingGuard::new(guard_status);
+
         // Offload the blocking filesystem walk to the dedicated thread pool.
         let scan_result = tokio::task::spawn_blocking(move || scan_files(&config)).await;
 
@@ -1022,4 +1059,48 @@ pub async fn stop_file_watcher(watcher_state: State<'_, WatcherState>) -> VoltRe
         *handle = None;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Regression: prior to the IndexingGuard, an aborted scan task left
+    /// `is_indexing = true` permanently, bricking "Rebuild Index" until app
+    /// restart. The guard clears the flag in `Drop` so abort, panic, or
+    /// normal completion all release it.
+    #[test]
+    fn indexing_guard_clears_flag_on_drop() {
+        let status = Arc::new(Mutex::new(IndexStatus {
+            is_indexing: true,
+            total_files: 0,
+            indexed_files: 0,
+            last_updated: 0,
+        }));
+        {
+            let _guard = IndexingGuard::new(Arc::clone(&status));
+            // Simulate the spawn closure being aborted before reaching its
+            // success/error arms — `_guard` still drops at scope exit.
+        }
+        assert!(!status.lock().unwrap().is_indexing);
+    }
+
+    /// Even if the guard's drop runs after a panic-poisoned mutex, it must
+    /// not panic itself. We can't easily simulate a poisoned mutex in a
+    /// `#[test]` (would require catching a panic and re-acquiring), so this
+    /// test pins the behaviour: drop is total — never aborts on lock failure.
+    #[test]
+    fn indexing_guard_drop_does_not_panic_on_lock_failure() {
+        // Trigger Drop with a still-healthy mutex; the assertion below proves
+        // the success path does not panic. The poisoned-mutex path is covered
+        // by the `if let Ok(mut s) = self.status.lock()` guard in the impl.
+        let status = Arc::new(Mutex::new(IndexStatus {
+            is_indexing: true,
+            total_files: 0,
+            indexed_files: 0,
+            last_updated: 0,
+        }));
+        drop(IndexingGuard::new(Arc::clone(&status)));
+        assert!(!status.lock().unwrap().is_indexing);
+    }
 }

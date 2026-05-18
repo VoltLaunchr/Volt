@@ -5,10 +5,10 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { logger } from '../../../shared/utils';
+import { extractErrorMessage, logger } from '../../../shared/utils';
 import type { CustomPosition, WindowPosition } from '../types';
 
-const errorMessage = (err: unknown): string => (err instanceof Error ? err.message : String(err));
+const errorMessage = extractErrorMessage;
 
 /**
  * Service for managing the application window

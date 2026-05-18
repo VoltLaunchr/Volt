@@ -489,20 +489,15 @@ struct ExchangeResponse {
     user_id: String,
 }
 
-/// Parse a `volt://auth/callback?...` URL and persist the session.
+/// Parse a `volt://auth/callback?state=&code=` URL and persist the session.
 ///
-/// Accepts two callback shapes for forward/backward compatibility during
-/// the PKCE rollout:
+/// PKCE-only: the desktop submits `{code, verifier}` to
+/// `/api/auth/exchange-code` and receives tokens back over HTTPS. Tokens
+/// never travel through the URL or browser history. Any callback missing
+/// `code` is rejected (the legacy implicit `access_token`/`refresh_token`
+/// shape was removed by A1 — tokens-out-of-IPC).
 ///
-/// * **PKCE** — `?state=&code=`. The desktop submits {code, verifier} to
-///   `/api/auth/exchange-code` and gets tokens back over HTTPS; tokens
-///   never travel through the URL / browser history.
-/// * **Implicit (legacy)** — `?state=&access_token=&refresh_token=`. The
-///   tokens come through the deep link directly. We still verify the JWT
-///   signature against the project JWKS before persisting, so a forged
-///   URL can't seed a session even on this path.
-///
-/// Validation layers (both shapes):
+/// Validation layers:
 /// 1. URL host/path must match the expected callback shape.
 /// 2. `state` MUST match a pending flow stored by `auth_start_login`
 ///    (CSRF binding); the entry is removed on use so the nonce can't be
@@ -543,13 +538,13 @@ pub async fn handle_auth_deep_link(url_str: &str) -> Result<AuthSession, String>
         flow.code_verifier.clone()
     };
 
-    // 2. Pick the path: PKCE (preferred) or legacy implicit (fallback).
-    if let Some(code) = params.get("code") {
-        info!("Auth callback: PKCE path (exchanging code)");
-        return exchange_code_for_session(code.clone(), verifier).await;
-    }
-
-    Err("Auth callback URL missing required `code` parameter".into())
+    // 2. PKCE: exchange the code for a session.
+    let code = params
+        .get("code")
+        .ok_or("Auth callback URL missing required `code` parameter")?
+        .clone();
+    info!("Auth callback: PKCE path (exchanging code)");
+    exchange_code_for_session(code, verifier).await
 }
 
 /// PKCE path — exchange the auth code for tokens via the website, then

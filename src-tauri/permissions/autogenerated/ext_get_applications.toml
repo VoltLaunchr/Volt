@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-ext-get-applications"
+description = "Enables the ext_get_applications command without any pre-configured scope."
+commands.allow = ["ext_get_applications"]
+
+[[permission]]
+identifier = "deny-ext-get-applications"
+description = "Denies the ext_get_applications command without any pre-configured scope."
+commands.deny = ["ext_get_applications"]

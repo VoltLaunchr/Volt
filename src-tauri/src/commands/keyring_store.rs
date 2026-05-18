@@ -12,6 +12,7 @@
 use std::path::PathBuf;
 use std::sync::OnceLock;
 use tracing::{debug, info, warn};
+use zeroize::{Zeroize, Zeroizing};
 
 use crate::utils::extension_state_sig;
 
@@ -181,10 +182,11 @@ pub fn retrieve_signed(account: &str) -> Result<Option<String>, String> {
         debug!("Keyring: '{}' integrity verified", account);
         Ok(Some(secret))
     } else {
-        // Tamper detected. Drop the entry so the caller is forced to
-        // re-authenticate. A motivated attacker can re-sign their swap, so
-        // this isn't a hard guarantee — but it's a forensic trail and
-        // catches every attacker who didn't think about the tag.
+        // Tamper detected. Wipe the suspect secret from memory before discarding,
+        // then drop the entry so the caller is forced to re-authenticate.
+        let mut suspect = secret;
+        suspect.zeroize();
+
         warn!(
             "⚠️ SECURITY ALERT: Keyring integrity check FAILED for '{}'. \
              Stored value differs from its HMAC tag — likely modified by \
@@ -218,12 +220,15 @@ pub fn remove_signed(account: &str) -> Result<(), String> {
 /// Build the HMAC input. Including the account name binds the signature to
 /// the account so a value swap from one entry to another (e.g. moving a
 /// leaked test token into the github slot) is also detected.
-fn build_payload(account: &str, secret: &str) -> Vec<u8> {
+///
+/// Returns a `Zeroizing` wrapper so the byte buffer is wiped from memory
+/// once the HMAC operation completes.
+fn build_payload(account: &str, secret: &str) -> Zeroizing<Vec<u8>> {
     let mut buf = Vec::with_capacity(account.len() + 1 + secret.len());
     buf.extend_from_slice(account.as_bytes());
     buf.push(0); // null separator avoids account+secret collision
     buf.extend_from_slice(secret.as_bytes());
-    buf
+    Zeroizing::new(buf)
 }
 
 // ---------------------------------------------------------------------------

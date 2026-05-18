@@ -1,10 +1,12 @@
 import { invoke } from '@tauri-apps/api/core';
 import { useCallback } from 'react';
+import { consumePendingHud } from '../../features/extensions/loader/hud-queue';
 import { applicationService } from '../../features/applications/services/applicationService';
 import { pluginRegistry } from '../../features/plugins/core';
 import { PluginResult as PluginResultData } from '../../features/plugins/types';
 import { defaultSuggestions } from '../../shared/constants/suggestions';
 import { FileInfo, SearchResult, SearchResultType } from '../../shared/types/common.types';
+import { extractErrorMessage } from '../../shared/utils/error';
 import { logger } from '../../shared/utils/logger';
 import { isPluginResultData } from '../../shared/utils/typeGuards';
 import { openSystemMonitorWindow } from '../windows';
@@ -62,6 +64,12 @@ export function useResultActions({
 
           // Don't hide window for settings/account commands - we want to show the settings window
           if (action === 'settings' || action === 'account') {
+            shouldHideWindow = false;
+            await openSettingsWindow();
+          } else if (action === 'create-extension') {
+            shouldHideWindow = false;
+            setActiveView({ type: 'create-extension' });
+          } else if (action === 'manage-extensions') {
             shouldHideWindow = false;
             await openSettingsWindow();
           } else {
@@ -130,6 +138,13 @@ export function useResultActions({
           );
         }
 
+        // If the extension called showHUD(), show the overlay for 1.5s before hiding.
+        const hudMessage = consumePendingHud();
+        if (hudMessage) {
+          window.dispatchEvent(new CustomEvent('volt:hud-show', { detail: { message: hudMessage } }));
+          await new Promise<void>((resolve) => { setTimeout(resolve, 1500); });
+        }
+
         // Hide window after launching if closeOnLaunch is enabled and action allows it
         if (shouldHideWindow && closeOnLaunch) {
           await hideWindow();
@@ -141,12 +156,12 @@ export function useResultActions({
           setResults([]);
         }
       } catch (err) {
-        const errorMessage = err instanceof Error ? err.message : String(err);
+        const errorMessage = extractErrorMessage(err);
         logger.error('Failed to launch:', errorMessage);
         setSearchError(`Failed to launch: ${errorMessage}`);
       }
     },
-    [closeOnLaunch, hideWindow, openSettingsWindow, setSearchQuery, setResults, setSearchError]
+    [closeOnLaunch, hideWindow, openSettingsWindow, setActiveView, setSearchQuery, setResults, setSearchError]
   );
 
   const handleSuggestionActivate = useCallback(
@@ -195,11 +210,42 @@ export function useResultActions({
         case 'steam-games':
           setActiveView({ type: 'games' });
           break;
+        case 'notes':
+          try {
+            await invoke<void>('open_notes_window', { noteId: null });
+            await hideWindow();
+          } catch (err) {
+            logger.error('Failed to open notes window:', err);
+          }
+          break;
+        case 'create-note': {
+          try {
+            const created = await invoke<{ id: string }>('create_note', {
+              title: null,
+              content: null,
+              tags: null,
+            });
+            await invoke<void>('open_notes_window', { noteId: created.id });
+            await hideWindow();
+          } catch (err) {
+            logger.error('Failed to create note:', err);
+          }
+          break;
+        }
+        case 'search-notes':
+          setSearchQuery('n ');
+          break;
+        case 'create-extension':
+          setActiveView({ type: 'create-extension' });
+          break;
+        case 'manage-extensions':
+          setActiveView({ type: 'manage-extensions' });
+          break;
         default:
           logger.warn('Unknown suggestion:', item.id);
       }
     },
-    [openSettingsWindow, setSearchQuery, setActiveView]
+    [openSettingsWindow, setSearchQuery, setActiveView, hideWindow]
   );
 
   return { handleLaunch, handleSuggestionActivate };

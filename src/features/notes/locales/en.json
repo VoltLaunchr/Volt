@@ -1,0 +1,25 @@
+{
+  "title": "Notes",
+  "newNote": "New note",
+  "search": "Search notes…",
+  "clearSearch": "Clear search",
+  "empty": "No notes yet",
+  "noResults": "No matching notes",
+  "loading": "Loading…",
+  "createFirst": "Press Cmd+N to create your first note",
+  "untitled": "Untitled",
+  "pinned": "Pinned",
+  "titlePlaceholder": "Note title",
+  "writePlaceholder": "Start writing…",
+  "selectOrCreate": "Select a note or create a new one",
+  "deleteConfirm": "Delete this note? It will be moved to trash.",
+  "delete": "Delete",
+  "pin": "Pin",
+  "unpin": "Unpin",
+  "saveStatus": {
+    "idle": "",
+    "saving": "Saving…",
+    "saved": "Saved",
+    "error": "Failed to save"
+  }
+}

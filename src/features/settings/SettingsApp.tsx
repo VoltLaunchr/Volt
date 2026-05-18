@@ -31,7 +31,20 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import { Button, HotkeyCapture, Spinner, Toggle } from '../../shared/components/ui';
+import { extractErrorMessage } from '../../shared/utils/error';
 import { logger } from '../../shared/utils/logger';
+import {
+  getPreferredSkinTone,
+  setPreferredSkinTone,
+  getSkinToneDisplayName,
+} from '../plugins/builtin/emoji-picker/utils/skinTones';
+import {
+  getEmojiColumns,
+  setEmojiColumns,
+  getEmojiPrimaryAction,
+  setEmojiPrimaryAction,
+} from '../plugins/builtin/emoji-picker/utils/emojiSettings';
+import type { SkinTone } from '../plugins/builtin/emoji-picker/types';
 import { applyTheme, settingsService } from './services/settingsService';
 import {
   checkForUpdate,
@@ -54,7 +67,9 @@ import {
 } from './types/settings.types';
 import { SETTINGS_CATEGORIES, type SettingsCategory } from './constants/settingsCategories';
 import { ExtensionsStore } from '../extensions';
+import { AiSettingsView } from './components/AiSettingsView';
 import { IntegrationsPanel } from './components/IntegrationsPanel';
+import { NotesSettingsPanel } from './components/NotesSettingsPanel';
 import { SyncPanel } from './components/SyncPanel';
 import { AccountSection } from '../auth';
 import logo from '../../assets/icons/logo.svg';
@@ -93,6 +108,11 @@ export function SettingsApp() {
   const [updateChecked, setUpdateChecked] = useState(false);
   const [updateError, setUpdateError] = useState<string | null>(null);
   const [appVersion, setAppVersion] = useState<string>('');
+  const [emojiSkinTone, setEmojiSkinToneState] = useState<SkinTone>(() => getPreferredSkinTone());
+  const [emojiColumns, setEmojiColumnsState] = useState<number>(() => getEmojiColumns());
+  const [emojiPrimaryAction, setEmojiPrimaryActionState] = useState<'copy' | 'paste'>(
+    () => getEmojiPrimaryAction()
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -316,7 +336,7 @@ export function SettingsApp() {
     } catch (err) {
       logger.error('Failed to change autostart setting:', err);
       setError(
-        `Failed to ${checked ? 'enable' : 'disable'} autostart: ${err instanceof Error ? err.message : String(err)}`
+        `Failed to ${checked ? 'enable' : 'disable'} autostart: ${extractErrorMessage(err)}`
       );
     }
   };
@@ -342,7 +362,7 @@ export function SettingsApp() {
       await invoke<void>('set_global_hotkey', { newHotkey: hotkey });
       updateSettings('hotkeys', 'toggleWindow', hotkey);
     } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error);
+      const errorMsg = extractErrorMessage(error);
       setHotkeyError(errorMsg);
       logger.error('Failed to set global hotkey:', error);
     }
@@ -1398,6 +1418,19 @@ export function SettingsApp() {
             />
           </div>
 
+          <div className="flex items-center justify-between py-3 border-b border-hairline last:border-0">
+            <div className="flex flex-col gap-0.5">
+              <span className="text-sm text-body">Deep Search</span>
+              <span className="text-xs text-mute mt-0.5">
+                Search up to 10 levels deep inside indexed folders (vs 3 by default)
+              </span>
+            </div>
+            <Toggle
+              checked={settings.indexing.deepSearch}
+              onChange={(checked) => updateSettings('indexing', 'deepSearch', checked)}
+            />
+          </div>
+
           <div className="h-px bg-hairline my-5" />
 
           <h3 className="text-sm font-semibold text-ink mb-1.5">{t('fileSearch.foldersToIndex')}</h3>
@@ -1551,6 +1584,100 @@ export function SettingsApp() {
     );
   };
 
+  // Render Emoji & Symbols section
+  const renderEmojiSection = () => {
+    const skinTones: SkinTone[] = ['none', 'light', 'medium-light', 'medium', 'medium-dark', 'dark'];
+    const skinToneEmoji: Record<SkinTone, string> = {
+      none: '✋',
+      light: '✋🏻',
+      'medium-light': '✋🏼',
+      medium: '✋🏽',
+      'medium-dark': '✋🏾',
+      dark: '✋🏿',
+    };
+
+    return (
+      <div className="flex-1 flex flex-col overflow-hidden">
+        <div className="flex items-center justify-between h-14 px-6 border-b border-hairline shrink-0">
+          <h2 className="text-sm font-medium text-ink m-0">Emoji & Symbols</h2>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-6">
+          <div className="flex items-center justify-between py-3 border-b border-hairline">
+            <div className="flex flex-col gap-0.5">
+              <span className="text-sm text-body">Primary Action</span>
+              <span className="text-xs text-mute mt-0.5">What happens when you select an emoji</span>
+            </div>
+            <select
+              className="bg-surface-elevated border border-hairline rounded-md px-3 py-1.5 text-sm text-on-dark outline-none focus:border-hairline-strong cursor-pointer"
+              value={emojiPrimaryAction}
+              onChange={(e) => {
+                const action = e.target.value as 'copy' | 'paste';
+                setEmojiPrimaryActionState(action);
+                setEmojiPrimaryAction(action);
+              }}
+            >
+              <option value="copy">Copy to Clipboard</option>
+              <option value="paste">Paste to Active App</option>
+            </select>
+          </div>
+
+          <div className="flex items-center justify-between py-3 border-b border-hairline">
+            <div className="flex flex-col gap-0.5">
+              <span className="text-sm text-body">Grid Columns</span>
+              <span className="text-xs text-mute mt-0.5">Number of columns in the emoji grid ({emojiColumns})</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                type="range"
+                min={4}
+                max={12}
+                step={1}
+                value={emojiColumns}
+                className="w-28 accent-accent-blue"
+                onChange={(e) => {
+                  const n = parseInt(e.target.value, 10);
+                  setEmojiColumnsState(n);
+                  setEmojiColumns(n);
+                }}
+              />
+              <span className="text-sm text-mute w-4 text-right">{emojiColumns}</span>
+            </div>
+          </div>
+
+          <div className="py-3 border-b border-hairline">
+            <div className="flex flex-col gap-0.5 mb-4">
+              <span className="text-sm text-body">Skin Tone</span>
+              <span className="text-xs text-mute mt-0.5">Default skin tone for emojis that support it</span>
+            </div>
+            <div className="flex items-center gap-2 flex-wrap">
+              {skinTones.map((tone) => (
+                <button
+                  key={tone}
+                  title={getSkinToneDisplayName(tone)}
+                  className={`flex flex-col items-center gap-1 px-3 py-2 rounded-lg border-2 cursor-pointer transition-all ${
+                    emojiSkinTone === tone
+                      ? 'border-accent-blue bg-accent-blue/10'
+                      : 'border-hairline bg-surface-elevated/30 hover:bg-surface-elevated/60'
+                  }`}
+                  onClick={() => {
+                    setEmojiSkinToneState(tone);
+                    setPreferredSkinTone(tone);
+                  }}
+                >
+                  <span className="text-2xl leading-none">{skinToneEmoji[tone]}</span>
+                  <span className="text-[10px] text-mute whitespace-nowrap">
+                    {getSkinToneDisplayName(tone)}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   // Render Applications section
   const renderApplicationsSection = () => (
     <div className="flex-1 flex flex-col overflow-hidden">
@@ -1583,7 +1710,7 @@ export function SettingsApp() {
                   setScanResult({ count: apps.length, error: null });
                 } catch (err) {
                   logger.error('Failed to scan applications:', err);
-                  setScanResult({ count: 0, error: String(err) });
+                  setScanResult({ count: 0, error: extractErrorMessage(err) });
                 } finally {
                   setIsScanningApps(false);
                 }
@@ -1682,6 +1809,82 @@ export function SettingsApp() {
               void handleClipboardMonitoringToggle(checked);
             }}
           />
+        </div>
+
+        <div className="flex items-center justify-between py-3 border-b border-hairline last:border-0">
+          <div className="flex flex-col gap-0.5">
+            <span className="text-sm text-body">Keep History For</span>
+            <span className="text-xs text-mute mt-0.5">How long to retain clipboard entries</span>
+          </div>
+          <select
+            className="bg-surface-elevated border border-hairline rounded-md px-3 py-1.5 text-sm text-on-dark outline-none focus:border-hairline-strong cursor-pointer"
+            value={settings.plugins.clipboardRetentionDays}
+            onChange={(e) => {
+              const days = parseInt(e.target.value, 10);
+              updateSettings('plugins', 'clipboardRetentionDays', days);
+              void invoke<void>('set_clipboard_retention_days', { days }).catch((err) => {
+                logger.error('Failed to update clipboard retention:', err);
+              });
+            }}
+          >
+            <option value={7}>1 Week</option>
+            <option value={14}>2 Weeks</option>
+            <option value={30}>1 Month</option>
+            <option value={90}>3 Months</option>
+            <option value={0}>Forever</option>
+          </select>
+        </div>
+
+        <div className="py-3 border-b border-hairline last:border-0">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex flex-col gap-0.5">
+              <span className="text-sm text-body">Disabled Applications</span>
+              <span className="text-xs text-mute mt-0.5">
+                Clipboard changes from these apps will not be recorded
+              </span>
+            </div>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                const name = window.prompt('Enter executable name to exclude (e.g. 1password):');
+                if (name?.trim()) {
+                  const newList = [...settings.plugins.clipboardDisabledApps, name.trim().toLowerCase()];
+                  updateSettings('plugins', 'clipboardDisabledApps', newList);
+                  void invoke<void>('set_clipboard_disabled_apps', { apps: newList }).catch((err) => {
+                    logger.error('Failed to update clipboard disabled apps:', err);
+                  });
+                }
+              }}
+            >
+              + Add
+            </Button>
+          </div>
+          <div className="flex flex-col gap-1.5">
+            {settings.plugins.clipboardDisabledApps.length === 0 ? (
+              <p className="text-xs text-stone italic">No applications excluded</p>
+            ) : (
+              settings.plugins.clipboardDisabledApps.map((app, index) => (
+                <div
+                  key={index}
+                  className="flex items-center gap-2.5 px-3 py-2 bg-surface-elevated/30 rounded-md border border-hairline"
+                >
+                  <span className="flex-1 text-[13px] text-body font-mono">{app}</span>
+                  <button
+                    className="w-6 h-6 rounded-sm bg-transparent border-none text-ash text-lg cursor-pointer flex items-center justify-center transition-all hover:bg-accent-red/15 hover:text-accent-red"
+                    onClick={() => {
+                      const newList = settings.plugins.clipboardDisabledApps.filter((_, i) => i !== index);
+                      updateSettings('plugins', 'clipboardDisabledApps', newList);
+                      void invoke<void>('set_clipboard_disabled_apps', { apps: newList }).catch((err) => {
+                        logger.error('Failed to update clipboard disabled apps:', err);
+                      });
+                    }}
+                  >
+                    ×
+                  </button>
+                </div>
+              ))
+            )}
+          </div>
         </div>
 
         <div className="flex items-center justify-between py-3 border-b border-hairline last:border-0">
@@ -1876,6 +2079,12 @@ export function SettingsApp() {
         return renderClipboardSection();
       case 'shell':
         return renderShellSection();
+      case 'emoji':
+        return renderEmojiSection();
+      case 'ai':
+        return <AiSettingsView />;
+      case 'notes':
+        return <NotesSettingsPanel />;
       default:
         return renderGeneralSection();
     }

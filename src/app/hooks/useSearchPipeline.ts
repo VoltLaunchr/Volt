@@ -10,6 +10,7 @@ import {
   SEARCH_SENSITIVITY_FUZZY_MULTIPLIER,
 } from '../../shared/constants/searchScoring';
 import type { SearchSensitivity } from '../../features/settings/types/settings.types';
+import { extractErrorMessage } from '../../shared/utils/error';
 import { logger } from '../../shared/utils/logger';
 import { parseQuery } from '../../shared/utils/queryParser';
 import { detectUrl } from '../../shared/utils/urlDetector';
@@ -186,6 +187,9 @@ const convertPlugins = (
         searchResultType = SearchResultType.SystemMonitor;
         data = (result.data ?? result) as SearchResult['data'];
         break;
+      case PluginResultType.GridItem:
+        searchResultType = SearchResultType.GridItem;
+        break;
       default:
         searchResultType = SearchResultType.Plugin;
     }
@@ -204,6 +208,9 @@ const convertPlugins = (
       badge: result.badge,
       score: finalScore,
       data,
+      accessories: result.accessories,
+      section: result.section,
+      layout: result.layout,
     };
   });
 
@@ -319,8 +326,8 @@ export function useSearchPipeline({
 
         if (searchId === latestSearchId.current) {
           setResults(allAppResults);
+          setShowSnowEffect(false);
         }
-        setShowSnowEffect(false);
         return;
       }
 
@@ -393,7 +400,7 @@ export function useSearchPipeline({
               apps: allApps,
               onEvent: channel,
             }).catch((err) => {
-              logger.warn('Streaming search failed, results may be partial:', String(err));
+              logger.warn('Streaming search failed, results may be partial:', extractErrorMessage(err));
             })
           : Promise.resolve();
 
@@ -476,7 +483,7 @@ export function useSearchPipeline({
 
         setResults(allResults);
       } catch (err) {
-        const errorMessage = err instanceof Error ? err.message : String(err);
+        const errorMessage = extractErrorMessage(err);
         logger.error('Search failed:', errorMessage);
         setResults([]);
         setSearchError(`Search failed: ${errorMessage}`);

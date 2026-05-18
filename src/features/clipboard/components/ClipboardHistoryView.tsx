@@ -124,6 +124,18 @@ export function ClipboardHistoryView({ onClose }: ClipboardHistoryViewProps): Re
     }
   };
 
+  // Paste all visible text items in sequence
+  const handlePasteSequentially = async () => {
+    const textItems = filteredItems.filter((i) => i.contentType === 'text').map((i) => i.content);
+    if (textItems.length === 0) return;
+    try {
+      onClose();
+      await invoke<void>('paste_sequentially', { texts: textItems });
+    } catch (error) {
+      logger.error('Failed to paste sequentially:', error);
+    }
+  };
+
   // Handle delete action
   const handleDelete = async (item: ClipboardItem) => {
     try {
@@ -532,7 +544,7 @@ export function ClipboardHistoryView({ onClose }: ClipboardHistoryViewProps): Re
             </div>
 
             {/* Actions footer */}
-            <div className="flex gap-2 px-4 py-3 border-t border-hairline bg-canvas">
+            <div className="flex gap-2 px-4 py-3 border-t border-hairline bg-canvas flex-wrap">
               <button
                 className="flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium rounded-md border border-hairline bg-accent-blue text-on-dark cursor-pointer transition-all hover:opacity-90"
                 onClick={() => {
@@ -542,6 +554,17 @@ export function ClipboardHistoryView({ onClose }: ClipboardHistoryViewProps): Re
                 <span>{t('actions.paste')}</span>
                 <kbd className="px-1.5 py-0.5 text-xs font-mono bg-white/20 rounded-sm">↵</kbd>
               </button>
+              {filteredItems.filter((i) => i.contentType === 'text').length > 1 && (
+                <button
+                  className="flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium rounded-md border border-hairline bg-surface text-ink cursor-pointer transition-all hover:bg-surface-elevated hover:border-hairline-strong"
+                  onClick={() => {
+                    void handlePasteSequentially();
+                  }}
+                  title="Paste all text items in sequence"
+                >
+                  {t('actions.pasteSequentially', { defaultValue: 'Paste Sequentially' })}
+                </button>
+              )}
               <button
                 className="flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium rounded-md border border-hairline bg-surface text-ink cursor-pointer transition-all hover:bg-surface-elevated hover:border-hairline-strong"
                 onClick={() => {

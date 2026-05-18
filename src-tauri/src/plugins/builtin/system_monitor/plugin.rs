@@ -771,4 +771,26 @@ mod tests {
         assert!(cached.components.is_empty());
         assert_eq!(cached.network.received_bytes_per_sec, 0);
     }
+
+    /// Pin the contract: `cpu_usage()`, `memory_usage()`, `disk_usage()` are
+    /// pure cache reads (no sysinfo refresh, no sleep). They are safe to call
+    /// from a sync `#[tauri::command]` because they never hit the slow path.
+    /// Regression: if anyone moves a `refresh_cache()` or `refresh_cpu_dual_sample()`
+    /// call into these getters, the IPC thread will sleep ~200ms per call.
+    #[test]
+    fn cached_getters_complete_under_50ms() {
+        let plugin = SystemMonitorPlugin::new();
+        let start = std::time::Instant::now();
+        let _ = plugin.cpu_usage();
+        let _ = plugin.memory_usage();
+        let _ = plugin.disk_usage();
+        let _ = plugin.cached_last_updated();
+        let _ = plugin.cached_metrics();
+        let elapsed = start.elapsed();
+        assert!(
+            elapsed < std::time::Duration::from_millis(50),
+            "cached getters took {:?} — must remain pure reads (no refresh, no sleep)",
+            elapsed
+        );
+    }
 }

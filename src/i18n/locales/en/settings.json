@@ -15,7 +15,10 @@
     "account": "Account",
     "sync": "Sync",
     "builtIn": "BUILT-IN",
-    "shell": "Shell Commands"
+    "shell": "Shell Commands",
+    "emoji": "Emoji & Symbols",
+    "ai": "AI",
+    "notes": "Notes"
   },
   "general": {
     "title": "General",
@@ -268,6 +271,100 @@
   "errors": {
     "loadFailed": "Failed to load settings",
     "saveFailed": "Failed to save settings"
+  },
+  "notes": {
+    "title": "Notes",
+    "headline": "Markdown notes with full-text search",
+    "tagline": "Capture, search, and organize notes. Stored locally in SQLite with FTS5 search.",
+    "active": "{{count}} active",
+    "trashed": "{{count}} in trash",
+    "openWindow": "Open Notes",
+    "create": "Create Note",
+    "commandsTitle": "Commands",
+    "trashTitle": "Trash",
+    "trashDesc": "Deleted notes stay in trash and can be restored from the Notes window. Empty the trash to permanently remove them.",
+    "emptyTrash": "Empty Trash",
+    "emptyingTrash": "Emptying…",
+    "confirmEmpty": "Permanently delete {{count}} trashed note(s)?",
+    "removed": "Removed {{count}} note(s) from trash",
+    "emptyFailed": "Empty trash failed: {{error}}",
+    "cmd": {
+      "open": "Open Notes",
+      "openDesc": "Open the dedicated Notes window",
+      "create": "Create Note",
+      "createDesc": "Start a fresh note in the editor",
+      "search": "Search Notes",
+      "searchDesc": "Full-text search via the launcher (n <query>)"
+    }
+  },
+  "ai": {
+    "title": "AI",
+    "description": "Configure AI providers to use AI features in Volt and extensions. API keys are stored securely in the OS keyring and never leave your machine.",
+    "apiKeys": "API Keys",
+    "add": "Add",
+    "addKey": "Add key",
+    "loading": "Loading…",
+    "noKeys": "No API Keys",
+    "defaultModel": "Default model: {{model}}",
+    "connected": "Connected",
+    "replace": "Replace",
+    "notConfigured": "{{provider}} — not configured",
+    "infoBefore": "Extensions can use AI via",
+    "infoMiddle": ". If an extension doesn't configure its own key, it falls back to the global key above. Keys require the",
+    "infoAfter": "permission in the extension manifest.",
+    "modal": {
+      "title": "Add API Key",
+      "provider": "Provider",
+      "apiKey": "API Key",
+      "placeholder": "Paste your {{provider}} API key",
+      "manageInConsole": "Manage in {{provider}} Console",
+      "verified": "Key verified successfully",
+      "invalid": "Invalid key",
+      "verify": "Verify",
+      "cancel": "Cancel",
+      "save": "Save",
+      "saving": "Saving…"
+    },
+    "profile": {
+      "title": "Profile",
+      "description": "Context injected into all AI Chat conversations (not AI Commands)",
+      "loading": "Loading…",
+      "placeholder": "e.g. I'm a senior Rust dev. Prefer idiomatic code, no comments.",
+      "saved": "Saved",
+      "lastUpdated": "Last updated {{date}}",
+      "notSaved": "Not saved yet",
+      "save": "Save",
+      "saving": "Saving…"
+    },
+    "quickActions": {
+      "title": "Quick Actions",
+      "description": "Press a hotkey from any app → Volt runs AI on your clipboard",
+      "add": "Add",
+      "loading": "Loading…",
+      "empty": "No quick actions configured.",
+      "newAction": "New Quick Action",
+      "newPrompt": "Your custom system prompt here. The clipboard text will be sent as the user message.",
+      "bindHotkey": "+ Bind hotkey",
+      "removeHotkey": "Remove hotkey",
+      "clickToChange": "Click to change",
+      "cancel": "Cancel",
+      "failed": "Failed",
+      "on": "On",
+      "off": "Off",
+      "enable": "Enable",
+      "disable": "Disable",
+      "edit": "Edit prompt",
+      "delete": "Delete",
+      "modal": {
+        "title": "Edit Quick Action",
+        "label": "Label",
+        "systemPrompt": "System Prompt",
+        "placeholdersIntro": "Available placeholders (resolved at trigger time):",
+        "cancel": "Cancel",
+        "save": "Save",
+        "saving": "Saving…"
+      }
+    }
   },
   "sync": {
     "title": "Cloud Sync",

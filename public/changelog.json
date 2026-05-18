@@ -1,6 +1,73 @@
 {
   "versions": [
     {
+      "version": "0.2.0",
+      "date": "2026-05-18",
+      "title": "Notes, AI, and developer portal",
+      "description": "Volt v0.2.0 is the biggest release since the public launch. Three flagship features land at once: a full Tiptap-based Notes app with FTS5 search, AI chat with quick actions and a developer profile, and a developer portal that lets third-party authors submit extensions through voltlaunchr.com. Bundled with extensive security hardening of the extension sandbox and OAuth token isolation.",
+      "sections": [
+        {
+          "type": "features",
+          "title": "Features",
+          "icon": "sparkles",
+          "items": [
+            "Notes app: rich-text editor (Tiptap) with markdown, slash commands, task lists, code blocks, FTS5 search, soft-delete trash, and JSON import/export",
+            "AI chat: in-launcher conversation with OpenAI, Anthropic, and Groq; per-provider API keys stored in the OS keyring",
+            "AI quick actions: assign global hotkeys to one-shot prompts that operate on the clipboard or selection",
+            "AI profile: tailor responses with persistent context (role, tone, language) that ships with every prompt",
+            "Custom emojis: generate sticker-style emojis from a free-text prompt via Replicate (Volt Pro path stubbed for launch)",
+            "Developer portal: third-party authors can submit extensions through voltlaunchr.com with a draft → pending → approved workflow",
+            "Extension storage and OAuth APIs: extensions can persist preferences/secrets and request GitHub/Notion OAuth tokens via a fully Rust-side flow (the token never enters the renderer)",
+            "Per-core CPU view, network and temperature metrics, and process kill in the System Monitor"
+          ]
+        },
+        {
+          "type": "security",
+          "title": "Security",
+          "icon": "shield",
+          "items": [
+            "Extension sandbox hardening: eval, Function, WebSocket, XMLHttpRequest, and importScripts are all locked down inside the Worker",
+            "Prototype freeze (M1) and getter-only Worker global protection blocking known sandbox-escape patterns",
+            "OAuth token isolation (H2): tokens are stored and replayed entirely from Rust; the renderer only sees an opaque handle",
+            "Parsed Ipv4/Ipv6 SSRF check replaces the prior string-prefix scan, blocking redirect-based SSRF and numeric IPv4/IPv6-mapped hosts",
+            "Launch validation: LOLBIN denylist, NTFS normalisation, and executable-extension check applied to every launch path",
+            "Extension state tampering detection with HMAC-SHA256 signatures and UI alerts on mismatch (fail-closed: granted permissions reset to empty)"
+          ]
+        },
+        {
+          "type": "fixes",
+          "title": "Bug Fixes",
+          "icon": "shield",
+          "items": [
+            "Notes FTS5 sync triggers now skip the 'delete' command for already-trashed rows — restoring or emptying trash no longer corrupts the FTS5 index",
+            "Indexer: RAII IndexingGuard prevents is_indexing from staying stuck on abort",
+            "System monitor: blocking sysinfo calls moved to spawn_blocking — no more frozen UI on slow disks",
+            "Auth: stale legacy-implicit deep-link branch removed; refresh now verifies user_id consistency",
+            "Extension tarballs: parent directories are created before unpacking entries; HTTP redirects are followed",
+            "Worker sandbox: match() timeout raised to 8s so network extensions finish cleanly"
+          ]
+        },
+        {
+          "type": "performance",
+          "title": "Performance",
+          "icon": "zap",
+          "items": [
+            "History recording moved off the IPC thread (spawn_blocking)",
+            "Dead hooks/utilities removed (safeInvoke shim, console→logger sweep)"
+          ]
+        }
+      ],
+      "footer": {
+        "gettingStarted": "Press Ctrl+Space to open Volt anytime. Type `n` to browse notes, `ai` (or `?`) to chat, `create` to scaffold an extension.",
+        "feedback": "Have feedback or found a bug? Visit our GitHub repository to report issues or request features.",
+        "links": {
+          "github": "https://github.com/VoltLaunchr/Volt",
+          "releases": "https://github.com/VoltLaunchr/Volt/releases",
+          "docs": "https://voltlaunchr.com/docs"
+        }
+      }
+    },
+    {
       "version": "0.1.9",
       "date": "2026-05-08",
       "title": "Critical boot fix",

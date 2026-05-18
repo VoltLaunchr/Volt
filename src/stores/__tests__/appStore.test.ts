@@ -29,8 +29,8 @@ describe('appStore', () => {
         windowPosition: 'center',
       },
       hotkeys: { toggleWindow: 'Ctrl+Space', openSettings: 'Ctrl+,' },
-      indexing: { folders: [], excludedPaths: [], fileExtensions: [], indexOnStartup: true },
-      plugins: { enabledPlugins: [], clipboardMonitoring: true },
+      indexing: { folders: [], excludedPaths: [], fileExtensions: [], indexOnStartup: true, deepSearch: false },
+      plugins: { enabledPlugins: [], clipboardMonitoring: true, clipboardRetentionDays: 30, clipboardDisabledApps: [] },
       shortcuts: { appShortcuts: [] },
     };
     useAppStore.getState().setSettings(mockSettings);

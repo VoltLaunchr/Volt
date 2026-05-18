@@ -15,7 +15,10 @@
     "account": "Compte",
     "sync": "Synchronisation",
     "builtIn": "INTÉGRÉ",
-    "shell": "Commandes Shell"
+    "shell": "Commandes Shell",
+    "emoji": "Emoji & Symboles",
+    "ai": "IA",
+    "notes": "Notes"
   },
   "general": {
     "title": "Général",
@@ -268,6 +271,100 @@
   "errors": {
     "loadFailed": "Impossible de charger les paramètres",
     "saveFailed": "Impossible d'enregistrer les paramètres"
+  },
+  "notes": {
+    "title": "Notes",
+    "headline": "Notes Markdown avec recherche plein texte",
+    "tagline": "Capturez, recherchez et organisez vos notes. Stockées localement dans SQLite avec recherche FTS5.",
+    "active": "{{count}} active(s)",
+    "trashed": "{{count}} dans la corbeille",
+    "openWindow": "Ouvrir les Notes",
+    "create": "Créer une note",
+    "commandsTitle": "Commandes",
+    "trashTitle": "Corbeille",
+    "trashDesc": "Les notes supprimées restent dans la corbeille et peuvent être restaurées depuis la fenêtre Notes. Videz la corbeille pour les supprimer définitivement.",
+    "emptyTrash": "Vider la corbeille",
+    "emptyingTrash": "Vidage…",
+    "confirmEmpty": "Supprimer définitivement {{count}} note(s) de la corbeille ?",
+    "removed": "{{count}} note(s) supprimée(s) de la corbeille",
+    "emptyFailed": "Échec du vidage de la corbeille : {{error}}",
+    "cmd": {
+      "open": "Ouvrir les Notes",
+      "openDesc": "Ouvrir la fenêtre Notes dédiée",
+      "create": "Créer une note",
+      "createDesc": "Démarrer une nouvelle note dans l'éditeur",
+      "search": "Rechercher des notes",
+      "searchDesc": "Recherche plein texte via le lanceur (n <requête>)"
+    }
+  },
+  "ai": {
+    "title": "IA",
+    "description": "Configurez des fournisseurs d'IA pour utiliser les fonctionnalités IA dans Volt et les extensions. Les clés API sont stockées en toute sécurité dans le trousseau du système et ne quittent jamais votre machine.",
+    "apiKeys": "Clés API",
+    "add": "Ajouter",
+    "addKey": "Ajouter une clé",
+    "loading": "Chargement…",
+    "noKeys": "Aucune clé API",
+    "defaultModel": "Modèle par défaut : {{model}}",
+    "connected": "Connecté",
+    "replace": "Remplacer",
+    "notConfigured": "{{provider}} — non configuré",
+    "infoBefore": "Les extensions peuvent utiliser l'IA via",
+    "infoMiddle": ". Si une extension ne configure pas sa propre clé, elle se rabat sur la clé globale ci-dessus. Les clés nécessitent la permission",
+    "infoAfter": "dans le manifeste de l'extension.",
+    "modal": {
+      "title": "Ajouter une clé API",
+      "provider": "Fournisseur",
+      "apiKey": "Clé API",
+      "placeholder": "Collez votre clé API {{provider}}",
+      "manageInConsole": "Gérer dans la console {{provider}}",
+      "verified": "Clé vérifiée avec succès",
+      "invalid": "Clé invalide",
+      "verify": "Vérifier",
+      "cancel": "Annuler",
+      "save": "Enregistrer",
+      "saving": "Enregistrement…"
+    },
+    "profile": {
+      "title": "Profil",
+      "description": "Contexte injecté dans toutes les conversations AI Chat (pas dans les AI Commands)",
+      "loading": "Chargement…",
+      "placeholder": "ex. Je suis dev Rust senior. Préfère le code idiomatique, sans commentaires.",
+      "saved": "Enregistré",
+      "lastUpdated": "Dernière mise à jour {{date}}",
+      "notSaved": "Pas encore enregistré",
+      "save": "Enregistrer",
+      "saving": "Enregistrement…"
+    },
+    "quickActions": {
+      "title": "Actions rapides",
+      "description": "Appuyez sur un raccourci depuis n'importe quelle app → Volt lance l'IA sur votre presse-papiers",
+      "add": "Ajouter",
+      "loading": "Chargement…",
+      "empty": "Aucune action rapide configurée.",
+      "newAction": "Nouvelle action rapide",
+      "newPrompt": "Votre prompt système personnalisé ici. Le texte du presse-papiers sera envoyé comme message utilisateur.",
+      "bindHotkey": "+ Lier un raccourci",
+      "removeHotkey": "Retirer le raccourci",
+      "clickToChange": "Cliquer pour modifier",
+      "cancel": "Annuler",
+      "failed": "Échec",
+      "on": "Activé",
+      "off": "Désactivé",
+      "enable": "Activer",
+      "disable": "Désactiver",
+      "edit": "Modifier le prompt",
+      "delete": "Supprimer",
+      "modal": {
+        "title": "Modifier l'action rapide",
+        "label": "Libellé",
+        "systemPrompt": "Prompt système",
+        "placeholdersIntro": "Placeholders disponibles (résolus au moment du déclenchement) :",
+        "cancel": "Annuler",
+        "save": "Enregistrer",
+        "saving": "Enregistrement…"
+      }
+    }
   },
   "sync": {
     "title": "Synchronisation cloud",

@@ -1,5 +1,6 @@
 import { Plugin, PluginContext, PluginResult, PluginResultType } from '../../types';
 import { copyToClipboard } from '../../utils/helpers';
+import { logger } from '../../../../shared/utils/logger';
 import { detectQueryType, parseQuery } from './parsers/queryParser';
 import { evaluateMathExpression } from './converters/math';
 import { convertUnit } from './converters/units';
@@ -100,7 +101,7 @@ export class CalculatorPlugin implements Plugin {
     const success = await copyToClipboard(formatted);
 
     if (success) {
-      console.log(`✓ Copied to clipboard: ${formatted}`);
+      logger.info(`✓ Copied to clipboard: ${formatted}`);
 
       // Add to history
       const queryType = result.data?.queryType as 'math' | 'unit' | 'date' | 'timezone';

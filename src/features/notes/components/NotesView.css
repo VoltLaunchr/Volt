@@ -1,0 +1,81 @@
+/* NotesView — root layout shell for the dedicated Notes window. */
+
+.notes-view {
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--color-canvas, transparent);
+  color: var(--color-ink, inherit);
+  font-family: var(--font-sans), -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 13px;
+}
+
+.notes-view__titlebar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 14px;
+  background: var(--color-surface, transparent);
+  border-bottom: 1px solid var(--color-hairline, rgba(127, 127, 127, 0.18));
+  user-select: none;
+  cursor: grab;
+}
+.notes-view__titlebar:active {
+  cursor: grabbing;
+}
+
+.notes-view__title {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--color-ink, inherit);
+}
+
+.notes-view__body {
+  flex: 1 1 auto;
+  display: flex;
+  min-height: 0;
+}
+
+.notes-view__sidebar {
+  flex: 0 0 auto;
+  border-right: 1px solid var(--color-hairline, rgba(127, 127, 127, 0.18));
+  background: var(--color-surface, transparent);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.notes-view__pane {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.notes-view__empty {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 24px;
+}
+
+.notes-view__empty-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-body, #cbd5e1);
+}
+
+.notes-view__empty-hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--color-ash, #94a3b8);
+}

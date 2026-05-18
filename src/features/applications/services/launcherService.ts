@@ -4,22 +4,25 @@
  */
 
 import { invoke } from '@tauri-apps/api/core';
-import { logger } from '../../../shared/utils';
+import { extractErrorMessage, logger } from '../../../shared/utils';
 import type { LaunchRecord } from '../types/launcher.types';
 
-const errorMessage = (err: unknown): string => (err instanceof Error ? err.message : String(err));
+const errorMessage = extractErrorMessage;
 
 /**
  * Service for launching applications and managing history
  */
 export const launcherService = {
   /**
-   * Launch an application with history tracking
+   * Launch an application with history tracking.
    * @param path - Path to the application
+   * @param asAdmin - Run elevated (Windows ShellExecuteW "runas" verb).
+   *                 Falls back to a normal launch on platforms where elevation
+   *                 is not yet implemented.
    */
-  async launchApp(path: string): Promise<void> {
+  async launchApp(path: string, asAdmin = false): Promise<void> {
     try {
-      await invoke<void>('launch_app', { path });
+      await invoke<void>('launch_app', { path, asAdmin });
     } catch (error) {
       logger.error('Failed to launch app:', error);
       throw new Error(`Failed to launch application: ${errorMessage(error)}`);

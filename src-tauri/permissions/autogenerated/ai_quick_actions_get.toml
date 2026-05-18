@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-ai-quick-actions-get"
+description = "Enables the ai_quick_actions_get command without any pre-configured scope."
+commands.allow = ["ai_quick_actions_get"]
+
+[[permission]]
+identifier = "deny-ai-quick-actions-get"
+description = "Denies the ai_quick_actions_get command without any pre-configured scope."
+commands.deny = ["ai_quick_actions_get"]

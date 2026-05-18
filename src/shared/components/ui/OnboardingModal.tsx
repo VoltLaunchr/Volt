@@ -75,20 +75,25 @@ interface OnboardingModalProps {
   onComplete: () => void;
 }
 
+type CardLayout = 'appLauncher' | 'topCenter' | 'rightIcon' | 'leftIcon';
+
 interface Screen2Card {
   id: string;
   label: string;
   image: string;
-  icon?: string; // path to app SVG icon
+  icon?: string;
+  layout: CardLayout;
+  imageOpacity: number;
+  cardRadius?: number;
 }
 
 const SCREEN2_CARDS: Screen2Card[] = [
-  { id: 'appLauncher', label: 'App Launcher',  image: '/onboarding/ecran-2/card-1.png' },
-  { id: 'fileSearch',  label: 'Search File',   image: '/onboarding/ecran-2/card-2.png', icon: '/icons/app/file_search_icon.svg' },
-  { id: 'calculator',  label: 'Calculator',    image: '/onboarding/ecran-2/card-3.png', icon: '/icons/app/calculator_icon.svg' },
-  { id: 'emojis',      label: 'Search emojis', image: '/onboarding/ecran-2/card-4.png', icon: '/icons/app/emojis_icon.svg' },
-  { id: 'clipboard',   label: 'File History',  image: '/onboarding/ecran-2/card-5.png', icon: '/icons/app/clipboard_history_icon.svg' },
-  { id: 'games',       label: 'Launch Game',   image: '/onboarding/ecran-2/card-6.png', icon: '/icons/app/games_icon.svg' },
+  { id: 'appLauncher', label: 'App Launcher',  image: '/onboarding/ecran-2/card-1.png',                                               layout: 'appLauncher', imageOpacity: 0.65 },
+  { id: 'fileSearch',  label: 'Search File',   image: '/onboarding/ecran-2/card-2.png', icon: '/icons/app/file_search_icon.svg',       layout: 'topCenter',   imageOpacity: 0.5  },
+  { id: 'calculator',  label: 'Calculator',    image: '/onboarding/ecran-2/card-3.png', icon: '/icons/app/calculator_icon.svg',        layout: 'topCenter',   imageOpacity: 0.5,  cardRadius: 12 },
+  { id: 'emojis',      label: 'Search emojis', image: '/onboarding/ecran-2/card-4.png', icon: '/icons/app/emojis_icon.svg',            layout: 'rightIcon',   imageOpacity: 0.6  },
+  { id: 'clipboard',   label: 'File History',  image: '/onboarding/ecran-2/card-5.png', icon: '/icons/app/clipboard_history_icon.svg', layout: 'rightIcon',   imageOpacity: 0.48 },
+  { id: 'games',       label: 'Launch Game',   image: '/onboarding/ecran-2/card-6.png', icon: '/icons/app/games_icon.svg',             layout: 'leftIcon',    imageOpacity: 0.46 },
 ];
 
 interface ExtensionItem {
@@ -271,13 +276,13 @@ export function OnboardingModal({ isOpen, onComplete }: OnboardingModalProps) {
               src="/onboarding/ecran-2/lueur.svg"
               className="absolute"
               style={{
-                top: -100,
-                left: -200,
-                width: 1400,
-                height: 1000,
+                top: -219,
+                left: -145,
+                width: 1079,
+                height: 871,
                 pointerEvents: 'none',
                 opacity: 0.9,
-                transform: 'scaleY(-1)',
+                transform: 'rotate(-93.74deg)',
                 transformOrigin: 'center',
               }}
               aria-hidden="true"
@@ -551,17 +556,16 @@ function SlideFeatures() {
       <div className="w-[420px] shrink-0 flex flex-col justify-center py-0 pl-12 pr-8 gap-5">
         {/* Eyebrow */}
         <div
-          className="ob-pill inline-flex items-center gap-1.5 px-3 py-[5px] rounded-full w-fit"
+          className="ob-pill inline-flex items-center gap-[4px] px-[10px] py-[2px] rounded-[10px] h-[22px] w-fit"
           style={{
-            background: 'rgba(133,133,224,0.15)',
-            border: '1px solid rgba(133,133,224,0.3)',
+            background: 'rgba(164,133,255,0.7)',
             animation: 'onboarding-pill-pop 0.4s cubic-bezier(0.4,0,0.2,1) both 0.05s',
           }}
         >
-          <CheckCircle2 size={12} strokeWidth={2.4} style={{ color: ACCENT }} />
+          <CheckCircle2 size={12} strokeWidth={2.4} style={{ color: '#e6f0ff' }} />
           <span
-            className="text-[11px] font-semibold tracking-[0.02em]"
-            style={{ color: ACCENT }}
+            className="text-[12px] font-medium"
+            style={{ color: '#e6f0ff' }}
           >
             {t('features.eyebrow')}
           </span>
@@ -570,8 +574,8 @@ function SlideFeatures() {
         <h2
           className="ob-fade font-extrabold leading-[1.05] m-0"
           style={{
-            fontSize: 64,
-            letterSpacing: '-0.035em',
+            fontSize: 50,
+            letterSpacing: '-0.03em',
             color: 'rgba(255,255,255,0.97)',
             animation: 'onboarding-fade-in 0.5s cubic-bezier(0.4,0,0.2,1) both 0.15s',
           }}
@@ -580,9 +584,10 @@ function SlideFeatures() {
         </h2>
 
         <p
-          className="ob-fade text-[14px] leading-[1.65] m-0"
+          className="ob-fade leading-[1.65] m-0"
           style={{
-            color: 'rgba(255,255,255,0.6)',
+            fontSize: 16,
+            color: '#bebebe',
             maxWidth: 340,
             animation: 'onboarding-fade-in 0.5s cubic-bezier(0.4,0,0.2,1) both 0.22s',
           }}
@@ -605,69 +610,180 @@ function SlideFeatures() {
 }
 
 function FeatureCard({ card, idx }: { card: Screen2Card; idx: number }) {
+  const radius = card.cardRadius ?? 7;
+
   return (
     <div
-      className="ob-card relative rounded-xl overflow-hidden opacity-0 flex flex-col"
+      className="ob-card relative overflow-hidden"
       style={{
-        background: '#0c0c18',
+        background: 'rgba(174,174,174,0.05)',
         border: '1px solid rgba(255,255,255,0.09)',
-        animation: 'onboarding-card-in 0.45s cubic-bezier(0.4,0,0.2,1) forwards',
-        animationDelay: `${0.04 + idx * 0.055}s`,
+        borderRadius: radius,
+        animation: `onboarding-card-in 0.45s cubic-bezier(0.4,0,0.2,1) both ${0.04 + idx * 0.055}s`,
       }}
     >
-      {/* Screenshot fills the card */}
-      <img
-        src={card.image}
-        alt=""
-        className="absolute inset-0 w-full h-full object-cover object-top"
-        style={{ opacity: 0.65 }}
-        draggable={false}
-      />
-
-      {/* Radial dark vignette so icon/text stand out */}
-      <div
-        className="absolute inset-0"
-        style={{
-          background:
-            'radial-gradient(ellipse 70% 70% at 55% 45%, rgba(0,0,0,0.45) 0%, transparent 80%)',
-        }}
-      />
-
-      {/* Content overlay */}
-      <div className="relative z-10 flex flex-col items-center justify-center h-full gap-2 py-3 px-3">
-        {card.icon ? (
-          <>
-            <img
-              src={card.icon}
-              alt=""
-              width={58}
-              height={58}
-              draggable={false}
-              style={{
-                borderRadius: 14,
-                filter: 'drop-shadow(0 6px 16px rgba(0,0,0,0.55))',
-                flexShrink: 0,
-              }}
-            />
-            <span
-              className="text-[13px] font-semibold text-center leading-tight"
-              style={{ color: 'rgba(255,255,255,0.92)', textShadow: '0 1px 6px rgba(0,0,0,0.7)' }}
-            >
-              {card.label}
-            </span>
-          </>
-        ) : (
-          /* App Launcher — no icon, label at top-left */
+      {card.layout === 'appLauncher' && (
+        <>
+          <img
+            src={card.image}
+            alt=""
+            className="absolute inset-0 w-full h-full object-cover object-top"
+            style={{ opacity: card.imageOpacity }}
+            draggable={false}
+          />
           <div className="absolute top-0 left-0 p-3">
             <span
-              className="text-[13px] font-bold"
-              style={{ color: 'rgba(255,255,255,0.95)', textShadow: '0 1px 6px rgba(0,0,0,0.7)' }}
+              className="text-[16px] font-semibold"
+              style={{ color: '#fff', textShadow: '0 1px 6px rgba(0,0,0,0.7)' }}
             >
               {card.label}
             </span>
           </div>
-        )}
-      </div>
+        </>
+      )}
+
+      {card.layout === 'topCenter' && (
+        <>
+          {/* Interface screenshot — lower portion only (starts at ~65px, leaving room for icon+label) */}
+          <img
+            src={card.image}
+            alt=""
+            className="absolute object-cover object-top"
+            style={{
+              opacity: card.imageOpacity,
+              filter: 'blur(0.5px)',
+              left: 10,
+              top: 65,
+              width: 'calc(100% - 20px)',
+              height: 'calc(100% - 55px)',
+              borderRadius: 4,
+            }}
+            draggable={false}
+          />
+          {/* Icon + label — clean top area */}
+          <div className="absolute top-0 left-0 right-0 flex flex-col items-center pt-3.5 gap-[7px]">
+            {card.icon && (
+              <img
+                src={card.icon}
+                alt=""
+                width={50}
+                height={50}
+                draggable={false}
+                style={{
+                  borderRadius: 12,
+                  filter: 'drop-shadow(0 6px 16px rgba(0,0,0,0.6))',
+                }}
+              />
+            )}
+            <span
+              className="text-[15px] font-semibold text-white text-center"
+              style={{ textShadow: '0 1px 6px rgba(0,0,0,0.7)' }}
+            >
+              {card.label}
+            </span>
+          </div>
+        </>
+      )}
+
+      {card.layout === 'rightIcon' && (
+        <>
+          {/* Interface screenshot — left portion, blurred */}
+          <img
+            src={card.image}
+            alt=""
+            className="absolute object-cover"
+            style={{
+              opacity: card.imageOpacity,
+              left: -3,
+              top: 12,
+              width: '62%',
+              height: '90%',
+              objectPosition: 'left top',
+              filter: 'blur(2px)',
+            }}
+            draggable={false}
+          />
+          {/* Icon — top-right */}
+          {card.icon && (
+            <img
+              src={card.icon}
+              alt=""
+              width={50}
+              height={50}
+              draggable={false}
+              className="absolute"
+              style={{
+                right: 22,
+                top: 12,
+                borderRadius: 12,
+                filter: 'drop-shadow(0 6px 16px rgba(0,0,0,0.6))',
+              }}
+            />
+          )}
+          {/* Label — below icon, right side */}
+          <span
+            className="absolute text-[15px] font-semibold text-white text-center"
+            style={{
+              right: 0,
+              width: '40%',
+              top: 70,
+              textShadow: '0 1px 6px rgba(0,0,0,0.7)',
+            }}
+          >
+            {card.label}
+          </span>
+        </>
+      )}
+
+      {card.layout === 'leftIcon' && (
+        <>
+          {/* Interface screenshot — right portion, blurred */}
+          <img
+            src={card.image}
+            alt=""
+            className="absolute object-cover"
+            style={{
+              opacity: card.imageOpacity,
+              right: 0,
+              top: 28,
+              width: '65%',
+              height: '80%',
+              objectPosition: 'top',
+              filter: 'blur(2px)',
+            }}
+            draggable={false}
+          />
+          {/* Icon — top-left */}
+          {card.icon && (
+            <img
+              src={card.icon}
+              alt=""
+              width={50}
+              height={50}
+              draggable={false}
+              className="absolute"
+              style={{
+                left: 39,
+                top: 15,
+                borderRadius: 12,
+                filter: 'drop-shadow(0 6px 16px rgba(0,0,0,0.6))',
+              }}
+            />
+          )}
+          {/* Label — below icon, left side */}
+          <span
+            className="absolute text-[15px] font-semibold text-white text-center"
+            style={{
+              left: 0,
+              width: '40%',
+              top: 69,
+              textShadow: '0 1px 6px rgba(0,0,0,0.7)',
+            }}
+          >
+            {card.label}
+          </span>
+        </>
+      )}
     </div>
   );
 }

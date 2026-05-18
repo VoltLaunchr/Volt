@@ -190,13 +190,34 @@ fn main() {
         "acknowledge_extension_tamper_alert",
         "fetch_extension_downloads",
         "increment_extension_download",
+        // Extension storage API (per-extension key/value, gated by permission)
+        "ext_storage_get",
+        "ext_storage_set",
+        "ext_storage_remove",
+        "ext_storage_clear",
+        // Extension preferences API
+        "get_extension_preference",
+        "set_extension_preference",
+        "get_extension_secret",
+        "set_extension_secret",
+        "delete_extension_secret",
+        // Extension OAuth API
+        "ext_oauth_start",
+        "ext_oauth_get_token",
+        "ext_oauth_revoke_token",
+        // Extension System API
+        "ext_get_applications",
+        "ext_show_in_folder",
+        "ext_move_to_trash",
         // Dev extensions commands
+        "scaffold_extension",
         "get_dev_extensions",
         "link_dev_extension",
         "unlink_dev_extension",
         "toggle_dev_extension",
         "get_dev_extensions_path",
         "refresh_dev_extension",
+        "get_dev_reload_signal",
         // Credentials commands (load_credential intentionally omitted —
         // bare tokens must never cross the renderer boundary; M2)
         "save_credential",
@@ -204,6 +225,7 @@ fn main() {
         "delete_credential",
         "get_credential_info",
         "test_credential",
+        "extension_authenticated_fetch",
         // Auth commands (Supabase)
         "auth_login",
         "auth_get_session",
@@ -236,6 +258,24 @@ fn main() {
         "expand_snippet",
         "import_snippets",
         "export_snippets",
+        // Notes commands
+        "get_notes",
+        "get_note",
+        "get_trash",
+        "create_note",
+        "update_note",
+        "delete_note",
+        "restore_note",
+        "empty_trash",
+        "search_notes",
+        "export_notes",
+        "import_notes",
+        // Embeddings commands (local AI)
+        "embeddings_is_ready",
+        "embeddings_prepare",
+        "embeddings_test",
+        // Notes window
+        "open_notes_window",
         // Shell command execution
         "execute_shell_command",
         "execute_shell_command_streaming",
@@ -251,6 +291,30 @@ fn main() {
         "search_streaming",
         // Window management commands
         "snap_window",
+        // Extension AI / OAuth / System APIs (callable from main + extensions worker)
+        "ext_ai_ask_stream",
+        // Global AI key management
+        "ai_set_global_key",
+        "ai_delete_global_key",
+        "ai_get_providers_status",
+        "ai_verify_key",
+        // Built-in AI Chat
+        "ai_ask_builtin_stream",
+        // AI Profile
+        "ai_profile_get",
+        "ai_profile_set",
+        // AI Quick Actions
+        "ai_quick_actions_get",
+        "ai_quick_actions_save",
+        "ai_quick_actions_apply_all",
+        "ai_quick_actions_read_clipboard",
+        // Custom Emojis (SDXL Emoji via Replicate)
+        "custom_emojis_generate",
+        "custom_emojis_list",
+        "custom_emojis_delete",
+        "custom_emojis_has_token",
+        "custom_emojis_copy_image",
+        "ai_pro_features_enabled",
     ];
 
     tauri_build::try_build(

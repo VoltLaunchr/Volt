@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-scaffold-extension"
+description = "Enables the scaffold_extension command without any pre-configured scope."
+commands.allow = ["scaffold_extension"]
+
+[[permission]]
+identifier = "deny-scaffold-extension"
+description = "Denies the scaffold_extension command without any pre-configured scope."
+commands.deny = ["scaffold_extension"]

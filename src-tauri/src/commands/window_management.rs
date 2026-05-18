@@ -3,6 +3,9 @@
 //! These commands manipulate the PREVIOUSLY focused window (not Volt's own window).
 //! The frontend hides Volt first, then calls these commands so that
 //! `GetForegroundWindow()` returns the user's target window.
+//!
+//! The `open_notes_window` command is the lone exception: it acts on Volt's
+//! own webview windows (creating or focusing the dedicated Notes window).
 
 #[cfg(target_os = "windows")]
 mod windows_impl {
@@ -145,4 +148,65 @@ pub async fn snap_window(position: String) -> Result<(), String> {
         let _ = position;
         Err("Window management is currently only supported on Windows".to_string())
     }
+}
+
+/// Opens (or focuses) the dedicated Volt Notes window.
+///
+/// If the window already exists, it is unhidden + focused and (if `note_id`
+/// is provided) a `volt:notes:open-note` event is emitted so the running
+/// React tree can navigate to that note.
+///
+/// If the window does not exist yet, it is created from the static config
+/// defined in `tauri.conf.json` (label `"notes"`) via Tauri's webview window
+/// builder. The static config lives in `tauri.conf.json` so the geometry +
+/// chrome stay declaratively versioned in one place.
+///
+/// Per AGENTS.md, all command results are `Result<T, String>`. We bubble
+/// every Tauri error up via `map_err(|e| e.to_string())` instead of letting
+/// it `?` directly (which would otherwise propagate as `tauri::Error`).
+#[tauri::command]
+pub async fn open_notes_window(
+    app: tauri::AppHandle,
+    note_id: Option<String>,
+) -> Result<(), String> {
+    use tauri::{Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
+
+    const LABEL: &str = "notes";
+
+    if let Some(existing) = app.get_webview_window(LABEL) {
+        existing.show().map_err(|e| e.to_string())?;
+        existing.set_focus().map_err(|e| e.to_string())?;
+        if let Some(id) = note_id {
+            existing
+                .emit("volt:notes:open-note", id)
+                .map_err(|e| e.to_string())?;
+        }
+        return Ok(());
+    }
+
+    let builder = WebviewWindowBuilder::new(&app, LABEL, WebviewUrl::App("index.html".into()))
+        .title("Volt Notes")
+        .inner_size(1000.0, 680.0)
+        .min_inner_size(700.0, 480.0)
+        .resizable(true)
+        .decorations(false)
+        .transparent(true)
+        .always_on_top(false)
+        .skip_taskbar(false)
+        .visible(true)
+        .focused(true)
+        .center();
+
+    let window = builder.build().map_err(|e| e.to_string())?;
+
+    if let Some(id) = note_id {
+        // Defer the emit until the webview has had a tick to mount listeners.
+        // Tauri delivers events even if no listener is attached yet (they queue
+        // until the first `listen()` call), so a direct emit is safe.
+        window
+            .emit("volt:notes:open-note", id)
+            .map_err(|e| e.to_string())?;
+    }
+
+    Ok(())
 }

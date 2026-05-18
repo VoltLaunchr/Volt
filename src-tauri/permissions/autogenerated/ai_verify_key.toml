@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-ai-verify-key"
+description = "Enables the ai_verify_key command without any pre-configured scope."
+commands.allow = ["ai_verify_key"]
+
+[[permission]]
+identifier = "deny-ai-verify-key"
+description = "Denies the ai_verify_key command without any pre-configured scope."
+commands.deny = ["ai_verify_key"]

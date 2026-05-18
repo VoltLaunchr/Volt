@@ -5,3 +5,6 @@
 - [Shell v2 Re-audit](audit_shell_v2.md) -- Streaming-path 50KB gap, PS wipe bypass, working_dir uncanonicalized, 2026-05-03
 - [dev-branch second-pass audit](audit_dev_branch_v2.md) -- May-03 hardening verified landed; new PS-heredoc RCE in windows_search; sync.rs authz/data issues; multi-window token-theft surface
 - [Release-readiness audit v0.1.2](audit_release_readiness_2026-05-03.md) -- devtools-on-by-default in release; single shared capability across 4 windows; load_credential renderer exposure; sync re-validation still missing
+- [dev-branch deep audit 2026-05-07](audit_dev_branch_2026_05_07.md) -- HIGH: auth_get_session leaks both tokens to renderer; MEDIUM: C4-pattern fail-open in read_source_files_recursive; MEDIUM: import_settings file-read primitive
+- [Post-v0.1.7 validation 2026-05-09](audit_post_v0_1_7_2026_05_09.md) -- A1-A6, C1/H1/M1/M3/M5, P1/P3/P4/P9 verified; new HIGH: open_quicklink LOLBIN bypass
+- [Extension sandbox audit 2026-05-14](audit_extension_sandbox_2026_05_14.md) -- C2 saveCredential perm bypass, C3 extension_authenticated_fetch caller-trust, H2 OAuth token in event payload

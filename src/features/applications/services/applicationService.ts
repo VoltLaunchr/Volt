@@ -5,6 +5,7 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import type { AppCategory, AppInfo } from '../../../shared/types/common.types';
+import { extractErrorMessage } from '../../../shared/utils/error';
 import { logger } from '../../../shared/utils/logger';
 import type { AppLaunchResult, AppSearchOptions } from '../types';
 
@@ -23,7 +24,7 @@ export const applicationService = {
       return apps;
     } catch (error) {
       logger.error('Failed to scan applications:', error);
-      const msg = error instanceof Error ? error.message : String(error);
+      const msg = extractErrorMessage(error);
       throw new Error(`Failed to scan applications: ${msg}`);
     }
   },
@@ -60,28 +61,34 @@ export const applicationService = {
       return results;
     } catch (error) {
       logger.error('Failed to search applications:', error);
-      const msg = error instanceof Error ? error.message : String(error);
+      const msg = extractErrorMessage(error);
       throw new Error(`Failed to search applications: ${msg}`);
     }
   },
 
   /**
-   * Launch an application by its path
+   * Launch an application by its path.
+   *
+   * Routes through the canonical `launch_application` Tauri command which
+   * records the launch in history (frecency stays accurate) and supports
+   * elevated launches via `asAdmin`.
+   *
    * @param path - Path to the application executable
+   * @param asAdmin - Run elevated (Shift+Enter on Windows). Default false.
    * @returns Promise resolving to launch result
    */
-  async launchApplication(path: string): Promise<AppLaunchResult> {
+  async launchApplication(path: string, asAdmin = false): Promise<AppLaunchResult> {
     const launchedAt = Date.now();
 
     try {
-      await invoke<void>('launch_application', { path });
+      await invoke<void>('launch_application', { path, asAdmin });
       return {
         success: true,
         path,
         launchedAt,
       };
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorMessage = extractErrorMessage(error);
       logger.error('Failed to launch application:', errorMessage);
       return {
         success: false,

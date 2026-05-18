@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="40%" r="60%">
+      <stop offset="0%" stop-color="#a855f7"/>
+      <stop offset="100%" stop-color="#6d28d9"/>
+    </radialGradient>
+  </defs>
+  <rect width="512" height="512" rx="120" fill="url(#bg)"/>
+  <!-- Sparkle / AI star shape -->
+  <g fill="white" fill-opacity="0.95">
+    <!-- Central large star -->
+    <path d="M256 110 L272 230 L392 256 L272 282 L256 402 L240 282 L120 256 L240 230 Z"/>
+    <!-- Top-right small star -->
+    <path d="M370 140 L376 176 L412 182 L376 188 L370 224 L364 188 L328 182 L364 176 Z" fill-opacity="0.7"/>
+    <!-- Bottom-left small star -->
+    <path d="M142 300 L146 322 L168 326 L146 330 L142 352 L138 330 L116 326 L138 322 Z" fill-opacity="0.5"/>
+  </g>
+</svg>

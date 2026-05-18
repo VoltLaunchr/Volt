@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-custom-emojis-generate"
+description = "Enables the custom_emojis_generate command without any pre-configured scope."
+commands.allow = ["custom_emojis_generate"]
+
+[[permission]]
+identifier = "deny-custom-emojis-generate"
+description = "Denies the custom_emojis_generate command without any pre-configured scope."
+commands.deny = ["custom_emojis_generate"]

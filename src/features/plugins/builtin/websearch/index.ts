@@ -1,6 +1,7 @@
 
 import { Plugin, PluginContext, PluginResult, PluginResultType } from '../../types';
 import { openUrl } from '../../utils/helpers';
+import { logger } from '../../../../shared/utils/logger';
 
 export class WebSearchPlugin implements Plugin {
   id = 'websearch';
@@ -85,7 +86,7 @@ export class WebSearchPlugin implements Plugin {
 
     if (url) {
       await openUrl(url);
-      console.log(`✓ Opened web search: ${url}`);
+      logger.info(`✓ Opened web search: ${url}`);
     }
   }
 

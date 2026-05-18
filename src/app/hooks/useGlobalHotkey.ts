@@ -260,8 +260,13 @@ export function useGlobalHotkey({
             selectedResult.type === SearchResultType.File
               ? (selectedResult.data as FileInfo).path
               : (selectedResult.data as AppInfo).path;
-          invoke<void>('launch_application', { path, asAdmin: true })
-            .then(() => {
+          applicationService
+            .launchApplication(path, true)
+            .then((result) => {
+              if (!result.success) {
+                logger.error('launch_application failed:', result.error);
+                return;
+              }
               if (closeOnLaunch) {
                 void hideWindow();
               }

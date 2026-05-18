@@ -11,6 +11,7 @@ use tauri::State;
 use uuid::Uuid;
 
 use crate::core::error::{VoltError, VoltResult};
+use crate::utils::launch_validation::validate_launch_path;
 
 /// Characters that allow shell command chaining / redirection / substitution.
 /// Rejected in command-type quicklinks to prevent shell injection even though
@@ -293,6 +294,11 @@ pub async fn open_quicklink(_app: tauri::AppHandle, quicklink: Quicklink) -> Vol
                 .ok_or_else(|| VoltError::Launch("Command quicklink target is empty".into()))?;
             let args: Vec<&str> = tokens.collect();
 
+            // LOLBIN denylist + Windows extension/UWP validation. Without this,
+            // `validate_command_target` accepts any absolute existing file —
+            // including cmd.exe, powershell.exe, regsvr32.exe, etc.
+            validate_launch_path(program).map_err(VoltError::Launch)?;
+
             std::process::Command::new(program)
                 .args(&args)
                 .spawn()
@@ -307,4 +313,33 @@ pub async fn open_quicklink(_app: tauri::AppHandle, quicklink: Quicklink) -> Vol
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Regression test for the LOLBIN-via-quicklink bypass.
+    ///
+    /// `validate_command_target` only checks "absolute path + exists + is_file +
+    /// no shell metas". On Windows that accepts cmd.exe, powershell.exe, etc.
+    /// It must be paired with `validate_launch_path` which carries the LOLBIN
+    /// denylist. This test pins the contract: target validation alone is not
+    /// enough; launch-path validation is required to refuse LOLBINs.
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn lolbin_blocked_by_validate_launch_path() {
+        for prog in [
+            r"C:\Windows\System32\cmd.exe",
+            r"C:\Windows\System32\powershell.exe",
+            r"C:\Windows\System32\regsvr32.exe",
+            r"C:\Windows\System32\mshta.exe",
+        ] {
+            assert!(
+                validate_launch_path(prog).is_err(),
+                "validate_launch_path must reject LOLBIN: {}",
+                prog
+            );
+        }
+    }
 }

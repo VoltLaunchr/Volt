@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-ai-profile-set"
+description = "Enables the ai_profile_set command without any pre-configured scope."
+commands.allow = ["ai_profile_set"]
+
+[[permission]]
+identifier = "deny-ai-profile-set"
+description = "Denies the ai_profile_set command without any pre-configured scope."
+commands.deny = ["ai_profile_set"]

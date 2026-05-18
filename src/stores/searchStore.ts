@@ -17,6 +17,7 @@ interface SearchActions {
   setSearchError: (error: string | null) => void;
   setShowSnowEffect: (show: boolean) => void;
   clearSearch: () => void;
+  updateResultMetadata: (pluginId: string, opts: { title?: string; subtitle?: string }) => void;
 }
 
 export const useSearchStore = create<SearchState & SearchActions>()((set) => ({
@@ -46,4 +47,16 @@ export const useSearchStore = create<SearchState & SearchActions>()((set) => ({
   setShowSnowEffect: (show) => set({ showSnowEffect: show }),
   clearSearch: () =>
     set({ searchQuery: '', results: [], selectedIndex: 0, showSnowEffect: false }),
+  updateResultMetadata: (pluginId, opts) =>
+    set((state) => ({
+      results: state.results.map((r) => {
+        const data = r.data as { pluginId?: string };
+        if (data.pluginId !== pluginId) return r;
+        return {
+          ...r,
+          ...(opts.title !== undefined && { title: opts.title }),
+          ...(opts.subtitle !== undefined && { subtitle: opts.subtitle }),
+        };
+      }),
+    })),
 }));

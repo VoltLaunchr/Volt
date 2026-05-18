@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-ext-storage-set"
+description = "Enables the ext_storage_set command without any pre-configured scope."
+commands.allow = ["ext_storage_set"]
+
+[[permission]]
+identifier = "deny-ext-storage-set"
+description = "Denies the ext_storage_set command without any pre-configured scope."
+commands.deny = ["ext_storage_set"]

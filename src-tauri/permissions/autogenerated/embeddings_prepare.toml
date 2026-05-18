@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-embeddings-prepare"
+description = "Enables the embeddings_prepare command without any pre-configured scope."
+commands.allow = ["embeddings_prepare"]
+
+[[permission]]
+identifier = "deny-embeddings-prepare"
+description = "Denies the embeddings_prepare command without any pre-configured scope."
+commands.deny = ["embeddings_prepare"]

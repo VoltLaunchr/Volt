@@ -18,7 +18,8 @@
       "activity": "Activity",
       "objects": "Objects",
       "symbols": "Symbols",
-      "flags": "Flags"
+      "flags": "Flags",
+      "custom": "Custom (AI)"
     }
   }
 }

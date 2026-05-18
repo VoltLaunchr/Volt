@@ -41,8 +41,11 @@ Ce fichier complète `.github/copilot-instructions.md` avec des règles plus dé
 
 ## Extensions (externe, distinct des plugins)
 
-- Les extensions sont séparées des plugins built-in. Plugins built-in = dans ce repo (`src/features/plugins/builtin/`). Extensions = repo externe.
-- Repo externe: [VoltLaunchr/volt-extensions](https://github.com/VoltLaunchr/volt-extensions)
+- Les extensions sont séparées des plugins built-in. Plugins built-in = dans ce repo (`src/features/plugins/builtin/`). Extensions = chargées dynamiquement.
+- **Deux sources de registry** fusionnées dans `/api/extensions` sur voltlaunchr.com :
+  1. **GitHub legacy** — `VoltLaunchr/volt-extensions/registry.json` : extensions existantes (github, notion, password-generator). Ne pas modifier sans raison.
+  2. **Supabase** — table `developer_extensions` (status = `approved`) : nouvelles extensions soumises via le portail developer.
+- **Portail developer** (voltlaunchr.com/developer) : workflow complet draft → pending → approved/rejected. API keys (`sk_live_*`) SHA-256 hashées en DB (`api_keys.developer_id`, `.key_prefix`, `.scopes`, `.is_active`).
 - Système d'extensions frontend: `src/features/extensions/`
 - Le lifecycle des extensions est géré par `useAppLifecycle` hook.
 

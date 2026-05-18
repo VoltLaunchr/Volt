@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-ai-quick-actions-read-clipboard"
+description = "Enables the ai_quick_actions_read_clipboard command without any pre-configured scope."
+commands.allow = ["ai_quick_actions_read_clipboard"]
+
+[[permission]]
+identifier = "deny-ai-quick-actions-read-clipboard"
+description = "Denies the ai_quick_actions_read_clipboard command without any pre-configured scope."
+commands.deny = ["ai_quick_actions_read_clipboard"]

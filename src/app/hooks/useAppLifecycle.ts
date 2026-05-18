@@ -5,9 +5,12 @@ import { useApplications } from '../../features/applications';
 import { ClipboardPlugin } from '../../features/clipboard';
 import { extensionLoader } from '../../features/extensions';
 import {
+  AiChatPlugin,
   CalculatorPlugin,
+  DeveloperCommandsPlugin,
   EmojiPickerPlugin,
   GamesPlugin,
+  NotesPlugin,
   QuicklinksPlugin,
   WindowManagementPlugin,
   ShellCommandPlugin,
@@ -66,6 +69,10 @@ export function useAppLifecycle(): UseAppLifecycleResult {
 
   const indexingStarted = useRef(false); // Prevent double indexing (StrictMode)
   const updateCheckDone = useRef(false); // Prevent double update check
+  // Tracks the active `indexing-progress` Tauri listener so both effects below
+  // (settings-changed restart + start-indexing-on-mount) can tear it down.
+  // Declared at the top so both effects see the same ref instance.
+  const indexingUnlistenRef = useRef<(() => void) | null>(null);
 
   // Sync app data into store (single effect to avoid cascading re-renders)
   useEffect(() => {
@@ -86,7 +93,9 @@ export function useAppLifecycle(): UseAppLifecycleResult {
         // Register built-in plugins (only once - prevents StrictMode double-registration)
         if (!pluginRegistry.isInitialized()) {
           pluginRegistry.register(new ClipboardPlugin());
+          pluginRegistry.register(new AiChatPlugin());
           pluginRegistry.register(new CalculatorPlugin());
+          pluginRegistry.register(new DeveloperCommandsPlugin());
           pluginRegistry.register(new EmojiPickerPlugin());
           pluginRegistry.register(new WebSearchPlugin());
           pluginRegistry.register(new SystemCommandsPlugin());
@@ -95,6 +104,7 @@ export function useAppLifecycle(): UseAppLifecycleResult {
           pluginRegistry.register(new GamesPlugin()); // Unified games plugin (all platforms)
           pluginRegistry.register(new SnippetsPlugin());
           pluginRegistry.register(new QuicklinksPlugin());
+          pluginRegistry.register(new NotesPlugin());
           pluginRegistry.register(new WindowManagementPlugin());
           pluginRegistry.register(new ShellCommandPlugin());
 
@@ -321,6 +331,7 @@ export function useAppLifecycle(): UseAppLifecycleResult {
               excludedPaths: newSettings.indexing.excludedPaths,
               fileExtensions: newSettings.indexing.fileExtensions,
               force: true,
+              deepSearch: newSettings.indexing.deepSearch,
             });
           } catch (err) {
             logger.error('Failed to restart indexing after settings change:', err);
@@ -339,11 +350,13 @@ export function useAppLifecycle(): UseAppLifecycleResult {
     return () => {
       cancelled = true;
       unlistenFn?.();
+      // Tear down any indexing-progress listener installed by an in-flight
+      // restart. Without this, an unmount mid-restart leaks the listener and
+      // fires setIsIndexing/addToast on a torn-down store subscriber.
+      indexingUnlistenRef.current?.();
+      indexingUnlistenRef.current = null;
     };
   }, [setSettings, setIsIndexing]);
-
-  // Ref to track the indexing listener for cleanup on unmount
-  const indexingUnlistenRef = useRef<(() => void) | null>(null);
 
   // Start file indexing if enabled in settings.
   // We deliberately depend only on the narrow indexing knobs and read the
@@ -441,6 +454,7 @@ export function useAppLifecycle(): UseAppLifecycleResult {
           excludedPaths: currentSettings.indexing.excludedPaths,
           fileExtensions: currentSettings.indexing.fileExtensions,
           force: forceRescan || undefined,
+          deepSearch: currentSettings.indexing.deepSearch,
         });
       } catch (err) {
         logger.error('Failed to start file indexing:', err);

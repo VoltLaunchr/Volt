@@ -151,7 +151,12 @@ impl LaunchHistory {
         Ok(())
     }
 
-    /// Record an application launch
+    /// Record an application launch.
+    ///
+    /// The in-memory update is fast; the persist-to-disk step is offloaded to
+    /// a blocking task when called from a Tokio runtime so the IPC thread is
+    /// never blocked on `fs::write`. Outside a runtime (tests, init) we fall
+    /// back to a synchronous save.
     pub fn record_launch(&self, path: &str, name: &str) -> Result<(), String> {
         {
             let mut records = self.records.lock().map_err(|e| e.to_string())?;
@@ -164,10 +169,50 @@ impl LaunchHistory {
         }
 
         if self.auto_save {
-            self.save()?;
+            if tokio::runtime::Handle::try_current().is_ok() {
+                self.save_async();
+            } else {
+                self.save()?;
+            }
         }
 
         Ok(())
+    }
+
+    /// Fire-and-forget async persist used by hot mutators (record_launch).
+    /// Errors are logged but not returned — the in-memory state is already
+    /// updated, and a transient disk write failure must not block a launch.
+    fn save_async(&self) {
+        if self.history_file.as_os_str().is_empty() {
+            return;
+        }
+        // Snapshot under the mutex; release before spawning so the blocking
+        // thread doesn't contend with the next launch.
+        let json = match self.records.lock() {
+            Ok(records) => match serde_json::to_string_pretty(&*records) {
+                Ok(j) => j,
+                Err(e) => {
+                    log::warn!("launch history: serialize failed: {}", e);
+                    return;
+                }
+            },
+            Err(e) => {
+                log::warn!("launch history: mutex poisoned: {:?}", e);
+                return;
+            }
+        };
+        let history_file = self.history_file.clone();
+        tokio::task::spawn_blocking(move || {
+            if let Some(parent) = history_file.parent()
+                && let Err(e) = fs::create_dir_all(parent)
+            {
+                log::warn!("launch history: create_dir_all failed: {}", e);
+                return;
+            }
+            if let Err(e) = fs::write(&history_file, json) {
+                log::warn!("launch history: fs::write failed: {}", e);
+            }
+        });
     }
     /// Get a launch record by path
     pub fn get(&self, path: &str) -> Option<LaunchRecord> {

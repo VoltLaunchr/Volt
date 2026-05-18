@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-ext-ai-ask-stream"
+description = "Enables the ext_ai_ask_stream command without any pre-configured scope."
+commands.allow = ["ext_ai_ask_stream"]
+
+[[permission]]
+identifier = "deny-ext-ai-ask-stream"
+description = "Denies the ext_ai_ask_stream command without any pre-configured scope."
+commands.deny = ["ext_ai_ask_stream"]

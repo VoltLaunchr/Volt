@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from "motion/react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { useChart } from "./use-chart";
 
@@ -94,7 +94,6 @@ export function LiveYAxis({
 }: LiveYAxisProps) {
   const { yScale, margin, innerHeight, containerRef } = useChart();
   const [container, setContainer] = useState<HTMLDivElement | null>(null);
-  const intervalRef = useRef(0);
 
   useEffect(() => {
     setContainer(containerRef.current);
@@ -105,17 +104,18 @@ export function LiveYAxis({
   const maxVal = domain[1];
   const valRange = maxVal - minVal;
 
-  // Pick a nice interval with hysteresis
-  const interval = useMemo(() => {
-    const next = pickNiceInterval(
-      valRange,
-      innerHeight,
-      minGap,
-      intervalRef.current
-    );
-    intervalRef.current = next;
-    return next;
-  }, [valRange, innerHeight, minGap]);
+  // Pick a nice interval with hysteresis. We keep the previously-chosen
+  // interval in state (rather than a ref) so React Hooks 7.1's
+  // `react-hooks/refs` rule doesn't fire on reads/writes during render.
+  // `pickNiceInterval` is idempotent once it converges, so the
+  // set-state-during-render here settles after at most one extra render.
+  const [interval, setInterval] = useState<number>(() =>
+    pickNiceInterval(valRange, innerHeight, minGap, 0)
+  );
+  const nextInterval = pickNiceInterval(valRange, innerHeight, minGap, interval);
+  if (nextInterval !== interval) {
+    setInterval(nextInterval);
+  }
 
   // Stabilize the tick VALUE set: only recompute which ticks exist when the
   // domain crosses an interval boundary. We quantize min/max to interval

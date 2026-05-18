@@ -105,10 +105,14 @@ export function formatAppPath(path: string): string {
 export function getCategoryIcon(category: AppCategory | string | undefined): string {
   const icons: Record<string, string> = {
     [AppCategory.Development]: '💻',
-    [AppCategory.Productivity]: '📊',
+    [AppCategory.Browsers]: '🌐',
+    [AppCategory.Communication]: '💬',
     [AppCategory.Media]: '🎬',
-    [AppCategory.Gaming]: '🎮',
+    [AppCategory.Graphics]: '🎨',
+    [AppCategory.Office]: '📊',
     [AppCategory.System]: '⚙️',
+    [AppCategory.Gaming]: '🎮',
+    [AppCategory.FileManagement]: '🗂️',
     [AppCategory.Other]: '📁',
   };
 
@@ -123,10 +127,14 @@ export function getCategoryIcon(category: AppCategory | string | undefined): str
 export function getCategoryName(category: AppCategory | string | undefined): string {
   const names: Record<string, string> = {
     [AppCategory.Development]: 'Development',
-    [AppCategory.Productivity]: 'Productivity',
+    [AppCategory.Browsers]: 'Browsers',
+    [AppCategory.Communication]: 'Communication',
     [AppCategory.Media]: 'Media & Entertainment',
-    [AppCategory.Gaming]: 'Games',
+    [AppCategory.Graphics]: 'Graphics & Design',
+    [AppCategory.Office]: 'Office',
     [AppCategory.System]: 'System Tools',
+    [AppCategory.Gaming]: 'Games',
+    [AppCategory.FileManagement]: 'File Management',
     [AppCategory.Other]: 'Other',
   };
 

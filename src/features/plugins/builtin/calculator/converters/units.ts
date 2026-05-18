@@ -159,6 +159,18 @@ const CONVERSIONS = {
     knot: 0.514444,
     knots: 0.514444,
   },
+
+  // CSS units (base: pixels, 1rem = 16px browser default)
+  css: {
+    px: 1,
+    pixel: 1,
+    pixels: 1,
+    rem: 16,
+    em: 16,
+    pt: 1.3333333333333333, // 1pt = 96/72 px at 96dpi
+    point: 1.3333333333333333,
+    points: 1.3333333333333333,
+  },
 } as const;
 
 /**

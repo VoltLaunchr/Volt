@@ -3,7 +3,9 @@ import { useTranslation } from 'react-i18next';
 import { CalculatorPlugin } from '../index';
 import { copyToClipboard } from '../../../utils/helpers';
 import { addToHistory, clearHistory, getHistory, CalculationHistoryItem } from '../utils/history';
+import { logger } from '../../../../../shared/utils/logger';
 import { cn } from '@/lib/utils';
+import { HighlightedExpression } from '../utils/highlight';
 
 interface CalculatorViewProps {
   onClose: () => void;
@@ -73,7 +75,7 @@ export function CalculatorView({
 
     const success = await copyToClipboard(result);
     if (success) {
-      console.log(`✓ Copied to clipboard: ${result}`);
+      logger.info(`✓ Copied to clipboard: ${result}`);
 
       addToHistory({
         query: expression.trim(),
@@ -259,9 +261,10 @@ export function CalculatorView({
                     onClick={() => handleSelectHistory(item)}
                   >
                     <div className="flex-1 min-w-0 flex items-center gap-3">
-                      <span className="flex-1 text-sm font-mono text-ink truncate">
-                        {item.query}
-                      </span>
+                      <HighlightedExpression
+                        expression={item.query}
+                        className="flex-1 text-sm font-mono truncate"
+                      />
                       <span className="text-sm font-mono font-semibold text-accent-blue shrink-0">
                         = {item.result}
                       </span>

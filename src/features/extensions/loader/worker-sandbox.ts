@@ -11,8 +11,74 @@ import { Plugin, PluginContext, PluginResult } from '../../plugins/types';
 import { copyToClipboard, openUrl } from '../../plugins/utils/helpers';
 import { generateWorkerBootstrap, type ActionCommand, type WorkerResponse } from './worker-bootstrap';
 import { logger } from '../../../shared/utils/logger';
+import { useUiStore } from '../../../stores/uiStore';
+import { setPendingHud } from './hud-queue';
 
-const WORKER_TIMEOUT_MS = 500;
+interface OAuthRequestPayload {
+  provider?: string;
+  authUrl?: string;
+  tokenUrl?: string;
+  clientId?: string;
+  scopes?: string[];
+}
+
+interface AIRequestPayload {
+  prompt: string;
+  options?: {
+    provider: string;
+    apiKeyPreference?: string;
+    model?: string;
+    maxTokens?: number;
+    system?: string;
+    creativity?: string | number;
+    temperature?: number;
+  };
+}
+
+interface SystemRequestPayload {
+  op: 'getApplications';
+}
+
+interface CaptureExceptionPayload {
+  message: string;
+  stack?: string;
+  context?: Record<string, unknown>;
+  severity?: 'error' | 'warning';
+  phase?: 'match' | 'execute' | 'background' | 'manual';
+  queryContext?: string;
+}
+
+export interface ExtensionError {
+  extensionId: string;
+  message: string;
+  stack?: string;
+  context?: Record<string, unknown>;
+  /** `error` = crash / unexpected throw; `warning` = recoverable / informational */
+  severity: 'error' | 'warning';
+  /** Which execution phase produced the error */
+  phase: 'match' | 'execute' | 'background' | 'manual';
+  /** Query that was being processed when the error occurred (match phase only) */
+  queryContext?: string;
+  /** When this fingerprint was first seen */
+  firstSeen: number;
+  /** When this fingerprint was last seen */
+  lastSeen: number;
+  /** How many times this exact fingerprint has fired */
+  count: number;
+}
+
+/** Max distinct error fingerprints kept per extension instance */
+const MAX_ERROR_LOG_SIZE = 50;
+/**
+ * Two errors with the same fingerprint within this window are deduplicated
+ * (count++ / lastSeen updated) rather than added as a new entry.
+ */
+const ERROR_DEDUP_WINDOW_MS = 60_000;
+
+/** Timeout for match() — must cover network round-trips for extensions with `network` permission */
+const WORKER_MATCH_TIMEOUT_MS = 8000;
+/** Timeout for execute() — local side-effects only, should be fast */
+const WORKER_EXECUTE_TIMEOUT_MS = 500;
 
 /**
  * Maximum fetch response body size (10 MB). A malicious endpoint could
@@ -30,6 +96,16 @@ interface PendingRequest {
  * A Plugin implementation that delegates match() and execute() to a Web Worker.
  * canHandle() is evaluated declaratively on the main thread using keywords/prefix.
  */
+/**
+ * Maps service IDs to the API hostnames that should be handled by the
+ * Rust authenticated fetch proxy instead of the regular sandbox fetch.
+ * Must stay in sync with `service_api_hosts()` in credentials.rs.
+ */
+const SERVICE_API_HOSTS: Record<string, readonly string[]> = {
+  github: ['api.github.com'],
+  notion: ['api.notion.com'],
+};
+
 export class WorkerPlugin implements Plugin {
   id: string;
   name: string;
@@ -54,6 +130,29 @@ export class WorkerPlugin implements Plugin {
 
   // Permission enforcement
   private grantedPermissions: Set<string>;
+
+  // Cleanup callbacks for active OAuth event listeners (cancelled on destroy)
+  private oauthUnlisteners: Array<() => void> = [];
+
+  // Cleanup callback for a pending alert dialog (cancelled on destroy)
+  private pendingAlertCleanup: (() => void) | null = null;
+
+  // Background refresh
+  private refreshIntervalMs: number = 0;
+  private refreshTimer: ReturnType<typeof setInterval> | null = null;
+  private cachedResults: import('../../plugins/types').PluginResult[] = [];
+  private cacheTimestamp: number = 0;
+
+  // Extension error log (deduplicated, max MAX_ERROR_LOG_SIZE fingerprints)
+  private errorLog: ExtensionError[] = [];
+  // Timestamp of last `volt:extension-error` DOM event — throttled to ≤1/s
+  private lastErrorEventAt: number = 0;
+
+  /**
+   * Process-wide error log shared across all WorkerPlugin instances.
+   * Keyed by extensionId for O(1) lookup from the settings UI.
+   */
+  static readonly globalLog = new Map<string, ExtensionError[]>();
 
   constructor(options: {
     id: string;
@@ -105,17 +204,42 @@ export class WorkerPlugin implements Plugin {
   }
 
   /**
-   * Sends match request to Worker, returns results with 500ms timeout.
+   * Sends match request to Worker, returns results with timeout.
+   * When backgroundRefresh is configured and the cache is fresh, returns cached results
+   * instantly; a background refresh is triggered if the cache is older than half the interval.
    */
   async match(context: PluginContext): Promise<PluginResult[]> {
+    // Serve from background-refresh cache when query is empty and cache is fresh
+    if (this.refreshIntervalMs > 0 && !context.query) {
+      const age = Date.now() - this.cacheTimestamp;
+      if (this.cachedResults.length > 0 && age < this.refreshIntervalMs) {
+        // Trigger a background refresh if approaching stale
+        if (age > this.refreshIntervalMs / 2) {
+          void this.refreshCache();
+        }
+        return this.cachedResults;
+      }
+    }
+
     try {
       const worker = this.getOrCreateWorker();
       const results = await this.sendRequest<PluginResult[]>(worker, 'match', {
         query: context.query,
       });
-      // Tag results with pluginId
-      return (results || []).map((r) => ({ ...r, pluginId: this.id }));
+      const tagged = (results || []).map((r) => ({ ...r, pluginId: this.id }));
+      // Update cache when this was a background (empty-query) refresh
+      if (this.refreshIntervalMs > 0 && !context.query) {
+        this.cachedResults = tagged;
+        this.cacheTimestamp = Date.now();
+      }
+      return tagged;
     } catch (err) {
+      this.recordError({
+        message: String(err),
+        severity: 'error',
+        phase: 'match',
+        queryContext: context.query || undefined,
+      });
       logger.error(`[WorkerPlugin:${this.id}] match() failed:`, err);
       return [];
     }
@@ -132,6 +256,7 @@ export class WorkerPlugin implements Plugin {
         await this.executeActions(actions);
       }
     } catch (err) {
+      this.recordError({ message: String(err), severity: 'error', phase: 'execute' });
       logger.error(`[WorkerPlugin:${this.id}] execute() failed:`, err);
     }
   }
@@ -161,17 +286,18 @@ export class WorkerPlugin implements Plugin {
       // response against a pending request.
       const id = crypto.randomUUID();
 
+      const timeoutMs = type === 'match' ? WORKER_MATCH_TIMEOUT_MS : WORKER_EXECUTE_TIMEOUT_MS;
       const timer = setTimeout(() => {
         // Reject ALL pending entries — not just this one. Keeping the others
         // alive past `terminateWorker()` is unsafe: their later timer firings
         // would call `terminateWorker()` again, killing whichever worker the
         // plugin has lazily recreated in the meantime. (M12)
         this.cleanupPending(
-          `Worker reset due to timeout (after ${WORKER_TIMEOUT_MS}ms on ${type})`
+          `Worker reset due to timeout (after ${timeoutMs}ms on ${type})`
         );
         this.terminateWorker();
-        reject(new Error(`Worker timeout after ${WORKER_TIMEOUT_MS}ms for ${type}`));
-      }, WORKER_TIMEOUT_MS);
+        reject(new Error(`Worker timeout after ${timeoutMs}ms for ${type}`));
+      }, timeoutMs);
 
       this.pending.set(id, { resolve: resolve as (v: unknown) => void, reject, timer });
       worker.postMessage({ type, id, payload });
@@ -201,6 +327,51 @@ export class WorkerPlugin implements Plugin {
       // worker-bootstrap); coerce for the handler signature.
       const fetchId = typeof id === 'number' ? id : Number(id);
       void this.handleFetchRequest(fetchId, payload as { url: string; options?: RequestInit });
+      return;
+    }
+
+    if (type === 'storage-request' as string) {
+      const storageId = typeof id === 'number' ? id : Number(id);
+      void this.handleStorageRequest(storageId, payload as { op: string; key?: string; value?: string });
+      return;
+    }
+
+    if (type === 'prefs-request' as string) {
+      const prefsId = typeof id === 'number' ? id : Number(id);
+      void this.handlePrefsRequest(prefsId, payload as { op: string; key: string; value?: string; default?: unknown });
+      return;
+    }
+
+    if (
+      type === 'oauth-request' as string ||
+      type === 'oauth-get-token' as string ||
+      type === 'oauth-revoke-token' as string
+    ) {
+      const oauthId = typeof id === 'number' ? id : Number(id);
+      void this.handleOAuthRequest(oauthId, type, payload as OAuthRequestPayload);
+      return;
+    }
+
+    if (type === 'ai-request' as string) {
+      const aiId = typeof id === 'number' ? id : Number(id);
+      void this.handleAIRequest(aiId, payload as AIRequestPayload);
+      return;
+    }
+
+    if (type === 'system-request' as string) {
+      const sysId = typeof id === 'number' ? id : Number(id);
+      void this.handleSystemRequest(sysId, payload as SystemRequestPayload);
+      return;
+    }
+
+    if (type === 'capture-exception' as string) {
+      this.recordError(payload as CaptureExceptionPayload);
+      return;
+    }
+
+    if (type === 'alert-request' as string) {
+      const alertId = typeof id === 'number' ? id : Number(id);
+      void this.handleAlertRequest(alertId, payload as { message: string });
       return;
     }
 
@@ -590,6 +761,20 @@ export class WorkerPlugin implements Plugin {
     try {
       const safeOptions = this.sanitizeFetchOptions(payload.options);
 
+      // Route requests to known service API hosts through the Rust authenticated
+      // fetch proxy. The token is read from the OS keyring inside Rust and never
+      // crosses the Worker or renderer boundary.
+      try {
+        const parsedUrl = new URL(payload.url);
+        const serviceHosts = SERVICE_API_HOSTS[this.id] ?? [];
+        if ((serviceHosts as string[]).includes(parsedUrl.hostname)) {
+          await this.handleAuthenticatedFetch(requestId, payload.url, safeOptions);
+          return;
+        }
+      } catch {
+        // URL parse error — fall through to regular fetch which will fail naturally
+      }
+
       // Manual redirect loop with re-validation at every hop. The initial URL
       // was already approved by `isUrlSafe` above; we still re-check it inside
       // the loop so a single code path enforces the policy for hop 0..N. (H3)
@@ -691,6 +876,67 @@ export class WorkerPlugin implements Plugin {
   }
 
   /**
+   * Route a fetch through the Rust `extension_authenticated_fetch` command.
+   * The token is read from the OS keyring inside Rust — it never crosses the
+   * Worker or renderer process boundary.
+   */
+  private async handleAuthenticatedFetch(
+    requestId: number,
+    url: string,
+    safeOptions: RequestInit
+  ): Promise<void> {
+    const worker = this.worker;
+    if (!worker) return;
+
+    try {
+      // Flatten sanitized headers to a plain object for Tauri IPC serialisation.
+      const headers: Record<string, string> = {};
+      if (safeOptions.headers) {
+        if (safeOptions.headers instanceof Headers) {
+          safeOptions.headers.forEach((v, k) => { headers[k] = v; });
+        } else if (Array.isArray(safeOptions.headers)) {
+          for (const [k, v] of safeOptions.headers) { headers[String(k)] = String(v); }
+        } else if (typeof safeOptions.headers === 'object') {
+          Object.assign(headers, safeOptions.headers);
+        }
+      }
+
+      const { invoke } = await import('@tauri-apps/api/core');
+      const result = await invoke<{
+        ok: boolean;
+        status: number;
+        statusText: string;
+        body: string;
+        bodyEncoding: string;
+      }>('extension_authenticated_fetch', {
+        extensionId: this.id,
+        url,
+        method: (safeOptions.method as string) ?? 'GET',
+        headers,
+        body: typeof safeOptions.body === 'string' ? safeOptions.body : null,
+      });
+
+      worker.postMessage({
+        type: 'fetch-response',
+        id: requestId,
+        payload: {
+          ok: result.ok,
+          status: result.status,
+          statusText: result.statusText,
+          body: result.body,
+          bodyEncoding: result.bodyEncoding ?? 'utf-8',
+        },
+      });
+    } catch (err) {
+      worker.postMessage({
+        type: 'fetch-response',
+        id: requestId,
+        payload: { error: String(err) },
+      });
+    }
+  }
+
+  /**
    * Handle Worker errors.
    */
   private handleError = (event: ErrorEvent) => {
@@ -761,6 +1007,42 @@ export class WorkerPlugin implements Plugin {
           // Network fetch is handled in match/execute response flow, not here
           break;
         }
+        case 'saveCredential': {
+          // Extension may only save a credential for the service matching its own
+          // ID. This prevents a compromised extension from overwriting credentials
+          // belonging to a different service.
+          if (action.service !== this.id) {
+            console.warn(
+              `[WorkerPlugin:${this.id}] Blocked saveCredential for '${action.service}' — must match extension ID`
+            );
+            break;
+          }
+          const { invoke } = await import('@tauri-apps/api/core');
+          await invoke('save_credential', { service: action.service, token: action.token });
+          break;
+        }
+        case 'showInFolder': {
+          if (!this.hasPermission('system')) {
+            console.warn(`[WorkerPlugin:${this.id}] Blocked showInFolder — system permission not granted`);
+            break;
+          }
+          const { invoke: _inv1 } = await import('@tauri-apps/api/core');
+          await _inv1('ext_show_in_folder', { path: action.path }).catch((e: unknown) => {
+            logger.error(`[WorkerPlugin:${this.id}] showInFolder failed:`, e);
+          });
+          break;
+        }
+        case 'moveToTrash': {
+          if (!this.hasPermission('system')) {
+            console.warn(`[WorkerPlugin:${this.id}] Blocked moveToTrash — system permission not granted`);
+            break;
+          }
+          const { invoke: _inv2 } = await import('@tauri-apps/api/core');
+          await _inv2('ext_move_to_trash', { path: action.path }).catch((e: unknown) => {
+            logger.error(`[WorkerPlugin:${this.id}] moveToTrash failed:`, e);
+          });
+          break;
+        }
         case 'notify':
           if (!this.hasPermission('notifications')) {
             console.warn(`[WorkerPlugin:${this.id}] Blocked notification — permission not granted`);
@@ -772,9 +1054,531 @@ export class WorkerPlugin implements Plugin {
             })
           );
           break;
+        case 'toast':
+          window.dispatchEvent(
+            new CustomEvent('volt:toast', {
+              detail: {
+                message: action.message,
+                subtitle: action.subtitle,
+                style: action.style ?? 'info',
+                duration: action.duration,
+              },
+            })
+          );
+          break;
         case 'noop':
           break;
+        case 'hud':
+          setPendingHud(action.message);
+          window.dispatchEvent(
+            new CustomEvent('volt:hud', { detail: { message: action.message } })
+          );
+          break;
+        case 'updateMetadata':
+          window.dispatchEvent(
+            new CustomEvent('volt:update-metadata', {
+              detail: { pluginId: this.id, title: action.title, subtitle: action.subtitle },
+            })
+          );
+          break;
+        case 'pasteText': {
+          if (!this.hasPermission('clipboard')) {
+            console.warn(`[WorkerPlugin:${this.id}] Blocked pasteText — clipboard permission not granted`);
+            break;
+          }
+          try {
+            const { invoke } = await import('@tauri-apps/api/core');
+            await invoke('paste_text', { text: action.text });
+          } catch (err) {
+            logger.error(`[WorkerPlugin:${this.id}] pasteText failed:`, err);
+          }
+          break;
+        }
       }
+    }
+  }
+
+  /**
+   * Handle OAuth PKCE requests from the Worker.
+   * Routes authorize/getToken/revokeToken through Tauri commands.
+   * The PKCE code_verifier is generated in Rust — it never touches JS.
+   */
+  private async handleOAuthRequest(
+    requestId: number,
+    msgType: string,
+    payload: OAuthRequestPayload
+  ): Promise<void> {
+    const worker = this.worker;
+    if (!worker) return;
+
+    if (!this.hasPermission('oauth')) {
+      worker.postMessage({
+        type: 'oauth-response',
+        id: requestId,
+        payload: { error: 'OAuth permission not granted. Add "oauth" to extension permissions.' },
+      });
+      return;
+    }
+
+    const respond = (result: Record<string, unknown>) => {
+      if (this.worker) {
+        this.worker.postMessage({ type: 'oauth-response', id: requestId, payload: result });
+      }
+    };
+
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+
+      if (msgType === 'oauth-get-token') {
+        const token = await invoke<string | null>('ext_oauth_get_token', {
+          extensionId: this.id,
+          provider: payload.provider ?? '',
+        });
+        respond({ token });
+        return;
+      }
+
+      if (msgType === 'oauth-revoke-token') {
+        await invoke<void>('ext_oauth_revoke_token', {
+          extensionId: this.id,
+          provider: payload.provider ?? '',
+        });
+        respond({ success: true });
+        return;
+      }
+
+      // oauth-request: full PKCE authorize flow.
+      // Register the listener BEFORE opening the browser to close the race where
+      // the callback URL arrives before listen() has resolved. The state nonce is
+      // applied as a post-registration filter so concurrent flows don't cross-resolve.
+      const { listen } = await import('@tauri-apps/api/event');
+      const eventName = `ext-oauth-${this.id}`;
+
+      let done = false;
+      let unlistenFn: (() => void) | null = null;
+      let timerId: ReturnType<typeof setTimeout> | null = null;
+      let pendingState: string | null = null;
+
+      const finish = (result: Record<string, unknown>) => {
+        if (done) return;
+        done = true;
+        if (timerId !== null) { clearTimeout(timerId); timerId = null; }
+        if (unlistenFn !== null) { unlistenFn(); unlistenFn = null; }
+        const idx = this.oauthUnlisteners.indexOf(cancelFn);
+        if (idx >= 0) this.oauthUnlisteners.splice(idx, 1);
+        respond(result);
+      };
+
+      const cancelFn = () => finish({ error: 'OAuth cancelled (extension unloaded)' });
+      this.oauthUnlisteners.push(cancelFn);
+
+      timerId = setTimeout(
+        () => finish({ error: 'OAuth authorization timed out after 5 minutes' }),
+        5 * 60 * 1000
+      );
+
+      unlistenFn = await listen<{ error?: string; state?: string }>(
+        eventName,
+        (event) => {
+          // Accept all events until we have the state nonce; filter strictly after.
+          if (pendingState !== null && event.payload.state && event.payload.state !== pendingState) return;
+          if (event.payload.error) {
+            finish({ error: event.payload.error });
+          } else {
+            // Token is NOT in the event payload — the Rust side stores it in the
+            // OS keyring and emits only a success signal. Retrieve the token via
+            // ext_oauth_get_token so it never travels over the broadcast event
+            // channel where another extension could intercept it. (H2)
+            const provider = payload.provider ?? '';
+            import('@tauri-apps/api/core').then(({ invoke }) =>
+              invoke<string | null>('ext_oauth_get_token', {
+                extensionId: this.id,
+                provider,
+              })
+            ).then((token) => {
+              finish({ token });
+            }).catch((err: unknown) => {
+              finish({ error: `Failed to retrieve OAuth token: ${String(err)}` });
+            });
+          }
+        }
+      );
+
+      // If finish() fired (e.g. timeout elapsed during listen()), clean up and bail.
+      if (done) { unlistenFn(); return; }
+
+      // Rust builds the full auth URL with PKCE params and stores the pending entry.
+      const { authUrl, state } = await invoke<{ authUrl: string; state: string }>('ext_oauth_start', {
+        extensionId: this.id,
+        provider: payload.provider ?? '',
+        baseAuthUrl: payload.authUrl ?? '',
+        tokenUrl: payload.tokenUrl ?? '',
+        clientId: payload.clientId ?? '',
+        scopes: payload.scopes ?? [],
+      });
+
+      // Enable strict state filtering now that we have the nonce.
+      pendingState = state;
+
+      // Open the authorization URL in the default browser.
+      await openUrl(authUrl);
+
+    } catch (err) {
+      respond({ error: String(err) });
+    }
+  }
+
+  /**
+   * Handle AI inference requests from the Worker using streaming (Tauri Channel API).
+   *
+   * Emits `ai-chunk` for each token so extensions can render progressive output,
+   * then `ai-response` with the full text when the stream is done.
+   * Times out after 60 s to avoid hanging the Worker indefinitely.
+   */
+  private async handleAIRequest(
+    requestId: number,
+    payload: AIRequestPayload
+  ): Promise<void> {
+    const worker = this.worker;
+    if (!worker) return;
+
+    if (!this.hasPermission('ai')) {
+      worker.postMessage({
+        type: 'ai-response',
+        id: requestId,
+        payload: { error: 'AI permission not granted. Add "ai" to extension permissions.' },
+      });
+      return;
+    }
+
+    const AI_TIMEOUT_MS = 60_000;
+
+    try {
+      const { invoke, Channel } = await import('@tauri-apps/api/core');
+
+      type AiStreamEvent =
+        | { type: 'chunk'; text: string }
+        | { type: 'done'; fullText: string }
+        | { type: 'error'; error: string };
+
+      const channel = new Channel<AiStreamEvent>();
+
+      channel.onmessage = (event) => {
+        if (!this.worker) return;
+        if (event.type === 'chunk') {
+          this.worker.postMessage({ type: 'ai-chunk', id: requestId, payload: { text: event.text } });
+        } else if (event.type === 'done') {
+          this.worker.postMessage({
+            type: 'ai-response',
+            id: requestId,
+            payload: { text: event.fullText },
+          });
+        } else if (event.type === 'error') {
+          this.worker.postMessage({
+            type: 'ai-response',
+            id: requestId,
+            payload: { error: event.error },
+          });
+        }
+      };
+
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(
+          () => reject(new Error('AI request timed out (60s)')),
+          AI_TIMEOUT_MS
+        )
+      );
+
+      await Promise.race([
+        invoke('ext_ai_ask_stream', {
+          extensionId: this.id,
+          prompt: payload.prompt,
+          options: payload.options ?? {},
+          channel,
+        }),
+        timeoutPromise,
+      ]);
+    } catch (err) {
+      worker.postMessage({
+        type: 'ai-response',
+        id: requestId,
+        payload: { error: String(err) },
+      });
+    }
+  }
+
+  /**
+   * Handle system requests from the Worker (getApplications).
+   * Requires 'system' permission.
+   */
+  private async handleSystemRequest(
+    requestId: number,
+    payload: SystemRequestPayload
+  ): Promise<void> {
+    const worker = this.worker;
+    if (!worker) return;
+
+    if (!this.hasPermission('system')) {
+      worker.postMessage({
+        type: 'system-response',
+        id: requestId,
+        payload: { error: 'System permission not granted. Add "system" to extension permissions.' },
+      });
+      return;
+    }
+
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      if (payload.op === 'getApplications') {
+        const apps = await invoke<unknown[]>('ext_get_applications');
+        worker.postMessage({ type: 'system-response', id: requestId, payload: { value: apps } });
+      } else {
+        worker.postMessage({ type: 'system-response', id: requestId, payload: { error: 'Unknown system op' } });
+      }
+    } catch (err) {
+      worker.postMessage({ type: 'system-response', id: requestId, payload: { error: String(err) } });
+    }
+  }
+
+  /**
+   * Record an error into the ring buffer with fingerprint deduplication.
+   *
+   * Fingerprint = message + first non-empty stack line.  Two calls with the
+   * same fingerprint within ERROR_DEDUP_WINDOW_MS increment `count`/`lastSeen`
+   * rather than adding a new entry.  DOM events are throttled to ≤1 per second
+   * to avoid flooding listeners during error storms.  Every write syncs to the
+   * process-wide `WorkerPlugin.globalLog` for cross-plugin inspection.
+   */
+  private recordError(payload: Partial<CaptureExceptionPayload>): void {
+    const now = Date.now();
+    const message = payload.message ?? 'Unknown error';
+    const firstStackLine = payload.stack?.split('\n').find((l) => l.trim()) ?? '';
+
+    const existing = this.errorLog.find((e) => {
+      const eFirst = e.stack?.split('\n').find((l) => l.trim()) ?? '';
+      return e.message === message && eFirst === firstStackLine && now - e.lastSeen < ERROR_DEDUP_WINDOW_MS;
+    });
+    if (existing) {
+      existing.count++;
+      existing.lastSeen = now;
+      WorkerPlugin.globalLog.set(this.id, this.errorLog.slice());
+      return;
+    }
+
+    const entry: ExtensionError = {
+      extensionId: this.id,
+      message,
+      stack: payload.stack,
+      context: payload.context,
+      severity: payload.severity ?? 'error',
+      phase: payload.phase ?? 'manual',
+      queryContext: payload.queryContext,
+      firstSeen: now,
+      lastSeen: now,
+      count: 1,
+    };
+
+    this.errorLog.push(entry);
+    if (this.errorLog.length > MAX_ERROR_LOG_SIZE) {
+      this.errorLog.shift();
+    }
+
+    WorkerPlugin.globalLog.set(this.id, this.errorLog.slice());
+
+    if (now - this.lastErrorEventAt > 1000) {
+      this.lastErrorEventAt = now;
+      window.dispatchEvent(new CustomEvent('volt:extension-error', { detail: entry }));
+    }
+
+    logger.warn(`[WorkerPlugin:${this.id}] Extension error captured:`, entry.message);
+  }
+
+  /** Return the captured error log for this extension (most recent last). */
+  getErrorLog(): ExtensionError[] {
+    return this.errorLog.slice();
+  }
+
+  /**
+   * Start background refresh at the given interval (ms).
+   * Triggers an immediate warm-up, then refreshes on schedule.
+   */
+  startBackgroundRefresh(intervalMs: number): void {
+    if (intervalMs <= 0) return;
+    this.refreshIntervalMs = intervalMs;
+    // Warm up immediately without blocking the current call
+    void this.refreshCache();
+    this.refreshTimer = setInterval(() => { void this.refreshCache(); }, intervalMs);
+  }
+
+  /** Stop background refresh and clear the cache. */
+  stopBackgroundRefresh(): void {
+    if (this.refreshTimer !== null) {
+      clearInterval(this.refreshTimer);
+      this.refreshTimer = null;
+    }
+    this.refreshIntervalMs = 0;
+    this.cachedResults = [];
+    this.cacheTimestamp = 0;
+  }
+
+  /** Internal: call match with empty query to warm the cache. */
+  private async refreshCache(): Promise<void> {
+    try {
+      const worker = this.getOrCreateWorker();
+      const results = await this.sendRequest<PluginResult[]>(worker, 'match', { query: '' });
+      this.cachedResults = (results || []).map((r) => ({ ...r, pluginId: this.id }));
+      this.cacheTimestamp = Date.now();
+    } catch {
+      // Refresh failures are silent — stale cache is served until next interval
+    }
+  }
+
+  /**
+   * Handle preference requests from the Worker.
+   * Non-secret prefs → JSON file via get_extension_preference / set_extension_preference.
+   * Secret prefs → OS keyring via get_extension_secret / set_extension_secret.
+   */
+  private async handlePrefsRequest(
+    requestId: number,
+    payload: { op: string; key: string; value?: string; default?: unknown }
+  ): Promise<void> {
+    const worker = this.worker;
+    if (!worker) return;
+
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+
+      let result: unknown = undefined;
+      if (payload.op === 'get') {
+        result = await invoke<string | null>('get_extension_preference', {
+          extensionId: this.id,
+          key: payload.key,
+        });
+        if (result === null || result === undefined) {
+          result = payload.default ?? null;
+        }
+      } else if (payload.op === 'set') {
+        await invoke('set_extension_preference', {
+          extensionId: this.id,
+          key: payload.key,
+          value: payload.value ?? '',
+        });
+      } else if (payload.op === 'get-secret') {
+        result = await invoke<string | null>('get_extension_secret', {
+          extensionId: this.id,
+          key: payload.key,
+        });
+      } else if (payload.op === 'set-secret') {
+        await invoke('set_extension_secret', {
+          extensionId: this.id,
+          key: payload.key,
+          value: payload.value ?? '',
+        });
+      } else if (payload.op === 'delete-secret') {
+        await invoke('delete_extension_secret', {
+          extensionId: this.id,
+          key: payload.key,
+        });
+      }
+
+      worker.postMessage({ type: 'prefs-response', id: requestId, payload: { value: result } });
+    } catch (err) {
+      worker.postMessage({ type: 'prefs-response', id: requestId, payload: { error: String(err) } });
+    }
+  }
+
+  /**
+   * Handle storage requests from the Worker.
+   * Executes SQLite CRUD on the main thread via Tauri IPC.
+   */
+  private async handleStorageRequest(
+    requestId: number,
+    payload: { op: string; key?: string; value?: string }
+  ): Promise<void> {
+    const worker = this.worker;
+    if (!worker) return;
+
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      const extensionId = this.id;
+
+      let result: unknown = undefined;
+      switch (payload.op) {
+        case 'get':
+          result = await invoke<string | null>('ext_storage_get', {
+            extensionId,
+            key: payload.key ?? '',
+          });
+          break;
+        case 'set':
+          await invoke('ext_storage_set', {
+            extensionId,
+            key: payload.key ?? '',
+            value: payload.value ?? '',
+          });
+          break;
+        case 'remove':
+          await invoke('ext_storage_remove', {
+            extensionId,
+            key: payload.key ?? '',
+          });
+          break;
+        case 'clear':
+          await invoke('ext_storage_clear', { extensionId });
+          break;
+        default:
+          throw new Error(`Unknown storage op: ${payload.op}`);
+      }
+
+      worker.postMessage({
+        type: 'storage-response',
+        id: requestId,
+        payload: { value: result },
+      });
+    } catch (err) {
+      worker.postMessage({
+        type: 'storage-response',
+        id: requestId,
+        payload: { error: String(err) },
+      });
+    }
+  }
+
+  /**
+  /**
+   * Handle a confirm() dialog request from the Worker.
+   * Opens the AlertDialog via uiStore and resolves/rejects the Worker promise.
+   */
+  private async handleAlertRequest(
+    requestId: number,
+    payload: { message: string }
+  ): Promise<void> {
+    const worker = this.worker;
+    if (!worker) return;
+
+    const respond = (confirmed: boolean) => {
+      if (this.worker) {
+        this.worker.postMessage({ type: 'alert-response', id: requestId, payload: { confirmed } });
+      }
+    };
+
+    try {
+      const confirmed = await new Promise<boolean>((resolve, reject) => {
+        this.pendingAlertCleanup = () => {
+          useUiStore.getState().setAlertRequest(null);
+          this.pendingAlertCleanup = null;
+          reject(new Error('Alert cancelled (extension unloaded)'));
+        };
+        useUiStore.getState().setAlertRequest({
+          message: payload.message,
+          resolve,
+        });
+      });
+      respond(confirmed);
+    } catch {
+      respond(false);
+    } finally {
+      this.pendingAlertCleanup = null;
     }
   }
 
@@ -782,8 +1586,22 @@ export class WorkerPlugin implements Plugin {
    * Clean up resources when the plugin is unloaded.
    */
   destroy(): void {
-    // Reject all pending requests via the shared helper (same semantics as
-    // the timeout / error paths — see M12).
+    // Stop background refresh timer
+    this.stopBackgroundRefresh();
+
+    // Cancel all active OAuth event listeners and their timeouts
+    for (const cancel of this.oauthUnlisteners) {
+      try { cancel(); } catch { /* best-effort */ }
+    }
+    this.oauthUnlisteners = [];
+
+    // Cancel pending alert dialog if extension is unloaded while dialog is open
+    this.pendingAlertCleanup?.();
+
+    // Remove from process-wide error log
+    WorkerPlugin.globalLog.delete(this.id);
+
+    // Reject all pending match/execute requests via the shared helper (see M12)
     this.cleanupPending('Plugin destroyed');
     this.terminateWorker();
   }

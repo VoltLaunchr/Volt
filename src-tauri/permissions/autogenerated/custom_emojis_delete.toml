@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-custom-emojis-delete"
+description = "Enables the custom_emojis_delete command without any pre-configured scope."
+commands.allow = ["custom_emojis_delete"]
+
+[[permission]]
+identifier = "deny-custom-emojis-delete"
+description = "Denies the custom_emojis_delete command without any pre-configured scope."
+commands.deny = ["custom_emojis_delete"]

@@ -1,0 +1,36 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "notes-capability",
+  "description": "IPC surface for the dedicated Notes window. Includes the full notes CRUD/search/import/export, embeddings prep + test (for the future 'Ask my notes' feature), window controls (show/hide/drag), opener (links inside markdown), and dialog (export/import via native file picker).",
+  "windows": ["notes"],
+  "permissions": [
+    "core:default",
+    "core:window:default",
+    "core:window:allow-show",
+    "core:window:allow-hide",
+    "core:window:allow-close",
+    "core:window:allow-minimize",
+    "core:window:allow-set-focus",
+    "core:window:allow-start-dragging",
+    "core:window:allow-toggle-maximize",
+    "opener:default",
+    "dialog:default",
+
+    "allow-get-notes",
+    "allow-get-note",
+    "allow-get-trash",
+    "allow-create-note",
+    "allow-update-note",
+    "allow-delete-note",
+    "allow-restore-note",
+    "allow-empty-trash",
+    "allow-search-notes",
+    "allow-export-notes",
+    "allow-import-notes",
+
+    "allow-embeddings-is-ready",
+    "allow-embeddings-prepare",
+
+    "allow-open-notes-window"
+  ]
+}

@@ -2,11 +2,14 @@ import { useDeferredValue } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ChangelogView } from '../../features/changelog';
 import { ClipboardHistoryView } from '../../features/clipboard';
+import { CreateExtensionView, ManageExtensionsView } from '../../features/developer';
 import { FileSearchView } from '../../features/files';
 import {
+  AiChatView,
   CalculatorView,
   EmojiPickerView,
   GameView,
+  QuickAiView,
   TimerView,
 } from '../../features/plugins/builtin';
 import { ResultsList } from '../../features/results/components/ResultsList';
@@ -57,6 +60,22 @@ export function ViewRouter({ onSelectEmoji, onLaunchResult, onActivateSuggestion
   };
 
   switch (activeView.type) {
+    case 'ai-chat':
+      return (
+        <AiChatView
+          onClose={resetToSearchView}
+          initialQuery={activeView.initialQuery}
+          systemPrompt={activeView.systemPrompt}
+        />
+      );
+    case 'quick-ai':
+      return (
+        <QuickAiView
+          onClose={resetToSearchView}
+          initialQuery={activeView.initialQuery}
+          systemPrompt={activeView.systemPrompt}
+        />
+      );
     case 'changelog':
       return <ChangelogView onClose={resetToSearchView} />;
     case 'calculator':
@@ -77,6 +96,15 @@ export function ViewRouter({ onSelectEmoji, onLaunchResult, onActivateSuggestion
       return <GameView onClose={resetToSearchView} />;
     case 'timer':
       return <TimerView onClose={resetToSearchView} />;
+    case 'create-extension':
+      return <CreateExtensionView onClose={resetToSearchView} />;
+    case 'manage-extensions':
+      return (
+        <ManageExtensionsView
+          onClose={resetToSearchView}
+          onCreateExtension={() => useUiStore.getState().setActiveView({ type: 'create-extension' })}
+        />
+      );
   }
 
   if (error) {

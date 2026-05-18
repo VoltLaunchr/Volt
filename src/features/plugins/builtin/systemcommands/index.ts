@@ -120,7 +120,7 @@ export class SystemCommandsPlugin implements Plugin {
         await this.quitApp();
         break;
       default:
-        console.warn(`Unknown system command: ${String(action)}`);
+        logger.warn(`Unknown system command: ${String(action)}`);
     }
   }
 
@@ -156,7 +156,7 @@ export class SystemCommandsPlugin implements Plugin {
       // Hide window first, then the user can manually close or we rely on the app lifecycle
       await invoke<void>('hide_window');
       // Note: Full app exit would require a Tauri command. For now, hiding is sufficient.
-      console.log('App hidden. To fully quit, close from system tray if available.');
+      logger.info('App hidden. To fully quit, close from system tray if available.');
     } catch (error) {
       logger.error('Failed to quit app:', error);
       window.close();

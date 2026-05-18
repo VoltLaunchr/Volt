@@ -1,4 +1,5 @@
 
+import { invoke } from '@tauri-apps/api/core';
 import { logger } from '../../../../shared/utils/logger';
 import { Plugin, PluginContext, PluginResult, PluginResultType } from '../../types';
 import { copyToClipboard } from '../../utils/helpers';
@@ -6,6 +7,7 @@ import { loadEmojiData } from './utils/emojiData';
 import { searchEmojis, getDefaultEmojis } from './utils/search';
 import { applyPreferredSkinTone } from './utils/skinTones';
 import { addToHistory, getFrequentEmojis } from './utils/history';
+import { getEmojiPrimaryAction } from './utils/emojiSettings';
 import type { SearchableEmoji } from './types';
 
 export { EmojiPickerView } from './components/EmojiPickerView';
@@ -127,13 +129,22 @@ export class EmojiPickerPlugin implements Plugin {
       return;
     }
 
-    // Copy to clipboard
+    const action = getEmojiPrimaryAction();
+
+    if (action === 'paste') {
+      try {
+        await invoke<void>('paste_text', { text: emoji });
+        logger.info(`✓ Pasted emoji: ${emoji}`);
+        addToHistory(emoji);
+        return;
+      } catch {
+        // Fallback to copy if paste not available
+      }
+    }
+
     const success = await copyToClipboard(emoji);
-
     if (success) {
-      console.log(`✓ Copied emoji to clipboard: ${emoji}`);
-
-      // Add to history for frequently used tracking
+      logger.info(`✓ Copied emoji to clipboard: ${emoji}`);
       addToHistory(emoji);
     }
   }

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import type { PluginResultAccessory } from '../../../shared/types/common.types';
 import { AppWindow, Copy, Equal, FolderOpen, Globe, Loader2 } from 'lucide-react';
 
 const APP_ICON = {
@@ -10,6 +11,7 @@ const APP_ICON = {
   shell: '/icons/app/shell_icon.svg',
   systemCommand: '/icons/app/settings_icon.svg',
   fileSearch: '/icons/app/file_search_icon.svg',
+  ai: '/icons/app/ai_icon.svg',
 } as const;
 import { SearchResult, SearchResultType } from '../../../shared/types/common.types';
 import type { ShellOutputData } from '../../plugins/builtin/shell';
@@ -18,6 +20,7 @@ import { AnsiText } from '../../plugins/builtin/shell/ansiParser';
 import { highlightMatch, HighlightSegment } from '../../../shared/utils/highlightMatch';
 import { useSearchStore } from '../../../stores/searchStore';
 import { cn } from '@/lib/utils';
+import { HighlightedExpression } from '../../plugins/builtin/calculator/utils/highlight';
 
 // Calculator data interface - nested inside PluginResult.data
 interface CalculatorInnerData {
@@ -63,6 +66,34 @@ const isSystemMonitorData = (data: unknown): data is SystemMonitorData => {
 interface ResultItemProps {
   result: SearchResult;
   isSelected: boolean;
+}
+
+/** Single Raycast-style accessory chip */
+function AccessoryChip({ acc }: { acc: PluginResultAccessory }) {
+  if (acc.tag) {
+    return (
+      <span
+        className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium leading-none whitespace-nowrap"
+        style={
+          acc.color
+            ? { color: acc.color, backgroundColor: acc.color + '28' }
+            : { color: 'var(--color-ash)', backgroundColor: 'var(--color-surface)' }
+        }
+      >
+        {acc.icon && <span className="mr-0.5">{acc.icon}</span>}
+        {acc.text}
+      </span>
+    );
+  }
+  return (
+    <span
+      className="inline-flex items-center gap-0.5 text-[11px] text-ash whitespace-nowrap tabular-nums"
+      style={acc.color ? { color: acc.color } : undefined}
+    >
+      {acc.icon && <span>{acc.icon}</span>}
+      {acc.text && <span>{acc.text}</span>}
+    </span>
+  );
 }
 
 /** Render a title string with highlighted matching characters */
@@ -184,7 +215,7 @@ export function ResultItem({ result, isSelected }: ResultItemProps) {
       <div className="flex flex-col min-w-0 flex-1">
         <div className="flex items-center gap-3 mt-0.5">
           <div className="flex flex-col">
-            <span className="text-sm text-body tabular-nums">{calcData.expression}</span>
+            <HighlightedExpression expression={calcData.expression} className="text-sm tabular-nums" />
             <span className="text-[10px] text-ash uppercase tracking-[0.5px]">Expression</span>
           </div>
           <div className="text-mute shrink-0">
@@ -291,6 +322,34 @@ export function ResultItem({ result, isSelected }: ResultItemProps) {
     );
   };
 
+  // Grid card layout for GridItem results
+  if (result.layout === 'grid') {
+    return (
+      <div
+        className={cn(
+          'flex flex-col items-center gap-1.5 p-2 rounded-lg cursor-pointer transition-colors outline-none border',
+          isSelected
+            ? 'bg-surface-elevated border-primary/60'
+            : 'hover:bg-surface-elevated border-transparent',
+        )}
+      >
+        {result.icon ? (
+          <img src={result.icon} alt="" className="w-10 h-10 object-contain rounded-md" />
+        ) : (
+          <div className="flex items-center justify-center w-10 h-10 rounded-md bg-surface">
+            <FolderOpen size={20} className="text-mute" />
+          </div>
+        )}
+        <div className="text-center w-full">
+          <div className="text-xs text-on-dark truncate leading-tight font-medium">{result.title}</div>
+          {result.subtitle && (
+            <div className="text-[10px] text-mute truncate leading-none mt-0.5">{result.subtitle}</div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       className={cn(
@@ -318,6 +377,8 @@ export function ResultItem({ result, isSelected }: ResultItemProps) {
           alt=""
           className="w-8 h-8 object-contain shrink-0 rounded-md"
         />
+      ) : result.type === SearchResultType.AiChat ? (
+        <img src={APP_ICON.ai} alt="" className="w-8 h-8 object-contain shrink-0 rounded-md" />
       ) : result.type === SearchResultType.WebSearch ? (
         <img src={APP_ICON.webSearch} alt="" className="w-8 h-8 object-contain shrink-0 rounded-md" />
       ) : result.type === SearchResultType.SystemCommand ? (
@@ -354,23 +415,32 @@ export function ResultItem({ result, isSelected }: ResultItemProps) {
         </div>
       )}
 
-      {/* Show badge: explicit badge > type badge > shortcut */}
-      {result.badge ? (
-        <div className="shrink-0 text-xs text-ash">{result.badge}</div>
-      ) : (
-        <div className="shrink-0 text-xs text-ash">
-          {result.type === SearchResultType.Application && 'Application'}
-          {result.type === SearchResultType.File && 'File'}
-          {result.type === SearchResultType.Game && 'Game'}
-          {result.type === SearchResultType.SystemCommand && 'Command'}
-          {result.type === SearchResultType.Calculator && 'Calculator'}
-          {result.type === SearchResultType.WebSearch && 'Web Search'}
-          {result.type === SearchResultType.Url && 'URL'}
-          {result.type === SearchResultType.Timer && 'Timer'}
-          {result.type === SearchResultType.SystemMonitor && 'System'}
-          {result.type === SearchResultType.Plugin && 'Plugin'}
-        </div>
-      )}
+      {/* Right-side metadata: accessories then badge */}
+      <div className="shrink-0 flex items-center gap-2 ml-auto pl-2">
+        {result.accessories && result.accessories.length > 0 && (
+          <div className="flex items-center gap-1.5">
+            {result.accessories.map((acc, i) => (
+              <AccessoryChip key={i} acc={acc} />
+            ))}
+          </div>
+        )}
+        {result.badge ? (
+          <span className="text-[11px] text-ash">{result.badge}</span>
+        ) : (
+          <span className="text-[11px] text-ash">
+            {result.type === SearchResultType.Application && 'Application'}
+            {result.type === SearchResultType.File && 'File'}
+            {result.type === SearchResultType.Game && 'Game'}
+            {result.type === SearchResultType.SystemCommand && 'Command'}
+            {result.type === SearchResultType.Calculator && 'Calculator'}
+            {result.type === SearchResultType.WebSearch && 'Web Search'}
+            {result.type === SearchResultType.Url && 'URL'}
+            {result.type === SearchResultType.Timer && 'Timer'}
+            {result.type === SearchResultType.SystemMonitor && 'System'}
+            {result.type === SearchResultType.Plugin && 'Plugin'}
+          </span>
+        )}
+      </div>
     </div>
   );
 }

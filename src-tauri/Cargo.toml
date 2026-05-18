@@ -1,6 +1,6 @@
 [package]
 name = "volt"
-version = "0.1.9"
+version = "0.2.0"
 description = "Lightning-fast keyboard-driven launcher for Windows, macOS, and Linux"
 authors = ["VoltLaunchr Contributors"]
 license = "Apache-2.0"
@@ -24,7 +24,7 @@ dotenvy = "0.15"
 [dependencies]
 # Tauri features intentionally empty: devtools is gated to debug builds via the
 # `devtools` feature below, and no other Tauri optional features are required.
-tauri = { version = "2", features = [] }
+tauri = { version = "2", features = ["protocol-asset"] }
 tauri-plugin-opener = "2"
 tauri-plugin-global-shortcut = "2"
 tauri-plugin-shell = "2"
@@ -59,6 +59,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tracing-appender = "0.2"
 reqwest = { version = "0.12", features = ["json", "stream"] }
 futures-util = "0.3"
+dotenvy = "0.15"
 zip = "2.2"
 tar = "0.4"
 flate2 = "1.0"
@@ -76,13 +77,20 @@ sha2 = "0.10"
 rand = "0.9"
 hex = "0.4"
 unicode-normalization = "0.1"
-jsonwebtoken = "9"
+jsonwebtoken = { version = "10", features = ["rust_crypto"] }
+trash = "5.2.6"
+thiserror = "2"
+# Local embeddings for "Ask my notes" RAG. fastembed wraps ort + ONNX Runtime
+# and ships pure-Rust tokenizers; the model itself is downloaded on first use
+# to `app_data_dir/embeddings/` (NOT bundled into the binary). Uses native-tls
+# by default — matches our existing reqwest config.
+fastembed = "5"
 
 [target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
 tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
 
 [target.'cfg(windows)'.dependencies]
-winapi = { version = "0.3", features = ["shellapi", "winuser", "wingdi", "winnt", "winreg", "fileapi"] }
+winapi = { version = "0.3", features = ["shellapi", "winuser", "wingdi", "winnt", "winreg", "fileapi", "psapi", "processthreadsapi", "handleapi"] }
 winreg = "0.55"
 lnk = "0.6"
 
@@ -96,6 +104,11 @@ tauri-plugin-positioner = "2"
 [features]
 default = []
 devtools = ["tauri/devtools"]
+# Enables the heavy end-to-end embedding test that downloads the multilingual-e5-small
+# model (~120 MB on first run, then cached). Run with:
+#   cargo test --features test-embeddings -- --test-threads=1
+# Kept off by default so CI and routine `cargo test` do not pull the model.
+test-embeddings = []
 
 [dev-dependencies]
 tempfile = "3"

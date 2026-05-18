@@ -1,5 +1,6 @@
 pub mod commands;
 mod core;
+pub mod embeddings;
 mod hotkey;
 mod indexer;
 pub mod launcher;
@@ -11,6 +12,7 @@ mod window;
 use commands::clipboard::ClipboardManagerState;
 use commands::files::{FileHistoryState, FileIndexState, WatcherState};
 use commands::launcher::LaunchHistoryState;
+use commands::notes::NoteState;
 use commands::shell::ShellExecutionState;
 use commands::sync::SyncState;
 use commands::system_monitor::SystemMonitorState;
@@ -232,6 +234,9 @@ pub fn run() {
                 current: std::sync::Mutex::new(None),
             });
 
+            // Initialize AI quick-action hotkey state
+            app.manage(commands::ai_quick_actions::QuickActionHotkeyState::default());
+
             // Initialize show-on-screen state (default: cursor)
             app.manage(ShowOnScreenState {
                 value: std::sync::Mutex::new("cursor".to_string()),
@@ -283,6 +288,25 @@ pub fn run() {
                             }
                         } else if let Err(e) = disable_autostart(app_handle.clone()).await {
                             warn!("Could not clean up dev autostart registration: {}", e);
+                        }
+
+                        // Register AI Quick Action hotkeys (best-effort; failures
+                        // surface in the Settings UI on next refresh).
+                        if let Some(state) = app_handle
+                            .try_state::<commands::ai_quick_actions::QuickActionHotkeyState>()
+                        {
+                            match commands::ai_quick_actions::ai_quick_actions_apply_all(
+                                app_handle.clone(),
+                                state,
+                            )
+                            .await
+                            {
+                                Ok(report) => info!(
+                                    "AI quick actions bound: {} entries",
+                                    report.len()
+                                ),
+                                Err(e) => warn!("Could not bind AI quick actions: {}", e),
+                            }
                         }
 
                         // Apply window position from settings
@@ -458,8 +482,27 @@ pub fn run() {
             // Initialize quicklink state
             app.manage(QuicklinkState::new(data_dir.clone()));
 
+            // Initialize notes state (SQLite + FTS5)
+            match NoteState::new(data_dir.clone()) {
+                Ok(notes_state) => {
+                    app.manage(notes_state);
+                }
+                Err(e) => {
+                    error!("Failed to init notes state: {}", e);
+                    return Err(format!("Failed to init notes state: {}", e).into());
+                }
+            }
+
             // Initialize sync state
             app.manage(SyncState::default());
+
+            // Initialize embedding engine (lazy: model is NOT loaded here,
+            // only when the frontend calls `embeddings_prepare` or an
+            // embed-needing command fires for the first time). The ~120 MB
+            // ONNX model is downloaded to `embeddings/` on first use.
+            let embeddings_dir = data_dir.join("embeddings");
+            let embedding_engine = Arc::new(embeddings::EmbeddingEngine::new(embeddings_dir));
+            app.manage(embedding_engine);
 
             // Initialize plugin system
             let plugin_api = Arc::new(VoltPluginAPI::new(data_dir));
@@ -653,6 +696,27 @@ pub fn run() {
                                     error!("Failed to handle OAuth deep link: {}", e);
                                 }
                             }
+                        } else if url_str.starts_with("volt://ext-oauth-callback") {
+                            let url_owned = url_str.clone();
+                            let emitter = emitter_handle.clone();
+                            tauri::async_runtime::spawn(async move {
+                                match commands::extensions::handle_ext_oauth_deep_link(
+                                    &emitter,
+                                    &url_owned,
+                                )
+                                .await
+                                {
+                                    Ok(result) => {
+                                        info!(
+                                            "ext OAuth complete for extension '{}'",
+                                            result.extension_id
+                                        );
+                                    }
+                                    Err(e) => {
+                                        error!("Failed to handle ext OAuth deep link: {}", e);
+                                    }
+                                }
+                            });
                         }
                     }
                 } else {
@@ -792,6 +856,10 @@ pub fn run() {
             start_clipboard_monitoring,
             stop_clipboard_monitoring,
             is_clipboard_monitoring,
+            set_clipboard_retention_days,
+            set_clipboard_disabled_apps,
+            paste_text,
+            paste_sequentially,
             // Extension store commands
             fetch_extension_registry,
             get_installed_extensions,
@@ -806,21 +874,72 @@ pub fn run() {
             get_enabled_extensions_sources,
             get_extension_tamper_alert,
             acknowledge_extension_tamper_alert,
+            // Extension storage API
+            ext_storage_get,
+            ext_storage_set,
+            ext_storage_remove,
+            ext_storage_clear,
+            // Extension preferences API
+            get_extension_preference,
+            set_extension_preference,
+            get_extension_secret,
+            set_extension_secret,
+            delete_extension_secret,
+            // Extension OAuth API
+            ext_oauth_start,
+            ext_oauth_get_token,
+            ext_oauth_revoke_token,
+            // Extension AI API
+            ext_ai_ask_stream,
+            // Global AI key management
+            ai_set_global_key,
+            ai_delete_global_key,
+            ai_get_providers_status,
+            ai_verify_key,
+            // Built-in AI Chat
+            ai_ask_builtin_stream,
+            // AI Profile (personalization prefix for AI Chat)
+            commands::ai_profile::ai_profile_get,
+            commands::ai_profile::ai_profile_set,
+            // AI Quick Actions
+            commands::ai_quick_actions::ai_quick_actions_get,
+            commands::ai_quick_actions::ai_quick_actions_save,
+            commands::ai_quick_actions::ai_quick_actions_apply_all,
+            commands::ai_quick_actions::ai_quick_actions_read_clipboard,
+            // Custom emojis (SDXL Emoji via Replicate)
+            commands::custom_emojis::custom_emojis_generate,
+            commands::custom_emojis::custom_emojis_list,
+            commands::custom_emojis::custom_emojis_delete,
+            commands::custom_emojis::custom_emojis_has_token,
+            commands::custom_emojis::custom_emojis_copy_image,
+            commands::custom_emojis::ai_pro_features_enabled,
+            // Local embeddings (lazy-loaded ONNX model for semantic search)
+            commands::embeddings::embeddings_is_ready,
+            commands::embeddings::embeddings_prepare,
+            #[cfg(debug_assertions)]
+            commands::embeddings::embeddings_test,
+            // Extension System API
+            ext_get_applications,
+            ext_show_in_folder,
+            ext_move_to_trash,
             fetch_extension_downloads,
             increment_extension_download,
             // Dev extensions commands
+            scaffold_extension,
             get_dev_extensions,
             link_dev_extension,
             unlink_dev_extension,
             toggle_dev_extension,
             get_dev_extensions_path,
             refresh_dev_extension,
+            get_dev_reload_signal,
             // Credentials commands
             save_credential,
             has_credential,
             delete_credential,
             get_credential_info,
             test_credential,
+            extension_authenticated_fetch,
             // Auth commands (Supabase)
             auth_login,
             auth_get_session,
@@ -853,6 +972,18 @@ pub fn run() {
             expand_snippet,
             import_snippets,
             export_snippets,
+            // Notes commands
+            notes::get_notes,
+            notes::get_note,
+            notes::get_trash,
+            notes::create_note,
+            notes::update_note,
+            notes::delete_note,
+            notes::restore_note,
+            notes::empty_trash,
+            notes::search_notes,
+            notes::export_notes,
+            notes::import_notes,
             // Shell command execution
             execute_shell_command,
             execute_shell_command_streaming,
@@ -868,6 +999,7 @@ pub fn run() {
             search_streaming,
             // Window management commands
             snap_window,
+            open_notes_window,
         ])
         .run(tauri::generate_context!())
         .unwrap_or_else(|e| {
