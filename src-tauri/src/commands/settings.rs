@@ -690,9 +690,17 @@ fn validate_import_path(path: &str) -> VoltResult<PathBuf> {
 }
 
 /// Export settings to a JSON file at the given path
+///
+/// Uses the same `validate_import_path` restriction as import — the path must
+/// be under the user's home directory and outside AppData/Library/.config —
+/// so that an extension that can invoke this command cannot drop arbitrary
+/// JSON files onto the user's Desktop, Documents, or other apps' data
+/// directories. Previously the export side only blocked traversal + system
+/// dirs, which left the entire filesystem (minus a handful of system roots)
+/// open as a file-drop primitive.
 #[tauri::command]
 pub async fn export_settings(app_handle: AppHandle, path: String) -> VoltResult<String> {
-    let validated_path = validate_settings_path(&path, Some("json"))?;
+    let validated_path = validate_import_path(&path)?;
 
     let settings = load_settings(app_handle).await?;
 

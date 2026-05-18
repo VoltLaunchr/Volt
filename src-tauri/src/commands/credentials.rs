@@ -163,9 +163,45 @@ pub async fn extension_authenticated_fetch(
         },
     };
 
+    // Custom redirect policy: re-apply the host allowlist on every hop.
+    // `Policy::limited(5)` only checked the initial URL — an open redirect on
+    // `api.github.com` (or a compromise of an allowlisted host) would then
+    // forward the user's Bearer token to wherever the 302 pointed, including
+    // private IPs (e.g. AWS IMDS at 169.254.169.254) or attacker-controlled
+    // hosts. We refuse any hop that lands outside the service allowlist or
+    // resolves to a private/loopback IP. HTTP scheme downgrades are blocked
+    // by the same path.
+    //
+    // `service_api_hosts(...)` returns a `&'static [&'static str]` (the data
+    // is compiled into the binary), which is `Copy + 'static + Send + Sync`
+    // — exactly what `Policy::custom`'s closure bound requires.
+    let allowed_hosts: &'static [&'static str] = service_api_hosts(&extension_id);
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(30))
-        .redirect(reqwest::redirect::Policy::limited(5))
+        .redirect(reqwest::redirect::Policy::custom(move |attempt| {
+            if attempt.previous().len() >= 5 {
+                return attempt.error("too many redirects");
+            }
+            let url = attempt.url();
+            if url.scheme() != "https" {
+                return attempt.stop();
+            }
+            match url.host() {
+                Some(url::Host::Ipv4(a)) if super::extensions::is_private_ipv4(a) => attempt.stop(),
+                Some(url::Host::Ipv6(a)) if super::extensions::is_private_ipv6(a) => attempt.stop(),
+                Some(url::Host::Domain(d)) => {
+                    let lower = d.to_ascii_lowercase();
+                    if lower == "localhost" || lower.ends_with(".localhost") {
+                        return attempt.stop();
+                    }
+                    if !allowed_hosts.iter().any(|h| h.eq_ignore_ascii_case(&lower)) {
+                        return attempt.stop();
+                    }
+                    attempt.follow()
+                }
+                Some(_) | None => attempt.stop(),
+            }
+        }))
         .build()
         .map_err(|e| format!("HTTP client error: {}", e))?;
 
@@ -222,14 +258,24 @@ pub async fn extension_authenticated_fetch(
     let ok = resp.status().is_success();
     let status_text = resp.status().canonical_reason().unwrap_or("").to_string();
 
-    let bytes = resp
-        .bytes()
-        .await
-        .map_err(|e| format!("Failed to read response body: {}", e))?;
-    if bytes.len() > MAX_BODY {
-        return Err("Response body exceeds 10 MB limit".to_string());
+    // Stream the body with an incremental cap. `resp.bytes().await` buffered
+    // the entire response before checking the size — an upstream that returned
+    // a multi-GB body (compromise or mis-configuration) could OOM-kill the app
+    // before we ever got a chance to reject it. We bound the in-flight buffer
+    // and abort the moment a chunk would push us over MAX_BODY.
+    let mut buf: Vec<u8> = Vec::new();
+    {
+        use futures_util::StreamExt;
+        let mut stream = resp.bytes_stream();
+        while let Some(chunk) = stream.next().await {
+            let chunk = chunk.map_err(|e| format!("Failed to read response body: {}", e))?;
+            if buf.len() + chunk.len() > MAX_BODY {
+                return Err("Response body exceeds 10 MB limit".to_string());
+            }
+            buf.extend_from_slice(&chunk);
+        }
     }
-    let body_str = String::from_utf8_lossy(&bytes).to_string();
+    let body_str = String::from_utf8_lossy(&buf).into_owned();
 
     Ok(serde_json::json!({
         "ok": ok,
