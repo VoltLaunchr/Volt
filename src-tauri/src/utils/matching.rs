@@ -27,6 +27,89 @@ pub fn fuzzy_match(text: &str, pattern: &str) -> bool {
     current_pattern_char.is_none()
 }
 
+/// ASCII-case-insensitive equality without allocating.
+fn ascii_ieq(a: &str, b: &str) -> bool {
+    a.len() == b.len() && a.eq_ignore_ascii_case(b)
+}
+
+/// ASCII-case-insensitive prefix match without allocating.
+fn ascii_istarts_with(text: &str, prefix: &str) -> bool {
+    text.len() >= prefix.len()
+        && text.as_bytes()[..prefix.len()].eq_ignore_ascii_case(prefix.as_bytes())
+}
+
+/// Optimised hot-path scorer that reuses a caller-supplied `Vec<char>` buffer
+/// for the Utf32Str haystack. The full-allocation variant
+/// [`calculate_match_score_with_matcher`] wraps this for callers that don't
+/// yet thread the buffer through.
+///
+/// Performance notes:
+/// - Pure-ASCII haystacks (the common case for app names and filenames) take
+///   the [`Utf32Str::Ascii`] zero-copy branch and avoid the char-collect entirely.
+/// - Pure-ASCII query+text pairs use `eq_ignore_ascii_case` /
+///   `as_bytes().eq_ignore_ascii_case` for the exact and prefix arms, skipping
+///   the previous double `to_lowercase()` allocations.
+/// - Non-ASCII haystacks reuse the supplied `char_buf`; the caller pays a
+///   single growable allocation amortized over the entire search loop.
+pub fn calculate_match_score_with_matcher_buf(
+    text: &str,
+    query: &str,
+    matcher: &mut Matcher,
+    char_buf: &mut Vec<char>,
+) -> f32 {
+    if query.is_empty() {
+        return if text.is_empty() { 100.0 } else { 80.0 };
+    }
+
+    let text_is_ascii = text.is_ascii();
+    let query_is_ascii = query.is_ascii();
+
+    // Exact match (case-insensitive).
+    if text_is_ascii && query_is_ascii {
+        if ascii_ieq(text, query) {
+            return 100.0;
+        }
+        if ascii_istarts_with(text, query) {
+            return 90.0;
+        }
+    } else {
+        // Fallback for non-ASCII: pay the to_lowercase() so we get proper
+        // Unicode case folding. These allocations are unavoidable here, but
+        // the hot path (almost all app/file names) is ASCII.
+        let text_lower = text.to_lowercase();
+        let query_lower = query.to_lowercase();
+        if text_lower == query_lower {
+            return 100.0;
+        }
+        if text_lower.starts_with(&query_lower) {
+            return 90.0;
+        }
+    }
+
+    // Build the pattern with Smart case-matching — nucleo handles case folding
+    // internally, so we pass the raw query instead of a lowercased copy.
+    let pattern = Pattern::parse(query, CaseMatching::Smart, Normalization::Smart);
+
+    let raw_score = if text_is_ascii {
+        // Zero-copy haystack — `Utf32Str::Ascii` borrows the original bytes.
+        pattern.score(Utf32Str::Ascii(text.as_bytes()), matcher)
+    } else {
+        // Reuse the caller's buffer for non-ASCII text. `Utf32Str::new` will
+        // clear and repopulate it, so the allocation amortises across the
+        // entire search loop instead of paying once per scored item.
+        let haystack = Utf32Str::new(text, char_buf);
+        pattern.score(haystack, matcher)
+    };
+
+    match raw_score {
+        Some(s) if s > 0 => {
+            let log_score = (s as f32).ln();
+            (50.0 + log_score * (39.0 / 10.0)).clamp(50.0, 89.0)
+        }
+        _ => 0.0,
+    }
+}
+
 /// Calculates a match score using a caller-supplied `Matcher` so that the
 /// matcher's internal scratch buffers are reused across loop iterations.
 /// Prefer this in hot loops over [`calculate_match_score`].
@@ -36,33 +119,13 @@ pub fn fuzzy_match(text: &str, pattern: &str) -> bool {
 /// - 90: Starts with query
 /// - 50-89: nucleo fuzzy/substring score (word-boundary aware, position-sensitive)
 /// - 0: No match
+///
+/// This is a thin wrapper over [`calculate_match_score_with_matcher_buf`] that
+/// allocates a fresh char buffer per call. For tight loops, prefer the `_buf`
+/// variant to amortise the haystack-conversion allocation.
 pub fn calculate_match_score_with_matcher(text: &str, query: &str, matcher: &mut Matcher) -> f32 {
-    if query.is_empty() {
-        return if text.is_empty() { 100.0 } else { 80.0 };
-    }
-
-    let text_lower = text.to_lowercase();
-    let query_lower = query.to_lowercase();
-
-    if text_lower == query_lower {
-        return 100.0;
-    }
-
-    if text_lower.starts_with(&query_lower) {
-        return 90.0;
-    }
-
-    let pattern = Pattern::parse(&query_lower, CaseMatching::Smart, Normalization::Smart);
-    let text_chars: Vec<char> = text.chars().collect();
-    let haystack = Utf32Str::Unicode(&text_chars);
-
-    match pattern.score(haystack, matcher) {
-        Some(raw_score) if raw_score > 0 => {
-            let log_score = (raw_score as f32).ln();
-            (50.0 + log_score * (39.0 / 10.0)).clamp(50.0, 89.0)
-        }
-        _ => 0.0,
-    }
+    let mut char_buf = Vec::new();
+    calculate_match_score_with_matcher_buf(text, query, matcher, &mut char_buf)
 }
 
 /// Calculates a match score for search results using nucleo-matcher for fuzzy scoring.

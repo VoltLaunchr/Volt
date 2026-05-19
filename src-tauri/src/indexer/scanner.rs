@@ -126,6 +126,24 @@ pub fn scan_files(config: &IndexConfig) -> Result<Vec<FileInfo>, String> {
         .map(|e| e.to_lowercase())
         .collect();
 
+    // Canonicalise excluded paths exactly once instead of re-canonicalising
+    // every excluded entry against every visited directory inside `scan_directory`.
+    // On a typical Windows scan that's ~5 exclusions × ~50 000 directories =
+    // ~250 000 redundant `canonicalize` syscalls that each potentially hit the
+    // disk; the previous code paid that cost on every recursion. We keep the
+    // original `excluded` string alongside the canonical form so the
+    // component-equality fallback (for relative exclusions like `node_modules`)
+    // still works.
+    let excluded_canonical: Vec<(String, PathBuf)> = config
+        .excluded_paths
+        .iter()
+        .map(|excluded| {
+            let p = Path::new(excluded);
+            let canonical = p.canonicalize().unwrap_or_else(|_| p.to_path_buf());
+            (excluded.clone(), canonical)
+        })
+        .collect();
+
     for folder in &config.folders {
         let path = PathBuf::from(folder);
         if !path.exists() {
@@ -133,7 +151,9 @@ pub fn scan_files(config: &IndexConfig) -> Result<Vec<FileInfo>, String> {
             continue;
         }
 
-        if let Ok(scanned) = scan_directory(&path, config, 0, &extensions_lower) {
+        if let Ok(scanned) =
+            scan_directory(&path, config, 0, &extensions_lower, &excluded_canonical)
+        {
             files.extend(scanned);
         }
     }
@@ -147,6 +167,7 @@ fn scan_directory(
     config: &IndexConfig,
     current_depth: usize,
     extensions_lower: &std::collections::HashSet<String>,
+    excluded_canonical: &[(String, PathBuf)],
 ) -> Result<Vec<FileInfo>, String> {
     let mut files = Vec::new();
 
@@ -155,31 +176,24 @@ fn scan_directory(
         return Ok(files);
     }
 
-    // Check if path is excluded using proper path-based comparison
-    for excluded in &config.excluded_paths {
-        let excluded_path = Path::new(excluded);
-
-        // Try to canonicalize both paths for accurate comparison
-        // Fall back to original paths if canonicalization fails (e.g., path doesn't exist)
+    // Check if path is excluded. The canonical exclusion list is pre-computed
+    // in `scan_files`; we only canonicalise `dir_path` once per recursion.
+    if !excluded_canonical.is_empty() {
         let dir_canonical = dir_path
             .canonicalize()
             .unwrap_or_else(|_| dir_path.to_path_buf());
-        let excluded_canonical = excluded_path
-            .canonicalize()
-            .unwrap_or_else(|_| excluded_path.to_path_buf());
-
-        // If excluded path is absolute, check if current path is a descendant
-        if excluded_canonical.is_absolute() {
-            if dir_canonical.starts_with(&excluded_canonical) {
-                return Ok(files);
-            }
-        } else {
-            // For relative/component-based exclusions, check if any component matches exactly
-            for component in dir_canonical.components() {
-                if let Some(comp_str) = component.as_os_str().to_str()
-                    && comp_str == excluded
-                {
+        for (raw, canonical) in excluded_canonical {
+            if canonical.is_absolute() {
+                if dir_canonical.starts_with(canonical) {
                     return Ok(files);
+                }
+            } else {
+                for component in dir_canonical.components() {
+                    if let Some(comp_str) = component.as_os_str().to_str()
+                        && comp_str == raw
+                    {
+                        return Ok(files);
+                    }
                 }
             }
         }
@@ -203,40 +217,45 @@ fn scan_directory(
     };
 
     for entry in entries.flatten() {
-        let path = entry.path();
-
-        // Skip symlinks to avoid infinite loops
-        let metadata = match entry.metadata() {
-            Ok(m) => m,
+        // `file_type()` reads from the already-loaded DirEntry — no extra
+        // syscall and no symlink-following. The previous `entry.metadata()`
+        // call followed symlinks, which on Windows triggered a network round
+        // trip on OneDrive cloud-only files (hydrating them just to find out
+        // whether they were files or dirs). For directory traversal we only
+        // need the file_type; metadata for `size` / `modified` is fetched
+        // below only when we actually keep the file.
+        let file_type = match entry.file_type() {
+            Ok(ft) => ft,
             Err(_) => continue,
         };
-
-        if metadata.is_symlink() {
+        if file_type.is_symlink() {
             continue;
         }
+        let path = entry.path();
 
-        if metadata.is_dir() {
+        if file_type.is_dir() {
             // Always index directories at the first two levels (game folders and subfolders)
             // This allows searching for game directories like "Battlefield 6"
             if (current_depth <= 1 || config.file_extensions.is_empty())
+                && let Ok(metadata) = entry.metadata()
                 && let Some(dir_info) = create_directory_info(&path, &metadata)
             {
                 files.push(dir_info);
             }
 
             // Recursively scan subdirectory
-            if let Ok(sub_files) =
-                scan_directory(&path, config, current_depth + 1, extensions_lower)
-            {
+            if let Ok(sub_files) = scan_directory(
+                &path,
+                config,
+                current_depth + 1,
+                extensions_lower,
+                excluded_canonical,
+            ) {
                 files.extend(sub_files);
             }
-        } else if metadata.is_file() {
-            // Check file size limit
-            if config.max_file_size > 0 && metadata.len() > config.max_file_size {
-                continue;
-            }
-
-            // Check file extension filter — O(1) HashSet lookup, built once in scan_files.
+        } else if file_type.is_file() {
+            // Check file extension filter BEFORE the metadata syscall — cheapest
+            // possible rejection path for excluded extensions.
             if !extensions_lower.is_empty() {
                 if let Some(ext) = path.extension() {
                     let ext_str = ext.to_string_lossy().to_lowercase();
@@ -247,6 +266,16 @@ fn scan_directory(
                     // Skip files without extension if filter is set
                     continue;
                 }
+            }
+
+            let metadata = match entry.metadata() {
+                Ok(m) => m,
+                Err(_) => continue,
+            };
+
+            // Check file size limit
+            if config.max_file_size > 0 && metadata.len() > config.max_file_size {
+                continue;
             }
 
             // Create FileInfo

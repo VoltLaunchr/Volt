@@ -36,12 +36,30 @@
 //! 2. We save the bytes to `app_data_dir/custom_emojis/{id}.png`.
 //! 3. We persist a tiny index JSON so the UI can list/manage them.
 
+use once_cell::sync::Lazy;
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 use std::time::Duration;
 use tauri::{AppHandle, Manager};
 use tracing::{info, warn};
+
+/// Redact `Bearer <token>` patterns from upstream error bodies before they
+/// land in logs. Replicate / HuggingFace error responses occasionally echo
+/// the request `Authorization` header back in JSON; treating them as opaque
+/// would leak the user's API token via the tracing-appender file. We keep
+/// the redaction conservative so a bad upstream message still has enough
+/// shape to debug (status code, error code, etc.) — only the credential
+/// fragment is replaced.
+static BEARER_TOKEN_RE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"(?i)bearer\s+[A-Za-z0-9_\-\.=]{8,}").unwrap());
+
+fn redact_secrets(body: &str) -> String {
+    BEARER_TOKEN_RE
+        .replace_all(body, "Bearer [REDACTED]")
+        .into_owned()
+}
 
 /// The `fofr/sdxl-emoji` LoRA was trained with the trigger phrase
 /// `A TOK emoji of …`. Prepending it consistently produces sticker-style emojis;
@@ -62,8 +80,7 @@ const REPLICATE_PROMPT_PREFIX: &str = "A TOK emoji of ";
 /// is distilled and runs without classifier-free guidance (`guidance_scale: 0`).
 const HUGGINGFACE_INFERENCE_ENDPOINT: &str =
     "https://router.huggingface.co/hf-inference/models/black-forest-labs/FLUX.1-schnell";
-const HUGGINGFACE_PROMPT_PREFIX: &str =
-    "A cute emoji sticker, flat vector illustration, bold outline, vibrant colors, centered on a plain white background, of ";
+const HUGGINGFACE_PROMPT_PREFIX: &str = "A cute emoji sticker, flat vector illustration, bold outline, vibrant colors, centered on a plain white background, of ";
 
 /// Pollinations.ai — free, auth-less image generation. GET the URL and you
 /// get a PNG back. Used as the last-resort fallback in the provider chain.
@@ -166,8 +183,12 @@ fn write_index(app: &AppHandle, entries: &[CustomEmoji]) -> Result<(), String> {
 /// PNG as `Vec<u8>` — HF emits bytes directly, Replicate downloads its own
 /// output URL internally — so callers never see the URL-vs-bytes split.
 enum EmojiProvider {
-    HuggingFace { token: String },
-    Replicate { token: String },
+    HuggingFace {
+        token: String,
+    },
+    Replicate {
+        token: String,
+    },
     /// Free, no-auth fallback. Pollinations does not need any state — we
     /// keep the variant unit-like so adding it to the chain is just
     /// `providers.push(EmojiProvider::Pollinations)` with no env-var dance.
@@ -276,10 +297,12 @@ async fn fetch_latest_version(client: &reqwest::Client, token: &str) -> Result<S
     let status = resp.status();
     if !status.is_success() {
         let txt = resp.text().await.unwrap_or_default();
-        return Err(format!(
-            "Replicate model lookup returned HTTP {}: {}",
-            status, txt
-        ));
+        warn!(
+            "Replicate model lookup HTTP {} body: {}",
+            status,
+            redact_secrets(&txt)
+        );
+        return Err(format!("Replicate model lookup returned HTTP {}", status));
     }
 
     let info: ReplicateModelInfo = resp
@@ -348,12 +371,14 @@ async fn run_huggingface_inference(token: &str, prompt: &str) -> Result<Vec<u8>,
         }
 
         let txt = resp.text().await.unwrap_or_default();
+        let redacted = redact_secrets(&txt);
         if status.as_u16() == 503 && attempt == 0 {
-            warn!("HuggingFace cold-start (503), retrying once: {}", txt);
+            warn!("HuggingFace cold-start (503), retrying once: {}", redacted);
             tokio::time::sleep(Duration::from_secs(HUGGINGFACE_COLD_START_WAIT_SECS)).await;
             continue;
         }
-        return Err(format!("HuggingFace returned HTTP {}: {}", status, txt));
+        warn!("HuggingFace HTTP {} body: {}", status, redacted);
+        return Err(format!("HuggingFace returned HTTP {}", status));
     }
     Err("HuggingFace: exhausted retries on cold start".into())
 }
@@ -377,8 +402,7 @@ async fn run_pollinations(prompt: &str) -> Result<Vec<u8>, String> {
     // be percent-encoded. `url::form_urlencoded` over-encodes commas/spaces
     // exactly the way the service expects.
     let styled_prompt = format!("{}{}", HUGGINGFACE_PROMPT_PREFIX, prompt);
-    let encoded: String =
-        url::form_urlencoded::byte_serialize(styled_prompt.as_bytes()).collect();
+    let encoded: String = url::form_urlencoded::byte_serialize(styled_prompt.as_bytes()).collect();
     let url = format!(
         "{}{}?model=flux&width=1024&height=1024&nologo=true",
         POLLINATIONS_BASE_URL, encoded
@@ -393,7 +417,12 @@ async fn run_pollinations(prompt: &str) -> Result<Vec<u8>, String> {
     let status = resp.status();
     if !status.is_success() {
         let txt = resp.text().await.unwrap_or_default();
-        return Err(format!("Pollinations returned HTTP {}: {}", status, txt));
+        warn!(
+            "Pollinations HTTP {} body: {}",
+            status,
+            redact_secrets(&txt)
+        );
+        return Err(format!("Pollinations returned HTTP {}", status));
     }
 
     let content_type = resp
@@ -404,9 +433,14 @@ async fn run_pollinations(prompt: &str) -> Result<Vec<u8>, String> {
         .to_string();
     if !content_type.starts_with("image/") {
         let txt = resp.text().await.unwrap_or_default();
+        warn!(
+            "Pollinations non-image content-type '{}' body: {}",
+            content_type,
+            redact_secrets(&txt)
+        );
         return Err(format!(
-            "Pollinations succeeded but returned non-image content-type '{}': {}",
-            content_type, txt
+            "Pollinations succeeded but returned non-image content-type '{}'",
+            content_type
         ));
     }
 
@@ -455,7 +489,8 @@ async fn run_replicate_prediction(token: &str, prompt: &str) -> Result<Vec<u8>, 
     let status = resp.status();
     if !status.is_success() {
         let txt = resp.text().await.unwrap_or_default();
-        return Err(format!("Replicate returned HTTP {}: {}", status, txt));
+        warn!("Replicate HTTP {} body: {}", status, redact_secrets(&txt));
+        return Err(format!("Replicate returned HTTP {}", status));
     }
 
     let mut prediction: ReplicatePrediction = resp
@@ -627,11 +662,7 @@ pub async fn custom_emojis_delete(app: AppHandle, id: String) -> Result<(), Stri
 /// is `Cow<[u8]>` and the cheapest way to avoid borrow-checker grief across
 /// retry boundaries is to construct it fresh each attempt (the RGBA slice
 /// itself is borrowed, no copy).
-fn set_clipboard_image_with_retry(
-    width: usize,
-    height: usize,
-    rgba: &[u8],
-) -> Result<(), String> {
+fn set_clipboard_image_with_retry(width: usize, height: usize, rgba: &[u8]) -> Result<(), String> {
     const MAX_ATTEMPTS: u32 = 8;
     let mut last_err = String::new();
 
@@ -690,8 +721,8 @@ pub async fn custom_emojis_copy_image(app: AppHandle, id: String) -> Result<(), 
     // and `image::open` picks its decoder from the file extension. Read the
     // bytes ourselves and let the image crate sniff the format from the
     // magic header so we decode whatever was actually written to disk.
-    let bytes = fs::read(&entry.path)
-        .map_err(|e| format!("Failed to read {}: {}", entry.path, e))?;
+    let bytes =
+        fs::read(&entry.path).map_err(|e| format!("Failed to read {}: {}", entry.path, e))?;
     let img = image::load_from_memory(&bytes)
         .map_err(|e| format!("Failed to decode {}: {}", entry.path, e))?;
     let rgba = img.to_rgba8();

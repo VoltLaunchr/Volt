@@ -317,6 +317,9 @@ fn truncate_output(s: &str, max_bytes: usize) -> String {
 /// Rejects:
 /// - UNC paths (`\\server\share`, `//server/share`) — these trigger SMB auth
 ///   round-trips and can be used to leak NTLM hashes to attacker-controlled hosts.
+/// - NT object manager paths (`\??\…`) and DOS device paths (`\\.\…`, `\\?\…`)
+///   — these bypass normal path resolution and can reach kernel/driver namespaces
+///   (e.g. `\??\GLOBALROOT\Device\…`) that no shell working directory legitimately needs.
 /// - Non-existent paths.
 /// - Paths that resolve to a non-directory.
 fn validate_working_dir(
@@ -329,9 +332,14 @@ fn validate_working_dir(
             if trimmed.is_empty() {
                 return Ok(None);
             }
-            if trimmed.starts_with("\\\\") || trimmed.starts_with("//") {
+            // `\\?\` and `\\.\` both start with `\\` so they fall under the UNC
+            // reject below, but `\??\` (NT object manager prefix) does not —
+            // list it explicitly. Forward-slash variants are listed for the
+            // same reason as the UNC `//` form.
+            const BAD_PREFIXES: &[&str] = &["\\\\", "//", "\\??\\", "/??/"];
+            if BAD_PREFIXES.iter().any(|p| trimmed.starts_with(p)) {
                 return Err(VoltError::PermissionDenied(
-                    "UNC working_dir not allowed".into(),
+                    "Special path syntax not allowed in working_dir".into(),
                 ));
             }
             // Generic error message — surfacing the raw OS error leaks
@@ -1215,6 +1223,22 @@ mod tests {
         let r = validate_working_dir(Some(r"\\server\share"));
         assert!(matches!(r, Err(VoltError::PermissionDenied(_))));
         let r = validate_working_dir(Some("//server/share"));
+        assert!(matches!(r, Err(VoltError::PermissionDenied(_))));
+    }
+
+    #[test]
+    fn test_validate_working_dir_nt_object_path_rejected() {
+        // NT object manager prefix — bypasses normal Win32 path resolution.
+        let r = validate_working_dir(Some(r"\??\C:\Windows"));
+        assert!(matches!(r, Err(VoltError::PermissionDenied(_))));
+        // Forward-slash variant of the same.
+        let r = validate_working_dir(Some("/??/C:/Windows"));
+        assert!(matches!(r, Err(VoltError::PermissionDenied(_))));
+        // Extended-length and DOS-device prefixes both start with `\\` so they
+        // are also caught by the UNC arm of the blocklist.
+        let r = validate_working_dir(Some(r"\\?\C:\Windows"));
+        assert!(matches!(r, Err(VoltError::PermissionDenied(_))));
+        let r = validate_working_dir(Some(r"\\.\PhysicalDrive0"));
         assert!(matches!(r, Err(VoltError::PermissionDenied(_))));
     }
 

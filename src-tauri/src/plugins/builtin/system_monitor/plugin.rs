@@ -5,8 +5,8 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::Instant;
 use sysinfo::{
-    Components, CpuRefreshKind, DiskKind, Disks, MINIMUM_CPU_UPDATE_INTERVAL, MemoryRefreshKind,
-    Networks, Pid, ProcessRefreshKind, ProcessesToUpdate, RefreshKind, System,
+    Components, CpuRefreshKind, DiskKind, Disks, MemoryRefreshKind, Networks, Pid,
+    ProcessRefreshKind, ProcessesToUpdate, RefreshKind, System,
 };
 
 /// System monitoring plugin
@@ -215,23 +215,29 @@ impl SystemMonitorPlugin {
         Ok(())
     }
 
-    /// Performs the dual-sample CPU refresh required by sysinfo. If the cached
-    /// reading is fresh (< 1s old) we skip the sleep to keep the command
-    /// responsive; otherwise we refresh, sleep `MINIMUM_CPU_UPDATE_INTERVAL`,
-    /// and refresh again so `global_cpu_usage()` returns a meaningful value.
+    /// Refreshes the CPU usage sample. sysinfo's `global_cpu_usage()` returns
+    /// the delta between the two most recent `refresh_cpu_usage()` calls, so
+    /// the baseline must be maintained by an external schedule:
+    ///
+    /// 1. `prime_cpu()` is called once at startup to seed the first sample.
+    /// 2. The 5s background ticker (`refresh_cache`) calls this on every cycle,
+    ///    keeping the inter-sample interval at ~5s.
+    ///
+    /// The previous implementation slept for `MINIMUM_CPU_UPDATE_INTERVAL`
+    /// (~200ms) while holding the `system: Mutex<System>` whenever the cache
+    /// was older than 1s. That blocked every concurrent IPC call (kill_process,
+    /// get_system_info) for the duration of the sleep and was triggered on
+    /// every single ticker iteration. The single-sample path is sufficient
+    /// because the ticker already provides the required inter-sample gap; if
+    /// the baseline is genuinely cold (system resume from suspend, ticker not
+    /// yet primed), the next tick will produce a meaningful reading and the
+    /// transient 0.0 value is acceptable.
     fn refresh_cpu_dual_sample(&self, system: &mut System) {
         let mut last = match self.last_cpu_refresh.lock() {
             Ok(g) => g,
             Err(poisoned) => poisoned.into_inner(),
         };
-        let needs_warmup = last
-            .map(|t| t.elapsed() > std::time::Duration::from_secs(1))
-            .unwrap_or(true);
         system.refresh_cpu_usage();
-        if needs_warmup {
-            std::thread::sleep(MINIMUM_CPU_UPDATE_INTERVAL);
-            system.refresh_cpu_usage();
-        }
         *last = Some(Instant::now());
     }
 
@@ -310,12 +316,9 @@ impl SystemMonitorPlugin {
             .with_cpu(CpuRefreshKind::new().with_cpu_usage())
             .with_memory(MemoryRefreshKind::new().with_ram());
         system.refresh_specifics(refresh_kind);
-        // NOTE: Do NOT call `refresh_cpu_dual_sample` here — it would block the
-        // IPC hot path with `std::thread::sleep(MINIMUM_CPU_UPDATE_INTERVAL)` on
-        // cold cache. The 5-second background ticker (`refresh_cache`) primes
-        // the CPU baseline within ~200ms of startup; the first user query
-        // before that returns whatever the single-sample refresh gives (often
-        // 0.0), which is acceptable.
+        // CPU baseline is primed at startup via `prime_cpu` and maintained by
+        // the 5s background ticker; the single-sample refresh above provides
+        // a meaningful delta against the most recent baseline.
 
         let mut disks = self
             .disks
@@ -511,6 +514,13 @@ impl SystemMonitorPlugin {
         };
 
         // Top processes -------------------------------------------------------
+        // The previous implementation collected ~500 `ProcessInfo` (each with a
+        // heap-allocated name String), cloned the entire Vec, full-sorted both
+        // copies, then truncated to 5. That paid full O(n log n) for two top-5
+        // queries and allocated ~1000 strings every 5 s. We now collect once
+        // and use `select_nth_unstable_by` (O(n) average) to partition top-5
+        // without cloning.
+        const TOP_K: usize = 5;
         let mut processes: Vec<ProcessInfo> = system
             .processes()
             .iter()
@@ -522,16 +532,43 @@ impl SystemMonitorPlugin {
                 memory_bytes: p.memory(),
             })
             .collect();
-        let mut top_cpu_processes = processes.clone();
-        top_cpu_processes.sort_by(|a, b| {
-            b.cpu_usage_percent
-                .partial_cmp(&a.cpu_usage_percent)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
-        top_cpu_processes.truncate(5);
-        processes.sort_by_key(|b| std::cmp::Reverse(b.memory_bytes));
-        processes.truncate(5);
-        let top_memory_processes = processes;
+
+        let top_cpu_processes: Vec<ProcessInfo> = if processes.len() > TOP_K {
+            processes.select_nth_unstable_by(TOP_K, |a, b| {
+                b.cpu_usage_percent
+                    .partial_cmp(&a.cpu_usage_percent)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
+            let mut top: Vec<ProcessInfo> = processes[..TOP_K].to_vec();
+            top.sort_by(|a, b| {
+                b.cpu_usage_percent
+                    .partial_cmp(&a.cpu_usage_percent)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
+            top
+        } else {
+            let mut top = processes.clone();
+            top.sort_by(|a, b| {
+                b.cpu_usage_percent
+                    .partial_cmp(&a.cpu_usage_percent)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
+            top
+        };
+
+        // Reuse the now-shuffled `processes` for the memory ranking. We don't
+        // care about the previous CPU ordering — `select_nth_unstable_by` only
+        // guaranteed that the first K elements have the K largest CPU values,
+        // not any particular order outside that prefix.
+        let top_memory_processes: Vec<ProcessInfo> = if processes.len() > TOP_K {
+            processes.select_nth_unstable_by_key(TOP_K, |r| std::cmp::Reverse(r.memory_bytes));
+            processes.truncate(TOP_K);
+            processes.sort_by_key(|r| std::cmp::Reverse(r.memory_bytes));
+            processes
+        } else {
+            processes.sort_by_key(|r| std::cmp::Reverse(r.memory_bytes));
+            processes
+        };
 
         // Components (temperatures) ------------------------------------------
         let components_info: Vec<ComponentInfo> = components

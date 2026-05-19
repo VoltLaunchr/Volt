@@ -2,7 +2,21 @@
 
 use super::types::{GameInfo, GamePlatform, GameScanner};
 use crate::utils::game_icon::{find_game_icon, get_steam_cached_icon};
+use once_cell::sync::Lazy;
+use regex::Regex;
 use std::path::{Path, PathBuf};
+
+// Pre-compiled regexes for the three ACF fields we actually read. The previous
+// `extract_value` recompiled a regex on every call (3 fields per game × 100
+// games per scan = 300 redundant compiles, ~20 ms total per Steam scan).
+static ACF_APPID_RE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r#""appid"\s+"([^"]+)""#).expect("static ACF appid regex"));
+static ACF_NAME_RE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r#""name"\s+"([^"]+)""#).expect("static ACF name regex"));
+static ACF_INSTALLDIR_RE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r#""installdir"\s+"([^"]+)""#).expect("static ACF installdir regex"));
+static LIBRARYFOLDERS_PATH_RE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r#""path"\s+"([^"]+)""#).expect("static libraryfolders path regex"));
 
 /// Steam game information
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -93,48 +107,27 @@ impl SteamScanner {
         None
     }
 
-    /// Get Steam path from Windows Registry
+    /// Get Steam path from Windows Registry.
+    ///
+    /// Uses the wide (UTF-16) API via the `winreg` crate. The previous ANSI
+    /// implementation (`RegOpenKeyExA` + `String::from_utf8_lossy`) had two
+    /// production bugs: (1) `size as usize - 1` underflowed and panicked on an
+    /// empty `SteamPath` value, and (2) `from_utf8_lossy` corrupted paths
+    /// containing non-ASCII characters because RegQueryValueExA returns the
+    /// system ANSI codepage, not UTF-8 — Steam libraries under user profiles
+    /// with Cyrillic/CJK names were silently lost.
     #[cfg(target_os = "windows")]
     fn get_steam_path_from_registry() -> Option<PathBuf> {
-        use std::ffi::CString;
-        use std::ptr::null_mut;
-        use winapi::um::winnt::{KEY_READ, REG_SZ};
-        use winapi::um::winreg::{HKEY_CURRENT_USER, RegOpenKeyExA, RegQueryValueExA};
+        use winreg::RegKey;
+        use winreg::enums::HKEY_CURRENT_USER;
 
-        unsafe {
-            let key_path = CString::new("Software\\Valve\\Steam").ok()?;
-            let value_name = CString::new("SteamPath").ok()?;
-
-            let mut hkey = null_mut();
-            let result =
-                RegOpenKeyExA(HKEY_CURRENT_USER, key_path.as_ptr(), 0, KEY_READ, &mut hkey);
-
-            if result != 0 {
-                return None;
-            }
-
-            let mut buffer = vec![0u8; 512];
-            let mut size = buffer.len() as u32;
-            let mut value_type = REG_SZ;
-
-            let result = RegQueryValueExA(
-                hkey,
-                value_name.as_ptr(),
-                null_mut(),
-                &mut value_type,
-                buffer.as_mut_ptr(),
-                &mut size,
-            );
-
-            winapi::um::winreg::RegCloseKey(hkey);
-
-            if result == 0 && value_type == REG_SZ {
-                let path_str = String::from_utf8_lossy(&buffer[..size as usize - 1]);
-                return Some(PathBuf::from(path_str.to_string()));
-            }
+        let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+        let steam_key = hkcu.open_subkey(r"Software\Valve\Steam").ok()?;
+        let path: String = steam_key.get_value("SteamPath").ok()?;
+        if path.is_empty() {
+            return None;
         }
-
-        None
+        Some(PathBuf::from(path))
     }
 
     /// Check if Steam is installed
@@ -237,12 +230,28 @@ impl SteamScanner {
         })
     }
 
-    /// Extract a value from ACF content
+    /// Extract a value from ACF content using the pre-compiled regex for each
+    /// supported key. The `key` parameter is preserved for test ergonomics but
+    /// only "appid", "name", and "installdir" are actually used by the scanner.
+    /// Unknown keys fall back to a one-off compile so the function stays
+    /// general-purpose for tests that pass arbitrary keys.
     fn extract_value(content: &str, key: &str) -> Option<String> {
-        // Look for "key" "value" pattern
-        let pattern = format!(r#""{}"\s+"([^"]+)""#, key);
-        let re = regex::Regex::new(&pattern).ok()?;
-
+        let re: &Regex = match key {
+            "appid" => &ACF_APPID_RE,
+            "name" => &ACF_NAME_RE,
+            "installdir" => &ACF_INSTALLDIR_RE,
+            _ => {
+                // Slow path: arbitrary key — compile once per call. Only test
+                // code reaches here; production callers above use the named
+                // statics directly.
+                let pattern = format!(r#""{}"\s+"([^"]+)""#, key);
+                return Regex::new(&pattern)
+                    .ok()?
+                    .captures(content)
+                    .and_then(|cap| cap.get(1))
+                    .map(|m| m.as_str().to_string());
+            }
+        };
         re.captures(content)
             .and_then(|cap| cap.get(1))
             .map(|m| m.as_str().to_string())
@@ -270,11 +279,10 @@ impl SteamScanner {
 
         let mut libraries = Vec::new();
 
-        // Match all "path" values in the VDF file
-        let path_pattern = regex::Regex::new(r#""path"\s+"([^"]+)""#)
-            .map_err(|e| format!("Invalid regex pattern: {}", e))?;
-
-        for capture in path_pattern.captures_iter(&content) {
+        // Match all "path" values in the VDF file. The regex is compiled once
+        // at program start (`LIBRARYFOLDERS_PATH_RE`) — the previous version
+        // recompiled on every scan.
+        for capture in LIBRARYFOLDERS_PATH_RE.captures_iter(&content) {
             if let Some(path_match) = capture.get(1) {
                 let path_str = path_match.as_str();
 

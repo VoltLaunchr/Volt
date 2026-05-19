@@ -234,7 +234,7 @@ fn validate_extension_id(id: &str) -> VoltResult<()> {
 }
 
 /// Returns true if `addr` is a private/loopback/link-local IPv4 address.
-fn is_private_ipv4(addr: Ipv4Addr) -> bool {
+pub(crate) fn is_private_ipv4(addr: Ipv4Addr) -> bool {
     addr.is_loopback()              // 127.0.0.0/8
         || addr.is_private()        // 10/8, 172.16/12, 192.168/16
         || addr.is_link_local()     // 169.254.0.0/16
@@ -251,7 +251,7 @@ fn is_private_ipv4(addr: Ipv4Addr) -> bool {
 /// unspecified (`::`), and IPv4-mapped (`::ffff:0:0/96`) — the last is the
 /// trick that lets `[::ffff:127.0.0.1]` pretend to be an IPv6 address while
 /// actually targeting a v4 loopback.
-fn is_private_ipv6(addr: Ipv6Addr) -> bool {
+pub(crate) fn is_private_ipv6(addr: Ipv6Addr) -> bool {
     if addr.is_loopback() || addr.is_unspecified() {
         return true;
     }
@@ -323,14 +323,30 @@ fn validate_download_url(url: &str) -> VoltResult<()> {
     Ok(())
 }
 
+/// Maximum total decompressed size we allow when extracting an extension
+/// archive. The 50 MB cap on the compressed download (`MAX_EXTENSION_SIZE`)
+/// only bounds what we read off the wire — a malicious tarball with a 1000:1
+/// compression ratio could still expand to several GB and fill the user's
+/// disk before we reject it. 200 MB is well above any legitimate Volt
+/// extension while staying small enough that hitting the cap is a clear
+/// signal of abuse.
+const MAX_EXTRACTED_BYTES: u64 = 200 * 1024 * 1024;
+
 /// Extract a ZIP archive into `dest_dir`. Uses `enclosed_name()` to block
 /// path-traversal entries (e.g. `../evil.js`).
+///
+/// Tracks total decompressed bytes against `MAX_EXTRACTED_BYTES` to refuse
+/// zip bombs. The size is sourced from each entry's compressed/uncompressed
+/// header *and* verified against the number of bytes actually written, so an
+/// entry with a lying header still trips the cap during streaming copy.
 fn extract_zip(bytes: &[u8], dest_dir: &Path) -> VoltResult<()> {
     let cursor = std::io::Cursor::new(bytes);
     let mut archive = zip::ZipArchive::new(cursor)
         .map_err(|e| VoltError::FileSystem(format!("Failed to read zip archive: {}", e)))?;
 
     debug!("ZIP archive contains {} entries", archive.len());
+
+    let mut total_extracted: u64 = 0;
 
     for i in 0..archive.len() {
         let mut file = archive
@@ -351,6 +367,16 @@ fn extract_zip(bytes: &[u8], dest_dir: &Path) -> VoltResult<()> {
         if file.is_symlink() {
             warn!("Skipping symlink entry in zip: {:?}", file_path);
             continue;
+        }
+
+        // Pre-flight: if the entry advertises a size that alone would push us
+        // over the cap, bail out before touching the disk.
+        let advertised = file.size();
+        if total_extracted.saturating_add(advertised) > MAX_EXTRACTED_BYTES {
+            return Err(VoltError::InvalidConfig(format!(
+                "Zip archive exceeds {} MB decompressed (zip-bomb guard)",
+                MAX_EXTRACTED_BYTES / (1024 * 1024)
+            )));
         }
 
         let outpath = dest_dir.join(&file_path);
@@ -387,15 +413,29 @@ fn extract_zip(bytes: &[u8], dest_dir: &Path) -> VoltResult<()> {
                     e
                 ))
             })?;
-            std::io::copy(&mut file, &mut outfile)
+            // Cap the destination at the remaining budget. If the entry lies
+            // about its size in the header, the underlying decompressor will
+            // hit the limit and short-circuit before we exceed MAX_EXTRACTED_BYTES.
+            use std::io::Read;
+            let budget = MAX_EXTRACTED_BYTES.saturating_sub(total_extracted);
+            let mut limited = (&mut file).take(budget + 1);
+            let written = std::io::copy(&mut limited, &mut outfile)
                 .map_err(|e| VoltError::FileSystem(format!("Failed to extract file: {}", e)))?;
+            if written > budget {
+                return Err(VoltError::InvalidConfig(format!(
+                    "Zip archive exceeds {} MB decompressed (zip-bomb guard)",
+                    MAX_EXTRACTED_BYTES / (1024 * 1024)
+                )));
+            }
+            total_extracted = total_extracted.saturating_add(written);
         }
     }
     Ok(())
 }
 
 /// Extract a gzipped tar archive into `dest_dir`. Reject any entry whose
-/// resolved path escapes `dest_dir` (path traversal guard).
+/// resolved path escapes `dest_dir` (path traversal guard) and bail out once
+/// the total decompressed size crosses `MAX_EXTRACTED_BYTES` (tar-bomb guard).
 fn extract_tar_gz(bytes: &[u8], dest_dir: &Path) -> VoltResult<()> {
     let gz = flate2::read::GzDecoder::new(std::io::Cursor::new(bytes));
     let mut archive = tar::Archive::new(gz);
@@ -404,6 +444,8 @@ fn extract_tar_gz(bytes: &[u8], dest_dir: &Path) -> VoltResult<()> {
     archive.set_overwrite(true);
     // We resolve paths ourselves to stay safe on symlink entries.
     archive.set_preserve_permissions(false);
+
+    let mut total_extracted: u64 = 0;
 
     for entry in archive
         .entries()
@@ -434,6 +476,16 @@ fn extract_tar_gz(bytes: &[u8], dest_dir: &Path) -> VoltResult<()> {
             continue;
         }
 
+        // Pre-flight bomb guard: bail out before touching the disk if this
+        // entry's advertised size alone would push us over the cap.
+        let advertised = entry.header().size().unwrap_or(0);
+        if total_extracted.saturating_add(advertised) > MAX_EXTRACTED_BYTES {
+            return Err(VoltError::InvalidConfig(format!(
+                "Tar archive exceeds {} MB decompressed (tar-bomb guard)",
+                MAX_EXTRACTED_BYTES / (1024 * 1024)
+            )));
+        }
+
         let outpath = dest_dir.join(&entry_path);
 
         if entry_type == tar::EntryType::Directory {
@@ -453,6 +505,8 @@ fn extract_tar_gz(bytes: &[u8], dest_dir: &Path) -> VoltResult<()> {
         entry
             .unpack(&outpath)
             .map_err(|e| VoltError::FileSystem(format!("Failed to unpack tar entry: {}", e)))?;
+
+        total_extracted = total_extracted.saturating_add(advertised);
     }
 
     Ok(())
@@ -685,11 +739,37 @@ pub async fn install_extension(
     // Download the extension
     info!("Downloading extension from: {}", download_url);
     // GitHub releases respond with HTTP 302 → objects.githubusercontent.com CDN.
-    // Allow up to 5 redirects; SSRF is already mitigated by validate_download_url()
-    // on the initial URL, and reqwest only follows same-scheme (https) redirects.
+    // We allow up to 5 redirects, but re-apply the same SSRF guard on every
+    // hop: an open redirect on a trusted host (or a future compromise of one
+    // of the allowlisted registry hosts) must not be able to point us at a
+    // private IP, the AWS IMDS endpoint (169.254.169.254), or a non-HTTPS
+    // scheme. Previously `Policy::limited(5)` skipped re-validation on each
+    // hop and only the initial URL was checked.
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(30))
-        .redirect(reqwest::redirect::Policy::limited(5))
+        .redirect(reqwest::redirect::Policy::custom(|attempt| {
+            if attempt.previous().len() >= 5 {
+                return attempt.error("too many redirects");
+            }
+            let url = attempt.url();
+            if url.scheme() != "https" {
+                return attempt.stop();
+            }
+            match url.host() {
+                Some(url::Host::Ipv4(a)) if is_private_ipv4(a) => attempt.stop(),
+                Some(url::Host::Ipv6(a)) if is_private_ipv6(a) => attempt.stop(),
+                Some(url::Host::Domain(d))
+                    if {
+                        let lower = d.to_ascii_lowercase();
+                        lower == "localhost" || lower.ends_with(".localhost")
+                    } =>
+                {
+                    attempt.stop()
+                }
+                None => attempt.stop(),
+                _ => attempt.follow(),
+            }
+        }))
         .build()
         .map_err(|e| VoltError::Unknown(format!("HTTP client build failed: {}", e)))?;
     let response = client
@@ -3174,39 +3254,92 @@ pub async fn ext_get_applications() -> Result<Vec<crate::commands::apps::AppInfo
         .map_err(|e| e.to_string())
 }
 
+/// Validate a path that an extension passes into the `system` permission
+/// (show-in-folder / move-to-trash).
+///
+/// The previous guards were limited to `if path.contains("..")` — easily
+/// bypassed because `..` is a path-traversal *marker*, not the only way to
+/// reach a sensitive location. An extension granted `system` could pass:
+///
+/// - `\\evil.com\share\file` → SMB auth round-trip, NTLM hash leak
+/// - `\\?\C:\Windows\System32\config\SAM` → driver-namespace path
+/// - `/etc/shadow` → arbitrary read via the OS file manager
+///
+/// We now require the resolved canonical path to live under the user's home
+/// directory. UNC and NT object-manager prefixes are rejected outright before
+/// any filesystem touch. Embedded NUL bytes — which Windows treats as a path
+/// separator in `SHFileOperationW`'s double-NUL-terminated list, allowing the
+/// caller to widen the target set — are also refused.
+fn validate_extension_user_path(path: &str) -> Result<std::path::PathBuf, String> {
+    if path.is_empty() {
+        return Err("Path cannot be empty".to_string());
+    }
+    if path.contains('\0') {
+        return Err("Path must not contain NUL bytes".to_string());
+    }
+    if path.contains("..") {
+        return Err("Path must not contain '..'".to_string());
+    }
+    // UNC (`\\…`, `//…`), DOS-device (`\\?\…`, `\\.\…`) and NT object manager
+    // (`\??\…`) prefixes are all rejected. The first two literally start with
+    // `\\` (or its forward-slash equivalent), so `starts_with("\\\\")` /
+    // `"//"` covers them; `\??\` is listed explicitly.
+    const BAD_PREFIXES: &[&str] = &["\\\\", "//", "\\??\\", "/??/"];
+    if BAD_PREFIXES.iter().any(|p| path.starts_with(p)) {
+        return Err("UNC / device / NT object paths are not allowed".to_string());
+    }
+
+    let raw = std::path::Path::new(path);
+    if !raw.exists() {
+        return Err(format!("Path does not exist: {}", path));
+    }
+
+    let canonical = raw
+        .canonicalize()
+        .map_err(|e| format!("Cannot resolve path: {}", e))?;
+
+    let home = dirs::home_dir().ok_or_else(|| "Cannot determine home directory".to_string())?;
+    let canonical_home = home
+        .canonicalize()
+        .map_err(|e| format!("Cannot resolve home directory: {}", e))?;
+
+    if !canonical.starts_with(&canonical_home) {
+        return Err("Path must be inside your home directory".to_string());
+    }
+
+    Ok(canonical)
+}
+
 /// Reveal a path in the system file manager (Explorer / Finder / Nautilus).
 /// Requires `system` permission.
 #[tauri::command]
 pub async fn ext_show_in_folder(path: String) -> Result<(), String> {
-    if path.is_empty() {
-        return Err("Path cannot be empty".to_string());
-    }
-    // Basic path traversal guard
-    if path.contains("..") {
-        return Err("Path must not contain '..'".to_string());
-    }
+    let canonical = validate_extension_user_path(&path)?;
+    let canonical_str = canonical.to_string_lossy().into_owned();
 
     #[cfg(target_os = "windows")]
     {
+        // explorer.exe expects `/select,<path>` as a single argument; passing
+        // the canonical path keeps any UNC/symlink resolution we did above.
         std::process::Command::new("explorer")
-            .args(["/select,", &path])
+            .arg(format!("/select,{}", canonical_str))
             .spawn()
             .map_err(|e| format!("Failed to open Explorer: {}", e))?;
     }
     #[cfg(target_os = "macos")]
     {
         std::process::Command::new("open")
-            .args(["-R", &path])
+            .args(["-R", &canonical_str])
             .spawn()
             .map_err(|e| format!("Failed to open Finder: {}", e))?;
     }
     #[cfg(not(any(target_os = "windows", target_os = "macos")))]
     {
         // On Linux, open the parent directory
-        let parent = std::path::Path::new(&path)
+        let parent = canonical
             .parent()
             .map(|p| p.to_string_lossy().into_owned())
-            .unwrap_or_else(|| path.clone());
+            .unwrap_or(canonical_str);
         std::process::Command::new("xdg-open")
             .arg(&parent)
             .spawn()
@@ -3223,22 +3356,23 @@ pub async fn ext_show_in_folder(path: String) -> Result<(), String> {
 /// FreeDesktop.org spec on Linux (no external tool dependency).
 #[tauri::command]
 pub async fn ext_move_to_trash(path: String) -> Result<(), String> {
-    if path.is_empty() {
-        return Err("Path cannot be empty".to_string());
-    }
-    if path.contains("..") {
-        return Err("Path must not contain '..'".to_string());
-    }
-
-    let path_obj = std::path::Path::new(&path);
-    if !path_obj.exists() {
-        return Err(format!("Path does not exist: {}", path));
-    }
+    let canonical = validate_extension_user_path(&path)?;
+    let path_obj = canonical.as_path();
 
     #[cfg(target_os = "windows")]
     {
         use std::os::windows::ffi::OsStrExt;
-        let mut wide: Vec<u16> = path_obj.as_os_str().encode_wide().collect();
+        let raw: Vec<u16> = path_obj.as_os_str().encode_wide().collect();
+        // The encode_wide() output should not contain an interior NUL — the
+        // input has already been screened by `validate_extension_user_path`
+        // — but `OsStr` can technically carry interior NULs via WTF-16 paths
+        // that round-tripped through unusual sources. SHFileOperationW reads
+        // pFrom as a NUL-delimited list, so an interior NUL would widen the
+        // delete to whatever bytes follow. Refuse, do not delete.
+        if raw.contains(&0) {
+            return Err("Path contains embedded NUL after wide encoding".to_string());
+        }
+        let mut wide = raw;
         wide.push(0);
         wide.push(0);
 
