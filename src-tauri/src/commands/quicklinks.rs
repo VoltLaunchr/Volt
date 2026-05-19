@@ -317,6 +317,7 @@ pub async fn open_quicklink(_app: tauri::AppHandle, quicklink: Quicklink) -> Vol
 
 #[cfg(test)]
 mod tests {
+    #[cfg(target_os = "windows")]
     use super::*;
 
     /// Regression test for the LOLBIN-via-quicklink bypass.
