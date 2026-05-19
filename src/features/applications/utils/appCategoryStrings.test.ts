@@ -17,7 +17,9 @@ describe('AppCategory Rust↔TS contract', () => {
     __dirname,
     '../../../../src-tauri/src/commands/apps.rs',
   );
-  const source = readFileSync(appsRsPath, 'utf8');
+  // Normalize CRLF→LF: on Windows CI the file is checked out with CRLF and
+  // the `\n\}\n` regex anchor below would never match the closing brace.
+  const source = readFileSync(appsRsPath, 'utf8').replace(/\r\n/g, '\n');
 
   // Extract every `return "X".to_string();` and the trailing default
   // `"X".to_string()` from the function. The detector lives between

@@ -189,8 +189,16 @@ pub async fn open_notes_window(
         .inner_size(1000.0, 680.0)
         .min_inner_size(700.0, 480.0)
         .resizable(true)
-        .decorations(false)
-        .transparent(true)
+        .decorations(false);
+
+    // `.transparent(true)` on `WebviewWindowBuilder` is only compiled on macOS
+    // when the `macos-private-api` Tauri Cargo feature is enabled (Apple gates
+    // the underlying NSWindow API). Volt doesn't enable that feature, so on
+    // macOS we ship the Notes window opaque rather than fail to build.
+    #[cfg(not(target_os = "macos"))]
+    let builder = builder.transparent(true);
+
+    let builder = builder
         .always_on_top(false)
         .skip_taskbar(false)
         .visible(true)
