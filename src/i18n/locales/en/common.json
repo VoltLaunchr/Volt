@@ -81,6 +81,18 @@
     "steam-games": {
       "title": "Games",
       "subtitle": "Launch Games"
+    },
+    "ai-chat": {
+      "title": "AI Chat",
+      "subtitle": "Ask AI anything · `ai` or `?`"
+    },
+    "ai-quick-actions": {
+      "title": "AI Quick Actions",
+      "subtitle": "Manage one-shot AI prompts"
+    },
+    "custom-emojis": {
+      "title": "Custom Emojis",
+      "subtitle": "Generate sticker-style emojis with AI"
     }
   },
   "shell": {

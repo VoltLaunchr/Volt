@@ -16,6 +16,8 @@
   "delete": "Delete",
   "pin": "Pin",
   "unpin": "Unpin",
+  "minimize": "Minimize",
+  "close": "Close",
   "saveStatus": {
     "idle": "",
     "saving": "Saving…",

@@ -4,6 +4,7 @@ import { Plus, Trash2, CheckCircle, AlertCircle, Edit3, X } from 'lucide-react';
 import { HotkeyCapture } from '../../../shared/components/ui/HotkeyCapture';
 import { useQuickActions } from '../hooks/useQuickActions';
 import { PLACEHOLDER_DOCS } from '../placeholders';
+import { QuickActionIcon, QUICK_ACTION_ICONS } from '../icons';
 import type { AiQuickAction } from '../types';
 
 function HotkeyChip({
@@ -123,18 +124,21 @@ function EditPromptModal({ action, onClose, onSave }: EditPromptModalProps) {
   const { t } = useTranslation('settings');
   const [label, setLabel] = useState(action.label);
   const [system, setSystem] = useState(action.systemPrompt);
+  const [icon, setIcon] = useState<string | null>(action.icon ?? 'sparkles');
   const [saving, setSaving] = useState(false);
 
   const handleSave = useCallback(async () => {
     if (!label.trim() || !system.trim()) return;
     setSaving(true);
     try {
-      await onSave({ label: label.trim(), systemPrompt: system.trim() });
+      await onSave({ label: label.trim(), systemPrompt: system.trim(), icon });
       onClose();
     } finally {
       setSaving(false);
     }
-  }, [label, system, onSave, onClose]);
+  }, [label, system, icon, onSave, onClose]);
+
+  const iconKeys = Object.keys(QUICK_ACTION_ICONS);
 
   return (
     <div
@@ -165,6 +169,53 @@ function EditPromptModal({ action, onClose, onSave }: EditPromptModalProps) {
         <h3 style={{ margin: '0 0 16px', fontSize: 15, fontWeight: 600, color: 'var(--color-ink)' }}>
           {t('ai.quickActions.modal.title')}
         </h3>
+
+        <label style={{ display: 'block', marginBottom: 6, fontSize: 12, color: 'var(--color-mute)' }}>
+          {t('ai.quickActions.modal.icon', { defaultValue: 'Icon' })}
+        </label>
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(38px, 1fr))',
+            gap: 6,
+            padding: 8,
+            borderRadius: 8,
+            border: '1.5px solid var(--color-hairline)',
+            background: 'var(--color-surface)',
+            marginBottom: 16,
+            maxHeight: 140,
+            overflowY: 'auto',
+          }}
+        >
+          {iconKeys.map((key) => {
+            const selected = icon === key;
+            return (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setIcon(key)}
+                title={key}
+                style={{
+                  width: 38,
+                  height: 38,
+                  borderRadius: 8,
+                  border: selected
+                    ? '1.5px solid var(--color-accent)'
+                    : '1px solid var(--color-hairline)',
+                  background: selected ? 'rgba(168,85,247,0.12)' : 'var(--color-canvas)',
+                  color: selected ? 'var(--color-accent)' : 'var(--color-ink)',
+                  cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  transition: 'background 0.15s, border-color 0.15s',
+                }}
+              >
+                <QuickActionIcon name={key} size={16} strokeWidth={1.8} />
+              </button>
+            );
+          })}
+        </div>
 
         <label style={{ display: 'block', marginBottom: 4, fontSize: 12, color: 'var(--color-mute)' }}>
           {t('ai.quickActions.modal.label')}
@@ -354,24 +405,23 @@ export function QuickActionsSection() {
                   opacity: action.enabled ? 1 : 0.5,
                 }}
               >
-                {action.icon && (
-                  <div
-                    style={{
-                      width: 28,
-                      height: 28,
-                      borderRadius: 8,
-                      background: 'var(--color-canvas)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      fontSize: 14,
-                      color: 'var(--color-ink)',
-                      flexShrink: 0,
-                    }}
-                  >
-                    {action.icon}
-                  </div>
-                )}
+                <div
+                  style={{
+                    width: 32,
+                    height: 32,
+                    borderRadius: 8,
+                    background: 'var(--color-canvas)',
+                    border: '1px solid var(--color-hairline)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: 'var(--color-ink)',
+                    flexShrink: 0,
+                  }}
+                  aria-hidden
+                >
+                  <QuickActionIcon name={action.icon} size={15} strokeWidth={1.8} />
+                </div>
 
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--color-ink)' }}>

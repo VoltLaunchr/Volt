@@ -4,6 +4,7 @@
 //! Shell AppsFolder, including Microsoft Store/UWP apps.
 
 use crate::commands::apps::AppInfo;
+use crate::utils::process::no_window;
 use std::process::Command;
 use tracing::{info, warn};
 
@@ -12,7 +13,9 @@ use tracing::{info, warn};
 /// that don't have .lnk shortcuts.
 pub fn enumerate_apps_folder() -> Result<Vec<AppInfo>, String> {
     // Use Get-AppxPackage for Store apps (faster and more reliable than COM)
-    let output = Command::new("powershell")
+    let mut cmd = Command::new("powershell");
+    no_window(&mut cmd);
+    let output = cmd
         .args([
             "-NoProfile",
             "-NonInteractive",

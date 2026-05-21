@@ -12,6 +12,13 @@ interface AppState {
 
 interface AppActions {
   setSettings: (settings: Settings | null) => void;
+  /**
+   * Patch the `general` slice of settings without re-spreading the whole tree.
+   * No-op when settings haven't been loaded yet (current === null).
+   * Use this instead of `setSettings({ ...current, general: { ...current.general, ... } })`
+   * to keep call-sites resilient if new top-level slices are added.
+   */
+  updateGeneralSettings: (patch: Partial<Settings['general']>) => void;
   setIsIndexing: (indexing: boolean) => void;
   setAllApps: (apps: AppInfo[]) => void;
   setIsLoading: (loading: boolean) => void;
@@ -26,6 +33,17 @@ export const useAppStore = create<AppState & AppActions>()((set) => ({
   appError: null,
 
   setSettings: (settings) => set({ settings }),
+  updateGeneralSettings: (patch) =>
+    set((state) =>
+      state.settings
+        ? {
+            settings: {
+              ...state.settings,
+              general: { ...state.settings.general, ...patch },
+            },
+          }
+        : state
+    ),
   setIsIndexing: (isIndexing) => set({ isIndexing }),
   setAllApps: (allApps) => set({ allApps }),
   setIsLoading: (isLoading) => set({ isLoading }),

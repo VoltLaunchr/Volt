@@ -5,7 +5,7 @@ import type { ExtensionPermission } from '../features/extensions/types/extension
 export type ActiveView =
   | { type: 'search' }
   | { type: 'clipboard' }
-  | { type: 'emoji'; initialQuery?: string }
+  | { type: 'emoji'; initialQuery?: string; initialCategory?: string }
   | { type: 'files' }
   | { type: 'calculator' }
   | { type: 'games' }
@@ -61,7 +61,7 @@ interface UiActions {
 }
 
 export const useUiStore = create<UiState & UiActions>()((set) => ({
-  activeView: { type: 'search' } as ActiveView,
+  activeView: { type: 'search' } satisfies ActiveView,
   contextMenu: { isOpen: false, position: { x: 0, y: 0 }, result: null },
   isPropertiesOpen: false,
   propertiesResult: null,

@@ -282,6 +282,111 @@ impl Default for ShellSettings {
     }
 }
 
+/// Kind of action a fallback command performs when invoked.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum FallbackKind {
+    /// Open a URL in the default browser. `target` is a URL template that
+    /// can contain `{query}` (URL-encoded) and `{rawQuery}` (unencoded).
+    WebSearch,
+    /// Run a shell command. `target` is the command template with the same
+    /// placeholders as WebSearch.
+    Shell,
+    /// Open a plain URL (no query substitution); `target` is the full URL.
+    Url,
+}
+
+/// A single fallback command that takes over when the regular search returns
+/// no results. Inspired by Raycast's "Fallback Commands": the typed query is
+/// substituted into the `target` template and the action runs.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FallbackCommand {
+    pub id: String,
+    pub label: String,
+    #[serde(default)]
+    pub icon: Option<String>,
+    pub kind: FallbackKind,
+    /// URL/command template — supports `{query}` (URL-encoded) and
+    /// `{rawQuery}` (unencoded) placeholders.
+    pub target: String,
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    /// Display order in the fallback list (lower = higher in the result list).
+    #[serde(default)]
+    pub order: u32,
+}
+
+/// Fallback commands settings — the configurable list shown when a search
+/// returns no regular results.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FallbacksSettings {
+    #[serde(default = "default_fallback_commands")]
+    pub commands: Vec<FallbackCommand>,
+}
+
+impl Default for FallbacksSettings {
+    fn default() -> Self {
+        Self {
+            commands: default_fallback_commands(),
+        }
+    }
+}
+
+/// Seed default fallbacks for a fresh install. Mirrors the previously
+/// hardcoded set in `useSearchPipeline.ts` (Google, DuckDuckGo, YouTube),
+/// extended with a couple of high-value defaults (ChatGPT, Perplexity).
+fn default_fallback_commands() -> Vec<FallbackCommand> {
+    vec![
+        FallbackCommand {
+            id: "fallback-google".to_string(),
+            label: "Search {rawQuery} on Google".to_string(),
+            icon: Some("globe".to_string()),
+            kind: FallbackKind::WebSearch,
+            target: "https://www.google.com/search?q={query}".to_string(),
+            enabled: true,
+            order: 0,
+        },
+        FallbackCommand {
+            id: "fallback-duckduckgo".to_string(),
+            label: "Search {rawQuery} on DuckDuckGo".to_string(),
+            icon: Some("globe".to_string()),
+            kind: FallbackKind::WebSearch,
+            target: "https://duckduckgo.com/?q={query}".to_string(),
+            enabled: true,
+            order: 1,
+        },
+        FallbackCommand {
+            id: "fallback-youtube".to_string(),
+            label: "Search {rawQuery} on YouTube".to_string(),
+            icon: Some("youtube".to_string()),
+            kind: FallbackKind::WebSearch,
+            target: "https://www.youtube.com/results?search_query={query}".to_string(),
+            enabled: true,
+            order: 2,
+        },
+        FallbackCommand {
+            id: "fallback-chatgpt".to_string(),
+            label: "Ask ChatGPT about {rawQuery}".to_string(),
+            icon: Some("message-circle".to_string()),
+            kind: FallbackKind::WebSearch,
+            target: "https://chat.openai.com/?q={query}".to_string(),
+            enabled: false,
+            order: 3,
+        },
+        FallbackCommand {
+            id: "fallback-perplexity".to_string(),
+            label: "Ask Perplexity about {rawQuery}".to_string(),
+            icon: Some("message-circle".to_string()),
+            kind: FallbackKind::WebSearch,
+            target: "https://www.perplexity.ai/search?q={query}".to_string(),
+            enabled: false,
+            order: 4,
+        },
+    ]
+}
+
 /// Complete application settings
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Settings {
@@ -299,6 +404,8 @@ pub struct Settings {
     pub shortcuts: ShortcutsSettings,
     #[serde(default)]
     pub shell: ShellSettings,
+    #[serde(default)]
+    pub fallbacks: FallbacksSettings,
 }
 
 /// Get the settings file path

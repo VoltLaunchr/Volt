@@ -86,6 +86,7 @@ export function ViewRouter({ onSelectEmoji, onLaunchResult, onActivateSuggestion
           onClose={resetToSearchView}
           onSelectEmoji={onSelectEmoji}
           initialQuery={activeView.initialQuery || ''}
+          initialCategory={activeView.initialCategory}
         />
       );
     case 'clipboard':

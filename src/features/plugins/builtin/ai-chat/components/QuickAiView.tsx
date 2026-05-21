@@ -20,18 +20,29 @@ const PROVIDER_LABELS: Record<string, string> = {
   openai: 'OpenAI',
   anthropic: 'Anthropic',
   groq: 'Groq',
+  huggingface: 'Hugging Face',
 };
 
 const PROVIDER_LOGOS: Record<string, string> = {
-  openai: '/ai/openai-color.svg',
+  openai: '/ai/openai-color.webp',
   anthropic: '/ai/claude-color.svg',
   groq: '/ai/groq.svg',
+  huggingface: '/ai/huggingface-color.webp',
 };
 
+/**
+ * Provider logos that ship as a black-on-transparent asset. We flip these to
+ * white via a CSS filter to read on dark backgrounds. Keep in sync with the
+ * matching constant in AiSettingsView/AiChatView.
+ */
+const MONOCHROME_LOGO_RE = /\/(openai|groq)/;
+
+// Quick AI is one-shot + clipboard-fed → prefer fast/cheap models.
 const PROVIDER_DEFAULT_MODEL: Record<string, string> = {
-  openai: 'gpt-4o-mini',
+  openai: 'gpt-5.4-nano',
   anthropic: 'claude-haiku-4-5-20251001',
   groq: 'llama-3.1-8b-instant',
+  huggingface: 'Qwen/Qwen3-4B-Thinking-2507',
 };
 
 function StreamingCursor() {
@@ -221,7 +232,12 @@ export function QuickAiView({ onClose, initialQuery, systemPrompt }: QuickAiView
             alt=""
             width={14}
             height={14}
-            style={{ borderRadius: 3, objectFit: 'contain', opacity: 0.85 }}
+            style={{
+              borderRadius: 3,
+              objectFit: 'contain',
+              opacity: 0.85,
+              filter: MONOCHROME_LOGO_RE.test(PROVIDER_LOGOS[provider]) ? 'invert(1)' : undefined,
+            }}
           />
         )}
         <span

@@ -14,6 +14,8 @@ interface EmojiPickerViewProps {
   onClose: () => void;
   onSelectEmoji: (emoji: string) => void;
   initialQuery?: string;
+  /** Category to open on first mount. Defaults to 'all'. */
+  initialCategory?: string;
 }
 
 const CATEGORY_ICONS: Record<string, string> = {
@@ -51,11 +53,12 @@ export function EmojiPickerView({
   onClose,
   onSelectEmoji,
   initialQuery = '',
+  initialCategory = 'all',
 }: EmojiPickerViewProps): React.JSX.Element {
   const { t } = useTranslation('emoji-picker');
   const [allEmojis, setAllEmojis] = useState<SearchableEmoji[]>([]);
   const [displayedEmojis, setDisplayedEmojis] = useState<SearchableEmoji[]>([]);
-  const [selectedCategory, setSelectedCategory] = useState<string>('all');
+  const [selectedCategory, setSelectedCategory] = useState<string>(initialCategory);
   const [searchQuery, setSearchQuery] = useState(initialQuery);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
