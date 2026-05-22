@@ -109,7 +109,10 @@ pub async fn search_all(
 
     let history = history_state.history.clone();
     let apps_for_search = apps;
-    let aliases = shortcuts.as_deref().map(build_alias_map).unwrap_or_default();
+    let aliases = shortcuts
+        .as_deref()
+        .map(build_alias_map)
+        .unwrap_or_default();
 
     // Query bindings for learned preferences (scoped to drop MutexGuard before await)
     let bindings_snapshot = {
@@ -189,7 +192,10 @@ pub async fn search_streaming(
 ) -> Result<(), String> {
     let query = options.query.clone();
     let max_results = options.max_results;
-    let aliases = shortcuts.as_deref().map(build_alias_map).unwrap_or_default();
+    let aliases = shortcuts
+        .as_deref()
+        .map(build_alias_map)
+        .unwrap_or_default();
 
     // Extract data from State<'_> before spawning (State is not Send)
     let history = history_state.history.clone();
