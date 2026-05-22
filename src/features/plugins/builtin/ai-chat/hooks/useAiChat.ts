@@ -115,5 +115,18 @@ export function useAiChat({ provider, model }: UseAiChatOptions) {
     setIsStreaming(false);
   }, []);
 
-  return { messages, isStreaming, send, clear };
+  /**
+   * Abort the in-flight stream without clearing the conversation. The current
+   * partial assistant message is kept and marked done; later events are
+   * suppressed via `abortRef`.
+   */
+  const stop = useCallback(() => {
+    if (!isStreamingRef.current) return;
+    abortRef.current = true;
+    isStreamingRef.current = false;
+    setIsStreaming(false);
+    setMessages((prev) => prev.map((m) => (m.isStreaming ? { ...m, isStreaming: false } : m)));
+  }, []);
+
+  return { messages, isStreaming, send, clear, stop };
 }

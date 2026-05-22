@@ -22,16 +22,16 @@ const PROVIDERS: ProviderMeta[] = [
   {
     id: 'openai',
     label: 'OpenAI',
-    logo: '/ai/openai-color.svg',
+    logo: '/ai/openai-color.webp',
     consoleUrl: 'https://platform.openai.com/api-keys',
-    defaultModel: 'GPT-4o',
+    defaultModel: 'GPT-5.5',
   },
   {
     id: 'anthropic',
     label: 'Anthropic',
     logo: '/ai/claude-color.svg',
     consoleUrl: 'https://console.anthropic.com/settings/keys',
-    defaultModel: 'Claude Sonnet',
+    defaultModel: 'Claude Opus 4.7',
   },
   {
     id: 'groq',
@@ -40,7 +40,22 @@ const PROVIDERS: ProviderMeta[] = [
     consoleUrl: 'https://console.groq.com/keys',
     defaultModel: 'Llama 3.3 70B',
   },
+  {
+    id: 'huggingface',
+    label: 'Hugging Face',
+    logo: '/ai/huggingface-color.webp',
+    consoleUrl:
+      'https://huggingface.co/settings/tokens/new?ownUserPermissions=inference.serverless.write&tokenType=fineGrained',
+    defaultModel: 'DeepSeek V4 Pro',
+  },
 ];
+
+/**
+ * Provider logos that ship as a black-on-transparent asset. We render on a
+ * dark canvas, so we flip these to white via a CSS filter. Single source of
+ * truth — keep in sync with the matching constants in AiChatView/QuickAiView.
+ */
+const MONOCHROME_LOGO_RE = /\/(openai|groq)/;
 
 function ProviderLogo({ logo, label }: { logo: string; label: string }) {
   const [errored, setErrored] = useState(false);
@@ -68,13 +83,19 @@ function ProviderLogo({ logo, label }: { logo: string; label: string }) {
     );
   }
 
+  const isMono = MONOCHROME_LOGO_RE.test(logo);
   return (
     <img
       src={logo}
       alt={label}
       width={32}
       height={32}
-      style={{ borderRadius: 8, flexShrink: 0, objectFit: 'contain' }}
+      style={{
+        borderRadius: 8,
+        flexShrink: 0,
+        objectFit: 'contain',
+        filter: isMono ? 'invert(1)' : undefined,
+      }}
       onError={() => setErrored(true)}
     />
   );
@@ -124,8 +145,10 @@ function AddKeyModal({ onClose, onSaved, initialProvider }: AddKeyModalProps) {
     try {
       await invoke('ai_set_global_key', { provider, key: apiKey.trim() });
       onSaved();
-    } catch (_err) {
+    } catch (err) {
       setSaving(false);
+      setVerifyState('error');
+      setVerifyError(String(err));
     }
   }, [provider, apiKey, onSaved]);
 
@@ -183,7 +206,10 @@ function AddKeyModal({ onClose, onSaved, initialProvider }: AddKeyModalProps) {
                 padding: '7px 12px',
                 borderRadius: 8,
                 border: `1.5px solid ${provider === p.id ? 'var(--color-accent)' : 'var(--color-hairline)'}`,
-                background: provider === p.id ? 'var(--color-accent)/10' : 'var(--color-surface)',
+                background:
+                  provider === p.id
+                    ? 'color-mix(in srgb, var(--color-accent) 10%, transparent)'
+                    : 'var(--color-surface)',
                 cursor: 'pointer',
                 fontSize: 13,
                 fontWeight: 500,

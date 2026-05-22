@@ -240,8 +240,10 @@ impl GameScanner for UbisoftScanner {
 
         #[cfg(target_os = "windows")]
         {
-            std::process::Command::new("cmd")
-                .args(["/C", "start", "", &uri])
+            use crate::utils::process::no_window;
+            let mut cmd = std::process::Command::new("cmd");
+            no_window(&mut cmd);
+            cmd.args(["/C", "start", "", &uri])
                 .spawn()
                 .map_err(|e| format!("Failed to launch Ubisoft game: {}", e))?;
         }

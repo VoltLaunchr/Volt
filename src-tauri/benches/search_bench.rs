@@ -254,6 +254,8 @@ fn bench_search_with_frecency(c: &mut Criterion) {
         let apps = generate_apps(count);
         let history = generate_history(&apps, count.min(50)); // realistic: 50 history entries
         let bindings = QueryBindingStore::default();
+        let empty_aliases: std::collections::HashMap<String, String> =
+            std::collections::HashMap::new();
 
         group.bench_with_input(
             BenchmarkId::new("with_history", count),
@@ -265,6 +267,7 @@ fn bench_search_with_frecency(c: &mut Criterion) {
                         black_box(apps.clone()),
                         black_box(history),
                         black_box(Some(&bindings)),
+                        black_box(&empty_aliases),
                     )
                 })
             },
@@ -277,6 +280,7 @@ fn bench_search_with_frecency(c: &mut Criterion) {
                     black_box(apps.clone()),
                     black_box(&[]),
                     black_box(None),
+                    black_box(&empty_aliases),
                 )
             })
         });

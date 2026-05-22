@@ -16,8 +16,9 @@
   flex: 0 0 auto;
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 10px;
-  padding: 0 14px;
+  padding: 0 8px 0 14px;
   background: var(--color-surface, transparent);
   border-bottom: 1px solid var(--color-hairline, rgba(127, 127, 127, 0.18));
   user-select: none;
@@ -32,6 +33,46 @@
   font-weight: 600;
   letter-spacing: -0.01em;
   color: var(--color-ink, inherit);
+}
+
+.notes-view__window-controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+  cursor: default;
+}
+
+.notes-view__window-button {
+  width: 28px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--color-ash, #94a3b8);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease;
+  padding: 0;
+}
+
+.notes-view__window-button:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--color-ink, #f1f5f9);
+}
+
+.notes-view__window-button:focus-visible {
+  outline: 1px solid var(--color-accent, #6366f1);
+  outline-offset: 1px;
+}
+
+.notes-view__window-button--close:hover {
+  background: rgba(239, 68, 68, 0.18);
+  color: var(--color-accent-red, #ef4444);
 }
 
 .notes-view__body {

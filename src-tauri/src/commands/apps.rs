@@ -1157,8 +1157,13 @@ pub async fn search_applications_frecency(
         .store
         .lock()
         .map_err(|e| crate::core::error::VoltError::Unknown(e.to_string()))?;
-    let results =
-        crate::search::search_applications_with_frecency(&query, apps, &history, Some(&bindings));
+    let results = crate::search::search_applications_with_frecency(
+        &query,
+        apps,
+        &history,
+        Some(&bindings),
+        &std::collections::HashMap::new(),
+    );
     Ok(results
         .into_iter()
         .map(|(app, score)| AppInfoWithScore { app, score })

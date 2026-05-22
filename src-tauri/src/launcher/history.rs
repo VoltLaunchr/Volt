@@ -475,14 +475,18 @@ pub struct QueryBindingStore {
     bindings: HashMap<String, Vec<QueryBinding>>,
 }
 
-/// Maximum number of unique prefixes to keep (prevents unbounded growth)
-const MAX_BINDING_PREFIXES: usize = 1000;
-/// Maximum prefix length to record
-const MAX_PREFIX_LEN: usize = 8;
+/// Maximum number of unique query keys to keep (prevents unbounded growth)
+const MAX_BINDING_KEYS: usize = 1000;
+/// Maximum stored query length (truncated to keep the JSON file bounded).
+/// Raycast-style per-(query, item) frecency keys the boost off the *normalized*
+/// query string the user typed when they launched the item.
+const MAX_QUERY_LEN: usize = 64;
 
 impl QueryBindingStore {
-    /// Record a binding for every prefix of `query` (length 1..min(8, query.len())).
-    /// Increments count and updates last_used for existing bindings, or inserts new ones.
+    /// Record a binding for every prefix of the normalized `query`, up to
+    /// `MAX_QUERY_LEN`. Storing each prefix means typing "ch" then later "chr"
+    /// both get boosted — the cheap way to get per-(prefix, item) without
+    /// running a substring scan at lookup time.
     pub fn record_binding(&mut self, query: &str, result_id: &str) {
         let query_lower = query.to_lowercase();
         let query_lower = query_lower.trim();
@@ -491,14 +495,26 @@ impl QueryBindingStore {
         }
 
         let now = chrono::Utc::now().timestamp_millis();
-        let max_len = MAX_PREFIX_LEN.min(query_lower.len());
+        // Truncate to MAX_QUERY_LEN on a char boundary so we never overflow the
+        // store on pathologically long pastes.
+        let truncated = if query_lower.len() <= MAX_QUERY_LEN {
+            query_lower
+        } else {
+            // Walk char boundaries down from MAX_QUERY_LEN.
+            let mut end = MAX_QUERY_LEN;
+            while end > 0 && !query_lower.is_char_boundary(end) {
+                end -= 1;
+            }
+            &query_lower[..end]
+        };
 
-        for end in 1..=max_len {
-            // Ensure we split on a char boundary
-            let prefix = match query_lower.get(..end) {
-                Some(p) => p,
-                None => continue,
-            };
+        // Char-boundary-aware prefix enumeration. We index by byte offset to keep
+        // the loop simple but only emit on valid char boundaries.
+        for end in 1..=truncated.len() {
+            if !truncated.is_char_boundary(end) {
+                continue;
+            }
+            let prefix = &truncated[..end];
 
             let entries = self.bindings.entry(prefix.to_string()).or_default();
 
@@ -515,7 +531,7 @@ impl QueryBindingStore {
             }
         }
 
-        // Prune if we exceed the max number of unique prefixes
+        // Prune if we exceed the max number of unique query keys
         self.prune_if_needed();
     }
 
@@ -570,29 +586,29 @@ impl QueryBindingStore {
         serde_json::from_str(&content).unwrap_or_default()
     }
 
-    /// Prune oldest prefixes when exceeding the limit.
+    /// Prune the LRU-oldest query keys when we exceed the limit.
     fn prune_if_needed(&mut self) {
-        if self.bindings.len() <= MAX_BINDING_PREFIXES {
+        if self.bindings.len() <= MAX_BINDING_KEYS {
             return;
         }
 
-        // Find the oldest last_used per prefix, then drop the oldest prefixes
-        let mut prefix_ages: Vec<(String, i64)> = self
+        // Find the most recent last_used per key, then drop the oldest keys.
+        let mut key_ages: Vec<(String, i64)> = self
             .bindings
             .iter()
-            .map(|(prefix, entries)| {
+            .map(|(key, entries)| {
                 let max_last_used = entries.iter().map(|b| b.last_used).max().unwrap_or(0);
-                (prefix.clone(), max_last_used)
+                (key.clone(), max_last_used)
             })
             .collect();
 
         // Sort oldest first
-        prefix_ages.sort_by_key(|(_, age)| *age);
+        key_ages.sort_by_key(|(_, age)| *age);
 
         // Remove oldest entries until we're under the limit
-        let to_remove = self.bindings.len() - MAX_BINDING_PREFIXES;
-        for (prefix, _) in prefix_ages.into_iter().take(to_remove) {
-            self.bindings.remove(&prefix);
+        let to_remove = self.bindings.len() - MAX_BINDING_KEYS;
+        for (key, _) in key_ages.into_iter().take(to_remove) {
+            self.bindings.remove(&key);
         }
     }
 }

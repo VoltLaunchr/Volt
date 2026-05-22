@@ -56,10 +56,13 @@ impl XboxScanner {
     /// Get PackageFamilyName from Get-AppxPackage PowerShell
     #[cfg(target_os = "windows")]
     fn get_package_family_names() -> Result<std::collections::HashMap<String, String>, String> {
+        use crate::utils::process::no_window;
         use std::collections::HashMap;
         use std::process::Command;
 
-        let output = Command::new("powershell")
+        let mut cmd = Command::new("powershell");
+        no_window(&mut cmd);
+        let output = cmd
             .args([
                 "-NoProfile",
                 "-Command",
@@ -317,8 +320,10 @@ impl GameScanner for XboxScanner {
         {
             #[cfg(target_os = "windows")]
             {
-                std::process::Command::new("cmd")
-                    .args(["/C", "start", "", _uri])
+                use crate::utils::process::no_window;
+                let mut cmd = std::process::Command::new("cmd");
+                no_window(&mut cmd);
+                cmd.args(["/C", "start", "", _uri])
                     .spawn()
                     .map_err(|e| format!("Failed to launch Xbox game: {}", e))?;
                 return Ok(());

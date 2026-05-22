@@ -5,6 +5,7 @@
 //! covers files that our scanner might miss.
 
 use super::types::{FileCategory, FileInfo};
+use crate::utils::process::no_window;
 use std::process::Command;
 use tracing::{info, warn};
 
@@ -77,7 +78,9 @@ try {{
 "#
     );
 
-    let output = Command::new("powershell")
+    let mut cmd = Command::new("powershell");
+    no_window(&mut cmd);
+    let output = cmd
         .args(["-NoProfile", "-NonInteractive", "-Command", &ps_script])
         .env("VOLT_QUERY", &safe_query)
         .output()

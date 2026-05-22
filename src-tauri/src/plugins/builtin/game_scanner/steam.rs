@@ -374,11 +374,13 @@ impl SteamScanner {
 
         #[cfg(target_os = "windows")]
         {
+            use crate::utils::process::no_window;
             use std::process::Command;
 
             // Use empty string as window title before URL to handle URIs with special chars
-            Command::new("cmd")
-                .args(["/C", "start", "", &url])
+            let mut cmd = Command::new("cmd");
+            no_window(&mut cmd);
+            cmd.args(["/C", "start", "", &url])
                 .spawn()
                 .map_err(|e| format!("Failed to launch game: {}", e))?;
         }

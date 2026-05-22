@@ -6,7 +6,8 @@
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
-  Github,
+  // `Github` brand icon was removed in lucide-react v1.x. Use a neutral fallback.
+  GitBranch as Github,
   Database,
   AlertCircle,
   CheckCircle,

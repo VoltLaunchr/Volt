@@ -51,6 +51,10 @@ fn config_path(app: &AppHandle) -> Result<PathBuf, String> {
 }
 
 fn default_actions() -> Vec<AiQuickAction> {
+    // Icon strings are registry keys resolved by the frontend `QuickActionIcon`
+    // component (see `src/features/ai-quick-actions/icons.tsx`). Legacy installs
+    // that still hold glyphs like "✦" keep rendering through that registry's
+    // backward-compat path.
     vec![
         AiQuickAction {
             id: "improve-writing".into(),
@@ -59,7 +63,7 @@ fn default_actions() -> Vec<AiQuickAction> {
             hotkey: None,
             enabled: true,
             provider: None,
-            icon: Some("✦".into()),
+            icon: Some("sparkles".into()),
         },
         AiQuickAction {
             id: "fix-grammar".into(),
@@ -68,7 +72,7 @@ fn default_actions() -> Vec<AiQuickAction> {
             hotkey: None,
             enabled: true,
             provider: None,
-            icon: Some("✓".into()),
+            icon: Some("check-check".into()),
         },
         AiQuickAction {
             id: "translate".into(),
@@ -77,7 +81,7 @@ fn default_actions() -> Vec<AiQuickAction> {
             hotkey: None,
             enabled: true,
             provider: None,
-            icon: Some("🌐".into()),
+            icon: Some("languages".into()),
         },
         AiQuickAction {
             id: "explain-code".into(),
@@ -86,7 +90,7 @@ fn default_actions() -> Vec<AiQuickAction> {
             hotkey: None,
             enabled: true,
             provider: None,
-            icon: Some("</>".into()),
+            icon: Some("code".into()),
         },
         AiQuickAction {
             id: "summarize".into(),
@@ -95,7 +99,7 @@ fn default_actions() -> Vec<AiQuickAction> {
             hotkey: None,
             enabled: true,
             provider: None,
-            icon: Some("≡".into()),
+            icon: Some("list".into()),
         },
     ]
 }
@@ -155,9 +159,14 @@ fn unregister_all(app: &AppHandle, state: &State<'_, QuickActionHotkeyState>) {
             warn!("Failed to unregister quick-action hotkey '{}': {}", hk, e);
         }
     }
-    if let Ok(mut map) = state.registered.lock() {
-        map.clear();
-    }
+    let mut map = match state.registered.lock() {
+        Ok(g) => g,
+        Err(p) => {
+            warn!("QuickActionHotkeyState mutex poisoned in unregister_all; recovering");
+            p.into_inner()
+        }
+    };
+    map.clear();
 }
 
 /// Register one hotkey for an action; on press, emit `volt://ai-quick-action`
@@ -218,9 +227,15 @@ fn register_actions_internal(
 
         match register_one(app, action, hk) {
             Ok(()) => {
-                if let Ok(mut map) = state.registered.lock() {
-                    map.insert(action.id.clone(), hk.clone());
-                }
+                let mut map = match state.registered.lock() {
+                    Ok(g) => g,
+                    Err(p) => {
+                        warn!("QuickActionHotkeyState mutex poisoned in register; recovering");
+                        p.into_inner()
+                    }
+                };
+                map.insert(action.id.clone(), hk.clone());
+                drop(map);
                 report.insert(action.id.clone(), "ok".to_string());
                 info!("Quick action '{}' bound to '{}'", action.id, hk);
             }

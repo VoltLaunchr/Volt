@@ -28,7 +28,7 @@ const SIDEBAR_WIDTH = 300;
 
 export function NotesView(): React.JSX.Element {
   const { t } = useTranslation('notes');
-  const { notes, loading, error, createNote, updateNote, deleteNote, togglePin } = useNotes();
+  const { notes, loading, error, createNote, deleteNote, togglePin } = useNotes();
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   // Auto-select the first note once the list arrives so the editor isn't
@@ -125,27 +125,49 @@ export function NotesView(): React.JSX.Element {
     [],
   );
 
+  const handleMinimize = useCallback((): void => {
+    void (async (): Promise<void> => {
+      try {
+        await getCurrentWindow().minimize();
+      } catch (err) {
+        logger.error('NotesView: minimize failed:', err);
+      }
+    })();
+  }, []);
+
+  const handleClose = useCallback((): void => {
+    void (async (): Promise<void> => {
+      try {
+        await getCurrentWindow().close();
+      } catch (err) {
+        logger.error('NotesView: close failed:', err);
+      }
+    })();
+  }, []);
+
   // Cmd/Ctrl+N — create a new note from anywhere in the window.
+  // Escape — close the window unless an input/contenteditable has focus
+  // (so typing Esc in a search/title field doesn't kill the window).
   useEffect(() => {
     function onKey(e: KeyboardEvent): void {
       if ((e.metaKey || e.ctrlKey) && (e.key === 'n' || e.key === 'N')) {
         e.preventDefault();
         void handleCreate();
+        return;
+      }
+      if (e.key === 'Escape') {
+        const target = e.target as HTMLElement | null;
+        const tag = target?.tagName;
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || target?.isContentEditable) return;
+        e.preventDefault();
+        handleClose();
       }
     }
     window.addEventListener('keydown', onKey);
     return () => {
       window.removeEventListener('keydown', onKey);
     };
-  }, [handleCreate]);
-
-  // Update the saved snapshot inline so the sidebar reflects title changes
-  // without waiting for the next full refresh. We hook onSaved via useNote's
-  // optional callback (no extra invoke).
-  const updateNoteRef = React.useRef(updateNote);
-  useEffect(() => {
-    updateNoteRef.current = updateNote;
-  }, [updateNote]);
+  }, [handleCreate, handleClose]);
 
   return (
     <div className="notes-view">
@@ -155,6 +177,26 @@ export function NotesView(): React.JSX.Element {
         style={{ height: HEADER_HEIGHT }}
       >
         <span className="notes-view__title">{t('title')}</span>
+        <div className="notes-view__window-controls">
+          <button
+            type="button"
+            className="notes-view__window-button"
+            onClick={handleMinimize}
+            aria-label={t('minimize')}
+            title={t('minimize')}
+          >
+            <span aria-hidden="true">−</span>
+          </button>
+          <button
+            type="button"
+            className="notes-view__window-button notes-view__window-button--close"
+            onClick={handleClose}
+            aria-label={t('close')}
+            title={t('close')}
+          >
+            <span aria-hidden="true">×</span>
+          </button>
+        </div>
       </div>
 
       <div className="notes-view__body">

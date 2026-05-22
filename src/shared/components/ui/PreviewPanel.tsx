@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { invoke, convertFileSrc } from '@tauri-apps/api/core';
 import { SearchResult, SearchResultType } from '../../types/common.types';
 import type { ShellOutputData } from '../../../features/plugins/builtin/shell';
+import { Terminal } from '@/components/ai-elements/terminal';
 
 interface FilePreview {
   path: string;
@@ -89,6 +90,20 @@ export function PreviewPanel({ result, isOpen }: PreviewPanelProps) {
 
   if (result.type === SearchResultType.ShellCommand) {
     const shellData = result.data as unknown as ShellOutputData | undefined;
+
+    // Compose the body the Terminal AI element renders. We let `ansi-to-react`
+    // (inside Terminal) handle ANSI color codes natively — no manual stripping.
+    const stdout = (shellData?.stdout ?? '').trim();
+    const stderr = (shellData?.stderr ?? '').trim();
+    let output = '';
+    if (shellData?.status === 'done') {
+      output = stdout || stderr || 'No output';
+    } else if (shellData?.status === 'running') {
+      output = stdout || '...';
+    } else if (shellData?.status === 'error') {
+      output = shellData.errorMessage || 'Unknown error';
+    }
+
     return (
       <div
         className="flex flex-col bg-surface border-l border-hairline h-full overflow-hidden w-[300px] shrink-0"
@@ -103,19 +118,13 @@ export function PreviewPanel({ result, isOpen }: PreviewPanelProps) {
             <span className="text-sm text-body shrink-0 ml-2">{shellData.executionTimeMs}ms</span>
           )}
         </div>
-        <div className="flex-1 overflow-y-auto p-4">
-          {shellData?.status === 'done' ? (
-            <pre className="font-mono text-xs text-body bg-surface-card rounded-md p-3 overflow-auto whitespace-pre-wrap break-words m-0">
-              {shellData.stdout || shellData.stderr || 'No output'}
-            </pre>
-          ) : shellData?.status === 'running' ? (
-            <pre className="font-mono text-xs text-body bg-surface-card rounded-md p-3 overflow-auto whitespace-pre-wrap break-words m-0">
-              {(shellData.stdout || '') + '\n...'}
-            </pre>
-          ) : shellData?.status === 'error' ? (
-            <pre className="font-mono text-xs text-body bg-surface-card rounded-md p-3 overflow-auto whitespace-pre-wrap break-words m-0">
-              {shellData.errorMessage || 'Unknown error'}
-            </pre>
+        <div className="flex-1 overflow-hidden p-3">
+          {shellData ? (
+            <Terminal
+              className="h-full"
+              output={output}
+              isStreaming={shellData.status === 'running'}
+            />
           ) : (
             <div className="flex items-center justify-center h-full text-mute text-xs">
               Press Enter to run command
