@@ -72,7 +72,7 @@ uuid = { version = "1", features = ["v4"] }
 # any error. Removing apple-native / windows-native here will reproduce
 # that bug. sync-secret-service + crypto-rust cover Linux (D-Bus).
 keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service", "crypto-rust"] }
-hmac = "0.12"
+hmac = "0.13"
 sha2 = "0.10"
 rand = "0.9"
 hex = "0.4"
