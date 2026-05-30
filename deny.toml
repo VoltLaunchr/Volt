@@ -1,0 +1,84 @@
+# cargo-deny configuration — supply-chain gate for the Rust crate graph.
+#
+# This is the STARTING POINT for supply-chain auditing (audit item supply-01).
+# It surfaces known CVEs (RustSec advisories), yanked crates, and untrusted
+# crate sources at build time. Volt embeds `fastembed` -> `ort` -> ONNX Runtime
+# (a release-candidate native dependency) plus a ~120 MB model, so keeping an
+# eye on advisories in the dependency tree matters.
+#
+# Run locally:  cd src-tauri && cargo deny check advisories bans sources
+# Schema:       cargo-deny >= 0.18 (v2 advisories schema). See
+#               https://embarkstudios.github.io/cargo-deny/checks/advisories/cfg.html
+#
+# NOTE on intent vs. schema: the audit asked for
+#   [advisories] vulnerability = "deny", unmaintained = "warn", yanked = "deny"
+# The `vulnerability` and severity lint-levels were REMOVED in the v2 schema:
+# all vulnerability advisories now ALWAYS error (i.e. effectively `deny`), which
+# is exactly the intent. `unmaintained` no longer takes a lint level (warn/deny)
+# but a SCOPE; there is no "warn" value, so we scope it to "workspace" — an
+# unmaintained crate fails the check only if it is a direct workspace dependency,
+# while transitive unmaintained crates (common via ort/ONNX) are reported as a
+# note without reddening CI. `yanked = "deny"` is preserved verbatim.
+
+[graph]
+# Build the crate graph with all features so the gate sees every conditionally
+# compiled dependency (e.g. the fastembed/ort native stack).
+all-features = true
+
+# ---------------------------------------------------------------------------
+# Vulnerability advisories  (`cargo deny check advisories`)
+# ---------------------------------------------------------------------------
+[advisories]
+# RustSec advisory database. Default URL, listed explicitly for clarity.
+db-urls = ["https://github.com/rustsec/advisory-db"]
+# Vulnerabilities: always errors in the v2 schema (no key to relax this) -> deny.
+# Yanked crate versions: fail the check.
+yanked = "deny"
+# Unmaintained advisories: fail only for direct workspace dependencies; report
+# transitive ones as a note (closest faithful mapping of the audit's "warn").
+unmaintained = "workspace"
+# Advisory IDs to ignore, with a justification each.
+# Add entries here (NOT by relaxing the levels above) if a CVE is a false
+# positive or has no available fix. Every entry MUST carry a `reason`, is
+# auditable in git history, and should be revisited whenever the upstream
+# situation changes.
+ignore = [
+  # Marvin Attack — RSA timing side-channel. Reached only transitively via
+  # jsonwebtoken (rust_crypto feature) -> rsa. There is NO patched release of
+  # the `rsa` crate as of this writing ("No safe upgrade is available"), so the
+  # only alternatives are (a) block CI on an unfixable advisory or (b) track it
+  # explicitly here. We choose (b). The exposure is narrow: RSA is used for JWT
+  # signature verification of tokens Volt itself fetches, not as a network
+  # timing oracle exposed to attackers. REVISIT when `rsa` publishes a fix
+  # (https://github.com/RustCrypto/RSA/issues/626) or when jsonwebtoken can be
+  # configured to avoid pulling `rsa`.
+  { id = "RUSTSEC-2023-0071", reason = "rsa timing side-channel; no upstream fix available, narrow JWT-verify exposure, tracked for revisit" },
+]
+
+# ---------------------------------------------------------------------------
+# Crate bans / duplicates  (`cargo deny check bans`)
+# ---------------------------------------------------------------------------
+[bans]
+# Multiple versions of the same crate: warn only. Duplicate transitive versions
+# are extremely common in large trees (Tauri + reqwest + fastembed) and should
+# not block CI; flagging them keeps the bloat visible so it can be trimmed.
+multiple-versions = "warn"
+# A crate version requirement of `*` is sloppy but not in scope for this gate.
+wildcards = "allow"
+highlight = "all"
+# No crate-level allow/deny rules yet.
+allow = []
+deny = []
+
+# ---------------------------------------------------------------------------
+# Crate sources  (`cargo deny check sources`)
+# ---------------------------------------------------------------------------
+[sources]
+# Reject crates pulled from a registry that is not in the allow list below.
+unknown-registry = "deny"
+# Reject crates pulled from an unlisted git repository. None expected today;
+# if a legitimate git dependency is added, allow it explicitly in `allow-git`.
+unknown-git = "deny"
+# Only the official crates.io index is trusted.
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []
