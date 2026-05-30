@@ -1,4 +1,3 @@
-use once_cell::sync::Lazy;
 /**
  * OAuth Integration Commands
  *
@@ -6,7 +5,7 @@ use once_cell::sync::Lazy;
  * Handles deep link callbacks from volta:// protocol
  */
 use serde::{Deserialize, Serialize};
-use std::sync::Mutex;
+use std::sync::{LazyLock, Mutex};
 use tracing::{debug, info, trace, warn};
 
 /// Hard cap on concurrent pending OAuth requests. Mirrors auth.rs's
@@ -14,7 +13,7 @@ use tracing::{debug, info, trace, warn};
 /// either a bug or a memory-DoS via repeated `get_*_oauth_url` calls.
 const MAX_PENDING_OAUTH_REQUESTS: usize = 32;
 
-static OAUTH_STATE: Lazy<Mutex<OAuthState>> = Lazy::new(|| Mutex::new(OAuthState::new()));
+static OAUTH_STATE: LazyLock<Mutex<OAuthState>> = LazyLock::new(|| Mutex::new(OAuthState::new()));
 
 /// Helper to lock OAUTH_STATE, recovering from poison if needed
 fn lock_state() -> Result<std::sync::MutexGuard<'static, OAuthState>, String> {

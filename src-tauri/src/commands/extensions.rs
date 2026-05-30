@@ -18,10 +18,9 @@ use tracing::{debug, info, warn};
 
 use crate::utils::extension_state_sig;
 use base64::Engine as _;
-use once_cell::sync::Lazy;
 use sha2::Digest as _;
 use std::collections::{HashMap, VecDeque};
-use std::sync::{Mutex, OnceLock};
+use std::sync::{LazyLock, Mutex, OnceLock};
 use std::time::Instant;
 
 /// Reject paths that escape `root` (via `..` or symlink resolution).
@@ -2335,8 +2334,8 @@ struct ExtOAuthPending {
     initiated_at: chrono::DateTime<chrono::Local>,
 }
 
-static EXT_OAUTH_PENDING: Lazy<Mutex<HashMap<String, ExtOAuthPending>>> =
-    Lazy::new(|| Mutex::new(HashMap::new()));
+static EXT_OAUTH_PENDING: LazyLock<Mutex<HashMap<String, ExtOAuthPending>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
 
 /// Emitted on every webview after a successful ext OAuth callback.
 #[derive(Debug, Clone, Serialize, Deserialize)]

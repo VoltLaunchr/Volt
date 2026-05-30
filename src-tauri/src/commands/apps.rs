@@ -355,15 +355,15 @@ impl ScanCache {
 }
 
 // Global cache with 5-minute expiry
-static SCAN_CACHE: once_cell::sync::Lazy<Arc<RwLock<Option<ScanCache>>>> =
-    once_cell::sync::Lazy::new(|| Arc::new(RwLock::new(None)));
+static SCAN_CACHE: std::sync::LazyLock<Arc<RwLock<Option<ScanCache>>>> =
+    std::sync::LazyLock::new(|| Arc::new(RwLock::new(None)));
 
 // Single-flight lock: serializes concurrent fresh scans so a second caller
 // piggybacks on the first's result via the cache instead of running its own
 // scan in parallel. Without this, two simultaneous scan_applications calls
 // would both miss the cache, both run a full scan, and the doubled icon
 // extraction + .lnk parsing can OOM the process.
-static SCAN_LOCK: once_cell::sync::Lazy<Mutex<()>> = once_cell::sync::Lazy::new(|| Mutex::new(()));
+static SCAN_LOCK: std::sync::LazyLock<Mutex<()>> = std::sync::LazyLock::new(|| Mutex::new(()));
 
 /// Scans system for installed applications (cross-platform)
 /// Uses caching to avoid expensive rescans

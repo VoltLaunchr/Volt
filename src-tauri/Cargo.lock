@@ -7571,7 +7571,6 @@ dependencies = [
  "log",
  "notify",
  "nucleo-matcher",
- "once_cell",
  "plist",
  "png 0.17.16",
  "rand 0.9.4",
