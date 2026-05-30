@@ -115,11 +115,20 @@ pub async fn search_all(
 
     let (app_results, file_results, frecency_results) = tokio::join!(
         async {
-            let all_history = history.get_all();
+            // Project history into a path→frecency map under the lock; avoids
+            // cloning the whole record set just to score app matches.
+            let frecency = history.with_records(|records| {
+                records
+                    .iter()
+                    .map(|(path, record)| {
+                        (path.clone(), crate::search::calculate_frecency(record))
+                    })
+                    .collect::<std::collections::HashMap<String, f64>>()
+            });
             crate::search::search_applications_with_frecency(
                 &query_apps,
                 apps_for_search,
-                &all_history,
+                &frecency,
                 Some(&bindings_snapshot),
             )
             .into_iter()
@@ -128,17 +137,20 @@ pub async fn search_all(
         },
         search_files_batch(&query_files, &files_snapshot, &options, max_results),
         async {
-            let mut records = history.get_all();
-            // Compound-key sort: pinned first, then by frecency.
-            records.sort_by(|a, b| {
-                b.pinned.cmp(&a.pinned).then_with(|| {
-                    let fa = crate::search::calculate_frecency(a);
-                    let fb = crate::search::calculate_frecency(b);
-                    fb.partial_cmp(&fa).unwrap_or(std::cmp::Ordering::Equal)
-                })
-            });
-            records.truncate(5);
-            records
+            // Compound-key sort: pinned first, then by frecency. Sort over
+            // references under the lock and clone only the top 5 survivors
+            // instead of cloning every record up front.
+            history.with_records(|records| {
+                let mut refs: Vec<&LaunchRecord> = records.values().collect();
+                refs.sort_by(|a, b| {
+                    b.pinned.cmp(&a.pinned).then_with(|| {
+                        let fa = crate::search::calculate_frecency(a);
+                        let fb = crate::search::calculate_frecency(b);
+                        fb.partial_cmp(&fa).unwrap_or(std::cmp::Ordering::Equal)
+                    })
+                });
+                refs.into_iter().take(5).cloned().collect::<Vec<LaunchRecord>>()
+            })
         },
     );
 
@@ -188,11 +200,18 @@ pub async fn search_streaming(
     // --- App search task ---
     let tx_apps = tx.clone();
     tokio::spawn(async move {
-        let history_records = history.get_all();
+        // Project history into a path→frecency map under the lock; avoids
+        // cloning the whole record set per streaming search.
+        let frecency = history.with_records(|records| {
+            records
+                .iter()
+                .map(|(path, record)| (path.clone(), crate::search::calculate_frecency(record)))
+                .collect::<std::collections::HashMap<String, f64>>()
+        });
         let results = crate::search::search_applications_with_frecency(
             &query_apps,
             apps,
-            &history_records,
+            &frecency,
             Some(&bindings_snapshot),
         );
         let scored: Vec<AppInfoWithScore> = results

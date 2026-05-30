@@ -1152,13 +1152,20 @@ pub async fn search_applications_frecency(
     history_state: tauri::State<'_, crate::commands::launcher::LaunchHistoryState>,
     binding_state: tauri::State<'_, crate::commands::launcher::QueryBindingState>,
 ) -> VoltResult<Vec<AppInfoWithScore>> {
-    let history = history_state.history.get_all();
+    // Project the history into a path→frecency map under the lock instead of
+    // cloning every LaunchRecord just to read its score.
+    let frecency = history_state.history.with_records(|records| {
+        records
+            .iter()
+            .map(|(path, record)| (path.clone(), crate::search::calculate_frecency(record)))
+            .collect::<std::collections::HashMap<String, f64>>()
+    });
     let bindings = binding_state
         .store
         .lock()
         .map_err(|e| crate::core::error::VoltError::Unknown(e.to_string()))?;
     let results =
-        crate::search::search_applications_with_frecency(&query, apps, &history, Some(&bindings));
+        crate::search::search_applications_with_frecency(&query, apps, &frecency, Some(&bindings));
     Ok(results
         .into_iter()
         .map(|(app, score)| AppInfoWithScore { app, score })

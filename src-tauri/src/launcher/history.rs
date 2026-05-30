@@ -232,6 +232,24 @@ impl LaunchHistory {
         records.values().cloned().collect()
     }
 
+    /// Run `f` against the raw record map while holding the lock.
+    ///
+    /// This lets hot paths (per-keystroke search scoring) derive a cheap
+    /// projection — e.g. a `path → frecency` score map — without cloning the
+    /// entire `HashMap<String, LaunchRecord>` first (each `LaunchRecord` owns
+    /// two `String`s and a `Vec<String>`). The closure must not hold onto the
+    /// borrow past its return.
+    pub fn with_records<R>(&self, f: impl FnOnce(&HashMap<String, LaunchRecord>) -> R) -> R {
+        let records = self.records.lock().unwrap_or_else(|poisoned| {
+            log::error!(
+                "Launch history mutex poisoned in with_records(): {:?}",
+                poisoned
+            );
+            poisoned.into_inner()
+        });
+        f(&records)
+    }
+
     /// Get most recently launched apps.
     ///
     /// Uses [`select_nth_unstable_by_key`] to partition top-K in O(n) average

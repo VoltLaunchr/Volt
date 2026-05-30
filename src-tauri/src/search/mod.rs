@@ -15,23 +15,23 @@ pub fn calculate_frecency(record: &LaunchRecord) -> f64 {
 
 /// Search applications with frecency scoring from launch history.
 /// Returns apps sorted by (match_score + frecency_bonus + query_binding_boost) descending.
+///
+/// `frecency` is a pre-computed `path → frecency score` map (see
+/// [`LaunchHistory::with_records`]). Taking the map instead of a
+/// `&[LaunchRecord]` slice lets callers avoid cloning the entire launch
+/// history on every keystroke — only the scores we actually read are
+/// materialised.
 pub fn search_applications_with_frecency(
     query: &str,
     apps: Vec<AppInfo>,
-    history: &[LaunchRecord],
+    frecency: &std::collections::HashMap<String, f64>,
     query_bindings: Option<&QueryBindingStore>,
 ) -> Vec<(AppInfo, f32)> {
     if query.trim().is_empty() {
         return Vec::new();
     }
 
-    // Build path→frecency lookup
-    let frecency_map: std::collections::HashMap<&str, f64> = history
-        .iter()
-        .map(|r| (r.path.as_str(), calculate_frecency(r)))
-        .collect();
-
-    let has_history = !frecency_map.is_empty();
+    let has_history = !frecency.is_empty();
 
     let mut matcher = Matcher::new(Config::DEFAULT);
     // Shared scratch buffer for non-ASCII haystacks. Reusing this across every
@@ -99,10 +99,10 @@ pub fn search_applications_with_frecency(
                 return None;
             }
 
-            let frecency = frecency_map.get(app.path.as_str()).copied().unwrap_or(0.0);
+            let frecency_score = frecency.get(app.path.as_str()).copied().unwrap_or(0.0);
 
-            let mut final_score = if frecency > 0.0 {
-                match_score + (frecency * 10.0).min(50.0) as f32
+            let mut final_score = if frecency_score > 0.0 {
+                match_score + (frecency_score * 10.0).min(50.0) as f32
             } else if has_history {
                 match_score * 0.7
             } else {
