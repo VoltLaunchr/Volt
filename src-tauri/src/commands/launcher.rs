@@ -245,19 +245,44 @@ pub async fn get_frecency_suggestions(
     history_state: State<'_, LaunchHistoryState>,
 ) -> VoltResult<Vec<LaunchRecord>> {
     let limit = limit.unwrap_or(8);
-    let mut records = history_state.history.get_all();
+    if limit == 0 {
+        return Ok(Vec::new());
+    }
 
-    // Compound-key sort: pinned first, then by frecency. Keeps intent
-    // explicit and doesn't rely on sort stability across two passes.
-    records.sort_by(|a, b| {
-        b.pinned.cmp(&a.pinned).then_with(|| {
-            let fa = crate::search::calculate_frecency(a);
-            let fb = crate::search::calculate_frecency(b);
-            fb.partial_cmp(&fa).unwrap_or(std::cmp::Ordering::Equal)
-        })
+    // Rank under the lock on a cheap projection (`pinned`, frecency score, and
+    // a borrowed key) so we never clone the whole `HashMap<String,
+    // LaunchRecord>` — each record owns two `String`s and a `Vec<String>`.
+    // Only the top-N survivors are cloned out of the map afterwards.
+    let records = history_state.history.with_records(|records| {
+        // (pinned, frecency, key) — `&String` borrow lives only inside the closure.
+        let mut ranked: Vec<(bool, f64, &String)> = records
+            .iter()
+            .map(|(key, record)| (record.pinned, crate::search::calculate_frecency(record), key))
+            .collect();
+
+        // Compound-key sort: pinned first, then by frecency. Mirrors the
+        // previous `sort_by` semantics exactly (pinned `true` ahead of
+        // `false`, higher frecency first, NaN treated as Equal).
+        let order = |a: &(bool, f64, &String), b: &(bool, f64, &String)| {
+            b.0.cmp(&a.0)
+                .then_with(|| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal))
+        };
+
+        if ranked.len() > limit {
+            // `len > limit` guarantees index `limit` is in bounds. Mirrors the
+            // partial-sort pattern in `get_recent`/`get_frequent`.
+            ranked.select_nth_unstable_by(limit, order);
+            ranked.truncate(limit);
+        }
+        ranked.sort_by(order);
+
+        // Clone only the top-N survivors.
+        ranked
+            .into_iter()
+            .filter_map(|(_, _, key)| records.get(key).cloned())
+            .collect::<Vec<LaunchRecord>>()
     });
 
-    records.truncate(limit);
     Ok(records)
 }
 
