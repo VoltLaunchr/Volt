@@ -67,7 +67,8 @@ const MAX_EXPIRES_IN_SECS: i64 = 86_400;
 /// with the time it was fetched. Refreshed every `JWKS_CACHE_TTL` or on
 /// demand when an unknown `kid` is encountered (which signals a key
 /// rotation upstream).
-static JWKS_CACHE: LazyLock<RwLock<Option<(JwkSet, Instant)>>> = LazyLock::new(|| RwLock::new(None));
+static JWKS_CACHE: LazyLock<RwLock<Option<(JwkSet, Instant)>>> =
+    LazyLock::new(|| RwLock::new(None));
 
 /// JWKS cache TTL — matches Supabase's edge cache window so we don't keep
 /// stale public keys after a rotation, while avoiding a fetch per token.

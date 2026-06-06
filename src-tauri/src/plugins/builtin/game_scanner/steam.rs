@@ -13,10 +13,12 @@ static ACF_APPID_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r#""appid"\s+"([^"]+)""#).expect("static ACF appid regex"));
 static ACF_NAME_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r#""name"\s+"([^"]+)""#).expect("static ACF name regex"));
-static ACF_INSTALLDIR_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r#""installdir"\s+"([^"]+)""#).expect("static ACF installdir regex"));
-static LIBRARYFOLDERS_PATH_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r#""path"\s+"([^"]+)""#).expect("static libraryfolders path regex"));
+static ACF_INSTALLDIR_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r#""installdir"\s+"([^"]+)""#).expect("static ACF installdir regex")
+});
+static LIBRARYFOLDERS_PATH_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r#""path"\s+"([^"]+)""#).expect("static libraryfolders path regex")
+});
 
 /// Steam game information
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
