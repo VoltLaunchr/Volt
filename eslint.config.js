@@ -76,6 +76,8 @@ export default [
       'coverage/**',
       'playwright-report/**',
       'test-results/**',
+      // ts-rs generated IPC bindings (source of truth is the Rust structs)
+      'src/shared/types/generated/**',
     ],
   },
   // Type-checked config for project source (src/) — requires tsconfig project.

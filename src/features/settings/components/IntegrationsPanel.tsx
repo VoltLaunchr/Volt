@@ -6,7 +6,7 @@
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
-  Github,
+  GitBranch,
   Database,
   AlertCircle,
   CheckCircle,
@@ -38,7 +38,7 @@ const INTEGRATIONS: IntegrationConfig[] = [
   {
     id: 'github',
     name: 'GitHub',
-    icon: Github,
+    icon: GitBranch,
     descriptionKey: 'integrations.github.description',
     setupUrl: 'https://voltlaunchr.com/api/oauth/github',
     docUrl: 'https://github.com/VoltLaunchr/volt-extensions/blob/main/plugins/github/README.md',

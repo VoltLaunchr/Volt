@@ -102,6 +102,19 @@ export function GameView({ onClose }: GameViewProps): React.JSX.Element {
     }
   }, [games, filterQuery, platformFilter]);
 
+  // Launch game
+  const handleLaunchGame = useCallback(
+    async (game: GameInfo) => {
+      try {
+        await invoke<void>('launch_game', { gameId: game.id });
+        onClose();
+      } catch (error) {
+        logger.error('Failed to launch game:', error);
+      }
+    },
+    [onClose]
+  );
+
   // Handle keyboard navigation
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -140,19 +153,8 @@ export function GameView({ onClose }: GameViewProps): React.JSX.Element {
           break;
       }
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [selectedIndex, filteredGames, selectedGame, onClose]
+    [selectedIndex, filteredGames, selectedGame, onClose, handleLaunchGame]
   );
-
-  // Launch game
-  const handleLaunchGame = async (game: GameInfo) => {
-    try {
-      await invoke<void>('launch_game', { gameId: game.id });
-      onClose();
-    } catch (error) {
-      logger.error('Failed to launch game:', error);
-    }
-  };
 
   // Rescan games
   const handleRescan = async () => {

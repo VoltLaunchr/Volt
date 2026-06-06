@@ -1,9 +1,9 @@
 use crate::core::error::VoltError;
-use once_cell::sync::Lazy;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::process::Stdio;
+use std::sync::LazyLock;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use tauri::AppHandle;
@@ -47,7 +47,7 @@ const COMPLETED_TOKENS_MAX: usize = 100;
 /// client-side enforcement is bypassed by any caller that can reach `invoke()`
 /// (extensions escaping the Worker sandbox, XSS in dev tools, …). This
 /// Rust-side mirror is the actual trust boundary.
-static BLOCKED_PATTERNS: Lazy<Vec<Regex>> = Lazy::new(|| {
+static BLOCKED_PATTERNS: LazyLock<Vec<Regex>> = LazyLock::new(|| {
     // Compile once at startup. Any invalid pattern panics early rather than
     // silently disabling the block.
     [
@@ -102,7 +102,7 @@ static BLOCKED_PATTERNS: Lazy<Vec<Regex>> = Lazy::new(|| {
 /// Regex patterns used to redact likely secrets from a command string before
 /// it is logged or persisted. Best-effort — not a replacement for never
 /// typing credentials on the CLI.
-static REDACTORS: Lazy<Vec<(Regex, &'static str)>> = Lazy::new(|| {
+static REDACTORS: LazyLock<Vec<(Regex, &'static str)>> = LazyLock::new(|| {
     [
         // URL userinfo: scheme://user:password@host -> scheme://***@host
         (r"([a-z][a-z0-9+\-.]*)://[^/\s:@]+:[^/\s@]+@", "$1://***@"),

@@ -7,6 +7,8 @@ node_modules/
 
 # Generated files
 src-tauri/gen/
+# ts-rs generated IPC bindings (source of truth is the Rust structs)
+src/shared/types/generated/
 
 # Binary and lock files
 *.lock

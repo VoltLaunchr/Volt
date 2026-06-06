@@ -2,6 +2,7 @@ import { type Plugin, type PluginContext, type PluginResult, PluginResultType } 
 import { fuzzyScore } from '../../utils/helpers';
 import { aiQuickActionsService, type AiQuickAction } from '../../../ai-quick-actions';
 import { logger } from '../../../../shared/utils/logger';
+import { VOLT_EVENTS, emitVoltEvent } from '../../../../shared/events';
 import { AI_PRESETS } from './presets';
 
 /** Minimum fuzzy score to surface a quick action in the launcher. */
@@ -194,12 +195,8 @@ export class AiChatPlugin implements Plugin {
     // Quick AI mode requires a non-empty query (it's one-shot, can't open empty).
     // Default: Chat mode (handles empty query → opens blank chat ready for input).
     const useQuickAi = data.mode === 'quick' && !!data.query?.trim();
-    const eventName = useQuickAi ? 'volt:open-quick-ai' : 'volt:open-ai-chat';
-    window.dispatchEvent(
-      new CustomEvent(eventName, {
-        detail: { query: data.query ?? '', systemPrompt: data.systemPrompt },
-      })
-    );
+    const eventName = useQuickAi ? VOLT_EVENTS.OPEN_QUICK_AI : VOLT_EVENTS.OPEN_AI_CHAT;
+    emitVoltEvent(eventName, { query: data.query ?? '', systemPrompt: data.systemPrompt });
   }
 }
 

@@ -8,6 +8,7 @@ import {
   AiChatPlugin,
   CalculatorPlugin,
   DeveloperCommandsPlugin,
+  DeveloperToolsPlugin,
   EmojiPickerPlugin,
   GamesPlugin,
   NotesPlugin,
@@ -107,6 +108,7 @@ export function useAppLifecycle(): UseAppLifecycleResult {
           pluginRegistry.register(new NotesPlugin());
           pluginRegistry.register(new WindowManagementPlugin());
           pluginRegistry.register(new ShellCommandPlugin());
+          pluginRegistry.register(new DeveloperToolsPlugin());
 
           // Start clipboard monitoring
           await ClipboardPlugin.startMonitoring();

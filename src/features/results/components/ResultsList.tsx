@@ -175,7 +175,7 @@ export function ResultsList({
                       }
                     }}
                   >
-                    <ResultItem result={result} isSelected={globalIndex === selectedIndex} />
+                    <ResultItem result={result} isSelected={globalIndex === selectedIndex} globalIndex={globalIndex} />
                   </div>
                 ))}
               </div>
@@ -211,7 +211,7 @@ export function ResultsList({
                         }
                       }}
                     >
-                      <ResultItem result={result} isSelected={globalIndex === selectedIndex} />
+                      <ResultItem result={result} isSelected={globalIndex === selectedIndex} globalIndex={globalIndex} />
                     </div>
                   </Fragment>
                 );

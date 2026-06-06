@@ -37,8 +37,6 @@
   },
   "dependencies": {
     "@base-ui/react": "^1.4.1",
-    "@number-flow/react": "^0.6.0",
-    "@radix-ui/react-slot": "^1.2.4",
     "@tailwindcss/vite": "^4.3.0",
     "@tauri-apps/api": "^2.11.0",
     "@tauri-apps/plugin-dialog": "^2.7.1",
@@ -69,7 +67,6 @@
     "d3-array": "^3.2.4",
     "date-fns": "^4.2.1",
     "date-fns-tz": "^3.2.0",
-    "emojibase": "^17.0.0",
     "emojibase-data": "^17.0.0",
     "i18next": "^26.2.0",
     "lowlight": "^3.3.0",

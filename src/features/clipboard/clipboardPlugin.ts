@@ -3,6 +3,7 @@ import { PluginResultType, type Plugin, PluginContext, PluginResult } from '../p
 import { logger } from '../../shared/utils';
 import { isClipboardItem } from '../../shared/utils/typeGuards';
 import type { ClipboardItem } from '../../shared/types/clipboard';
+import { VOLT_EVENTS, emitVoltEvent } from '../../shared/events';
 
 /**
  * Clipboard History Plugin
@@ -108,20 +109,12 @@ export class ClipboardPlugin implements Plugin {
       await invoke<void>('hide_window');
 
       // Emit success event
-      window.dispatchEvent(
-        new CustomEvent('volt:clipboard:copied', {
-          detail: { id: item.id, preview: item.preview },
-        })
-      );
+      emitVoltEvent(VOLT_EVENTS.CLIPBOARD_COPIED, { id: item.id, preview: item.preview });
     } catch (error) {
       logger.error('Failed to copy to clipboard:', error);
 
       // Emit error event
-      window.dispatchEvent(
-        new CustomEvent('volt:clipboard:error', {
-          detail: { error: String(error) },
-        })
-      );
+      emitVoltEvent(VOLT_EVENTS.CLIPBOARD_ERROR, { error: String(error) });
     }
   }
 
@@ -216,7 +209,7 @@ export class ClipboardPlugin implements Plugin {
   static async clearHistory(includePinned: boolean = false): Promise<void> {
     try {
       await invoke<void>('clear_clipboard_history', { includePinned });
-      window.dispatchEvent(new CustomEvent('volt:clipboard:cleared'));
+      emitVoltEvent(VOLT_EVENTS.CLIPBOARD_CLEARED);
     } catch (error) {
       logger.error('Failed to clear clipboard history:', error);
       throw error;

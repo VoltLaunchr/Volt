@@ -1,0 +1,65 @@
+name: Supply Chain
+
+# Surfaces known vulnerabilities (CVEs / RustSec advisories) in both the Rust
+# crate graph and the npm dependency tree at build time. Audit item supply-01.
+#
+# Rationale: Volt embeds fastembed -> ort -> ONNX Runtime (a native RC
+# dependency) plus a ~120 MB downloaded model, so a regular supply-chain audit
+# is warranted. These gates are intentionally tuned to fail only on genuinely
+# actionable findings (see deny.toml and the --audit-level below) so they
+# surface real risk without reddening CI on unfixable transitive noise.
+
+on:
+  push:
+    branches: ["main", "dev"]
+  pull_request:
+    branches: ["main", "dev"]
+
+# Read-only; these jobs never write to the repo.
+permissions:
+  contents: read
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Rust crate graph — cargo-deny (advisories + bans + sources).
+  # Config lives in deny.toml at the repo root. The `licenses` check is
+  # intentionally NOT run here (out of scope for the supply-chain gate and
+  # would require curating an allow-list first).
+  # ---------------------------------------------------------------------------
+  cargo-deny:
+    name: cargo-deny (Rust advisories)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run cargo-deny
+        uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          # Volt's crate is in src-tauri/. deny.toml at the repo root is
+          # discovered automatically from the manifest's workspace root.
+          manifest-path: src-tauri/Cargo.toml
+          command: check advisories bans sources
+          arguments: --all-features
+
+  # ---------------------------------------------------------------------------
+  # npm dependency tree — bun audit.
+  # `--audit-level=high` fails the job only on high/critical advisories.
+  # Moderate/low findings (typically dev-only transitive deps) are reported by
+  # `bun audit` but do not block; run `bun audit` locally to see the full list.
+  # ---------------------------------------------------------------------------
+  bun-audit:
+    name: bun audit (npm advisories)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Audit npm dependencies (fail on high/critical)
+        run: bun audit --audit-level=high

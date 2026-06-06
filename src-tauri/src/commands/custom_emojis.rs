@@ -36,11 +36,11 @@
 //! 2. We save the bytes to `app_data_dir/custom_emojis/{id}.png`.
 //! 3. We persist a tiny index JSON so the UI can list/manage them.
 
-use once_cell::sync::Lazy;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
+use std::sync::LazyLock;
 use std::time::Duration;
 use tauri::{AppHandle, Manager};
 use tracing::{info, warn};
@@ -52,8 +52,8 @@ use tracing::{info, warn};
 /// the redaction conservative so a bad upstream message still has enough
 /// shape to debug (status code, error code, etc.) — only the credential
 /// fragment is replaced.
-static BEARER_TOKEN_RE: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"(?i)bearer\s+[A-Za-z0-9_\-\.=]{8,}").unwrap());
+static BEARER_TOKEN_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?i)bearer\s+[A-Za-z0-9_\-\.=]{8,}").unwrap());
 
 fn redact_secrets(body: &str) -> String {
     BEARER_TOKEN_RE

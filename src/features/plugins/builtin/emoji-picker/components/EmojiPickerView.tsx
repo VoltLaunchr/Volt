@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { loadEmojiData, getEmojisByGroup } from '../utils/emojiData';
 import { searchEmojis } from '../utils/search';
@@ -54,7 +54,6 @@ export function EmojiPickerView({
 }: EmojiPickerViewProps): React.JSX.Element {
   const { t } = useTranslation('emoji-picker');
   const [allEmojis, setAllEmojis] = useState<SearchableEmoji[]>([]);
-  const [displayedEmojis, setDisplayedEmojis] = useState<SearchableEmoji[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState(initialQuery);
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -67,56 +66,57 @@ export function EmojiPickerView({
     void loadEmojiData().then((data) => {
       setAllEmojis(data);
       setIsLoading(false);
-      updateDisplayedEmojis(data, selectedCategory, searchQuery);
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Update displayed emojis when category or search changes
-  const updateDisplayedEmojis = useCallback(
-    (emojis: SearchableEmoji[], category: string, query: string) => {
-      let filtered = emojis;
+  // Derived: emojis shown for the current category / search query
+  const displayedEmojis = useMemo<SearchableEmoji[]>(() => {
+    // Apply search filter
+    if (searchQuery.trim()) {
+      return searchEmojis(allEmojis, searchQuery);
+    }
 
-      // Apply search filter
-      if (query.trim()) {
-        filtered = searchEmojis(emojis, query);
-      } else if (category === 'frequent') {
-        // Show frequently used
-        const frequentList = getFrequentEmojis(50);
-        filtered = frequentList
-          .map((emoji) => emojis.find((e) => e.emoji === emoji))
-          .filter((e): e is SearchableEmoji => e !== undefined);
-      } else if (category !== 'all') {
-        // Filter by category
-        filtered = getEmojisByGroup(emojis, category);
-      }
+    // Show frequently used
+    if (selectedCategory === 'frequent') {
+      const frequentList = getFrequentEmojis(50);
+      return frequentList
+        .map((emoji) => allEmojis.find((e) => e.emoji === emoji))
+        .filter((e): e is SearchableEmoji => e !== undefined);
+    }
 
-      setDisplayedEmojis(filtered);
-      setSelectedIndex(0);
-    },
-    []
-  );
+    // Filter by category
+    if (selectedCategory !== 'all') {
+      return getEmojisByGroup(allEmojis, selectedCategory);
+    }
+
+    return allEmojis;
+  }, [allEmojis, selectedCategory, searchQuery]);
+
+  // Reset the highlighted index whenever the filter inputs change
+  useEffect(() => {
+    setSelectedIndex(0);
+  }, [selectedCategory, searchQuery]);
 
   // Handle search input change
   const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const query = e.target.value;
-    setSearchQuery(query);
-    updateDisplayedEmojis(allEmojis, selectedCategory, query);
+    setSearchQuery(e.target.value);
   };
 
   // Handle category change
   const handleCategoryChange = (category: string) => {
     setSelectedCategory(category);
     setShowCategoryDropdown(false);
-    updateDisplayedEmojis(allEmojis, category, searchQuery);
   };
 
   // Handle emoji selection
-  const handleSelectEmoji = (emoji: SearchableEmoji) => {
-    const displayEmoji = applyPreferredSkinTone(emoji);
-    onSelectEmoji(displayEmoji);
-    addToHistory(displayEmoji);
-  };
+  const handleSelectEmoji = useCallback(
+    (emoji: SearchableEmoji) => {
+      const displayEmoji = applyPreferredSkinTone(emoji);
+      onSelectEmoji(displayEmoji);
+      addToHistory(displayEmoji);
+    },
+    [onSelectEmoji]
+  );
 
   // Keyboard navigation
   const handleKeyDown = useCallback(
@@ -129,8 +129,6 @@ export function EmojiPickerView({
         }
         return;
       }
-
-      const gridColumns = 7; // Number of columns in the grid (matches CSS)
 
       switch (e.key) {
         case 'ArrowUp':
@@ -163,8 +161,7 @@ export function EmojiPickerView({
           break;
       }
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [displayedEmojis, selectedIndex, onClose, selectedCategory]
+    [displayedEmojis, selectedIndex, onClose, selectedCategory, gridColumns, handleSelectEmoji]
   );
 
   // Scroll selected emoji into view

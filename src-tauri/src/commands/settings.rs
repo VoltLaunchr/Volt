@@ -2,12 +2,12 @@ use crate::core::error::{VoltError, VoltResult};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::LazyLock;
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::Mutex;
 
 /// Mutex to serialize settings read-modify-write operations and prevent race conditions
-static SETTINGS_LOCK: once_cell::sync::Lazy<Mutex<()>> =
-    once_cell::sync::Lazy::new(|| Mutex::new(()));
+static SETTINGS_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
 
 /// General application settings
 #[derive(Debug, Clone, Serialize, Deserialize)]

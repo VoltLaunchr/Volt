@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { ShellCommandPlugin, stripAnsi, isCommandBlocked } from './index';
 import { PluginResultType } from '../../types';
+import { VOLT_EVENTS, onVoltEvent, type VoltShellOutputDetail } from '../../../../shared/events';
 
 // Mock Tauri invoke — all backend calls are stubbed
 vi.mock('@tauri-apps/api/core', () => ({
@@ -113,12 +114,8 @@ describe('ShellCommandPlugin', () => {
 
   describe('execute', () => {
     it('refuses to execute a blocked command', async () => {
-      interface ShellOutputDetail {
-        data: { status: string; errorMessage?: string };
-      }
-      const events: CustomEvent<ShellOutputDetail>[] = [];
-      const listener = (e: Event) => events.push(e as CustomEvent<ShellOutputDetail>);
-      window.addEventListener('volt:shell-output', listener);
+      const events: VoltShellOutputDetail[] = [];
+      const off = onVoltEvent(VOLT_EVENTS.SHELL_OUTPUT, (detail) => events.push(detail));
 
       await plugin.execute({
         id: 'shell-rm',
@@ -129,10 +126,10 @@ describe('ShellCommandPlugin', () => {
         data: { command: 'rm -rf /', status: 'pending' } as unknown as Record<string, unknown>,
       });
 
-      window.removeEventListener('volt:shell-output', listener);
+      off();
 
       expect(events.length).toBe(1);
-      const detail = events[0].detail;
+      const detail = events[0];
       expect(detail.data.status).toBe('error');
       expect(detail.data.errorMessage).toContain('blocked');
     });

@@ -355,15 +355,15 @@ impl ScanCache {
 }
 
 // Global cache with 5-minute expiry
-static SCAN_CACHE: once_cell::sync::Lazy<Arc<RwLock<Option<ScanCache>>>> =
-    once_cell::sync::Lazy::new(|| Arc::new(RwLock::new(None)));
+static SCAN_CACHE: std::sync::LazyLock<Arc<RwLock<Option<ScanCache>>>> =
+    std::sync::LazyLock::new(|| Arc::new(RwLock::new(None)));
 
 // Single-flight lock: serializes concurrent fresh scans so a second caller
 // piggybacks on the first's result via the cache instead of running its own
 // scan in parallel. Without this, two simultaneous scan_applications calls
 // would both miss the cache, both run a full scan, and the doubled icon
 // extraction + .lnk parsing can OOM the process.
-static SCAN_LOCK: once_cell::sync::Lazy<Mutex<()>> = once_cell::sync::Lazy::new(|| Mutex::new(()));
+static SCAN_LOCK: std::sync::LazyLock<Mutex<()>> = std::sync::LazyLock::new(|| Mutex::new(()));
 
 /// Scans system for installed applications (cross-platform)
 /// Uses caching to avoid expensive rescans
@@ -1152,13 +1152,20 @@ pub async fn search_applications_frecency(
     history_state: tauri::State<'_, crate::commands::launcher::LaunchHistoryState>,
     binding_state: tauri::State<'_, crate::commands::launcher::QueryBindingState>,
 ) -> VoltResult<Vec<AppInfoWithScore>> {
-    let history = history_state.history.get_all();
+    // Project the history into a path→frecency map under the lock instead of
+    // cloning every LaunchRecord just to read its score.
+    let frecency = history_state.history.with_records(|records| {
+        records
+            .iter()
+            .map(|(path, record)| (path.clone(), record.frecency_date))
+            .collect::<std::collections::HashMap<String, i64>>()
+    });
     let bindings = binding_state
         .store
         .lock()
         .map_err(|e| crate::core::error::VoltError::Unknown(e.to_string()))?;
     let results =
-        crate::search::search_applications_with_frecency(&query, apps, &history, Some(&bindings));
+        crate::search::search_applications_with_frecency(&query, apps, &frecency, Some(&bindings));
     Ok(results
         .into_iter()
         .map(|(app, score)| AppInfoWithScore { app, score })

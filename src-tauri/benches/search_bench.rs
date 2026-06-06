@@ -1,4 +1,5 @@
 use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
+use std::collections::HashMap;
 use volt_lib::commands::apps::AppInfo;
 use volt_lib::launcher::{LaunchRecord, QueryBindingStore};
 use volt_lib::search::search_applications;
@@ -128,10 +129,21 @@ fn generate_history(apps: &[AppInfo], count: usize) -> Vec<LaunchRecord> {
             launch_count: (10 - (i % 10)) as u32,
             first_launched: now_ms - 86_400_000 * 30, // 30 days ago
             last_launched: now_ms - (i as i64 * 3_600_000), // staggered
+            // Frecency date pushed into the future, more for "more used" entries.
+            frecency_date: now_ms + (10 - (i % 10)) as i64 * 86_400_000,
             total_time_ms: None,
             tags: Vec::new(),
             pinned: false,
         })
+        .collect()
+}
+
+/// Project a history slice into the `path → frecency_date` map that
+/// `search_applications_with_frecency` consumes.
+fn frecency_map(history: &[LaunchRecord]) -> HashMap<String, i64> {
+    history
+        .iter()
+        .map(|r| (r.path.clone(), r.frecency_date))
         .collect()
 }
 
@@ -253,17 +265,19 @@ fn bench_search_with_frecency(c: &mut Criterion) {
     for &count in &[100, 1000, 5000] {
         let apps = generate_apps(count);
         let history = generate_history(&apps, count.min(50)); // realistic: 50 history entries
+        let frecency = frecency_map(&history);
+        let empty_frecency: HashMap<String, i64> = HashMap::new();
         let bindings = QueryBindingStore::default();
 
         group.bench_with_input(
             BenchmarkId::new("with_history", count),
-            &(apps.clone(), history.clone()),
-            |b, (apps, history)| {
+            &(apps.clone(), frecency.clone()),
+            |b, (apps, frecency)| {
                 b.iter(|| {
                     search_applications_with_frecency(
                         black_box("code"),
                         black_box(apps.clone()),
-                        black_box(history),
+                        black_box(frecency),
                         black_box(Some(&bindings)),
                     )
                 })
@@ -275,7 +289,7 @@ fn bench_search_with_frecency(c: &mut Criterion) {
                 search_applications_with_frecency(
                     black_box("chrome"),
                     black_box(apps.clone()),
-                    black_box(&[]),
+                    black_box(&empty_frecency),
                     black_box(None),
                 )
             })

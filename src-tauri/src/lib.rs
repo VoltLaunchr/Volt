@@ -18,11 +18,10 @@ use commands::sync::SyncState;
 use commands::system_monitor::SystemMonitorState;
 use commands::*;
 use hotkey::HotkeyState;
-use once_cell::sync::Lazy;
 use plugins::api::VoltPluginAPI;
 use plugins::registry::PluginRegistry;
 use std::collections::VecDeque;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, LazyLock, Mutex};
 use std::time::{Duration, Instant};
 use tauri::{Emitter, Listener, Manager};
 use tracing::{debug, error, info, warn};
@@ -50,8 +49,8 @@ use window::*;
 const DEEPLINK_BURST_LIMIT: usize = 5;
 const DEEPLINK_WINDOW: Duration = Duration::from_secs(60);
 
-static DEEPLINK_TIMES: Lazy<Mutex<VecDeque<Instant>>> =
-    Lazy::new(|| Mutex::new(VecDeque::with_capacity(DEEPLINK_BURST_LIMIT + 1)));
+static DEEPLINK_TIMES: LazyLock<Mutex<VecDeque<Instant>>> =
+    LazyLock::new(|| Mutex::new(VecDeque::with_capacity(DEEPLINK_BURST_LIMIT + 1)));
 
 /// Returns `true` if this deep-link should be dropped due to rate limiting.
 /// Side effect: records the arrival time and logs once when transitioning

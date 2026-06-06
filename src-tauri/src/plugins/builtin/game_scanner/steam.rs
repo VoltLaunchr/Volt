@@ -2,21 +2,23 @@
 
 use super::types::{GameInfo, GamePlatform, GameScanner};
 use crate::utils::game_icon::{find_game_icon, get_steam_cached_icon};
-use once_cell::sync::Lazy;
 use regex::Regex;
 use std::path::{Path, PathBuf};
+use std::sync::LazyLock;
 
 // Pre-compiled regexes for the three ACF fields we actually read. The previous
 // `extract_value` recompiled a regex on every call (3 fields per game × 100
 // games per scan = 300 redundant compiles, ~20 ms total per Steam scan).
-static ACF_APPID_RE: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r#""appid"\s+"([^"]+)""#).expect("static ACF appid regex"));
-static ACF_NAME_RE: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r#""name"\s+"([^"]+)""#).expect("static ACF name regex"));
-static ACF_INSTALLDIR_RE: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r#""installdir"\s+"([^"]+)""#).expect("static ACF installdir regex"));
-static LIBRARYFOLDERS_PATH_RE: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r#""path"\s+"([^"]+)""#).expect("static libraryfolders path regex"));
+static ACF_APPID_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r#""appid"\s+"([^"]+)""#).expect("static ACF appid regex"));
+static ACF_NAME_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r#""name"\s+"([^"]+)""#).expect("static ACF name regex"));
+static ACF_INSTALLDIR_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r#""installdir"\s+"([^"]+)""#).expect("static ACF installdir regex")
+});
+static LIBRARYFOLDERS_PATH_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r#""path"\s+"([^"]+)""#).expect("static libraryfolders path regex")
+});
 
 /// Steam game information
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

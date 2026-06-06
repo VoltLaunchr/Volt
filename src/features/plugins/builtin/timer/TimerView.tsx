@@ -215,26 +215,6 @@ export function TimerView({ onClose }: TimerViewProps): React.JSX.Element {
     if (adding) addInputRef.current?.focus();
   }, [adding]);
 
-  // Keyboard: Escape closes, Space toggles play/pause when not in input
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      const target = e.target as HTMLElement | null;
-      const isInput =
-        target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA');
-      if (e.key === 'Escape' && !isInput) {
-        e.preventDefault();
-        onClose();
-      }
-      if (e.key === ' ' && !isInput) {
-        e.preventDefault();
-        togglePlay();
-      }
-    };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [onClose, session.activeTimerId, session.mode]);
-
   // ── Actions ────────────────────────────────────────────────────────────
 
   const switchMode = useCallback(
@@ -260,6 +240,26 @@ export function TimerView({ onClose }: TimerViewProps): React.JSX.Element {
     const id = timerStore.startTimer(totalMs, TIMER_LABELS[session.mode]);
     setSession((prev) => ({ ...prev, activeTimerId: id }));
   }, [running, paused, session.activeTimerId, session.mode, totalMs]);
+
+  // Keyboard: Escape closes, Space toggles play/pause when not in input.
+  // Declared after togglePlay so it can be referenced directly in deps.
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      const isInput =
+        target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA');
+      if (e.key === 'Escape' && !isInput) {
+        e.preventDefault();
+        onClose();
+      }
+      if (e.key === ' ' && !isInput) {
+        e.preventDefault();
+        togglePlay();
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [onClose, togglePlay]);
 
   const resetCurrent = useCallback(() => {
     if (session.activeTimerId) timerStore.cancelTimer(session.activeTimerId);

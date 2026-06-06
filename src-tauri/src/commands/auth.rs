@@ -19,11 +19,10 @@
 use base64::Engine as _;
 use jsonwebtoken::jwk::JwkSet;
 use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode, decode_header};
-use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
-use std::sync::{Mutex, RwLock};
+use std::sync::{LazyLock, Mutex, RwLock};
 use std::time::{Duration, Instant};
 use tracing::{debug, error, info, warn};
 use zeroize::{Zeroize, ZeroizeOnDrop};
@@ -46,8 +45,8 @@ impl Drop for PendingAuthFlow {
 
 /// Pending login flows keyed by CSRF state nonce. `Mutex` rather than
 /// `RwLock` because every access mutates (insert / remove / prune).
-static AUTH_STATE: Lazy<Mutex<HashMap<String, PendingAuthFlow>>> =
-    Lazy::new(|| Mutex::new(HashMap::new()));
+static AUTH_STATE: LazyLock<Mutex<HashMap<String, PendingAuthFlow>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
 
 /// Lifetime of a pending login flow (5 minutes — same as the website's
 /// auth-code TTL so the desktop never keeps state past what the server
@@ -68,7 +67,8 @@ const MAX_EXPIRES_IN_SECS: i64 = 86_400;
 /// with the time it was fetched. Refreshed every `JWKS_CACHE_TTL` or on
 /// demand when an unknown `kid` is encountered (which signals a key
 /// rotation upstream).
-static JWKS_CACHE: Lazy<RwLock<Option<(JwkSet, Instant)>>> = Lazy::new(|| RwLock::new(None));
+static JWKS_CACHE: LazyLock<RwLock<Option<(JwkSet, Instant)>>> =
+    LazyLock::new(|| RwLock::new(None));
 
 /// JWKS cache TTL — matches Supabase's edge cache window so we don't keep
 /// stale public keys after a rotation, while avoiding a fetch per token.

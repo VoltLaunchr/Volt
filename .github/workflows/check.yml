@@ -68,3 +68,10 @@ jobs:
 
       - name: Rust Tests
         run: cd src-tauri && cargo test --workspace --lib
+
+      - name: Verify generated TS bindings are up to date
+        # The Rust test step regenerates the ts-rs IPC bindings; fail if they
+        # drift from what's committed (fix: run `cargo test` and commit the
+        # result). Linux only — single source of truth, avoids CRLF/LF noise.
+        if: matrix.platform == 'ubuntu-latest'
+        run: git diff --exit-code -- src/shared/types/generated

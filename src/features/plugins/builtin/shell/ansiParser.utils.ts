@@ -73,8 +73,9 @@ export function parseAnsi(input: string): AnsiSegment[] {
 
   const segments: AnsiSegment[] = [];
   let state = emptyState();
-  // eslint-disable-next-line no-control-regex
-  const regex = /\x1b\[([0-9;]*)([a-zA-Z])/g;
+  // ESC (0x1b) built via fromCharCode so no control char appears in source.
+  const ESC = String.fromCharCode(27);
+  const regex = new RegExp(`${ESC}\\[([0-9;]*)([a-zA-Z])`, 'g');
   let lastIndex = 0;
   let match: RegExpExecArray | null;
 

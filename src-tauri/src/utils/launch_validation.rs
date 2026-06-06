@@ -7,9 +7,9 @@ use std::path::Path;
 use tracing::warn;
 
 #[cfg(target_os = "windows")]
-use once_cell::sync::Lazy;
-#[cfg(target_os = "windows")]
 use regex::Regex;
+#[cfg(target_os = "windows")]
+use std::sync::LazyLock;
 
 /// Strict regex for UWP AppsFolder identifiers.
 ///
@@ -19,8 +19,8 @@ use regex::Regex;
 ///
 /// Anchored on both ends to prevent injection of arbitrary characters.
 #[cfg(target_os = "windows")]
-static UWP_APP_RE: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"^[A-Za-z0-9.\-]+_[A-Za-z0-9]{8,}![A-Za-z0-9.\-]+$").unwrap());
+static UWP_APP_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^[A-Za-z0-9.\-]+_[A-Za-z0-9]{8,}![A-Za-z0-9.\-]+$").unwrap());
 
 /// Executable file names (case-insensitive) that should never be launched
 /// directly because they are commonly abused as LOLBIN (Living Off The Land

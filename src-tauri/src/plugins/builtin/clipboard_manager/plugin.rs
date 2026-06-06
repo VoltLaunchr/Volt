@@ -6,8 +6,11 @@ use base64::{Engine as _, engine::general_purpose};
 use chrono::Utc;
 use rusqlite::{Connection, params};
 use std::path::PathBuf;
+#[cfg(windows)]
+use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
+use tokio::sync::Notify;
 use tokio::time::{Duration, interval};
 
 /// Metadata tuple: (word_count, char_count, image_width, image_height, file_size)
@@ -35,6 +38,15 @@ pub struct ClipboardManagerPlugin {
     clipboard: Arc<Mutex<Option<Clipboard>>>,
     last_content_hash: Arc<Mutex<Option<String>>>,
     monitoring: Arc<AtomicBool>,
+    /// Signalled to trigger an immediate capture pass — by the Windows clipboard
+    /// listener on `WM_CLIPBOARDUPDATE`, and by `stop_monitoring` to wake the
+    /// loop so it observes the cleared `monitoring` flag.
+    wake: Arc<Notify>,
+    /// Raw HWND (as `usize`) of the message-only listener window, so
+    /// `stop_monitoring` can post it a message to unblock its `GetMessage` loop.
+    /// 0 when no listener is running. Windows-only.
+    #[cfg(windows)]
+    listener_hwnd: Arc<AtomicUsize>,
 }
 
 /// Configuration for the clipboard manager
@@ -109,6 +121,9 @@ impl ClipboardManagerPlugin {
             clipboard: Arc::new(Mutex::new(None)),
             last_content_hash: Arc::new(Mutex::new(None)),
             monitoring: Arc::new(AtomicBool::new(false)),
+            wake: Arc::new(Notify::new()),
+            #[cfg(windows)]
+            listener_hwnd: Arc::new(AtomicUsize::new(0)),
         }
     }
 
@@ -531,6 +546,7 @@ impl ClipboardManagerPlugin {
         let filter_sensitive = self.config.filter_sensitive;
         let api = self.api.clone();
         let plugin_id = self.id().to_string();
+        let wake = self.wake.clone();
 
         // Clone additional config values for image monitoring
         let max_image_size = self.config.max_image_size;
@@ -538,12 +554,41 @@ impl ClipboardManagerPlugin {
         let retention_days_override = self.retention_days_override.clone();
         let disabled_apps_filter = self.disabled_apps_filter.clone();
 
+        // On Windows, capture is event-driven: a hidden message-only window
+        // receives WM_CLIPBOARDUPDATE and signals `wake`, so the loop below
+        // reacts instantly with no idle polling. The interval is only a slow
+        // safety backstop in case an event is ever missed. On other platforms
+        // there is no listener, so the interval drives capture at its normal
+        // cadence.
+        #[cfg(windows)]
+        {
+            let wake_listener = self.wake.clone();
+            let monitoring_listener = self.monitoring.clone();
+            let hwnd_slot = self.listener_hwnd.clone();
+            std::thread::spawn(move || {
+                run_clipboard_listener(wake_listener, monitoring_listener, hwnd_slot);
+            });
+        }
+        // Windows is event-driven, so the interval is only a slow safety net;
+        // elsewhere it remains the primary capture cadence.
+        #[cfg(windows)]
+        let backstop_ms = check_interval_ms.max(3000);
+        #[cfg(not(windows))]
+        let backstop_ms = check_interval_ms;
+
         // Spawn background monitoring task
         tokio::spawn(async move {
-            let mut interval_timer = interval(Duration::from_millis(check_interval_ms));
+            let mut interval_timer = interval(Duration::from_millis(backstop_ms));
 
             while monitoring.load(Ordering::Relaxed) {
-                interval_timer.tick().await;
+                // Wake on a clipboard event (Windows) or the backstop tick.
+                tokio::select! {
+                    _ = wake.notified() => {}
+                    _ = interval_timer.tick() => {}
+                }
+                if !monitoring.load(Ordering::Relaxed) {
+                    break;
+                }
 
                 // Check clipboard
                 let mut image_processed = false;
@@ -738,6 +783,22 @@ impl ClipboardManagerPlugin {
     /// Stop monitoring clipboard
     pub fn stop_monitoring(&self) -> Result<(), String> {
         self.monitoring.store(false, Ordering::Relaxed);
+        // Wake the async loop so it observes the cleared flag and exits.
+        self.wake.notify_one();
+
+        // Unblock the Windows listener's GetMessageW so its thread can exit.
+        #[cfg(windows)]
+        {
+            let hwnd = self.listener_hwnd.load(Ordering::SeqCst);
+            if hwnd != 0 {
+                use winapi::shared::windef::HWND;
+                use winapi::um::winuser::{PostMessageW, WM_APP};
+                // SAFETY: posting a benign wake-up message to our own window.
+                unsafe {
+                    PostMessageW(hwnd as HWND, WM_APP, 0, 0);
+                }
+            }
+        }
 
         if let Some(api) = &self.api {
             api.log(
@@ -1059,6 +1120,84 @@ impl Plugin for ClipboardManagerPlugin {
         }
 
         Ok(())
+    }
+}
+
+/// Windows clipboard listener.
+///
+/// Creates a hidden message-only window subscribed via
+/// `AddClipboardFormatListener`; each `WM_CLIPBOARDUPDATE` signals `wake` so the
+/// async monitor runs exactly one capture pass — no polling. Runs its own
+/// message loop on a dedicated thread until `monitoring` clears (the loop is
+/// unblocked by a benign message posted from `stop_monitoring`).
+///
+/// We reuse the built-in `STATIC` window class so there's no need to register a
+/// custom class + WndProc just to pump messages: `GetMessageW` returns the
+/// posted `WM_CLIPBOARDUPDATE` before any default processing.
+#[cfg(windows)]
+fn run_clipboard_listener(
+    wake: Arc<Notify>,
+    monitoring: Arc<AtomicBool>,
+    hwnd_slot: Arc<AtomicUsize>,
+) {
+    use std::ptr;
+    use winapi::shared::windef::HWND;
+    use winapi::um::winuser::{
+        AddClipboardFormatListener, CreateWindowExW, DestroyWindow, GetMessageW, HWND_MESSAGE, MSG,
+        RemoveClipboardFormatListener, WM_CLIPBOARDUPDATE,
+    };
+
+    let class: Vec<u16> = "STATIC\0".encode_utf16().collect();
+    let name: Vec<u16> = "VoltClipboardListener\0".encode_utf16().collect();
+
+    // SAFETY: standard Win32 message-only window + clipboard listener lifecycle.
+    // All handles are created and destroyed within this function on one thread.
+    unsafe {
+        let hwnd: HWND = CreateWindowExW(
+            0,
+            class.as_ptr(),
+            name.as_ptr(),
+            0,
+            0,
+            0,
+            0,
+            0,
+            HWND_MESSAGE,
+            ptr::null_mut(),
+            ptr::null_mut(),
+            ptr::null_mut(),
+        );
+        if hwnd.is_null() {
+            tracing::warn!("clipboard listener: CreateWindowExW failed");
+            return;
+        }
+
+        if AddClipboardFormatListener(hwnd) == 0 {
+            tracing::warn!("clipboard listener: AddClipboardFormatListener failed");
+            DestroyWindow(hwnd);
+            return;
+        }
+
+        // Publish the HWND so stop_monitoring can post a wake-up message.
+        hwnd_slot.store(hwnd as usize, Ordering::SeqCst);
+
+        let mut msg: MSG = std::mem::zeroed();
+        while monitoring.load(Ordering::Relaxed) {
+            // >0: message retrieved · 0: WM_QUIT · -1: error.
+            let ret = GetMessageW(&mut msg, hwnd, 0, 0);
+            if ret <= 0 {
+                break;
+            }
+            if msg.message == WM_CLIPBOARDUPDATE {
+                wake.notify_one();
+            }
+            // Any other message (e.g. the WM_APP posted by stop_monitoring) just
+            // unblocks the loop so it re-checks `monitoring`.
+        }
+
+        RemoveClipboardFormatListener(hwnd);
+        DestroyWindow(hwnd);
+        hwnd_slot.store(0, Ordering::SeqCst);
     }
 }
 

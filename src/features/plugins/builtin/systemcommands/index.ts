@@ -1,6 +1,7 @@
 
 import { logger } from '../../../../shared/utils/logger';
 import { Plugin, PluginContext, PluginResult, PluginResultType } from '../../types';
+import { VOLT_EVENTS, emitVoltEvent } from '../../../../shared/events';
 
 export class SystemCommandsPlugin implements Plugin {
   id = 'systemcommands';
@@ -145,7 +146,7 @@ export class SystemCommandsPlugin implements Plugin {
 
   private openSettings(): Promise<void> {
     // Trigger settings modal via custom event
-    window.dispatchEvent(new CustomEvent('volt:open-settings'));
+    emitVoltEvent(VOLT_EVENTS.OPEN_SETTINGS);
     return Promise.resolve();
   }
 
