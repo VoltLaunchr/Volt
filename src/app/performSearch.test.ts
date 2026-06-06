@@ -26,6 +26,7 @@ const fakeFiles: FileInfo[] = [
     extension: 'md',
     size: 100,
     modified: Date.now(),
+    category: 'document',
   },
 ];
 

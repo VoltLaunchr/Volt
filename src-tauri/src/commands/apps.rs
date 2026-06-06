@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use ts_rs::TS;
 use std::time::{Duration, SystemTime};
 #[cfg(target_os = "windows")]
 use tokio::sync::Semaphore;
@@ -59,17 +60,34 @@ fn should_skip_directory(dir_name: &str) -> bool {
         .any(|&skip| dir_name.eq_ignore_ascii_case(skip))
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "AppInfo.ts")]
 pub struct AppInfo {
     pub id: String,
     pub name: String,
     pub path: String,
+    #[ts(optional)]
     pub icon: Option<String>,
+    #[ts(optional)]
     pub description: Option<String>,
+    #[ts(optional)]
     pub keywords: Option<Vec<String>>,
+    // `#[ts(type = "number")]`: serde_json serialises i64 as a JSON number and
+    // Tauri's invoke yields a JS `number` (ms timestamps stay within
+    // Number.MAX_SAFE_INTEGER); ts-rs would otherwise default i64 to `bigint`.
+    #[ts(optional, type = "number")]
     pub last_used: Option<i64>,
+    // u32 maps to `number` by default — no override needed.
     pub usage_count: u32,
+    // DECISION: `category` is `Option<String>` on the wire, so ts-rs generates
+    // `category?: string`. We intentionally do NOT make ts-rs import a
+    // hand-written `AppCategory` union here — wiring a non-ts-rs type into a
+    // generated file is fragile. The frontend keeps its semantic `AppCategory`
+    // enum (src/shared/types/common.types.ts) as the type used at call sites;
+    // the generated binding stays a plain `string`, which is the literal wire
+    // shape produced by `detect_app_category`.
+    #[ts(optional)]
     pub category: Option<String>,
 }
 
