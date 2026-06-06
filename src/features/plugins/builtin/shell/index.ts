@@ -129,8 +129,9 @@ export interface ShellOutputData {
 }
 
 export function stripAnsi(str: string): string {
-  // eslint-disable-next-line no-control-regex
-  return str.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '');
+  // ESC (0x1b) built via fromCharCode so no control char appears in source.
+  const ansiRegex = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*[a-zA-Z]`, 'g');
+  return str.replace(ansiRegex, '');
 }
 
 let executionCounter = 0;

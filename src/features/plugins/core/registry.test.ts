@@ -261,11 +261,19 @@ describe('PluginRegistry', () => {
     });
 
     it('ignores plugins that return non-array values', async () => {
+      // Simulate a misbehaving plugin whose match() returns a single object
+      // instead of an array. The wrong shape is produced as `unknown` and
+      // narrowed to the declared match signature so no `any` leaks in.
+      const badMatch = (): unknown => ({
+        id: 'x',
+        type: PluginResultType.Info,
+        title: 'bad',
+        score: 10,
+      });
       registry.register(
         makePlugin({
           id: 'bad',
-          // @ts-expect-error - intentionally wrong shape
-          match: () => ({ id: 'x', type: PluginResultType.Info, title: 'bad', score: 10 }),
+          match: badMatch as Plugin['match'],
         })
       );
       const results = await registry.query(ctx);

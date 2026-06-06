@@ -72,6 +72,19 @@ export function ClipboardHistoryView({ onClose }: ClipboardHistoryViewProps): Re
     }
   }, [items, filterQuery, typeFilter]);
 
+  // Handle paste action
+  const handlePaste = useCallback(
+    async (item: ClipboardItem) => {
+      try {
+        await invoke<void>('copy_to_clipboard', { content: item.content });
+        onClose();
+      } catch (error) {
+        logger.error('Failed to paste:', error);
+      }
+    },
+    [onClose]
+  );
+
   // Handle keyboard navigation
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -110,19 +123,8 @@ export function ClipboardHistoryView({ onClose }: ClipboardHistoryViewProps): Re
           break;
       }
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [selectedIndex, filteredItems, selectedItem, onClose]
+    [selectedIndex, filteredItems, selectedItem, onClose, handlePaste]
   );
-
-  // Handle paste action
-  const handlePaste = async (item: ClipboardItem) => {
-    try {
-      await invoke<void>('copy_to_clipboard', { content: item.content });
-      onClose();
-    } catch (error) {
-      logger.error('Failed to paste:', error);
-    }
-  };
 
   // Paste all visible text items in sequence
   const handlePasteSequentially = async () => {
