@@ -5,13 +5,26 @@ use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::Mutex;
+use ts_rs::TS;
 
 /// Mutex to serialize settings read-modify-write operations and prevent race conditions
 static SETTINGS_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
 
 /// General application settings
-#[derive(Debug, Clone, Serialize, Deserialize)]
+///
+/// NOTE (single-source-of-truth scope): these structs are exported via ts-rs so
+/// the IPC wire shape is captured in `src/shared/types/generated/`. The
+/// frontend's hand-written `src/features/settings/types/settings.types.ts` is
+/// intentionally kept as the UI-facing type because it carries richer literal
+/// unions (`Theme`, `WindowPosition`, `ShowOnScreen`, `language`, etc.) and a
+/// frontend-only `integrations?` field that has no Rust counterpart. ts-rs can
+/// only emit `string` for those `String` fields, so collapsing the UI type onto
+/// the generated one would *lose* type safety. The generated bindings therefore
+/// serve as a verifiable contract / reference for the wire format, not as the
+/// UI type.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "GeneralSettings.ts")]
 pub struct GeneralSettings {
     pub start_with_windows: bool,
     pub max_results: u32,
@@ -70,16 +83,19 @@ impl Default for GeneralSettings {
 }
 
 /// Appearance settings
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "AppearanceSettings.ts")]
 pub struct AppearanceSettings {
     pub theme: String,
     pub transparency: f32,
     pub window_position: String,
+    #[ts(optional)]
     pub custom_position: Option<CustomPosition>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "CustomPosition.ts")]
 pub struct CustomPosition {
     pub x: i32,
     pub y: i32,
@@ -97,8 +113,9 @@ impl Default for AppearanceSettings {
 }
 
 /// Hotkey settings
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "HotkeySettings.ts")]
 pub struct HotkeySettings {
     pub toggle_window: String,
     pub open_settings: String,
@@ -115,8 +132,9 @@ impl Default for HotkeySettings {
 }
 
 /// Indexing settings
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "IndexingSettings.ts")]
 pub struct IndexingSettings {
     pub folders: Vec<String>,
     pub excluded_paths: Vec<String>,
@@ -187,8 +205,9 @@ impl Default for IndexingSettings {
 }
 
 /// Plugin settings
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "PluginSettings.ts")]
 pub struct PluginSettings {
     pub enabled_plugins: Vec<String>,
     pub clipboard_monitoring: bool,
@@ -222,44 +241,56 @@ impl Default for PluginSettings {
 }
 
 /// Application shortcut
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "AppShortcut.ts")]
 pub struct AppShortcut {
     pub id: String,
     pub name: String,
     pub category: String,
+    #[ts(optional)]
     pub icon: Option<String>,
     pub path: String,
+    #[ts(optional)]
     pub alias: Option<String>,
+    #[ts(optional)]
     pub hotkey: Option<String>,
     pub enabled: bool,
 }
 
 /// Shortcuts settings
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "ShortcutsSettings.ts")]
 pub struct ShortcutsSettings {
     pub app_shortcuts: Vec<AppShortcut>,
 }
 
 /// Shell command settings
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "ShellSettings.ts")]
 pub struct ShellSettings {
     /// Whether shell commands (> prefix) are enabled
     #[serde(default = "default_true")]
     pub enabled: bool,
+    // `default_shell`/`working_dir`: no `#[ts(optional)]` — serde serialises
+    // `None` as `null` and the field is always present, so ts-rs emits
+    // `string | null`, matching the hand-written TS (`defaultShell: string | null`).
     /// Shell override (e.g. "powershell", "pwsh", "bash", "zsh"). None = system default.
     #[serde(default)]
     pub default_shell: Option<String>,
     /// Default working directory. None = user home directory.
     #[serde(default)]
     pub working_dir: Option<String>,
-    /// Command timeout in milliseconds
+    /// Command timeout in milliseconds. `u64`/`usize` over the wire are JSON
+    /// numbers; override ts-rs's default `bigint` mapping.
     #[serde(default = "default_shell_timeout")]
+    #[ts(type = "number")]
     pub timeout_ms: u64,
     /// Maximum history entries to keep
     #[serde(default = "default_history_size")]
+    #[ts(type = "number")]
     pub history_size: usize,
 }
 
@@ -283,7 +314,8 @@ impl Default for ShellSettings {
 }
 
 /// Complete application settings
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, TS)]
+#[ts(export, export_to = "Settings.ts")]
 pub struct Settings {
     #[serde(default)]
     pub general: GeneralSettings,

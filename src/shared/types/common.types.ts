@@ -2,6 +2,17 @@
  * Common type definitions shared across the application
  */
 
+// `AppInfo`, `FileInfo` and `FileCategory` are the single source of truth
+// generated from the Rust IPC structs by ts-rs (run `cd src-tauri && cargo
+// test`). They are imported here and re-exported so existing import paths keep
+// working. Change the shape on the Rust side
+// (src-tauri/src/commands/apps.rs, src-tauri/src/indexer/types.rs), not here.
+import type { AppInfo } from './generated/AppInfo';
+import type { FileInfo } from './generated/FileInfo';
+import type { FileCategory } from './generated/FileCategory';
+
+export type { AppInfo, FileInfo, FileCategory };
+
 /**
  * Discriminated union matching the serialized shape of `VoltError` on the Rust
  * backend (`src-tauri/src/core/error.rs`). Tauri commands that fail now return
@@ -36,21 +47,6 @@ export function isVoltError(value: unknown): value is VoltError {
     typeof (value as { kind: unknown }).kind === 'string' &&
     typeof (value as { message: unknown }).message === 'string'
   );
-}
-
-/**
- * Represents an application that can be launched
- */
-export interface AppInfo {
-  id: string;
-  name: string;
-  path: string;
-  icon?: string;
-  description?: string;
-  keywords?: string[];
-  lastUsed?: number;
-  usageCount: number;
-  category?: AppCategory;
 }
 
 /**
@@ -112,48 +108,6 @@ export enum SearchResultType {
   Url = 'url',
   GridItem = 'grid',
   AiChat = 'aichat',
-}
-
-/**
- * File category — mirrors `FileCategory` in `src-tauri/src/indexer/types.rs`.
- * Rust serializes with `rename_all = "lowercase"`.
- *
- * [SYNC: src-tauri/src/indexer/types.rs::FileCategory]
- */
-export type FileCategory =
-  | 'application'
-  | 'game'
-  | 'executable'
-  | 'folder'
-  | 'document'
-  | 'image'
-  | 'video'
-  | 'audio'
-  | 'archive'
-  | 'code'
-  | 'other';
-
-/**
- * File information for file search results.
- *
- * [SYNC: src-tauri/src/indexer/types.rs::FileInfo]
- * Rust struct uses `#[serde(rename_all = "camelCase")]`. Optional fields below
- * mirror `Option<i64>` / `Option<String>` on the Rust side. The trio
- * `created`/`accessed`/`category` was historically missing from the TS
- * interface even though Rust serializes them — adding them so highlight UI
- * and category-aware filters can consume the full payload without casts.
- */
-export interface FileInfo {
-  id: string;
-  name: string;
-  path: string;
-  extension: string;
-  size: number;
-  modified: number;
-  created?: number;
-  accessed?: number;
-  icon?: string;
-  category?: FileCategory;
 }
 
 /**

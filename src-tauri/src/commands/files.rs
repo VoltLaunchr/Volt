@@ -403,6 +403,7 @@ pub async fn search_files(
     modified_after: Option<i64>,
     modified_before: Option<i64>,
 ) -> VoltResult<Vec<FileSearchResult>> {
+    crate::time_command!("search_files");
     // O(1) Arc clone to release the mutex before searching
     let files = {
         let guard = state
@@ -729,6 +730,7 @@ pub async fn search_files_with_highlighting(
     filename_only: Option<bool>,
     min_score: Option<u32>,
 ) -> VoltResult<Vec<FileSearchResult>> {
+    crate::time_command!("search_files_with_highlighting");
     search_files_impl(
         &state,
         &query,

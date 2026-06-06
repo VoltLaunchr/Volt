@@ -47,7 +47,11 @@ tokio = { version = "1", features = ["full"] }
 sysinfo = "0.32"
 semver = "1.0"
 arboard = "3.4"
-rusqlite = { version = "0.32", features = ["bundled"] }
+# Bundling flavor is selected by Volt features (see [features] below), NOT here,
+# so the default build keeps plain bundled SQLite while `--features sqlcipher`
+# can swap in bundled SQLCipher. `libsqlite3-sys` links exactly one amalgamation,
+# so `bundled` and `bundled-sqlcipher` are mutually exclusive by design.
+rusqlite = { version = "0.32" }
 notify = { version = "6.1", features = ["macos_fsevent"] }
 image = "0.25"
 base64 = "0.22"
@@ -89,6 +93,11 @@ thiserror = "2"
 # to `app_data_dir/embeddings/` (NOT bundled into the binary). Uses native-tls
 # by default — matches our existing reqwest config.
 fastembed = "5"
+# Pilier D Track 1: full-text/relevance file index. Pure-Rust, builds on
+# Windows/macOS/Linux. OPTIONAL and OFF by default — only compiled when the
+# `tantivy-search` feature is enabled, so the default build is unaffected.
+# See REFONTE-PILIER-D-SEARCH.md.
+tantivy = { version = "0.26", optional = true }
 
 [target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
 tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
@@ -106,8 +115,23 @@ plist = "1.7"
 tauri-plugin-positioner = "2"
 
 [features]
-default = []
+# Default keeps plain bundled SQLite — today's behavior, no new build deps.
+default = ["bundled-sqlite"]
+# Plain bundled SQLite (current behavior). Kept as an explicit feature so the
+# bundling flavor is selected here rather than on the rusqlite dep line.
+bundled-sqlite = ["rusqlite/bundled"]
+# Pilier C — encrypted data-at-rest. Replaces plain SQLite with bundled
+# SQLCipher + vendored OpenSSL (no system OpenSSL required, best for Windows).
+# Implies `rusqlite/bundled-sqlcipher`. NOT in `default`: keeps the everyday
+# build free of the OpenSSL/Perl toolchain until validated across CI. Build
+# with: `cargo build --no-default-features --features sqlcipher` (do NOT combine
+# with `bundled-sqlite` — the two bundlings conflict at the link step).
+sqlcipher = ["rusqlite/bundled-sqlcipher-vendored-openssl"]
 devtools = ["tauri/devtools"]
+# Pilier D Track 1: enables the Tantivy-backed full-text file-search index
+# (`indexer::fulltext`). OFF by default; the default build keeps the existing
+# nucleo search path unchanged. See REFONTE-PILIER-D-SEARCH.md.
+tantivy-search = ["dep:tantivy"]
 # Enables the heavy end-to-end embedding test that downloads the multilingual-e5-small
 # model (~120 MB on first run, then cached). Run with:
 #   cargo test --features test-embeddings -- --test-threads=1
