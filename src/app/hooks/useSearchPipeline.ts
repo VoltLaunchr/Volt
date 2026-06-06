@@ -62,6 +62,13 @@ const PLUGIN_KEYWORDS: Record<string, string[]> = {
   games: ['game', 'jeu', 'steam', 'epic', 'gog'],
   clipboard: ['clipboard', 'presse-papier', 'copier', 'coller'],
   shellcommand: ['>'],
+  snippets: [';', 'snippet', 'snippets'],
+  quicklinks: ['ql', 'quicklink', 'quicklinks', 'link', 'bookmark'],
+  'window-management': ['window', 'snap', 'tile', 'maximize', 'minimize', 'fullscreen'],
+  'developer-tools': [
+    'uuid', 'guid', 'base64', 'b64', 'md5', 'sha1', 'sha256', 'sha512', 'hash', 'color', 'lorem',
+    'lipsum',
+  ],
 };
 
 // Check if query matches any plugin keywords
