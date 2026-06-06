@@ -1159,6 +1159,7 @@ fn parse_desktop_file(path: &std::path::Path) -> Option<AppInfo> {
 /// Searches applications based on query
 #[tauri::command]
 pub async fn search_applications(query: String, apps: Vec<AppInfo>) -> VoltResult<Vec<AppInfo>> {
+    crate::time_command!("search_applications");
     Ok(crate::search::search_applications(&query, apps))
 }
 
@@ -1170,6 +1171,7 @@ pub async fn search_applications_frecency(
     history_state: tauri::State<'_, crate::commands::launcher::LaunchHistoryState>,
     binding_state: tauri::State<'_, crate::commands::launcher::QueryBindingState>,
 ) -> VoltResult<Vec<AppInfoWithScore>> {
+    crate::time_command!("search_applications_frecency");
     // Project the history into a path→frecency map under the lock instead of
     // cloning every LaunchRecord just to read its score.
     let frecency = history_state.history.with_records(|records| {

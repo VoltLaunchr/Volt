@@ -244,6 +244,7 @@ pub async fn get_frecency_suggestions(
     limit: Option<usize>,
     history_state: State<'_, LaunchHistoryState>,
 ) -> VoltResult<Vec<LaunchRecord>> {
+    crate::time_command!("get_frecency_suggestions");
     let limit = limit.unwrap_or(8);
     if limit == 0 {
         return Ok(Vec::new());

@@ -105,6 +105,7 @@ pub async fn get_clipboard_history(
     plugin_state: State<'_, PluginState>,
     limit: Option<usize>,
 ) -> VoltResult<Vec<ClipboardItem>> {
+    crate::time_command!("get_clipboard_history");
     let manager = get_or_init_clipboard_manager(&clipboard_state, &plugin_state).await?;
     manager.get_history(limit).map_err(VoltError::Plugin)
 }
