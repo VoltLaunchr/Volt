@@ -1,6 +1,5 @@
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use ts_rs::TS;
 use std::time::{Duration, SystemTime};
 #[cfg(target_os = "windows")]
 use tokio::sync::Semaphore;
@@ -10,6 +9,7 @@ use tokio::time::timeout;
 use tracing::info;
 #[cfg(target_os = "windows")]
 use tracing::warn;
+use ts_rs::TS;
 
 use crate::commands::launcher::{LaunchHistoryState, execute_launch};
 use crate::core::error::{VoltError, VoltResult};

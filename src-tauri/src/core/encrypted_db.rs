@@ -83,8 +83,13 @@ pub fn open_db(path: impl AsRef<Path>) -> Result<Connection, String> {
 /// call sites and tests compile in every configuration. This is the fallback
 /// path and the default-build path.
 pub fn open_plain(path: impl AsRef<Path>) -> Result<Connection, String> {
-    Connection::open(path.as_ref())
-        .map_err(|e| format!("Failed to open database '{}': {}", path.as_ref().display(), e))
+    Connection::open(path.as_ref()).map_err(|e| {
+        format!(
+            "Failed to open database '{}': {}",
+            path.as_ref().display(),
+            e
+        )
+    })
 }
 
 /// Provision the database encryption key: return the existing keyring entry, or
@@ -131,8 +136,13 @@ pub fn open_encrypted(path: impl AsRef<Path>, key_hex: &str) -> Result<Connectio
     let path = path.as_ref();
     validate_hex_key(key_hex)?;
 
-    let conn = Connection::open(path)
-        .map_err(|e| format!("Failed to open encrypted database '{}': {}", path.display(), e))?;
+    let conn = Connection::open(path).map_err(|e| {
+        format!(
+            "Failed to open encrypted database '{}': {}",
+            path.display(),
+            e
+        )
+    })?;
 
     // Raw-key form: bypasses PBKDF2 since we supply full-entropy bytes.
     conn.pragma_update(None, "key", format!("x'{}'", key_hex))
@@ -143,7 +153,13 @@ pub fn open_encrypted(path: impl AsRef<Path>, key_hex: &str) -> Result<Connectio
     // "file is not a database", which is the signal the migration path
     // (see REFONTE-PILIER-C-SQLCIPHER.md §5) keys off of.
     conn.query_row("SELECT count(*) FROM sqlite_master", [], |_| Ok(()))
-        .map_err(|e| format!("SQLCipher key verification failed for '{}': {}", path.display(), e))?;
+        .map_err(|e| {
+            format!(
+                "SQLCipher key verification failed for '{}': {}",
+                path.display(),
+                e
+            )
+        })?;
 
     Ok(conn)
 }
@@ -164,8 +180,8 @@ fn generate_key_hex() -> String {
 /// hex. Always compiled so it can be unit tested without the `sqlcipher`
 /// feature; also used by the feature-gated open/provision paths.
 fn validate_hex_key(key_hex: &str) -> Result<(), String> {
-    let bytes = hex::decode(key_hex)
-        .map_err(|e| format!("Database key is not valid hex: {}", e))?;
+    let bytes =
+        hex::decode(key_hex).map_err(|e| format!("Database key is not valid hex: {}", e))?;
     if bytes.len() != DB_KEY_LEN {
         return Err(format!(
             "Database key has unexpected length ({} bytes, expected {})",
