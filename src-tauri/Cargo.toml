@@ -47,7 +47,11 @@ tokio = { version = "1", features = ["full"] }
 sysinfo = "0.32"
 semver = "1.0"
 arboard = "3.4"
-rusqlite = { version = "0.32", features = ["bundled"] }
+# Bundling flavor is selected by Volt features (see [features] below), NOT here,
+# so the default build keeps plain bundled SQLite while `--features sqlcipher`
+# can swap in bundled SQLCipher. `libsqlite3-sys` links exactly one amalgamation,
+# so `bundled` and `bundled-sqlcipher` are mutually exclusive by design.
+rusqlite = { version = "0.32" }
 notify = { version = "6.1", features = ["macos_fsevent"] }
 image = "0.25"
 base64 = "0.22"
@@ -106,7 +110,18 @@ plist = "1.7"
 tauri-plugin-positioner = "2"
 
 [features]
-default = []
+# Default keeps plain bundled SQLite — today's behavior, no new build deps.
+default = ["bundled-sqlite"]
+# Plain bundled SQLite (current behavior). Kept as an explicit feature so the
+# bundling flavor is selected here rather than on the rusqlite dep line.
+bundled-sqlite = ["rusqlite/bundled"]
+# Pilier C — encrypted data-at-rest. Replaces plain SQLite with bundled
+# SQLCipher + vendored OpenSSL (no system OpenSSL required, best for Windows).
+# Implies `rusqlite/bundled-sqlcipher`. NOT in `default`: keeps the everyday
+# build free of the OpenSSL/Perl toolchain until validated across CI. Build
+# with: `cargo build --no-default-features --features sqlcipher` (do NOT combine
+# with `bundled-sqlite` — the two bundlings conflict at the link step).
+sqlcipher = ["rusqlite/bundled-sqlcipher-vendored-openssl"]
 devtools = ["tauri/devtools"]
 # Enables the heavy end-to-end embedding test that downloads the multilingual-e5-small
 # model (~120 MB on first run, then cached). Run with:
