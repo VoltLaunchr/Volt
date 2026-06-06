@@ -1,6 +1,7 @@
 
 import { Plugin, PluginContext, PluginResult, PluginResultType } from '../../types';
 import { timerStore } from './timerStore';
+import { VOLT_EVENTS, emitVoltEvent } from '../../../../shared/events';
 
 // ── Duration parsing ──────────────────────────────────────────────────────────
 
@@ -212,7 +213,7 @@ export class TimerPlugin implements Plugin {
     const data = result.data as { action: string; duration?: number; label?: string; timerId?: string };
 
     if (data.action === 'open-view') {
-      window.dispatchEvent(new CustomEvent('volt:open-timer'));
+      emitVoltEvent(VOLT_EVENTS.OPEN_TIMER);
       return;
     }
 

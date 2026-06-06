@@ -8,6 +8,7 @@ import { AppInfo, FileInfo, SearchResult, SearchResultType } from '../../shared/
 import { logger } from '../../shared/utils/logger';
 import { pluginRegistry } from '../../features/plugins/core';
 import { useSearchStore } from '../../stores/searchStore';
+import { VOLT_EVENTS, onVoltEvent } from '../../shared/events';
 
 // Helper to extract directory path (cross-platform)
 const getDirectoryPath = (filePath: string): string => {
@@ -73,19 +74,16 @@ export function useGlobalHotkey({
 
   // Setup listener for custom events (e.g., from plugins)
   useEffect(() => {
-    const handleOpenSettings = () => {
+    const offSettings = onVoltEvent(VOLT_EVENTS.OPEN_SETTINGS, () => {
       void onOpenSettings();
-    };
-    const handleOpenCalculator = () => {
+    });
+    const offCalculator = onVoltEvent(VOLT_EVENTS.OPEN_CALCULATOR, () => {
       onOpenCalculator();
-    };
-
-    window.addEventListener('volt:open-settings', handleOpenSettings);
-    window.addEventListener('volt:open-calculator', handleOpenCalculator);
+    });
 
     return () => {
-      window.removeEventListener('volt:open-settings', handleOpenSettings);
-      window.removeEventListener('volt:open-calculator', handleOpenCalculator);
+      offSettings();
+      offCalculator();
     };
   }, [onOpenSettings, onOpenCalculator]);
 

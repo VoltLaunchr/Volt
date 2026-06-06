@@ -25,6 +25,7 @@ import { useSearchPipeline } from './hooks/useSearchPipeline';
 import { openSettingsWindow } from './utils';
 import { installPendingUpdate, hasPendingUpdate } from '../features/settings/services/updateService';
 import { resolvePlaceholders } from '../features/ai-quick-actions';
+import { VOLT_EVENTS, onVoltEvent, type VoltHudDetail } from '../shared/events';
 import i18n from '../i18n';
 
 const WINDOW_WIDTH_DEFAULT = 800;
@@ -204,9 +205,7 @@ function App() {
   }, [setActiveView, clearSearch]);
 
   useEffect(() => {
-    const openTimer = () => handleOpenTimerView();
-    window.addEventListener('volt:open-timer', openTimer);
-    return () => window.removeEventListener('volt:open-timer', openTimer);
+    return onVoltEvent(VOLT_EVENTS.OPEN_TIMER, () => handleOpenTimerView());
   }, [handleOpenTimerView]);
 
   const handleOpenAiChatView = useCallback(
@@ -218,12 +217,9 @@ function App() {
   );
 
   useEffect(() => {
-    const handler = (e: Event) => {
-      const { query, systemPrompt } = (e as CustomEvent<{ query: string; systemPrompt?: string }>).detail;
+    return onVoltEvent(VOLT_EVENTS.OPEN_AI_CHAT, ({ query, systemPrompt }) => {
       handleOpenAiChatView(query, systemPrompt);
-    };
-    window.addEventListener('volt:open-ai-chat', handler);
-    return () => window.removeEventListener('volt:open-ai-chat', handler);
+    });
   }, [handleOpenAiChatView]);
 
   const handleOpenQuickAiView = useCallback(
@@ -235,13 +231,10 @@ function App() {
   );
 
   useEffect(() => {
-    const handler = (e: Event) => {
-      const { query, systemPrompt } = (e as CustomEvent<{ query: string; systemPrompt?: string }>).detail;
+    return onVoltEvent(VOLT_EVENTS.OPEN_QUICK_AI, ({ query, systemPrompt }) => {
       if (!query?.trim()) return;
       handleOpenQuickAiView(query, systemPrompt);
-    };
-    window.addEventListener('volt:open-quick-ai', handler);
-    return () => window.removeEventListener('volt:open-quick-ai', handler);
+    });
   }, [handleOpenQuickAiView]);
 
   // AI Quick Action — triggered by a global hotkey registered in Rust.
@@ -286,41 +279,26 @@ function App() {
   // Extensions dispatch these from the Worker sandbox via VoltAPI.showToast / VoltAPI.notify.
   useEffect(() => {
     const { addToast } = useToastStore.getState();
-    const handleToast = (e: Event) => {
-      const { message, subtitle, style, duration } = (e as CustomEvent).detail as {
-        message: string;
-        subtitle?: string;
-        style?: 'info' | 'success' | 'error';
-        duration?: number;
-      };
+    const offToast = onVoltEvent(VOLT_EVENTS.TOAST, ({ message, subtitle, style, duration }) => {
       addToast(subtitle ? `${message} — ${subtitle}` : message, style ?? 'info', duration ?? 4000);
-    };
-    const handleNotification = (e: Event) => {
-      const { message, type } = (e as CustomEvent).detail as {
-        message: string;
-        type?: 'info' | 'success' | 'error';
-      };
+    });
+    const offNotification = onVoltEvent(VOLT_EVENTS.NOTIFICATION, ({ message, type }) => {
       addToast(message, type ?? 'info', 4000);
-    };
-    window.addEventListener('volt:toast', handleToast);
-    window.addEventListener('volt:notification', handleNotification);
+    });
     return () => {
-      window.removeEventListener('volt:toast', handleToast);
-      window.removeEventListener('volt:notification', handleNotification);
+      offToast();
+      offNotification();
     };
   }, []);
 
   // HUD overlay: shown by extensions via VoltAPI.showHUD() before window hides.
   useEffect(() => {
-    const handleHud = (e: Event) => {
-      const { message } = (e as CustomEvent<{ message: string }>).detail;
-      setHudMessage(message);
-    };
-    window.addEventListener('volt:hud', handleHud);
-    window.addEventListener('volt:hud-show', handleHud);
+    const handleHud = ({ message }: VoltHudDetail) => setHudMessage(message);
+    const offHud = onVoltEvent(VOLT_EVENTS.HUD, handleHud);
+    const offHudShow = onVoltEvent(VOLT_EVENTS.HUD_SHOW, handleHud);
     return () => {
-      window.removeEventListener('volt:hud', handleHud);
-      window.removeEventListener('volt:hud-show', handleHud);
+      offHud();
+      offHudShow();
     };
   }, []);
 
@@ -333,25 +311,16 @@ function App() {
 
   // updateCommandMetadata: update result title/subtitle in the search list
   useEffect(() => {
-    const handler = (e: Event) => {
-      const { pluginId, title, subtitle } = (e as CustomEvent).detail as {
-        pluginId: string;
-        title?: string;
-        subtitle?: string;
-      };
+    return onVoltEvent(VOLT_EVENTS.UPDATE_METADATA, ({ pluginId, title, subtitle }) => {
       useSearchStore.getState().updateResultMetadata(pluginId, { title, subtitle });
-    };
-    window.addEventListener('volt:update-metadata', handler);
-    return () => window.removeEventListener('volt:update-metadata', handler);
+    });
   }, []);
 
   // Bridge extension errors to the settings webview via Tauri event
   useEffect(() => {
-    const handler = (e: Event) => {
-      void emit('ext:error-captured', (e as CustomEvent).detail);
-    };
-    window.addEventListener('volt:extension-error', handler);
-    return () => window.removeEventListener('volt:extension-error', handler);
+    return onVoltEvent(VOLT_EVENTS.EXTENSION_ERROR, (detail) => {
+      void emit('ext:error-captured', detail);
+    });
   }, []);
 
   const handleOpenCreateExtension = useCallback(() => {
@@ -365,15 +334,11 @@ function App() {
   }, [setActiveView, clearSearch]);
 
   useEffect(() => {
-    const handler = () => handleOpenCreateExtension();
-    window.addEventListener('volt:open-create-extension', handler);
-    return () => window.removeEventListener('volt:open-create-extension', handler);
+    return onVoltEvent(VOLT_EVENTS.OPEN_CREATE_EXTENSION, () => handleOpenCreateExtension());
   }, [handleOpenCreateExtension]);
 
   useEffect(() => {
-    const handler = () => handleOpenManageExtensions();
-    window.addEventListener('volt:open-manage-extensions', handler);
-    return () => window.removeEventListener('volt:open-manage-extensions', handler);
+    return onVoltEvent(VOLT_EVENTS.OPEN_MANAGE_EXTENSIONS, () => handleOpenManageExtensions());
   }, [handleOpenManageExtensions]);
 
   const { handleKeyDown } = useGlobalHotkey({

@@ -2,6 +2,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, Copy, MessageSquare, RotateCw, Sparkles, AlertCircle, Check } from 'lucide-react';
 import { useAiChat } from '../hooks/useAiChat';
+import { VOLT_EVENTS, emitVoltEvent } from '../../../../../shared/events';
 
 interface ProviderStatus {
   provider: string;
@@ -130,14 +131,10 @@ export function QuickAiView({ onClose, initialQuery, systemPrompt }: QuickAiView
   }, [pendingRegen, messages.length, send]);
 
   const handleOpenInChat = useCallback(() => {
-    window.dispatchEvent(
-      new CustomEvent('volt:open-ai-chat', {
-        detail: {
-          query: lastQueryRef.current,
-          systemPrompt: lastSystemRef.current,
-        },
-      })
-    );
+    emitVoltEvent(VOLT_EVENTS.OPEN_AI_CHAT, {
+      query: lastQueryRef.current,
+      systemPrompt: lastSystemRef.current,
+    });
   }, []);
 
   // Keyboard shortcuts

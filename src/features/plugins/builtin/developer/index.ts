@@ -1,4 +1,5 @@
 import { Plugin, PluginContext, PluginResult, PluginResultType } from '../../types';
+import { VOLT_EVENTS, emitVoltEvent } from '../../../../shared/events';
 
 export class DeveloperCommandsPlugin implements Plugin {
   id = 'developer';
@@ -72,10 +73,10 @@ export class DeveloperCommandsPlugin implements Plugin {
 
     switch (action) {
       case 'create-extension':
-        window.dispatchEvent(new CustomEvent('volt:open-create-extension'));
+        emitVoltEvent(VOLT_EVENTS.OPEN_CREATE_EXTENSION);
         break;
       case 'manage-extensions':
-        window.dispatchEvent(new CustomEvent('volt:open-manage-extensions'));
+        emitVoltEvent(VOLT_EVENTS.OPEN_MANAGE_EXTENSIONS);
         break;
       default:
         break;

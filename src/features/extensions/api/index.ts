@@ -18,6 +18,7 @@ import {
   openUrl,
   formatNumber,
 } from '../../plugins/utils/helpers';
+import { VOLT_EVENTS, emitVoltEvent } from '../../../shared/events';
 
 /**
  * The Volt API interface exposed to extensions
@@ -283,22 +284,16 @@ export function createVoltAPI(extensionId: string = '__main__'): VoltAPIInterfac
 
     notify: (message: string, type: 'info' | 'success' | 'error' = 'info') => {
       logger.info(`[Volt ${type}] ${message}`);
-      window.dispatchEvent(
-        new CustomEvent('volt:notification', { detail: { message, type } })
-      );
+      emitVoltEvent(VOLT_EVENTS.NOTIFICATION, { message, type });
     },
 
     showToast: (opts: ToastOptions) => {
-      window.dispatchEvent(
-        new CustomEvent('volt:toast', {
-          detail: {
-            message: opts.message ?? opts.title ?? '',
-            subtitle: opts.subtitle,
-            style: opts.style ?? 'info',
-            duration: opts.duration,
-          },
-        })
-      );
+      emitVoltEvent(VOLT_EVENTS.TOAST, {
+        message: opts.message ?? opts.title ?? '',
+        subtitle: opts.subtitle,
+        style: opts.style ?? 'info',
+        duration: opts.duration,
+      });
     },
 
     storage: {

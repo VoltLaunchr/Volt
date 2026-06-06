@@ -9,6 +9,7 @@ import { FileInfo, SearchResult, SearchResultType } from '../../shared/types/com
 import { extractErrorMessage } from '../../shared/utils/error';
 import { logger } from '../../shared/utils/logger';
 import { isPluginResultData } from '../../shared/utils/typeGuards';
+import { VOLT_EVENTS, emitVoltEvent } from '../../shared/events';
 import { openSystemMonitorWindow } from '../windows';
 import { useSearchStore } from '../../stores/searchStore';
 import { useUiStore } from '../../stores/uiStore';
@@ -141,7 +142,7 @@ export function useResultActions({
         // If the extension called showHUD(), show the overlay for 1.5s before hiding.
         const hudMessage = consumePendingHud();
         if (hudMessage) {
-          window.dispatchEvent(new CustomEvent('volt:hud-show', { detail: { message: hudMessage } }));
+          emitVoltEvent(VOLT_EVENTS.HUD_SHOW, { message: hudMessage });
           await new Promise<void>((resolve) => { setTimeout(resolve, 1500); });
         }
 

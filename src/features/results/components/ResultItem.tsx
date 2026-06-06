@@ -18,6 +18,7 @@ import type { ShellOutputData } from '../../plugins/builtin/shell';
 import { stripAnsi } from '../../plugins/builtin/shell';
 import { AnsiText } from '../../plugins/builtin/shell/ansiParser';
 import { highlightMatch, HighlightSegment } from '../../../shared/utils/highlightMatch';
+import { VOLT_EVENTS, onVoltEvent } from '../../../shared/events';
 import { useSearchStore } from '../../../stores/searchStore';
 import { cn } from '@/lib/utils';
 import { HighlightedExpression } from '../../plugins/builtin/calculator/utils/highlight';
@@ -202,14 +203,13 @@ export function ResultItem({ result, isSelected, globalIndex }: ResultItemProps)
 
   useEffect(() => {
     if (!isShellCommand) return;
-    const handler = (e: Event) => {
-      const detail = (e as CustomEvent).detail as { command: string; data: ShellOutputData };
+    // Typed event bus (A) + the .data.data narrowing fix (getShellData) so the
+    // command match reads the real ShellOutputData, not the wrapping PluginResult.
+    return onVoltEvent(VOLT_EVENTS.SHELL_OUTPUT, (detail) => {
       if (detail.command === getShellData(result.data)?.command) {
         setShellData({ ...detail.data });
       }
-    };
-    window.addEventListener('volt:shell-output', handler);
-    return () => window.removeEventListener('volt:shell-output', handler);
+    });
   }, [isShellCommand, result.data]);
 
   const handleCopyOutput = useCallback((text: string) => {
