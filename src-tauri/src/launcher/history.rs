@@ -8,6 +8,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
+use ts_rs::TS;
 
 /// Credit (in ms) added to an item's `frecency_date` on each launch.
 ///
@@ -21,8 +22,9 @@ const FRECENCY_LAUNCH_WEIGHT: i64 = 86_400_000; // 1 day
 const FRECENCY_BACKFILL_CAP: i64 = 30;
 
 /// A single launch record
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "LaunchRecord.ts")]
 pub struct LaunchRecord {
     /// Application path
     pub path: String,
@@ -33,10 +35,15 @@ pub struct LaunchRecord {
     /// Total number of launches
     pub launch_count: u32,
 
-    /// Timestamp of first launch
+    /// Timestamp of first launch. `#[ts(type = "number")]`: serde_json
+    /// serialises i64 as a JSON number and Tauri's invoke yields a JS `number`
+    /// (ms timestamps stay well within Number.MAX_SAFE_INTEGER) — ts-rs would
+    /// otherwise default i64/u64 to `bigint`, which the wire never produces.
+    #[ts(type = "number")]
     pub first_launched: i64,
 
     /// Timestamp of most recent launch
+    #[ts(type = "number")]
     pub last_launched: i64,
 
     /// Monotonic "frecency date" (ms), pushed further into the future on each
@@ -48,9 +55,11 @@ pub struct LaunchRecord {
     /// `#[serde(default)]` lets records written before this field existed load
     /// with `0`, a sentinel [`backfill_frecency_date`] replaces on load.
     #[serde(default)]
+    #[ts(type = "number")]
     pub frecency_date: i64,
 
     /// Total time spent in app (if tracked)
+    #[ts(optional, type = "number")]
     pub total_time_ms: Option<u64>,
 
     /// Tags/categories assigned by user
@@ -94,8 +103,8 @@ impl LaunchRecord {
     /// ranking stays sensible across the upgrade. No-op once migrated.
     fn backfill_frecency_date(&mut self) {
         if self.frecency_date == 0 {
-            let credit = (self.launch_count as i64).min(FRECENCY_BACKFILL_CAP)
-                * FRECENCY_LAUNCH_WEIGHT;
+            let credit =
+                (self.launch_count as i64).min(FRECENCY_BACKFILL_CAP) * FRECENCY_LAUNCH_WEIGHT;
             self.frecency_date = self.last_launched + credit;
         }
     }
@@ -748,7 +757,10 @@ mod tests {
         };
         legacy.backfill_frecency_date();
         // Capped so a long history doesn't produce an unbounded future date.
-        assert_eq!(legacy.frecency_date, FRECENCY_BACKFILL_CAP * FRECENCY_LAUNCH_WEIGHT);
+        assert_eq!(
+            legacy.frecency_date,
+            FRECENCY_BACKFILL_CAP * FRECENCY_LAUNCH_WEIGHT
+        );
     }
 
     #[test]
