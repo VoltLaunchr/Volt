@@ -145,7 +145,10 @@ pub async fn search_all(
                         .cmp(&a.pinned)
                         .then_with(|| b.frecency_date.cmp(&a.frecency_date))
                 });
-                refs.into_iter().take(5).cloned().collect::<Vec<LaunchRecord>>()
+                refs.into_iter()
+                    .take(5)
+                    .cloned()
+                    .collect::<Vec<LaunchRecord>>()
             })
         },
     );

@@ -6,9 +6,9 @@ use base64::{Engine as _, engine::general_purpose};
 use chrono::Utc;
 use rusqlite::{Connection, params};
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 #[cfg(windows)]
 use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use tokio::sync::Notify;
 use tokio::time::{Duration, interval};

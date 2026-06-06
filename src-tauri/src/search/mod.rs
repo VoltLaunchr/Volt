@@ -306,8 +306,12 @@ mod tests {
     #[test]
     fn test_empty_query_returns_nothing() {
         let frecency = std::collections::HashMap::new();
-        let results =
-            search_applications_with_frecency("", vec![create_test_app("A", "/a")], &frecency, None);
+        let results = search_applications_with_frecency(
+            "",
+            vec![create_test_app("A", "/a")],
+            &frecency,
+            None,
+        );
         assert!(results.is_empty());
     }
 }
