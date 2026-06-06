@@ -1157,8 +1157,8 @@ pub async fn search_applications_frecency(
     let frecency = history_state.history.with_records(|records| {
         records
             .iter()
-            .map(|(path, record)| (path.clone(), crate::search::calculate_frecency(record)))
-            .collect::<std::collections::HashMap<String, f64>>()
+            .map(|(path, record)| (path.clone(), record.frecency_date))
+            .collect::<std::collections::HashMap<String, i64>>()
     });
     let bindings = binding_state
         .store

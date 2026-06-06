@@ -120,10 +120,8 @@ pub async fn search_all(
             let frecency = history.with_records(|records| {
                 records
                     .iter()
-                    .map(|(path, record)| {
-                        (path.clone(), crate::search::calculate_frecency(record))
-                    })
-                    .collect::<std::collections::HashMap<String, f64>>()
+                    .map(|(path, record)| (path.clone(), record.frecency_date))
+                    .collect::<std::collections::HashMap<String, i64>>()
             });
             crate::search::search_applications_with_frecency(
                 &query_apps,
@@ -143,11 +141,9 @@ pub async fn search_all(
             history.with_records(|records| {
                 let mut refs: Vec<&LaunchRecord> = records.values().collect();
                 refs.sort_by(|a, b| {
-                    b.pinned.cmp(&a.pinned).then_with(|| {
-                        let fa = crate::search::calculate_frecency(a);
-                        let fb = crate::search::calculate_frecency(b);
-                        fb.partial_cmp(&fa).unwrap_or(std::cmp::Ordering::Equal)
-                    })
+                    b.pinned
+                        .cmp(&a.pinned)
+                        .then_with(|| b.frecency_date.cmp(&a.frecency_date))
                 });
                 refs.into_iter().take(5).cloned().collect::<Vec<LaunchRecord>>()
             })
@@ -205,8 +201,8 @@ pub async fn search_streaming(
         let frecency = history.with_records(|records| {
             records
                 .iter()
-                .map(|(path, record)| (path.clone(), crate::search::calculate_frecency(record)))
-                .collect::<std::collections::HashMap<String, f64>>()
+                .map(|(path, record)| (path.clone(), record.frecency_date))
+                .collect::<std::collections::HashMap<String, i64>>()
         });
         let results = crate::search::search_applications_with_frecency(
             &query_apps,

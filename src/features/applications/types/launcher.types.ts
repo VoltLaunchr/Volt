@@ -17,6 +17,8 @@ export interface LaunchRecord {
   firstLaunched: number;
   /** Timestamp of most recent launch (ms) */
   lastLaunched: number;
+  /** Monotonic frecency date (ms), pushed into the future on each launch. Drives search ranking. */
+  frecencyDate: number;
   /** Total time spent in app in ms (if tracked) */
   totalTimeMs?: number;
   /** Tags/categories assigned by user */

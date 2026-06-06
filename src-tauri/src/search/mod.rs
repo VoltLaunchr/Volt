@@ -1,30 +1,38 @@
 use crate::commands::apps::AppInfo;
-use crate::launcher::{LaunchRecord, QueryBindingStore};
+use crate::launcher::QueryBindingStore;
 use crate::utils::matching::calculate_match_score_with_matcher_buf;
 use nucleo_matcher::{Config, Matcher};
 
-/// Calculate frecency score for a launch record.
-/// Combines frequency (launch_count) with recency (time decay).
-/// Half-life of 1 week (168 hours): recent items score higher.
-pub fn calculate_frecency(record: &LaunchRecord) -> f64 {
-    let now_ms = chrono::Utc::now().timestamp_millis();
-    let age_hours = ((now_ms - record.last_launched) as f64 / 3_600_000.0).max(0.0);
-    let recency_weight = (-age_hours / 168.0).exp().max(0.2);
-    record.launch_count as f64 * recency_weight
+/// Convert a stored `frecency_date` into a bounded search bonus relative to
+/// `now_ms`.
+///
+/// `frecency_date` is pushed into the future on each launch (see
+/// [`crate::launcher::LaunchRecord`]), so `frecency_date - now` is the item's
+/// remaining "credit": large for recently/frequently used apps, shrinking as
+/// real time advances (natural recency decay). A `ln` curve gives diminishing
+/// returns and the result is capped at `+50` to keep match relevance dominant
+/// — the same ceiling the previous frequency×decay formula used.
+///
+/// Unlike the old per-record `chrono::Utc::now()` + `exp()`, the timestamp is
+/// captured **once per query** and this is a pure O(1) arithmetic transform.
+fn frecency_bonus(frecency_date: i64, now_ms: i64) -> f32 {
+    let credit_days = ((frecency_date - now_ms) as f64 / 86_400_000.0).max(0.0);
+    ((credit_days + 1.0).ln() * 12.0).min(50.0) as f32
 }
 
 /// Search applications with frecency scoring from launch history.
 /// Returns apps sorted by (match_score + frecency_bonus + query_binding_boost) descending.
 ///
-/// `frecency` is a pre-computed `path → frecency score` map (see
+/// `frecency` is a pre-computed `path → frecency_date` map (see
 /// [`LaunchHistory::with_records`]). Taking the map instead of a
 /// `&[LaunchRecord]` slice lets callers avoid cloning the entire launch
-/// history on every keystroke — only the scores we actually read are
-/// materialised.
+/// history on every keystroke — only the dates we actually read are
+/// materialised, and presence in the map distinguishes "in history" from
+/// "never launched".
 pub fn search_applications_with_frecency(
     query: &str,
     apps: Vec<AppInfo>,
-    frecency: &std::collections::HashMap<String, f64>,
+    frecency: &std::collections::HashMap<String, i64>,
     query_bindings: Option<&QueryBindingStore>,
 ) -> Vec<(AppInfo, f32)> {
     if query.trim().is_empty() {
@@ -32,6 +40,8 @@ pub fn search_applications_with_frecency(
     }
 
     let has_history = !frecency.is_empty();
+    // Captured once per query, not once per record (the old hot-path cost).
+    let now_ms = chrono::Utc::now().timestamp_millis();
 
     let mut matcher = Matcher::new(Config::DEFAULT);
     // Shared scratch buffer for non-ASCII haystacks. Reusing this across every
@@ -99,14 +109,14 @@ pub fn search_applications_with_frecency(
                 return None;
             }
 
-            let frecency_score = frecency.get(app.path.as_str()).copied().unwrap_or(0.0);
-
-            let mut final_score = if frecency_score > 0.0 {
-                match_score + (frecency_score * 10.0).min(50.0) as f32
-            } else if has_history {
-                match_score * 0.7
-            } else {
-                match_score
+            // Presence in the map means the app is in launch history. Used apps
+            // get a bounded recency/frequency boost; apps the user has never
+            // launched are slightly penalised once any history exists so used
+            // apps float up.
+            let mut final_score = match frecency.get(app.path.as_str()) {
+                Some(&frecency_date) => match_score + frecency_bonus(frecency_date, now_ms),
+                None if has_history => match_score * 0.7,
+                None => match_score,
             };
 
             // Apply query-result binding boost (up to +30 pts)
@@ -258,6 +268,46 @@ mod tests {
     #[test]
     fn test_search_no_apps() {
         let results = search_applications("anything", vec![]);
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn test_frecency_bonus_is_bounded_and_monotonic() {
+        let now = 1_000_000_000_000;
+        let day = 86_400_000;
+        // Stale (date in the past) → no bonus.
+        assert_eq!(frecency_bonus(now - day, now), 0.0);
+        assert_eq!(frecency_bonus(now, now), 0.0);
+        // More credit (further future) → larger bonus.
+        let one = frecency_bonus(now + day, now);
+        let five = frecency_bonus(now + 5 * day, now);
+        assert!(one > 0.0);
+        assert!(five > one);
+        // Saturates at the +50 ceiling for very large credit.
+        assert!(frecency_bonus(now + 10_000 * day, now) <= 50.0);
+        assert!(frecency_bonus(now + 10_000 * day, now) > 45.0);
+    }
+
+    #[test]
+    fn test_used_app_outranks_never_launched_app() {
+        let apps = vec![
+            create_test_app("Chrome", "/c/chrome"),
+            create_test_app("Chrome Canary", "/c/canary"),
+        ];
+        let now = chrono::Utc::now().timestamp_millis();
+        // Only Chrome is in history, credited well into the future.
+        let mut frecency = std::collections::HashMap::new();
+        frecency.insert("/c/chrome".to_string(), now + 30 * 86_400_000);
+
+        let results = search_applications_with_frecency("chrome", apps, &frecency, None);
+        assert_eq!(results[0].0.path, "/c/chrome", "used app should rank first");
+    }
+
+    #[test]
+    fn test_empty_query_returns_nothing() {
+        let frecency = std::collections::HashMap::new();
+        let results =
+            search_applications_with_frecency("", vec![create_test_app("A", "/a")], &frecency, None);
         assert!(results.is_empty());
     }
 }

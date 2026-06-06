@@ -254,18 +254,16 @@ pub async fn get_frecency_suggestions(
     // LaunchRecord>` — each record owns two `String`s and a `Vec<String>`.
     // Only the top-N survivors are cloned out of the map afterwards.
     let records = history_state.history.with_records(|records| {
-        // (pinned, frecency, key) — `&String` borrow lives only inside the closure.
-        let mut ranked: Vec<(bool, f64, &String)> = records
+        // (pinned, frecency_date, key) — `&String` borrow lives only inside the closure.
+        let mut ranked: Vec<(bool, i64, &String)> = records
             .iter()
-            .map(|(key, record)| (record.pinned, crate::search::calculate_frecency(record), key))
+            .map(|(key, record)| (record.pinned, record.frecency_date, key))
             .collect();
 
-        // Compound-key sort: pinned first, then by frecency. Mirrors the
-        // previous `sort_by` semantics exactly (pinned `true` ahead of
-        // `false`, higher frecency first, NaN treated as Equal).
-        let order = |a: &(bool, f64, &String), b: &(bool, f64, &String)| {
-            b.0.cmp(&a.0)
-                .then_with(|| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal))
+        // Compound-key sort: pinned first, then by frecency_date descending
+        // (the Mozilla-style monotonic timestamp — no query-time math needed).
+        let order = |a: &(bool, i64, &String), b: &(bool, i64, &String)| {
+            b.0.cmp(&a.0).then_with(|| b.1.cmp(&a.1))
         };
 
         if ranked.len() > limit {
