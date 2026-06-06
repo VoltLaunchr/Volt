@@ -93,6 +93,11 @@ thiserror = "2"
 # to `app_data_dir/embeddings/` (NOT bundled into the binary). Uses native-tls
 # by default — matches our existing reqwest config.
 fastembed = "5"
+# Pilier D Track 1: full-text/relevance file index. Pure-Rust, builds on
+# Windows/macOS/Linux. OPTIONAL and OFF by default — only compiled when the
+# `tantivy-search` feature is enabled, so the default build is unaffected.
+# See REFONTE-PILIER-D-SEARCH.md.
+tantivy = { version = "0.26", optional = true }
 
 [target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
 tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
@@ -123,6 +128,10 @@ bundled-sqlite = ["rusqlite/bundled"]
 # with `bundled-sqlite` — the two bundlings conflict at the link step).
 sqlcipher = ["rusqlite/bundled-sqlcipher-vendored-openssl"]
 devtools = ["tauri/devtools"]
+# Pilier D Track 1: enables the Tantivy-backed full-text file-search index
+# (`indexer::fulltext`). OFF by default; the default build keeps the existing
+# nucleo search path unchanged. See REFONTE-PILIER-D-SEARCH.md.
+tantivy-search = ["dep:tantivy"]
 # Enables the heavy end-to-end embedding test that downloads the multilingual-e5-small
 # model (~120 MB on first run, then cached). Run with:
 #   cargo test --features test-embeddings -- --test-threads=1
