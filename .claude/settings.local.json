@@ -13,6 +13,7 @@
   },
   "enabledPlugins": {
     "figma@claude-plugins-official": true,
-    "supabase@claude-plugins-official": true
+    "supabase@claude-plugins-official": true,
+    "sourcegraph@claude-plugins-official": false
   }
 }

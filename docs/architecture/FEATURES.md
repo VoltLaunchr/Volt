@@ -2,7 +2,7 @@
 
 Complete reference of features available in **Volt v0.2.0**.
 
-> See [`SHORTCUTS.md`](../user-guide/SHORTCUTS.md) for the full keyboard reference and [`ARCHITECTURE.md`](./ARCHITECTURE.md) for the technical view.
+> See [`SHORTCUTS.md`](../user-guide/SHORTCUTS.md) for the full keyboard reference, [`ARCHITECTURE.md`](./ARCHITECTURE.md) for the technical view, and [`CLAIMS_EVIDENCE.md`](../marketing/CLAIMS_EVIDENCE.md) before reusing any feature wording in public marketing.
 
 ---
 
@@ -27,7 +27,7 @@ Parsed by `queryParser.ts`, forwarded to `search_files_advanced`:
 
 ### Cross-platform app discovery
 - **Windows**: Program Files + AppData + Start Menu, Registry `Uninstall` scan for clean display names, Shell `AppsFolder` for Store/UWP/MSIX, junk-app filter, Windows Search Index as supplementary file source.
-- **macOS**: Applications folders, `.app` bundles, native icon extraction via `icns`.
+- **macOS**: Applications folders, `.app` bundles, icon extraction via `icns`.
 - **Linux**: `.desktop` files across XDG dirs, icon-theme support.
 - **Frecency-aware launching** with `launch_app` (LOLBIN denylist, NTFS normalization, executable-extension validation).
 
@@ -144,7 +144,7 @@ Parsed by `queryParser.ts`, forwarded to `search_files_advanced`:
 ### 🎮 Games
 **Trigger**: game name or `games`
 - **10 platforms**: Steam, Epic Games, GOG Galaxy, Xbox, EA App (Origin), Ubisoft Connect, Riot, Amazon Games, Battle.net, Rockstar.
-- Platform metadata + icons, deduplication, cache for fast launch.
+- Platform metadata + icons, deduplication, and caching. Per-platform launch coverage is validated in the release QA matrix.
 - `launch_steam_game`, `rescan_all_games`, dedicated `GameView`.
 
 ### 🪟 Window Management
@@ -177,8 +177,8 @@ Parsed by `queryParser.ts`, forwarded to `search_files_advanced`:
 - `scaffold_extension` command bootstraps a new manifest + skeleton.
 - API keys (`sk_live_*`) for future CLI automation — SHA-256 hashed in DB, never stored in clear.
 
-### Sandbox & security
-- Web Worker for any extension with `keywords` / `prefix` (declarative `canHandle` stays on the main thread, < 0.1 ms).
+### Isolation & security
+- Web Worker for any extension with `keywords` / `prefix`; declarative `canHandle` stays on the main thread and does not execute extension code.
 - `eval`, `Function`, `WebSocket`, `XMLHttpRequest`, `importScripts` all disabled; prototype frozen; getter-only Worker global.
 - 500 ms timeout (8 s for `match()`), pending-request map cleared on timeout.
 - **Network**: Worker `fetch` proxied via `postMessage` → Rust; SSRF prevention (private IPs, numeric IPv4/IPv6-mapped hosts, redirect SSRF), credentials omitted, Cookie/Auth stripped, 10 MB body cap.
@@ -223,19 +223,19 @@ Export / import via `export_settings` / `import_settings`.
 
 ## 🚀 Performance
 
-- Cold start < 1 s (window created hidden, revealed on `volt://main-ready` with 5 s fallback).
+- Window is created hidden and revealed on `volt://main-ready` with a 5 s fallback; cold-start claims require the benchmark plan in [`PERFORMANCE_BASELINE.md`](../benchmarks/PERFORMANCE_BASELINE.md).
 - Search debounce 150 ms · plugin timeout 500 ms · preview debounce 200 ms.
-- Background SQLite indexer with `notify` watcher — no blocking UI scan.
-- System Monitor cache refreshed by a 5 s ticker on `spawn_blocking` so queries are instant.
+- Background file indexer with transactional SQLite persistence, optional persistent Tantivy search and a lifecycle-managed `notify` watcher. The last coherent snapshot survives failed rebuilds, and hidden files are excluded from normal search.
+- System Monitor cache refreshed by a 5 s ticker on `spawn_blocking`; user-visible latency should be measured before public claims.
 - Local embeddings loaded **lazily** on first use; model file kept out of the binary.
-- Typical memory footprint ~50–100 MB.
+- RAM, CPU idle, installer size and update time are not public claims until baselined.
 - Bundle protected by a chunk-cycle scan in the release checklist (prevents the v0.1.8 "splash infini" class of bugs).
 
 ---
 
 ## ♿ Accessibility
 
-- Full keyboard navigation (no mouse required); skip-link to the search input on every view.
+- Keyboard-first navigation; full accessibility claims depend on the release audit in [`ACCESSIBILITY_AUDIT.md`](../ACCESSIBILITY_AUDIT.md).
 - Visible focus outlines, ARIA roles on overlays (HUD, toasts, dialogs).
 - Configurable font size (planned), high-contrast theme support.
 - i18n: English + French via `i18next`.
@@ -244,9 +244,9 @@ Export / import via `export_settings` / `import_settings`.
 
 ## 🔄 Auto-Updates
 
-- Silent update check on startup via `tauri-plugin-updater`.
+- Update check on startup via `tauri-plugin-updater`, controlled by settings.
 - **Deferred install on close**: the app intercepts close requests; if an update is pending, it installs before exit (see `installPendingUpdate` / `hasPendingUpdate` in `features/settings/services/updateService`).
-- Signed artifacts (`latest.json` + `.sig` per platform) published by `release.yml`.
+- Updater artifacts (`latest.json` + `.sig` per platform) are produced by `release.yml`; release-to-release validation is tracked in [`QA_MATRIX.md`](../release/QA_MATRIX.md).
 
 ---
 

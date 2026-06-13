@@ -12,8 +12,11 @@ docs/
 ├── user-guide/        End-user shortcuts and guides
 ├── plugins/           Plugin / extension development & publishing
 ├── build-release/     CI/CD · distribution · signing · release roadmap
+├── release/           Cross-platform QA · bug bash and launch gates
+├── benchmarks/        Reproducible performance measurement plans
+├── marketing/         Product readiness · claims · scorecard · issue backlog
 ├── changelog/         Version history
-├── security/          Audits, accepted risks, key custody
+├── security/          Audits, privacy, accepted risks, key custody
 ├── roadmap/           Product roadmap, competitive analysis, ecosystem plan
 └── superpowers/       Internal specs & plans (work-in-progress)
 ```
@@ -60,7 +63,7 @@ Additional backend reference:
 
 **Plugin vs Extension**
 - **Plugin** = in-repo (`src/features/plugins/builtin/`). Registered in `useAppLifecycle.ts`. Communicates via `volt:*` DOM events and Tauri commands.
-- **Extension** = third-party, dynamic. Dual-source registry (GitHub legacy + Supabase via the **voltlaunchr.com/developer** portal). Loaded with Sucrase, sandboxed in a Web Worker, network proxied through Rust.
+- **Extension** = third-party, dynamic. Dual-source registry (GitHub legacy + Supabase via the **voltlaunchr.com/developer** portal). Loaded with Sucrase, isolated in a Web Worker when supported, network proxied through Rust.
 
 See the [Extensions](./architecture/FEATURES.md#-extension-ecosystem) section in FEATURES.md for the full security model.
 
@@ -77,6 +80,19 @@ See the [Extensions](./architecture/FEATURES.md#-extension-ecosystem) section in
 | [Implementation Plan (history)](./build-release/IMPLEMENTATION_PLAN.md) | Journal of past milestones |
 
 > The **mandatory release checklist** (branch naming, cycle scan, smoke test, post-merge verification) lives in [`CLAUDE.md`](../CLAUDE.md) at the repo root — don't skip it.
+
+### Pre-marketing release readiness
+
+| Document | Purpose |
+|---|---|
+| [Product Readiness Review](./marketing/PRODUCT_READINESS_REVIEW.md) | Master Developer Preview / Public v1 go-no-go audit |
+| [Claims Evidence](./marketing/CLAIMS_EVIDENCE.md) | Evidence and confidence for every public product claim |
+| [Marketing Readiness Scorecard](./marketing/MARKETING_READINESS_SCORECARD.md) | 0–40 launch-readiness score |
+| [Pre-Marketing Issues](./marketing/PRE_MARKETING_ISSUES.md) | Prioritized GitHub issue backlog |
+| [QA Matrix](./release/QA_MATRIX.md) | Windows, macOS and Linux release validation |
+| [Bug Bash Plan](./release/BUG_BASH_PLAN.md) | Platform, feature, security and accessibility sessions |
+| [Performance Baseline](./benchmarks/PERFORMANCE_BASELINE.md) | Benchmark protocol; no invented results |
+| [Privacy & Telemetry Review](./security/PRIVACY_AND_TELEMETRY_REVIEW.md) | Local data, opt-in network features and user-facing privacy copy |
 
 ---
 

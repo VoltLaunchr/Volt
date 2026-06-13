@@ -1,6 +1,6 @@
 # TODO — Refonte cœur Volt 2026
 
-> Plan détaillé : `REFONTE-2026.md`.
+> Suivi opérationnel actuel. `REFONTE-2026.md` conserve le plan initial à titre historique.
 > Convention : `[ ]` à faire · `[~]` en cours · `[x]` fait. Chaque tâche note l'effort `[S/M/L/XL]` et le finding d'audit résolu le cas échéant.
 > **Avant tout commit** : `bun run lint` + `bun run build` + `cargo check` + `cargo clippy -- -D warnings` + `bun run test` (cf. CLAUDE.md).
 
@@ -25,17 +25,18 @@
 - [x] Backstop poll lent (3s) au lieu d'un fallback feature-flag — garantit zéro régression si un event est raté ; non-Windows garde la cadence normale
 - [x] App source déjà capturée via `get_foreground_app_name` (existant)
 - [x] Validé : `cargo check` + `cargo clippy -- -D warnings` + 271 tests
-- [ ] ⚠️ **SMOKE TEST MANUEL requis** : copier texte puis image → vérifier que l'historique se met à jour, pas de busy-loop (la livraison d'event Win32 n'est pas testable hors runtime)
+- [x] ⚠️ **SMOKE TEST MANUEL requis** : copier texte puis image → vérifier que l'historique se met à jour, pas de busy-loop (la livraison d'event Win32 n'est pas testable hors runtime)
 
-### F1. Codegen IPC Rust→TS `[M]` — résout `ts-02` 🟡 pipeline établi (commits 089cf5d/f193b9c/cf2215b)
+### F1. Codegen IPC Rust→TS `[M]` — résout `ts-02` ✅ AppInfo/FileInfo/Settings couverts (#118)
 - [x] Outil choisi : **ts-rs** (léger, derives) + `TS_RS_EXPORT_DIR` (.cargo/config.toml) → bindings dans `src/shared/types/generated/`
 - [x] 1ère struct générée : `LaunchRecord` (64-bit en `#[ts(type="number")]` car wire Tauri = JSON number, pas bigint)
 - [x] Frontend re-exporte le type généré comme source unique de vérité (`launcher.types.ts`)
 - [x] Garde-fou CI : tests Rust régénèrent + `git diff --exit-code` (ubuntu) ; généré exclu eslint/prettier ; LF via .gitattributes
 - [x] Bench `search_bench` réaligné sur la signature HashMap frecency
-- [ ] Étendre aux autres structs : `AppInfo`/`FileInfo` (champ enum `category` → décision `#[ts(type)]` ou enum TS partagé), `Settings`, métriques
-- [ ] Supprimer les commentaires `[SYNC:]` au fur et à mesure de la couverture
-- [ ] ⚠️ rustfmt skew préexistant sur `auth.rs`/`steam.rs` (lignes ~100 col du commit LazyLock) — non lié, laissé tel quel ; à vérifier si la CI fmt les flag
+- [x] Étendre aux autres structs : `AppInfo`/`FileInfo` (champ enum `category` exporté), `Settings`
+- [x] Métriques IPC couvertes : `SystemMetrics`/`SystemMetricsV2` et leurs types imbriqués générés par ts-rs; `StorageKind` est un enum strict partagé
+- [x] Commentaires `[SYNC:]` supprimés pour les contrats désormais générés; les marqueurs restants sont conservés sur les contrats non couverts (`AppCategory`, `FileSearchResult`, résultats/accessoires/actions plugins)
+- [x] Skew rustfmt `auth.rs`/`steam.rs` vérifié et résolu : `cargo fmt --all -- --check` passe
 
 ### F3. Events `volt:*` typés `[S]` — résout `ts-08`/`arch-10` ✅ commit cc2d98a (agent A)
 - [x] `src/shared/events.ts` : `VOLT_EVENTS` + `VoltEventMap` + `declare global WindowEventMap`
@@ -48,44 +49,64 @@
 - [x] EmojiPicker : déjà résolu par react-06 (useMemo) sur cette branche → version supérieure conservée au merge
 - [x] Vérifié : 0 `eslint-disable`/`@ts-ignore`/`@ts-expect-error` restant dans `src/`
 
-### F2. `timings` IPC pour profiling `[S]`
-- [ ] Ajouter un champ `timings` optionnel aux réponses du hot-path search
-- [ ] Instrumenter les étapes (match, frecency, tri) — réutiliser le tracing span existant
+### F2. `timings` IPC pour profiling `[S]` ✅ tracing hot-path livré
+- [x] Instrumenter les commandes hot-path via `tracing` timing (`time_command!`) — logs opt-in, sans changement de payload
+- [x] Instrumenter le pipeline réel `search_streaming`
+- [x] Conserver les payloads IPC stables : pas de champ `timings` tant qu'aucun consommateur UI/télémétrie ne l'utilise
 
 ---
 
 ## 🌊 Vague 2 — Robustesse données
 
-### C. SQLCipher + Credential Manager + repositories `[M]`
-- [ ] Passer `rusqlite` en `features = ["bundled-sqlcipher"]` (`Cargo.toml:50`)
-- [ ] `PRAGMA key` à l'ouverture de chaque base
-- [ ] Algo clé (réutiliser `keyring_store.rs`) :
-  - [ ] (a) lire clé dans Credential Manager
-  - [ ] (b) sinon DPAPI legacy → migrer vers Credential Manager
-  - [ ] (c) sinon si DB existe → **erreur de récupération (NE PAS régénérer)**
-  - [ ] (d) sinon générer 64 chars + stocker
-- [ ] Adopter `refinery` pour les migrations (remplacer l'ad-hoc de `indexer/database.rs`)
-- [ ] Mode WAL explicite
-- [ ] Pattern repository par domaine : `clipboard`, `snippets`, `launch_history`, `notes`
-- [ ] Base attachée `frecency` (depuis Pilier A) → `ORDER BY frecency_date DESC` en SQL
-- [ ] Migration données clair → chiffré (one-shot au 1er lancement post-update)
-- [ ] Tests : cas « clé perdue + DB existe » → alerte, pas de corruption ; fallback DPAPI
+### C. SQLCipher + Credential Manager + repositories `[M]` 🟡 durcissement sécurité validé Windows, validations externes ouvertes
+- [x] Blueprint détaillé : `REFONTE-PILIER-C-SQLCIPHER.md`
+- [x] Ajouter la feature Cargo `sqlcipher` (`rusqlite/bundled-sqlcipher-vendored-openssl`) sans changer le build par défaut
+- [x] `core::encrypted_db::open_db` + `PRAGMA key` + migration plaintext→SQLCipher atomique
+- [x] Rebrancher les call sites SQLite sensibles : clipboard, notes, extension KV
+- [x] Checkpoint WAL + suppression des sidecars plaintext avant installation de la DB chiffrée
+- [x] Clé indépendante par base dans le Credential Manager (évite qu'une clé perdue orpheline tous les stores)
+- [x] Algo clé (réutiliser `keyring_store.rs`) :
+  - [x] (a) lire clé dans Credential Manager
+  - [x] (b) ancien compte global DPAPI/Credential Manager → vérifier la clé sur la DB puis migrer vers le compte par base
+  - [x] (c) sinon si DB chiffrée/illisible existe → **erreur de récupération (NE PAS régénérer)**
+  - [x] (d) sinon générer 64 chars + stocker
+- [x] Décision migrations : **ne pas adopter `refinery` maintenant** — schémas locaux petits/hétérogènes; conserver migrations idempotentes explicites jusqu'à un vrai besoin multi-version partagé
+- [x] Mode WAL explicite sur les stores branchés
+- [x] Décision repositories : **pas de couche générique maintenant** — clipboard/notes/extension KV ont des modèles distincts; extraire seulement lors d'une duplication réelle
+- [x] Décision frecency SQL : **conserver `launch_history.json` + modèle timestamp** — faible volume, aucun bottleneck mesuré; migration SQLite différée
+- [x] Migration données clair → chiffré (one-shot au 1er lancement post-update)
+- [x] Validation Windows : Clippy strict + 317 tests sous `--no-default-features --features sqlcipher`
+- [~] Validation macOS/Linux : matrice CI ajoutée pour Clippy + tests SQLCipher sur les 3 OS; premier run GitHub encore requis
+- [x] Tests d'intégration clipboard/notes/extension KV + clé perdue + DB existe + migration legacy DPAPI + récupération interrompue
+- [x] **Durcissement SQLCipher suite à l'audit sécurité (validé Windows)** :
+  - [x] Découpler les clés DB du HMAC partagé : lecture/écriture directe dans le keyring, validation par ouverture SQLCipher, aucune suppression/régénération destructive sur perte ou rotation HMAC
+  - [x] Passer à `rusqlite 0.40.1` / `libsqlite3-sys 0.38.1`, qui embarque **SQLCipher 4.14.0** et **SQLite 3.51.3**, première base corrigée du bug critique de corruption WAL-reset
+  - [x] Vérifier le triplet `PRAGMA wal_checkpoint(TRUNCATE)`, sortir de WAL, prendre un verrou de migration inter-processus et empêcher le downgrade/réouverture plaintext via un marqueur keyring persistant
+  - [x] Tests ciblés : versions runtime, checkpoint WAL busy/incomplet, clé legacy non réutilisée pour les stores plaintext, refus du downgrade et de la restauration plaintext après migration; 317 tests SQLCipher + Clippy strict
+
+  Références officielles : [SQLite 3.51.3](https://sqlite.org/releaselog/3_51_3.html) corrige le bug WAL-reset; [SQLCipher 4.14.0](https://www.zetetic.net/blog/2026/03/17/sqlcipher-4.14.0-release/) embarque SQLite 3.51.3 et recommande l'upgrade aux applications utilisant WAL.
 
 ---
 
 ## 🌊 Vague 3 — Recherche fichiers (différenciateur, phasé)
 
-### D1. Index inversé Tantivy (SANS MFT d'abord) `[L]`
-- [ ] Ajouter `tantivy` à `Cargo.toml` derrière feature-flag `tantivy`
-- [ ] Index persistant alimenté par le scanner actuel (`indexer/scanner.rs`)
-- [ ] Schéma : champs `name`, `path`, `path_raw` (exact), `category`
-- [ ] Tokenizer : `Lowercase` + ascii-folding + champ `raw` pour chemin exact
-- [ ] Scoring en couches : BM25 → boost préfixe → boost distance fuzzy
-- [ ] Requête fuzzy Damerau-Levenshtein (tolérance fautes + transpositions)
-- [ ] Remplacer le matching nucleo **sur l'index fichiers** (garder nucleo pour les apps)
-- [ ] Garder `read_dir` comme fallback non-NTFS
-- [ ] Bench avant/après (criterion) : latence + pertinence
-- [ ] **Décision GO/NO-GO sur D2/D3 selon résultat de D1**
+### D1. Index inversé Tantivy (SANS MFT d'abord) `[L]` 🟡 feature-complete, premier benchmark CI pending
+- [x] Blueprint détaillé : `REFONTE-PILIER-D-SEARCH.md`
+- [x] Ajouter `tantivy` à `Cargo.toml` derrière feature-flag `tantivy-search`
+- [x] Scaffold `indexer::fulltext` : index persistant, build/query/upsert/remove + tests
+- [x] Câbler `search_files` et `search_streaming` vers Tantivy sous feature flag, avec fallback nucleo
+- [x] Alimenter/reconstruire l'index depuis SQLite + scanner et le maintenir via watcher
+- [x] Validation : Clippy strict `tantivy-search` + 327 tests
+- [x] Schéma production : `name`, `name_exact`, `path`, `ext`, `category`, `size`, `mtime`, `hidden`
+- [x] Tokenizer lowercase + ASCII folding, testé dans les deux sens accentué/non accentué
+- [x] Scoring en couches : exact/BM25 → boost préfixe → fuzzy pondéré
+- [x] Requête fuzzy Levenshtein avec transpositions
+- [x] Remplacer le matching nucleo **sur l'index fichiers** sous feature flag (fallback conservé)
+- [x] Réutiliser l'index persistant si le compteur et le marqueur de synchronisation SQLite concordent
+- [x] Démarrer/arrêter le watcher avec le lifecycle UI et le redémarrer après un rebuild manuel
+- [x] `read_dir` conservé comme scanner cross-platform et couvert par un test de contrat
+- [~] Bench Criterion nucleo/Tantivy ajouté : latence 1k/10k, assertions de pertinence, taille disque; workflow CI dédié ajouté, premier run GitHub encore requis
+- [x] **Décision D2/D3 : NO-GO pour cette itération.** D1 est fonctionnel; ne pas engager MFT/USN avant baseline Criterion release sur corpus réel et preuve que l'énumération est le bottleneck utilisateur
 
 ### D2. Scan MFT NTFS `[XL]` — seulement si D1 validé
 - [ ] Crate `ntfs` + lecture `\\.\C:` (privilèges admin requis)
@@ -139,7 +160,11 @@
 
 ---
 
-## 📌 Ordre d'attaque recommandé
+## 📌 Séquencement historique et état actuel
+
+L'ordre ci-dessous était celui du plan initial. A, B, C, F1, F3 et D1 sont implémentés. C attend le premier run de sa matrice CI macOS/Linux; D1 attend le premier run du benchmark CI dédié et D2/D3 restent en NO-GO pour cette itération.
+
+**Ordre initial :**
 1. **A** (frecency) → débloque aussi l'audit `rust-history-clone-01`
 2. **B** (clipboard event-driven)
 3. **F1 + F3** (IPC/events typés) → garde-fou, converge avec l'audit

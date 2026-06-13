@@ -38,9 +38,11 @@
 
 ## Search + results behavior (don’t break these)
 
-- Search is debounced (150ms) and prevents stale responses via `latestSearchId` in [src/app/App.tsx](../src/app/App.tsx).
+- Search is debounced (150ms) and prevents stale responses via `latestSearchId` in [src/app/hooks/useSearchPipeline.ts](../src/app/hooks/useSearchPipeline.ts).
 - App + file + plugin search run in parallel and are merged/sorted by `score`.
 - File indexing is optional: frontend treats `search_files` failures as empty results.
+- File search uses nucleo by default. With the `tantivy-search` Cargo feature it uses the persistent Tantivy index, with SQLite as source of truth and nucleo as fallback.
+- The frontend watcher lifecycle is serialized by `FileWatcherLifecycle`: stop before rebuild/config change, start only after indexing completes, stop on unmount.
 
 ## Project conventions (senior guardrails)
 
@@ -66,4 +68,4 @@
 ## Error handling
 
 - All Tauri commands return `VoltResult<T>` (alias for `Result<T, VoltError>`).
-- `VoltError` is a discriminated union defined in `src-tauri/src/core/errors.rs` — do not use raw `Result<T, String>`.
+- `VoltError` is a discriminated union defined in `src-tauri/src/core/error.rs` — do not use raw `Result<T, String>` for Tauri commands.

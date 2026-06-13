@@ -2,9 +2,9 @@
 
 > **Cible** : Volt (Tauri v2 + React + TypeScript).
 > **Date** : 2026-06-06.
-> **Statut** : plan de refonte — à séquencer avec `AUDIT-2026.md` (Sprint 1 en cours sur `chore/sprint1-quickwins`).
+> **Statut** : plan historique daté du 6 juin 2026. Pour l'état opérationnel actuel, les décisions prises et les validations restantes, voir `TODO-REFONTE.md`.
 
-Ce document trace la modernisation du **cœur** de Volt (recherche, données, frecency, clipboard, input) en s'appuyant sur les techniques éprouvées de l'état de l'art des launchers clavier (Spotlight, Alfred, Raycast côté produit ; Everything pour l'énumération disque ; Lucene/Tantivy pour le full-text ; le modèle de frecency de Mozilla pour le classement). Chaque chantier est **ancré dans le code réel de Volt** (chemins vérifiés le 2026-06-06).
+Ce document conserve la proposition initiale de modernisation du **cœur** de Volt (recherche, données, frecency, clipboard, input). Ses constats et formulations « Volt aujourd'hui » décrivent l'état vérifié le 6 juin 2026 et ne constituent plus le suivi courant.
 
 Principe de fond : **Volt n'a pas besoin de refonte architecturale.** Tauri (cœur Rust + UI web) est déjà le bon socle cross-platform. On importe des **algorithmes et patterns** ciblés, pas une nouvelle topologie de process.
 

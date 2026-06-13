@@ -7,9 +7,9 @@
 > best-practice for building fast local search; no third-party binary internals
 > are discussed.
 >
-> **Status.** Track 1 scaffolding lands behind the `tantivy-search` Cargo feature
-> (OFF by default). Track 2 is documented as a later, optional accelerator with a
-> graceful fallback. The default build and current search behaviour are unchanged.
+> **Status.** Track 1 is feature-complete behind the `tantivy-search` Cargo feature
+> (OFF by default). A dedicated Criterion CI workflow is present, but its first
+> GitHub run is still required. Track 2 remains a documented NO-GO for this iteration.
 
 ---
 
@@ -17,9 +17,9 @@
 
 1. **Adopt Tantivy first (Track 1), behind a feature flag.** It is the single
    highest-leverage change: it removes the current full in-memory `Vec<FileInfo>`
-   linear scan, adds true relevance ranking (BM25) plus prefix/edge-ngram matching,
-   and gives us fast-field sorting by mtime/frecency without re-scanning the whole
-   set on every keystroke. It is pure-Rust, builds on Windows/macOS/Linux, and
+   linear scan, adds true relevance ranking (exact/BM25/prefix/fuzzy), and filters
+   hidden entries inside the index before top-k collection. It is feature-gated,
+   keeps the default build unchanged, and
    coexists cleanly with the existing SQLite store (SQLite stays the source of
    truth; Tantivy becomes the query engine).
 
@@ -32,9 +32,9 @@
    **always fall back** to the existing recursive `scan_files` walk when not
    elevated or not on NTFS.
 
-3. **Keep `nucleo-matcher` as the default path.** Until `tantivy-search` is proven
-   on real hardware and shipped, the current nucleo-based engine remains the
-   default. The feature flag means we can dark-ship, A/B, and roll back instantly.
+3. **Keep `nucleo-matcher` as the default path.** The `tantivy-search` implementation
+   is complete and validated behind its feature flag, while nucleo remains the
+   default and fallback until real-hardware benchmarks justify promotion.
 
 Phased rollout: **Track 1 (Tantivy, flagged) → measure → default-on → Track 2 (MFT,
 flagged + elevation-gated, Windows-only) → measure → default-on (Windows)**.
@@ -48,11 +48,12 @@ Read directly from the codebase. Key files:
 | File | Role |
 |---|---|
 | `src-tauri/src/indexer/scanner.rs` | Recursive `readdir` walk (`scan_files` → `scan_directory`), `max_depth` 3 (shallow) or 10 (deep). Builds `Vec<FileInfo>`. |
-| `src-tauri/src/indexer/database.rs` | `FileIndexDb` — SQLite (WAL), single `files` table + `metadata`. Bulk upsert in one transaction. Source of truth, persisted across restarts. |
-| `src-tauri/src/indexer/watcher.rs` | `notify` v6 recursive watcher, 100 ms debounce, incrementally upserts/removes in SQLite **and** the in-memory `Arc<Vec<FileInfo>>`. |
+| `src-tauri/src/indexer/database.rs` | `FileIndexDb` — SQLite (WAL), `files` + `metadata`. Source of truth. Full scans replace the snapshot transactionally only after success. |
+| `src-tauri/src/indexer/watcher.rs` | `notify` v6 recursive watcher, 100 ms debounce, incrementally synchronizes SQLite, the in-memory snapshot/lookup and Tantivy. `stop()` joins the worker. |
 | `src-tauri/src/indexer/search_engine.rs` | `SearchEngine` — `nucleo-matcher` fuzzy scoring over the **entire in-memory Vec**, with category/recency/frequency boosts and operator filters. |
 | `src-tauri/src/indexer/windows_search.rs` | Windows Search Index supplement via PowerShell + OLE DB (`Search.CollatorDSO`). Used to top up sparse results. |
-| `src-tauri/src/commands/files.rs` | Tauri commands. `FileIndexState` holds `Arc<Mutex<Arc<Vec<FileInfo>>>>` (cache), `Arc<Option<FileIndexDb>>` (persist), status, config. `search_files` clones the Arc and runs `SearchEngine`. |
+| `src-tauri/src/indexer/fulltext.rs` | Feature-gated persistent Tantivy index: exact boosts, BM25, prefix, fuzzy transpositions, hidden filtering, batch updates and schema recovery. |
+| `src-tauri/src/commands/files.rs` | Tauri commands. `FileIndexState` holds the snapshot, path lookup, SQLite and optional Tantivy state. Startup reuses Tantivy only when dirty marker and document count agree. |
 
 ### Data flow today
 
@@ -64,7 +65,7 @@ search_files (per keystroke, debounced 150 ms FE)
   └─ Arc::clone(cache) → SearchEngine::search → nucleo score every file → sort → truncate
      └─ (Windows) if sparse, top up via windows_search PowerShell query
 watcher (notify)
-  └─ debounce 100 ms → upsert/remove SQLite + rebuild in-memory Vec
+  └─ debounce 100 ms → upsert/remove SQLite + snapshot/lookup + Tantivy batch
 ```
 
 ### Performance ceiling (the problem)
@@ -111,9 +112,9 @@ Sources: [tantivy on crates.io](https://crates.io/crates/tantivy),
 | Dimension | Current (nucleo over Vec) | Tantivy |
 |---|---|---|
 | Query complexity | O(N) every keystroke | O(matching docs) via inverted index |
-| Ranking | fuzzy score + ad-hoc boosts | BM25 + boosting, plus our frecency fast-field |
-| Prefix / "as-you-type" | implicit via fuzzy | explicit edge-ngram tokenizer |
-| Sorting | recomputed per query | precomputed **fast fields** (mtime, frecency) |
+| Ranking | fuzzy score + ad-hoc boosts | exact-name boost + BM25 + weighted prefix/fuzzy clauses |
+| Prefix / "as-you-type" | implicit via fuzzy | zero-distance prefix query on normalized `name_exact`/`name` terms |
+| Filtering | applied around the linear matcher | `hidden` filtered inside Tantivy before top-k collection |
 | Memory | full `Vec<FileInfo>` resident | mmap'd segments, OS page cache |
 | Scale | tens of thousands comfortably | millions |
 | Typo tolerance | nucleo fuzzy | `FuzzyTermQuery` (Levenshtein) |
@@ -127,38 +128,32 @@ A document per file. Fields:
 
 | Field | Type | Options | Purpose |
 |---|---|---|---|
-| `path` | `text` (raw/STRING) + `STORED` | not tokenized, stored | unique key, returned to UI, used for dedup/delete |
-| `name` | `text` | tokenized (default tokenizer) + `STORED` | main relevance field (BM25) |
-| `name_ngram` | `text` | **edge-ngram** tokenizer (min 2, max 15), indexed only | prefix / as-you-type matching |
-| `ext` | `text` (raw/STRING) | indexed, `FAST` | `ext:pdf` operator, faceting |
-| `category` | `text` (raw/STRING) | indexed, `FAST` | category filter, sort/group |
-| `parent_dir` | `text` (raw/STRING) | indexed | `in:<dir>` operator (prefix on stored path) |
-| `size` | `u64` | `FAST` | `size:>10mb` operator, sort |
-| `mtime` | `i64` (Unix secs) | `FAST` | recency sort/boost |
-| `frecency` | `u64` | `FAST` | launch_count × recency_decay precomputed; primary sort key |
+| `name` | `text` + `STORED` | simple tokenizer + lowercase + ASCII folding | BM25 and token-level prefix/fuzzy relevance |
+| `name_exact` | `text` | raw tokenizer + lowercase + ASCII folding | exact whole-name boost and whole-name prefix matching |
+| `path` | `STRING` + `STORED` | exact, not tokenized | unique key, returned to UI, used for dedup/delete |
+| `ext` | `text` | raw tokenizer; value/query normalized ASCII lowercase | `ext:pdf` operator |
+| `category` | `STRING` | indexed | category filter |
+| `size` | `u64` | `FAST` | size metadata/filtering |
+| `mtime` | `i64` (Unix secs) | `FAST` | modification-time metadata/filtering |
+| `hidden` | `bool` | `INDEXED` + `FAST` | exclude hidden files before top-k collection |
 
 **Tokenizers**
 
-- Default tokenizer (lowercase, simple) on `name` for BM25 relevance.
-- A registered **edge-ngram** tokenizer (`NgramTokenizer::new(2, 15, true)` for the
-  prefix variant) on `name_ngram` so `"fire"` matches `"firefox.exe"` without a
-  full fuzzy pass. Edge-ngram (prefix-only) keeps the index small vs full n-gram.
-- `path`, `ext`, `category`, `parent_dir` use the **raw** tokenizer (exact, single
-  token) so filters are exact and cheap.
+- `name` uses `SimpleTokenizer` + lowercase + ASCII folding for BM25 terms.
+- `name_exact` uses `RawTokenizer` + lowercase + ASCII folding for normalized
+  whole-name exact and prefix queries.
+- `path` and `category` use Tantivy `STRING` fields. `ext` uses a raw-token field with
+  explicit ASCII lowercase normalization at indexing and query time.
 
-**Fast fields** (`FAST`) on `size`, `mtime`, `frecency`, `ext`, `category` let us
-**sort and filter without touching the inverted index or loading documents** — this
-is what makes "sort by recency / frecency" cheap at query time.
+**Fast fields** are limited to `size`, `mtime` and `hidden`; `hidden` is also indexed
+so exclusion happens inside the Tantivy query before top-k collection.
 
 ### 2.4 Index storage location & size
 
-- Location: `<app_data_dir>/file_index_tantivy/` (sibling to the existing
-  `file_index.db`). Created lazily on first feature-on run.
-- Rough sizing: a name+path+fast-fields document is small; expect roughly
-  **150–400 bytes/doc** on disk depending on path length and ngram fan-out.
-  - 100 k files ≈ 15–40 MB
-  - 1 M files ≈ 150–400 MB
-  Edge-ngram on `name` is the main multiplier; we cap ngram max length to bound it.
+- Location: `<app_data_dir>/file_history.tantivy` (derived from the existing
+  `file_history.db` path). Created lazily on first feature-on run.
+- On-disk bytes/document are reported by the Criterion harness. The dedicated CI
+  workflow has been added; its first run is still required before recording a baseline.
 - Segments are memory-mapped; resident RAM is governed by the OS page cache, not by
   the total index size — this is the key win over the all-resident `Vec`.
 
@@ -174,9 +169,6 @@ Two build paths, both reuse the **existing** `scan_files` / SQLite pipeline — 
 2. **Warm load.** On startup, if the Tantivy dir exists and is non-corrupt, just
    open it (mmap) — no rebuild.
 
-`frecency` is computed at build time from `FileHistory` (the same source the app
-already uses for recent files), and refreshed incrementally (see §2.6).
-
 ### 2.6 Incremental updates from the `notify` watcher
 
 The watcher already produces upsert/remove batches in `flush_events`. We add a
@@ -187,11 +179,9 @@ writer:
   (Tantivy commits are not free; batch them on the same 100 ms debounce, or every
   N docs, whichever comes first).
 - **Remove** = `delete_term(path)` + commit on the debounce.
-- `frecency` updates on file launch route through the same delete+add upsert with a
-  refreshed value (cheap because only the touched doc changes).
-
-This mirrors exactly how the watcher keeps SQLite + the in-memory Vec in sync today;
-Tantivy becomes a third sink behind the same boundary.
+Implemented: the watcher marks Tantivy dirty before mutation, applies successful
+SQLite changes as a Tantivy batch, then marks the derived index clean. On shutdown,
+the notify handle is dropped and the worker thread is joined before a rebuild begins.
 
 ### 2.7 Query routing (how search uses the index)
 
@@ -209,23 +199,23 @@ pub trait FileQueryBackend {
   today — `Arc::clone(cache)` + `SearchEngine` (nucleo). No trait indirection on the
   hot path; the integration point is a documented `#[cfg]` branch, not a rewrite.
 - **Feature on:** `search_files` routes to the Tantivy backend. Query construction:
-  1. Build a `BooleanQuery`: `name` BM25 clause **OR** `name_ngram` prefix clause,
+  1. Build a `BooleanQuery`: boosted exact/prefix clauses on `name_exact` plus BM25
+     and weighted prefix/fuzzy clauses on tokenized `name`,
      optionally **AND** filter clauses (`ext`, `category`, `parent_dir`, `size`
      range, `mtime` range) derived from the same operators already parsed today.
   2. Optionally add a `FuzzyTermQuery` on `name` for typo tolerance.
-  3. Collect top-K via a `TopDocs` collector **ordered by the `frecency` fast field**
-     (falling back to BM25 score), then map stored `path`/`name` back to `FileHit`.
+  3. Collect top-K via `TopDocs` by Tantivy relevance score, then map stored
+     `path`/`name` back to `FileHit`.
 - **Windows Search supplement** stays as-is and is orthogonal to the backend choice.
 
 ### 2.8 Result quality / latency vs nucleo
 
-- **Quality:** BM25 gives better multi-token relevance than a single fuzzy score;
-  edge-ngram gives crisp as-you-type prefix hits; `FuzzyTermQuery` retains typo
-  tolerance. Frecency fast-field sort matches the launcher's "what you use ranks
-  higher" intent without a per-query recompute.
-- **Latency:** the inverted index turns O(N) into O(matching docs). Expect sub-ms to
-  low-ms queries on million-doc indexes (vs current per-query full scan). First
-  build is a one-time cost folded into the existing scan.
+- **Quality:** exact-name boosts, BM25, normalized prefix clauses and weighted
+  `FuzzyTermQuery` clauses provide layered relevance; hidden files are excluded
+  before top-k collection.
+- **Latency:** the inverted index changes the query shape from a full linear scan
+  to matching-document collection. No p50/p99 claim is recorded until the first
+  dedicated CI benchmark run completes.
 - **Trade-off:** Tantivy commit latency on writes (mitigated by debounced batching)
   and on-disk index size (mitigated by capped ngram length).
 
@@ -317,14 +307,31 @@ rewrite.
 
 | Phase | What | Flag | Default |
 |---|---|---|---|
-| 1 | Tantivy schema + builder + query skeleton (this deliverable) | `tantivy-search` | OFF |
-| 2 | Wire Tantivy build from existing scan + watcher sink; route `search_files` when on | `tantivy-search` | OFF → measure |
+| 1 | Tantivy schema + persistent builder + exact/BM25/prefix/fuzzy query | `tantivy-search` | DONE, OFF |
+| 2 | Wire scan, SQLite recovery, watcher sink and `search_files` routing | `tantivy-search` | DONE, OFF → measure |
 | 3 | Promote Tantivy to default after validation on real hardware | — | ON (all OS) |
 | 4 | MFT/USN enumerator (Windows, elevation-gated, fallback) | `mft-search` (new, phase 2) | OFF |
 | 5 | Promote MFT to default on Windows after validation | — | ON (Windows/NTFS/elevated only) |
 
 Each promotion is gated on: cold-build time, query p50/p99, index size, and a
 correctness diff against the nucleo baseline on a fixed corpus.
+
+### Decision record — 2026-06-12
+
+- D1 is feature-complete: persistent index, exact/BM25/prefix/fuzzy ranking,
+  transpositions, ASCII folding, hidden filtering, watcher synchronization and
+  startup consistency checks.
+- Criterion now compares nucleo and Tantivy at 1k/10k documents, checks a fixed
+  relevance corpus and reports on-disk bytes/document. The dedicated
+  `.github/workflows/search-benchmark.yml` workflow is added, but its first GitHub
+  run is still required.
+- The first local release build exceeded 20 minutes while linking the complete
+  Tauri/ONNX crate, so no fabricated latency numbers are recorded here. Run the
+  harness on a dedicated CI/performance runner before promotion.
+- **D2/D3 decision: NO-GO for the current iteration.** Keep the tested recursive
+  `read_dir` source on every OS. Re-open MFT/USN only if production telemetry or
+  the release benchmark proves cold enumeration, rather than query latency, is
+  the user-visible bottleneck.
 
 ---
 
@@ -350,7 +357,7 @@ correctness diff against the nucleo baseline on a fixed corpus.
 | Risk | Mitigation |
 |---|---|
 | **Tantivy index corruption** | Index is derived from SQLite; on open-error we log + rebuild from `get_all_files()`. Never fatal. |
-| **Disk usage** (ngram fan-out) | Cap edge-ngram max length; ext/category/path use raw tokenizer; document expected sizes (§2.4). |
+| **Disk usage** | Measure bytes/document in the Criterion harness before promotion; no baseline is claimed before the first dedicated CI run. |
 | **Write/commit latency** | Debounce commits on the existing 100 ms watcher window / N-doc batches; never commit per event. |
 | **Build complexity / first compile cost** | tantivy is a heavy first build but pure-Rust, no C toolchain; gated behind a feature so default CI builds are unaffected. |
 | **MFT requires admin** | Runtime elevation + NTFS probe; transparent fallback to `scan_files`. Never request UAC for search. |
@@ -365,8 +372,8 @@ correctness diff against the nucleo baseline on a fixed corpus.
 - `src-tauri/Cargo.toml` — new `tantivy-search` feature; `tantivy` as an optional dep
   enabled by it. Default build unchanged.
 - `src-tauri/src/indexer/fulltext.rs` — **`#[cfg(feature = "tantivy-search")]`**
-  Tantivy schema, `FulltextIndex` builder (`add_document` / `commit`), and
-  `query(text) -> Vec<FileHit>` skeleton, with cfg-gated unit tests.
+  production Tantivy schema, persistent build/query/upsert/remove implementation,
+  with cfg-gated unit tests.
 - `src-tauri/src/indexer/mft.rs` — **doc-only phase-2 stub** (no `unsafe`, no
   `ntfs-reader` dep yet) describing the MFT/USN accelerator and the elevation
   fallback contract.

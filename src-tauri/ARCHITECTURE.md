@@ -178,13 +178,16 @@ File system indexing for fast file search.
 
 - **scanner.rs**: Background file system scanning
 - **search.rs**: File search with scoring
-- **search_engine.rs**: Advanced search engine
-- **database.rs**: Indexed file database
-- **watcher.rs**: File system watcher (notify v6)
+- **search_engine.rs**: Default nucleo search engine and fallback
+- **fulltext.rs**: Optional persistent Tantivy backend (`tantivy-search`)
+- **database.rs**: SQLite source of truth with transactional snapshot replacement
+- **watcher.rs**: File system watcher (notify v6), synchronized with SQLite/cache/Tantivy
 - **types.rs**: Indexer-specific types
 - **file_history.rs**: File access history tracking
 - **windows_search.rs**: (Windows) Windows Search Index OLE DB query as supplementary file source
-- Background scanning with incremental updates
+- Background scanning preserves the previous coherent index until the replacement commits
+- Tantivy exact/BM25/prefix/fuzzy search, persistent startup reuse and hidden-file filtering
+- Watcher shutdown joins its worker before rebuilds
 - Configurable paths and extensions
 - Windows integration: Registry Uninstall + Shell AppsFolder + Windows Search Index as supplementary sources
 
