@@ -551,20 +551,30 @@ pub fn run() {
             // Prime the CPU baseline in the background so the first user
             // query returns a meaningful value. sysinfo requires two
             // `refresh_cpu_usage()` calls separated by MINIMUM_CPU_UPDATE_INTERVAL.
+            // The prime itself does a synchronous `std::thread::sleep` inside
+            // sysinfo's dual-sample, so we offload it to a blocking worker
+            // (same pattern as the ticker below) to avoid parking a Tokio
+            // worker thread for ~200ms at boot.
             let priming_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 tokio::time::sleep(sysinfo::MINIMUM_CPU_UPDATE_INTERVAL).await;
                 if let Some(state) = priming_handle.try_state::<SystemMonitorState>() {
-                    match state.monitor.lock() {
-                        Ok(monitor) => {
-                            if let Err(e) = monitor.prime_cpu() {
-                                warn!("Failed to prime CPU baseline: {}", e);
-                            } else {
-                                info!("System monitor CPU baseline primed");
+                    let monitor_arc = state.monitor.clone();
+                    let _ = tokio::task::spawn_blocking(move || {
+                        match monitor_arc.lock() {
+                            Ok(monitor) => {
+                                if let Err(e) = monitor.prime_cpu() {
+                                    warn!("Failed to prime CPU baseline: {}", e);
+                                } else {
+                                    info!("System monitor CPU baseline primed");
+                                }
+                            }
+                            Err(e) => {
+                                warn!("SystemMonitorState lock poisoned during prime: {}", e)
                             }
                         }
-                        Err(e) => warn!("SystemMonitorState lock poisoned during prime: {}", e),
-                    }
+                    })
+                    .await;
                 }
             });
 

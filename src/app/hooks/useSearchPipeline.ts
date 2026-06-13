@@ -16,7 +16,6 @@ import { parseQuery } from '../../shared/utils/queryParser';
 import { detectUrl } from '../../shared/utils/urlDetector';
 import { useAppStore } from '../../stores/appStore';
 import { useSearchStore } from '../../stores/searchStore';
-import { mergeSearchResults } from '../searchResults';
 
 /** Shorten a file path for display: C:\Users\Noluc\Documents\foo.txt → ~\Documents\foo.txt */
 function shortenPath(fullPath: string): string {
@@ -63,13 +62,6 @@ const PLUGIN_KEYWORDS: Record<string, string[]> = {
   games: ['game', 'jeu', 'steam', 'epic', 'gog'],
   clipboard: ['clipboard', 'presse-papier', 'copier', 'coller'],
   shellcommand: ['>'],
-  snippets: [';', 'snippet', 'snippets'],
-  quicklinks: ['ql', 'quicklink', 'quicklinks', 'link', 'bookmark'],
-  'window-management': ['window', 'snap', 'tile', 'maximize', 'minimize', 'fullscreen'],
-  'developer-tools': [
-    'uuid', 'guid', 'base64', 'b64', 'md5', 'sha1', 'sha256', 'sha512', 'hash', 'color', 'lorem',
-    'lipsum',
-  ],
 };
 
 // Check if query matches any plugin keywords
@@ -129,7 +121,7 @@ const convertApps = (
         subtitle: appWithScore.description || undefined,
         icon: appWithScore.icon,
         score: SEARCH_SCORING.APPLICATION + adjustedScore,
-        data: appWithScore,
+        data: appWithScore as AppInfo,
       };
     });
 };
@@ -157,7 +149,7 @@ const convertFiles = (files: FileSearchResultCompact[]): SearchResult[] => {
       subtitle: shortenPath(file.path),
       icon: file.icon,
       score: SEARCH_SCORING.FILE + Math.round((file.score / maxFileScore) * 50),
-      data: file,
+      data: file as unknown as FileInfo,
     }));
 };
 
@@ -239,6 +231,13 @@ export function useSearchPipeline({
   const allApps = useAppStore((s) => s.allApps);
   const searchSensitivity: SearchSensitivity =
     useAppStore((s) => s.settings?.general.searchSensitivity) ?? 'medium';
+  // App shortcuts carry user-defined aliases. We pass them to the backend
+  // cascade ranker on every search so alias-exact / alias-prefix tiers fire
+  // (e.g. typing "gh" launches GitHub when GitHub.alias = "gh").
+  const appShortcuts = useAppStore((s) => s.settings?.shortcuts?.appShortcuts);
+  // Fallback commands run when the regular search returns no results. They are
+  // user-configurable in Settings → Fallback Commands.
+  const fallbackCommands = useAppStore((s) => s.settings?.fallbacks?.commands);
   const searchQuery = useSearchStore((s) => s.searchQuery);
   const results = useSearchStore((s) => s.results);
   const selectedIndex = useSearchStore((s) => s.selectedIndex);
@@ -281,7 +280,7 @@ export function useSearchPipeline({
                 name: record.name,
                 path: record.path,
                 usageCount: record.launchCount,
-              },
+              } as AppInfo,
             }));
             setResults(predictiveResults);
           } else {
@@ -349,9 +348,12 @@ export function useSearchPipeline({
       try {
         const searchId = ++latestSearchId.current;
 
-        // Merge helper: sort by score, collapse duplicate apps, then limit.
+        // Merge helper: sort by score, limit
         const mergeResults = (...sources: SearchResult[][]): SearchResult[] =>
-          mergeSearchResults(maxResults + SEARCH_LIMITS.MAX_RESULTS_BUFFER, ...sources);
+          sources
+            .flat()
+            .sort((a, b) => b.score - a.score)
+            .slice(0, maxResults + 4);
 
         // Accumulated partial results from streaming
         let streamedApps: SearchResult[] = [];
@@ -403,6 +405,7 @@ export function useSearchPipeline({
                   : null,
               },
               apps: allApps,
+              shortcuts: appShortcuts ?? null,
               onEvent: channel,
             }).catch((err) => {
               logger.warn('Streaming search failed, results may be partial:', extractErrorMessage(err));
@@ -450,38 +453,81 @@ export function useSearchPipeline({
               subtitle: 'Press Enter to open in browser',
               score: SEARCH_SCORING.PLUGIN_KEYWORD_BOOST + 200,
               data: { url: detectedUrl },
-            },
+            } as import('../../shared/types/common.types').PluginResultData,
           };
           allResults.unshift(urlResult);
           // Re-sort so score ordering is respected
           allResults.sort((a, b) => b.score - a.score);
         }
 
-        // Fallback: show web search options when no results found
+        // Fallback Commands — Raycast-style. When the regular search returns
+        // nothing, surface user-configured fallbacks (search engines, AI prompts,
+        // custom shell commands) that take the typed query as input.
         if (allResults.length === 0 && effectiveQuery.trim()) {
+          const enabled = (fallbackCommands ?? [])
+            .filter((cmd) => cmd.enabled)
+            .sort((a, b) => a.order - b.order);
+
           const encoded = encodeURIComponent(effectiveQuery);
-          const fallbackEngines = [
-            { engine: 'google', label: 'Google', url: `https://www.google.com/search?q=${encoded}` },
-            { engine: 'duckduckgo', label: 'DuckDuckGo', url: `https://duckduckgo.com/?q=${encoded}` },
-            { engine: 'youtube', label: 'YouTube', url: `https://www.youtube.com/results?search_query=${encoded}` },
-          ];
-          fallbackEngines.forEach(({ engine, label, url }) => {
-            const fallbackId = `websearch-fallback-${engine}-${searchId}`;
+          const substitute = (tpl: string): string =>
+            tpl.replace(/\{query\}/g, encoded).replace(/\{rawQuery\}/g, effectiveQuery);
+
+          enabled.forEach((cmd, idx) => {
+            // Resolved URL/command after placeholder substitution.
+            const resolvedTarget = substitute(cmd.target);
+            const resolvedLabel = substitute(cmd.label);
+            const fallbackId = `fallback-${cmd.id}-${searchId}`;
+            // Score descending in fallback order so the user's preferred
+            // fallback is selected by default. Stays well below any real
+            // result (worst real fuzzy match is in the 200+ tier).
+            const fallbackScore = 10 - idx;
+
+            if (cmd.kind === 'shell') {
+              // Shell kind: dispatch via ShellCommandPlugin. The plugin reads
+              // `data.command` and pipes it through the standard streaming
+              // shell pipeline (validation, redaction, output events).
+              const shellData: PluginResultData = {
+                id: fallbackId,
+                type: PluginResultType.ShellCommand,
+                title: resolvedLabel,
+                subtitle: `Run: ${resolvedTarget}`,
+                score: 90,
+                pluginId: 'shellcommand',
+                data: { command: resolvedTarget, status: 'pending' },
+              };
+              allResults.push({
+                id: fallbackId,
+                type: SearchResultType.ShellCommand,
+                title: resolvedLabel,
+                subtitle: `Run: ${resolvedTarget}`,
+                icon: cmd.icon,
+                score: fallbackScore,
+                badge: 'Fallback',
+                data: shellData,
+              });
+              return;
+            }
+
+            // webSearch + url kinds — open the resolved URL in the default
+            // browser. WebSearch is the existing dispatch path that already
+            // handles URL opening via the WebSearchPlugin.
+            const webData: PluginResultData = {
+              id: fallbackId,
+              type: PluginResultType.WebSearch,
+              title: resolvedLabel,
+              subtitle: 'Press Enter to open in browser',
+              score: 90,
+              data: { query: effectiveQuery, engine: cmd.id, url: resolvedTarget },
+            };
             allResults.push({
               id: fallbackId,
               type: SearchResultType.WebSearch,
-              title: `Search "${effectiveQuery}" on ${label}`,
+              title: resolvedLabel,
               subtitle: 'Press Enter to open in browser',
-              score: 1,
+              icon: cmd.icon,
+              score: fallbackScore,
               badge: 'Fallback',
-              data: {
-                id: fallbackId,
-                type: 'websearch',
-                title: `Search "${effectiveQuery}" on ${label}`,
-                subtitle: 'Press Enter to open in browser',
-                score: 90,
-                data: { query: effectiveQuery, engine, url },
-              },
+              data: webData,
             });
           });
         }
@@ -494,7 +540,16 @@ export function useSearchPipeline({
         setSearchError(`Search failed: ${errorMessage}`);
       }
     },
-    [allApps, maxResults, searchSensitivity, setResults, setSearchError, setShowSnowEffect]
+    [
+      allApps,
+      appShortcuts,
+      fallbackCommands,
+      maxResults,
+      searchSensitivity,
+      setResults,
+      setSearchError,
+      setShowSnowEffect,
+    ]
   );
 
   // Debounced search effect — adaptive: 150ms for short queries, 80ms for longer ones

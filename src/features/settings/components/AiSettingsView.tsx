@@ -1,19 +1,9 @@
 import { invoke } from '@tauri-apps/api/core';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import {
-  Eye,
-  EyeOff,
-  ExternalLink,
-  Plus,
-  Trash2,
-  CheckCircle,
-  XCircle,
-  Loader,
-} from 'lucide-react';
+import { Eye, EyeOff, ExternalLink, Plus, Trash2, CheckCircle, XCircle, Loader } from 'lucide-react';
 import { AiProfileSection } from '../../ai-profile';
 import { QuickActionsSection } from '../../ai-quick-actions';
-import { AiProviderLogo } from '../../../shared/components/ui';
 
 interface ProviderStatus {
   provider: string;
@@ -23,6 +13,7 @@ interface ProviderStatus {
 interface ProviderMeta {
   id: string;
   label: string;
+  logo: string;
   consoleUrl: string;
   defaultModel: string;
 }
@@ -31,41 +22,82 @@ const PROVIDERS: ProviderMeta[] = [
   {
     id: 'openai',
     label: 'OpenAI',
+    logo: '/ai/openai-color.webp',
     consoleUrl: 'https://platform.openai.com/api-keys',
-    defaultModel: 'GPT-4o',
+    defaultModel: 'GPT-5.5',
   },
   {
     id: 'anthropic',
     label: 'Anthropic',
+    logo: '/ai/claude-color.svg',
     consoleUrl: 'https://console.anthropic.com/settings/keys',
-    defaultModel: 'Claude Sonnet',
+    defaultModel: 'Claude Opus 4.7',
   },
   {
     id: 'groq',
     label: 'Groq',
+    logo: '/ai/groq.svg',
     consoleUrl: 'https://console.groq.com/keys',
     defaultModel: 'Llama 3.3 70B',
   },
+  {
+    id: 'huggingface',
+    label: 'Hugging Face',
+    logo: '/ai/huggingface-color.webp',
+    consoleUrl:
+      'https://huggingface.co/settings/tokens/new?ownUserPermissions=inference.serverless.write&tokenType=fineGrained',
+    defaultModel: 'DeepSeek V4 Pro',
+  },
 ];
 
-function ProviderMark({ provider, label }: { provider: string; label: string }) {
+/**
+ * Provider logos that ship as a black-on-transparent asset. We render on a
+ * dark canvas, so we flip these to white via a CSS filter. Single source of
+ * truth — keep in sync with the matching constants in AiChatView/QuickAiView.
+ */
+const MONOCHROME_LOGO_RE = /\/(openai|groq)/;
+
+function ProviderLogo({ logo, label }: { logo: string; label: string }) {
+  const [errored, setErrored] = useState(false);
+
+  if (errored) {
+    const initials = label.slice(0, 2).toUpperCase();
+    return (
+      <div
+        style={{
+          width: 32,
+          height: 32,
+          borderRadius: 8,
+          background: 'var(--color-surface)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontSize: 11,
+          fontWeight: 700,
+          color: 'var(--color-ink)',
+          flexShrink: 0,
+        }}
+      >
+        {initials}
+      </div>
+    );
+  }
+
+  const isMono = MONOCHROME_LOGO_RE.test(logo);
   return (
-    <span
+    <img
+      src={logo}
+      alt={label}
+      width={32}
+      height={32}
       style={{
-        width: 32,
-        height: 32,
-        borderRadius: 9,
-        background: 'var(--color-canvas)',
-        border: '1px solid var(--color-hairline)',
-        display: 'inline-flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        color: 'var(--color-ink)',
+        borderRadius: 8,
         flexShrink: 0,
+        objectFit: 'contain',
+        filter: isMono ? 'invert(1)' : undefined,
       }}
-    >
-      <AiProviderLogo provider={provider} label={label} size={20} />
-    </span>
+      onError={() => setErrored(true)}
+    />
   );
 }
 
@@ -113,8 +145,10 @@ function AddKeyModal({ onClose, onSaved, initialProvider }: AddKeyModalProps) {
     try {
       await invoke('ai_set_global_key', { provider, key: apiKey.trim() });
       onSaved();
-    } catch (_err) {
+    } catch (err) {
       setSaving(false);
+      setVerifyState('error');
+      setVerifyError(String(err));
     }
   }, [provider, apiKey, onSaved]);
 
@@ -152,33 +186,19 @@ function AddKeyModal({ onClose, onSaved, initialProvider }: AddKeyModalProps) {
         onClick={(e) => e.stopPropagation()}
         onKeyDown={handleKeyDown}
       >
-        <h2
-          style={{ margin: '0 0 20px', fontSize: 15, fontWeight: 600, color: 'var(--color-ink)' }}
-        >
+        <h2 style={{ margin: '0 0 20px', fontSize: 15, fontWeight: 600, color: 'var(--color-ink)' }}>
           {t('ai.modal.title')}
         </h2>
 
         {/* Provider selector */}
-        <label
-          style={{
-            display: 'block',
-            marginBottom: 4,
-            fontSize: 12,
-            color: 'var(--color-mute)',
-            fontWeight: 500,
-          }}
-        >
+        <label style={{ display: 'block', marginBottom: 4, fontSize: 12, color: 'var(--color-mute)', fontWeight: 500 }}>
           {t('ai.modal.provider')}
         </label>
         <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
           {PROVIDERS.map((p) => (
             <button
               key={p.id}
-              onClick={() => {
-                setProvider(p.id);
-                setVerifyState('idle');
-                setVerifyError('');
-              }}
+              onClick={() => { setProvider(p.id); setVerifyState('idle'); setVerifyError(''); }}
               style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -186,7 +206,10 @@ function AddKeyModal({ onClose, onSaved, initialProvider }: AddKeyModalProps) {
                 padding: '7px 12px',
                 borderRadius: 8,
                 border: `1.5px solid ${provider === p.id ? 'var(--color-accent)' : 'var(--color-hairline)'}`,
-                background: provider === p.id ? 'var(--color-accent)/10' : 'var(--color-surface)',
+                background:
+                  provider === p.id
+                    ? 'color-mix(in srgb, var(--color-accent) 10%, transparent)'
+                    : 'var(--color-surface)',
                 cursor: 'pointer',
                 fontSize: 13,
                 fontWeight: 500,
@@ -194,22 +217,14 @@ function AddKeyModal({ onClose, onSaved, initialProvider }: AddKeyModalProps) {
                 transition: 'border-color 0.15s',
               }}
             >
-              <ProviderMark provider={p.id} label={p.label} />
+              <ProviderLogo logo={p.logo} label={p.label} />
               {p.label}
             </button>
           ))}
         </div>
 
         {/* API Key input */}
-        <label
-          style={{
-            display: 'block',
-            marginBottom: 4,
-            fontSize: 12,
-            color: 'var(--color-mute)',
-            fontWeight: 500,
-          }}
-        >
+        <label style={{ display: 'block', marginBottom: 4, fontSize: 12, color: 'var(--color-mute)', fontWeight: 500 }}>
           {t('ai.modal.apiKey')}
         </label>
         <div style={{ position: 'relative', marginBottom: 8 }}>
@@ -217,11 +232,7 @@ function AddKeyModal({ onClose, onSaved, initialProvider }: AddKeyModalProps) {
             ref={inputRef}
             type={showKey ? 'text' : 'password'}
             value={apiKey}
-            onChange={(e) => {
-              setApiKey(e.target.value);
-              setVerifyState('idle');
-              setVerifyError('');
-            }}
+            onChange={(e) => { setApiKey(e.target.value); setVerifyState('idle'); setVerifyError(''); }}
             placeholder={t('ai.modal.placeholder', { provider: meta.label })}
             style={{
               width: '100%',
@@ -276,31 +287,12 @@ function AddKeyModal({ onClose, onSaved, initialProvider }: AddKeyModalProps) {
 
         {/* Verify status */}
         {verifyState === 'ok' && (
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 6,
-              marginBottom: 16,
-              fontSize: 13,
-              color: '#22c55e',
-            }}
-          >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 16, fontSize: 13, color: '#22c55e' }}>
             <CheckCircle size={14} /> {t('ai.modal.verified')}
           </div>
         )}
         {verifyState === 'error' && (
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 6,
-              marginBottom: 16,
-              fontSize: 13,
-              color: 'var(--color-accent-red)',
-              flexWrap: 'wrap',
-            }}
-          >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 16, fontSize: 13, color: 'var(--color-accent-red)', flexWrap: 'wrap' }}>
             <XCircle size={14} /> {verifyError || t('ai.modal.invalid')}
           </div>
         )}
@@ -324,9 +316,7 @@ function AddKeyModal({ onClose, onSaved, initialProvider }: AddKeyModalProps) {
               gap: 6,
             }}
           >
-            {verifyState === 'loading' ? (
-              <Loader size={13} style={{ animation: 'spin 1s linear infinite' }} />
-            ) : null}
+            {verifyState === 'loading' ? <Loader size={13} style={{ animation: 'spin 1s linear infinite' }} /> : null}
             {t('ai.modal.verify')}
           </button>
           <button
@@ -389,20 +379,17 @@ export function AiSettingsView() {
     void refresh();
   }, [refresh]);
 
-  const handleDelete = useCallback(
-    async (provider: string) => {
-      setDeleting(provider);
-      try {
-        await invoke('ai_delete_global_key', { provider });
-        await refresh();
-      } catch (_err) {
-        // ignore
-      } finally {
-        setDeleting(null);
-      }
-    },
-    [refresh]
-  );
+  const handleDelete = useCallback(async (provider: string) => {
+    setDeleting(provider);
+    try {
+      await invoke('ai_delete_global_key', { provider });
+      await refresh();
+    } catch (_err) {
+      // ignore
+    } finally {
+      setDeleting(null);
+    }
+  }, [refresh]);
 
   const handleAdd = useCallback((providerId?: string) => {
     setSelectedProvider(providerId);
@@ -437,9 +424,7 @@ export function AiSettingsView() {
 
       {/* Body */}
       <div style={{ flex: 1, overflowY: 'auto', padding: '24px' }}>
-        <p
-          style={{ margin: '0 0 24px', fontSize: 13, color: 'var(--color-mute)', lineHeight: 1.6 }}
-        >
+        <p style={{ margin: '0 0 24px', fontSize: 13, color: 'var(--color-mute)', lineHeight: 1.6 }}>
           {t('ai.description')}
         </p>
 
@@ -458,13 +443,10 @@ export function AiSettingsView() {
               alignItems: 'center',
               justifyContent: 'space-between',
               padding: '12px 16px',
-              borderBottom:
-                configuredProviders.length > 0 ? '1px solid var(--color-hairline)' : 'none',
+              borderBottom: configuredProviders.length > 0 ? '1px solid var(--color-hairline)' : 'none',
             }}
           >
-            <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-ink)' }}>
-              {t('ai.apiKeys')}
-            </span>
+            <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-ink)' }}>{t('ai.apiKeys')}</span>
             <button
               onClick={() => handleAdd()}
               style={{
@@ -487,9 +469,7 @@ export function AiSettingsView() {
           </div>
 
           {loading ? (
-            <div
-              style={{ padding: 40, textAlign: 'center', color: 'var(--color-mute)', fontSize: 13 }}
-            >
+            <div style={{ padding: 40, textAlign: 'center', color: 'var(--color-mute)', fontSize: 13 }}>
               {t('ai.loading')}
             </div>
           ) : configuredProviders.length === 0 ? (
@@ -499,9 +479,7 @@ export function AiSettingsView() {
                 textAlign: 'center',
               }}
             >
-              <div style={{ fontSize: 13, color: 'var(--color-mute)', marginBottom: 16 }}>
-                {t('ai.noKeys')}
-              </div>
+              <div style={{ fontSize: 13, color: 'var(--color-mute)', marginBottom: 16 }}>{t('ai.noKeys')}</div>
               <div style={{ display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap' }}>
                 {PROVIDERS.map((p) => (
                   <button
@@ -520,7 +498,7 @@ export function AiSettingsView() {
                       cursor: 'pointer',
                     }}
                   >
-                    <ProviderMark provider={p.id} label={p.label} />
+                    <ProviderLogo logo={p.logo} label={p.label} />
                     {p.label}
                   </button>
                 ))}
@@ -539,17 +517,12 @@ export function AiSettingsView() {
                       alignItems: 'center',
                       gap: 12,
                       padding: '12px 16px',
-                      borderBottom:
-                        idx < configuredProviders.length - 1
-                          ? '1px solid var(--color-hairline)'
-                          : 'none',
+                      borderBottom: idx < configuredProviders.length - 1 ? '1px solid var(--color-hairline)' : 'none',
                     }}
                   >
-                    <ProviderMark provider={meta.id} label={meta.label} />
+                    <ProviderLogo logo={meta.logo} label={meta.label} />
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--color-ink)' }}>
-                        {meta.label}
-                      </div>
+                      <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--color-ink)' }}>{meta.label}</div>
                       <div style={{ fontSize: 12, color: 'var(--color-mute)' }}>
                         {t('ai.defaultModel', { model: meta.defaultModel })}
                       </div>
@@ -605,47 +578,45 @@ export function AiSettingsView() {
               })}
 
               {/* Show unconfigured providers as quick-add shortcuts */}
-              {statuses
-                .filter((s) => !s.hasKey)
-                .map((status) => {
-                  const meta = PROVIDERS.find((p) => p.id === status.provider);
-                  if (!meta) return null;
-                  return (
-                    <div
-                      key={status.provider}
+              {statuses.filter((s) => !s.hasKey).map((status) => {
+                const meta = PROVIDERS.find((p) => p.id === status.provider);
+                if (!meta) return null;
+                return (
+                  <div
+                    key={status.provider}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 12,
+                      padding: '12px 16px',
+                      borderTop: '1px solid var(--color-hairline)',
+                      opacity: 0.6,
+                    }}
+                  >
+                    <ProviderLogo logo={meta.logo} label={meta.label} />
+                    <div style={{ flex: 1, fontSize: 13, color: 'var(--color-mute)' }}>
+                      {t('ai.notConfigured', { provider: meta.label })}
+                    </div>
+                    <button
+                      onClick={() => handleAdd(meta.id)}
                       style={{
                         display: 'flex',
                         alignItems: 'center',
-                        gap: 12,
-                        padding: '12px 16px',
-                        borderTop: '1px solid var(--color-hairline)',
-                        opacity: 0.6,
+                        gap: 4,
+                        padding: '5px 10px',
+                        borderRadius: 7,
+                        border: '1.5px solid var(--color-hairline)',
+                        background: 'none',
+                        color: 'var(--color-ink)',
+                        fontSize: 12,
+                        cursor: 'pointer',
                       }}
                     >
-                      <ProviderMark provider={meta.id} label={meta.label} />
-                      <div style={{ flex: 1, fontSize: 13, color: 'var(--color-mute)' }}>
-                        {t('ai.notConfigured', { provider: meta.label })}
-                      </div>
-                      <button
-                        onClick={() => handleAdd(meta.id)}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 4,
-                          padding: '5px 10px',
-                          borderRadius: 7,
-                          border: '1.5px solid var(--color-hairline)',
-                          background: 'none',
-                          color: 'var(--color-ink)',
-                          fontSize: 12,
-                          cursor: 'pointer',
-                        }}
-                      >
-                        <Plus size={12} /> {t('ai.addKey')}
-                      </button>
-                    </div>
-                  );
-                })}
+                      <Plus size={12} /> {t('ai.addKey')}
+                    </button>
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>
@@ -655,6 +626,7 @@ export function AiSettingsView() {
 
         {/* Quick Actions */}
         <QuickActionsSection />
+
 
         {/* Info callout */}
         <div
@@ -669,27 +641,9 @@ export function AiSettingsView() {
           }}
         >
           {t('ai.infoBefore')}{' '}
-          <code
-            style={{
-              fontFamily: 'monospace',
-              background: 'var(--color-surface)',
-              padding: '1px 4px',
-              borderRadius: 4,
-            }}
-          >
-            VoltAPI.ai.ask()
-          </code>
+          <code style={{ fontFamily: 'monospace', background: 'var(--color-surface)', padding: '1px 4px', borderRadius: 4 }}>VoltAPI.ai.ask()</code>
           {t('ai.infoMiddle')}{' '}
-          <code
-            style={{
-              fontFamily: 'monospace',
-              background: 'var(--color-surface)',
-              padding: '1px 4px',
-              borderRadius: 4,
-            }}
-          >
-            ai
-          </code>{' '}
+          <code style={{ fontFamily: 'monospace', background: 'var(--color-surface)', padding: '1px 4px', borderRadius: 4 }}>ai</code>{' '}
           {t('ai.infoAfter')}
         </div>
       </div>

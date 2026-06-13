@@ -1,5 +1,17 @@
-import { lazy, Suspense, useDeferredValue } from 'react';
+import { useDeferredValue } from 'react';
 import { useTranslation } from 'react-i18next';
+import { ChangelogView } from '../../features/changelog';
+import { ClipboardHistoryView } from '../../features/clipboard';
+import { CreateExtensionView, ManageExtensionsView } from '../../features/developer';
+import { FileSearchView } from '../../features/files';
+import {
+  AiChatView,
+  CalculatorView,
+  EmojiPickerView,
+  GameView,
+  QuickAiView,
+  TimerView,
+} from '../../features/plugins/builtin';
 import { ResultsList } from '../../features/results/components/ResultsList';
 import { SuggestionsView } from '../../features/suggestions';
 import { ErrorMessage, Spinner } from '../../shared/components/ui';
@@ -8,67 +20,6 @@ import { SearchResult } from '../../shared/types/common.types';
 import { useAppStore } from '../../stores/appStore';
 import { useSearchStore } from '../../stores/searchStore';
 import { useUiStore } from '../../stores/uiStore';
-
-// Heavy secondary views are loaded on demand to keep the boot bundle small —
-// only the search/results/suggestions path above is eager. Each view is a
-// named export, so we adapt it to the default-export shape that React.lazy
-// expects. Importing the component file directly (not the feature barrel)
-// avoids dragging the rest of the barrel into the boot graph.
-const AiChatView = lazy(() =>
-  import('../../features/plugins/builtin/ai-chat/components/AiChatView').then((m) => ({
-    default: m.AiChatView,
-  }))
-);
-const QuickAiView = lazy(() =>
-  import('../../features/plugins/builtin/ai-chat/components/QuickAiView').then((m) => ({
-    default: m.QuickAiView,
-  }))
-);
-const CalculatorView = lazy(() =>
-  import('../../features/plugins/builtin/calculator/components/CalculatorView').then((m) => ({
-    default: m.CalculatorView,
-  }))
-);
-const EmojiPickerView = lazy(() =>
-  import('../../features/plugins/builtin/emoji-picker/components/EmojiPickerView').then((m) => ({
-    default: m.EmojiPickerView,
-  }))
-);
-const GameView = lazy(() =>
-  import('../../features/plugins/builtin/games/components/GameView').then((m) => ({
-    default: m.GameView,
-  }))
-);
-const TimerView = lazy(() =>
-  import('../../features/plugins/builtin/timer/TimerView').then((m) => ({
-    default: m.TimerView,
-  }))
-);
-const ClipboardHistoryView = lazy(() =>
-  import('../../features/clipboard/components/ClipboardHistoryView').then((m) => ({
-    default: m.ClipboardHistoryView,
-  }))
-);
-const FileSearchView = lazy(() =>
-  import('../../features/files/components/FileSearchView').then((m) => ({
-    default: m.FileSearchView,
-  }))
-);
-const ChangelogView = lazy(() =>
-  import('../../features/changelog/components/ChangelogView').then((m) => ({
-    default: m.ChangelogView,
-  }))
-);
-const CreateExtensionView = lazy(() =>
-  import('../../features/developer/components/CreateExtensionView').then((m) => ({
-    default: m.CreateExtensionView,
-  }))
-);
-const ManageExtensionsView = lazy(() =>
-  import('../../features/developer/components/ManageExtensionsView').then((m) => ({
-    default: m.ManageExtensionsView,
-  }))
-);
 
 interface ViewRouterProps {
   onSelectEmoji: (emoji: string) => void;
@@ -108,97 +59,52 @@ export function ViewRouter({ onSelectEmoji, onLaunchResult, onActivateSuggestion
     useSearchStore.getState().setSelectedIndex(globalIndex + itemIndex);
   };
 
-  // Lightweight fallback while a lazy view chunk is fetched. Reuses the shared
-  // Spinner so there is no jarring flash between views.
-  const viewFallback = (
-    <div className="loading-container">
-      <Spinner size="medium" />
-    </div>
-  );
-
   switch (activeView.type) {
     case 'ai-chat':
       return (
-        <Suspense fallback={viewFallback}>
-          <AiChatView
-            onClose={resetToSearchView}
-            initialQuery={activeView.initialQuery}
-            systemPrompt={activeView.systemPrompt}
-          />
-        </Suspense>
+        <AiChatView
+          onClose={resetToSearchView}
+          initialQuery={activeView.initialQuery}
+          systemPrompt={activeView.systemPrompt}
+        />
       );
     case 'quick-ai':
       return (
-        <Suspense fallback={viewFallback}>
-          <QuickAiView
-            onClose={resetToSearchView}
-            initialQuery={activeView.initialQuery}
-            systemPrompt={activeView.systemPrompt}
-          />
-        </Suspense>
+        <QuickAiView
+          onClose={resetToSearchView}
+          initialQuery={activeView.initialQuery}
+          systemPrompt={activeView.systemPrompt}
+        />
       );
     case 'changelog':
-      return (
-        <Suspense fallback={viewFallback}>
-          <ChangelogView onClose={resetToSearchView} />
-        </Suspense>
-      );
+      return <ChangelogView onClose={resetToSearchView} />;
     case 'calculator':
-      return (
-        <Suspense fallback={viewFallback}>
-          <CalculatorView onClose={resetToSearchView} />
-        </Suspense>
-      );
+      return <CalculatorView onClose={resetToSearchView} />;
     case 'emoji':
       return (
-        <Suspense fallback={viewFallback}>
-          <EmojiPickerView
-            onClose={resetToSearchView}
-            onSelectEmoji={onSelectEmoji}
-            initialQuery={activeView.initialQuery || ''}
-          />
-        </Suspense>
+        <EmojiPickerView
+          onClose={resetToSearchView}
+          onSelectEmoji={onSelectEmoji}
+          initialQuery={activeView.initialQuery || ''}
+          initialCategory={activeView.initialCategory}
+        />
       );
     case 'clipboard':
-      return (
-        <Suspense fallback={viewFallback}>
-          <ClipboardHistoryView onClose={resetToSearchView} />
-        </Suspense>
-      );
+      return <ClipboardHistoryView onClose={resetToSearchView} />;
     case 'files':
-      return (
-        <Suspense fallback={viewFallback}>
-          <FileSearchView onClose={resetToSearchView} />
-        </Suspense>
-      );
+      return <FileSearchView onClose={resetToSearchView} />;
     case 'games':
-      return (
-        <Suspense fallback={viewFallback}>
-          <GameView onClose={resetToSearchView} />
-        </Suspense>
-      );
+      return <GameView onClose={resetToSearchView} />;
     case 'timer':
-      return (
-        <Suspense fallback={viewFallback}>
-          <TimerView onClose={resetToSearchView} />
-        </Suspense>
-      );
+      return <TimerView onClose={resetToSearchView} />;
     case 'create-extension':
-      return (
-        <Suspense fallback={viewFallback}>
-          <CreateExtensionView onClose={resetToSearchView} />
-        </Suspense>
-      );
+      return <CreateExtensionView onClose={resetToSearchView} />;
     case 'manage-extensions':
       return (
-        <Suspense fallback={viewFallback}>
-          <ManageExtensionsView
-            onClose={resetToSearchView}
-            onCreateExtension={() =>
-              useUiStore.getState().setActiveView({ type: 'create-extension' })
-            }
-          />
-        </Suspense>
+        <ManageExtensionsView
+          onClose={resetToSearchView}
+          onCreateExtension={() => useUiStore.getState().setActiveView({ type: 'create-extension' })}
+        />
       );
   }
 

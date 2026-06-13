@@ -18,11 +18,30 @@ use crate::commands::files::FileIndexState;
 #[cfg(feature = "tantivy-search")]
 use crate::commands::files::search_files_fulltext;
 use crate::commands::launcher::{LaunchHistoryState, QueryBindingState};
+use crate::commands::settings::AppShortcut;
 use crate::core::error::{VoltError, VoltResult};
 #[cfg(feature = "tantivy-search")]
 use crate::indexer::fulltext::{FulltextIndex, FulltextQueryOptions};
 use crate::indexer::{FileInfo, SearchEngine, SearchOptions};
 use crate::launcher::LaunchRecord;
+
+/// Build a `path → alias` map from a list of shortcuts, skipping entries
+/// that are disabled or have no alias configured. Used by the cascade ranker
+/// to surface alias-exact / alias-prefix tiers.
+fn build_alias_map(shortcuts: &[AppShortcut]) -> std::collections::HashMap<String, String> {
+    shortcuts
+        .iter()
+        .filter(|s| s.enabled)
+        .filter_map(|s| {
+            let alias = s.alias.as_ref()?.trim();
+            if alias.is_empty() {
+                None
+            } else {
+                Some((s.path.clone(), alias.to_string()))
+            }
+        })
+        .collect()
+}
 
 // ============================================================
 // Shared types
@@ -84,6 +103,7 @@ pub enum SearchBatch {
 pub async fn search_all(
     options: SearchAllOptions,
     apps: Vec<AppInfo>,
+    shortcuts: Option<Vec<AppShortcut>>,
     file_state: State<'_, FileIndexState>,
     history_state: State<'_, LaunchHistoryState>,
     binding_state: State<'_, QueryBindingState>,
@@ -97,6 +117,10 @@ pub async fn search_all(
 
     let history = history_state.history.clone();
     let apps_for_search = apps;
+    let aliases = shortcuts
+        .as_deref()
+        .map(build_alias_map)
+        .unwrap_or_default();
 
     // Query bindings for learned preferences (scoped to drop MutexGuard before await)
     let bindings_snapshot = {
@@ -164,6 +188,7 @@ pub async fn search_all(
                 apps_for_search,
                 &frecency,
                 Some(&bindings_snapshot),
+                &aliases,
             )
             .into_iter()
             .map(|(app, score)| AppInfoWithScore { app, score })
@@ -206,6 +231,7 @@ pub async fn search_all(
 pub async fn search_streaming(
     options: SearchAllOptions,
     apps: Vec<AppInfo>,
+    shortcuts: Option<Vec<AppShortcut>>,
     on_event: Channel<SearchBatch>,
     file_state: State<'_, FileIndexState>,
     history_state: State<'_, LaunchHistoryState>,
@@ -215,6 +241,10 @@ pub async fn search_streaming(
 
     let query = options.query.clone();
     let max_results = options.max_results;
+    let aliases = shortcuts
+        .as_deref()
+        .map(build_alias_map)
+        .unwrap_or_default();
 
     // Extract data from State<'_> before spawning (State is not Send)
     let history = history_state.history.clone();
@@ -245,6 +275,7 @@ pub async fn search_streaming(
 
     // --- App search task ---
     let tx_apps = tx.clone();
+    let aliases_for_apps = aliases;
     tokio::spawn(async move {
         // Project history into a path→frecency map under the lock; avoids
         // cloning the whole record set per streaming search.
@@ -259,6 +290,7 @@ pub async fn search_streaming(
             apps,
             &frecency,
             Some(&bindings_snapshot),
+            &aliases_for_apps,
         );
         let scored: Vec<AppInfoWithScore> = results
             .into_iter()

@@ -20,7 +20,7 @@ export type { ActiveView };
 interface UseResultActionsOptions {
   closeOnLaunch: boolean;
   hideWindow: () => Promise<void>;
-  openSettingsWindow: () => Promise<void>;
+  openSettingsWindow: (section?: string) => Promise<void>;
 }
 
 export interface UseResultActionsResult {
@@ -241,6 +241,18 @@ export function useResultActions({
           break;
         case 'manage-extensions':
           setActiveView({ type: 'manage-extensions' });
+          break;
+        case 'ai-chat':
+          setActiveView({ type: 'ai-chat', initialQuery: '' });
+          break;
+        case 'ai-quick-actions':
+          // The AI Settings panel hosts the Quick Actions editor. We open
+          // the settings window with a hash so SettingsApp can land on the
+          // AI section instead of the default General tab.
+          await openSettingsWindow('ai');
+          break;
+        case 'custom-emojis':
+          setActiveView({ type: 'emoji', initialQuery: '', initialCategory: 'custom' });
           break;
         default:
           logger.warn('Unknown suggestion:', item.id);

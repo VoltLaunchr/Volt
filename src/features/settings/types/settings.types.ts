@@ -99,6 +99,29 @@ export interface ShellSettings {
   historySize: number;
 }
 
+/**
+ * Fallback commands — taken over by the search bar when a query returns no
+ * regular results. The typed query is substituted into the `target` template
+ * via `{query}` (URL-encoded) and `{rawQuery}` (unencoded) placeholders.
+ *
+ * Mirrors `FallbackCommand` in `src-tauri/src/commands/settings.rs`.
+ */
+export type FallbackKind = 'webSearch' | 'shell' | 'url';
+
+export interface FallbackCommand {
+  id: string;
+  label: string;
+  icon?: string;
+  kind: FallbackKind;
+  target: string;
+  enabled: boolean;
+  order: number;
+}
+
+export interface FallbacksSettings {
+  commands: FallbackCommand[];
+}
+
 export interface Settings {
   general: GeneralSettings;
   appearance: AppearanceSettings;
@@ -108,6 +131,7 @@ export interface Settings {
   shortcuts: ShortcutsSettings;
   integrations?: IntegrationsSettings;
   shell: ShellSettings;
+  fallbacks: FallbacksSettings;
 }
 
 export type Theme = 'light' | 'dark' | 'auto';
@@ -213,6 +237,55 @@ export const DEFAULT_SETTINGS: Settings = {
     workingDir: null,
     timeoutMs: 30000,
     historySize: 500,
+  },
+  fallbacks: {
+    commands: [
+      {
+        id: 'fallback-google',
+        label: 'Search {rawQuery} on Google',
+        icon: 'globe',
+        kind: 'webSearch',
+        target: 'https://www.google.com/search?q={query}',
+        enabled: true,
+        order: 0,
+      },
+      {
+        id: 'fallback-duckduckgo',
+        label: 'Search {rawQuery} on DuckDuckGo',
+        icon: 'globe',
+        kind: 'webSearch',
+        target: 'https://duckduckgo.com/?q={query}',
+        enabled: true,
+        order: 1,
+      },
+      {
+        id: 'fallback-youtube',
+        label: 'Search {rawQuery} on YouTube',
+        icon: 'youtube',
+        kind: 'webSearch',
+        target: 'https://www.youtube.com/results?search_query={query}',
+        enabled: true,
+        order: 2,
+      },
+      {
+        id: 'fallback-chatgpt',
+        label: 'Ask ChatGPT about {rawQuery}',
+        icon: 'message-circle',
+        kind: 'webSearch',
+        target: 'https://chat.openai.com/?q={query}',
+        enabled: false,
+        order: 3,
+      },
+      {
+        id: 'fallback-perplexity',
+        label: 'Ask Perplexity about {rawQuery}',
+        icon: 'message-circle',
+        kind: 'webSearch',
+        target: 'https://www.perplexity.ai/search?q={query}',
+        enabled: false,
+        order: 4,
+      },
+    ],
   },
   integrations: {
     github: {

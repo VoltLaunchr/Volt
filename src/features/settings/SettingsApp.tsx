@@ -81,7 +81,17 @@ import { cn } from '@/lib/utils';
 export function SettingsApp() {
   const { t } = useTranslation('settings');
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
-  const [activeCategory, setActiveCategory] = useState<SettingsCategory>('general');
+  const [activeCategory, setActiveCategory] = useState<SettingsCategory>(() => {
+    // Deep-link support: openSettingsWindow(section) injects the section into
+    // window.location.hash so the panel can land on the right tab without
+    // requiring a round-trip event. Falls back to 'general' if absent or unknown.
+    if (typeof window === 'undefined') return 'general';
+    const raw = window.location.hash.replace(/^#/, '');
+    if (!raw) return 'general';
+    const decoded = decodeURIComponent(raw);
+    const valid = SETTINGS_CATEGORIES.some((c) => c.id === decoded);
+    return valid ? (decoded as SettingsCategory) : 'general';
+  });
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -202,6 +212,26 @@ export function SettingsApp() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  // Switch to a target section when the main window pings us via Tauri event.
+  // This covers the case where the settings window is already open — the URL
+  // hash only fires on initial mount, so we need a second channel.
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    void (async () => {
+      const { listen } = await import('@tauri-apps/api/event');
+      unlisten = await listen<{ section?: string }>('volt://settings-navigate', (e) => {
+        const section = e.payload?.section;
+        if (!section) return;
+        if (SETTINGS_CATEGORIES.some((c) => c.id === section)) {
+          setActiveCategory(section as SettingsCategory);
+        }
+      });
+    })();
+    return () => {
+      if (unlisten) unlisten();
+    };
   }, []);
 
   const loadAppShortcuts = useCallback(async () => {

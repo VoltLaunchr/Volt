@@ -6,7 +6,8 @@
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
-  GitBranch,
+  // `Github` brand icon was removed in lucide-react v1.x. Use a neutral fallback.
+  GitBranch as Github,
   Database,
   AlertCircle,
   CheckCircle,
@@ -38,7 +39,7 @@ const INTEGRATIONS: IntegrationConfig[] = [
   {
     id: 'github',
     name: 'GitHub',
-    icon: GitBranch,
+    icon: Github,
     descriptionKey: 'integrations.github.description',
     setupUrl: 'https://voltlaunchr.com/api/oauth/github',
     docUrl: 'https://github.com/VoltLaunchr/volt-extensions/blob/main/plugins/github/README.md',

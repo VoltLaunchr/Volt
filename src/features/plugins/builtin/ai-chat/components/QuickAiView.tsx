@@ -1,17 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import {
-  ArrowLeft,
-  Copy,
-  MessageSquare,
-  RotateCw,
-  Sparkles,
-  AlertCircle,
-  Check,
-} from 'lucide-react';
+import { ArrowLeft, Copy, MessageSquare, RotateCw, Sparkles, AlertCircle, Check } from 'lucide-react';
 import { useAiChat } from '../hooks/useAiChat';
-import { VOLT_EVENTS, emitVoltEvent } from '../../../../../shared/events';
-import { AiProviderLogo } from '../../../../../shared/components/ui';
 
 interface ProviderStatus {
   provider: string;
@@ -30,12 +20,29 @@ const PROVIDER_LABELS: Record<string, string> = {
   openai: 'OpenAI',
   anthropic: 'Anthropic',
   groq: 'Groq',
+  huggingface: 'Hugging Face',
 };
 
+const PROVIDER_LOGOS: Record<string, string> = {
+  openai: '/ai/openai-color.webp',
+  anthropic: '/ai/claude-color.svg',
+  groq: '/ai/groq.svg',
+  huggingface: '/ai/huggingface-color.webp',
+};
+
+/**
+ * Provider logos that ship as a black-on-transparent asset. We flip these to
+ * white via a CSS filter to read on dark backgrounds. Keep in sync with the
+ * matching constant in AiSettingsView/AiChatView.
+ */
+const MONOCHROME_LOGO_RE = /\/(openai|groq)/;
+
+// Quick AI is one-shot + clipboard-fed → prefer fast/cheap models.
 const PROVIDER_DEFAULT_MODEL: Record<string, string> = {
-  openai: 'gpt-4o-mini',
+  openai: 'gpt-5.4-nano',
   anthropic: 'claude-haiku-4-5-20251001',
   groq: 'llama-3.1-8b-instant',
+  huggingface: 'Qwen/Qwen3-4B-Thinking-2507',
 };
 
 function StreamingCursor() {
@@ -134,10 +141,14 @@ export function QuickAiView({ onClose, initialQuery, systemPrompt }: QuickAiView
   }, [pendingRegen, messages.length, send]);
 
   const handleOpenInChat = useCallback(() => {
-    emitVoltEvent(VOLT_EVENTS.OPEN_AI_CHAT, {
-      query: lastQueryRef.current,
-      systemPrompt: lastSystemRef.current,
-    });
+    window.dispatchEvent(
+      new CustomEvent('volt:open-ai-chat', {
+        detail: {
+          query: lastQueryRef.current,
+          systemPrompt: lastSystemRef.current,
+        },
+      })
+    );
   }, []);
 
   // Keyboard shortcuts
@@ -146,11 +157,7 @@ export function QuickAiView({ onClose, initialQuery, systemPrompt }: QuickAiView
       if (e.key === 'Escape') {
         e.preventDefault();
         onClose();
-      } else if (
-        (e.metaKey || e.ctrlKey) &&
-        e.key.toLowerCase() === 'c' &&
-        !window.getSelection()?.toString()
-      ) {
+      } else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'c' && !window.getSelection()?.toString()) {
         // Only intercept Cmd/Ctrl+C if nothing is selected (otherwise let native copy work)
         e.preventDefault();
         void handleCopy();
@@ -219,7 +226,20 @@ export function QuickAiView({ onClose, initialQuery, systemPrompt }: QuickAiView
           Quick AI
         </span>
 
-        <AiProviderLogo provider={provider} size={14} />
+        {PROVIDER_LOGOS[provider] && (
+          <img
+            src={PROVIDER_LOGOS[provider]}
+            alt=""
+            width={14}
+            height={14}
+            style={{
+              borderRadius: 3,
+              objectFit: 'contain',
+              opacity: 0.85,
+              filter: MONOCHROME_LOGO_RE.test(PROVIDER_LOGOS[provider]) ? 'invert(1)' : undefined,
+            }}
+          />
+        )}
         <span
           style={{
             fontFamily: 'ui-monospace, monospace',
@@ -245,8 +265,7 @@ export function QuickAiView({ onClose, initialQuery, systemPrompt }: QuickAiView
           }}
         >
           <AlertCircle size={13} style={{ color: 'var(--color-accent)' }} />
-          No API keys configured. Open{' '}
-          <strong style={{ color: 'var(--color-ink)' }}>Settings → AI</strong> to add one.
+          No API keys configured. Open <strong style={{ color: 'var(--color-ink)' }}>Settings → AI</strong> to add one.
         </div>
       )}
 
@@ -276,16 +295,7 @@ export function QuickAiView({ onClose, initialQuery, systemPrompt }: QuickAiView
               wordBreak: 'break-word',
             }}
           >
-            <div
-              style={{
-                fontSize: 10,
-                fontWeight: 600,
-                color: 'var(--color-mute)',
-                textTransform: 'uppercase',
-                letterSpacing: 0.4,
-                marginBottom: 4,
-              }}
-            >
+            <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--color-mute)', textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 4 }}>
               Question
             </div>
             {userMessage.content}
@@ -300,7 +310,8 @@ export function QuickAiView({ onClose, initialQuery, systemPrompt }: QuickAiView
               lineHeight: 1.7,
               padding: '12px 14px',
               borderRadius: 10,
-              background: aiMessage.role === 'error' ? 'rgba(239,68,68,0.08)' : 'transparent',
+              background:
+                aiMessage.role === 'error' ? 'rgba(239,68,68,0.08)' : 'transparent',
               border:
                 aiMessage.role === 'error'
                   ? '1px solid rgba(239,68,68,0.25)'
@@ -310,16 +321,7 @@ export function QuickAiView({ onClose, initialQuery, systemPrompt }: QuickAiView
             }}
           >
             {aiMessage.role === 'error' && (
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 6,
-                  marginBottom: 6,
-                  fontSize: 11,
-                  fontWeight: 600,
-                }}
-              >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6, fontSize: 11, fontWeight: 600 }}>
                 <AlertCircle size={13} />
                 Error
               </div>
@@ -410,7 +412,9 @@ export function QuickAiView({ onClose, initialQuery, systemPrompt }: QuickAiView
 
         <div style={{ flex: 1 }} />
 
-        <span style={{ fontSize: 11, color: 'var(--color-mute)' }}>Esc to close</span>
+        <span style={{ fontSize: 11, color: 'var(--color-mute)' }}>
+          Esc to close
+        </span>
       </div>
     </div>
   );

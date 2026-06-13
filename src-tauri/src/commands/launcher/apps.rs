@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 use std::time::{Duration, SystemTime};
 #[cfg(target_os = "windows")]
 use tokio::sync::Semaphore;
@@ -9,7 +9,6 @@ use tokio::time::timeout;
 use tracing::info;
 #[cfg(target_os = "windows")]
 use tracing::warn;
-use ts_rs::TS;
 
 use crate::commands::launcher::{LaunchHistoryState, execute_launch};
 use crate::core::error::{VoltError, VoltResult};
@@ -60,34 +59,17 @@ fn should_skip_directory(dir_name: &str) -> bool {
         .any(|&skip| dir_name.eq_ignore_ascii_case(skip))
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-#[ts(export, export_to = "AppInfo.ts")]
 pub struct AppInfo {
     pub id: String,
     pub name: String,
     pub path: String,
-    #[ts(optional)]
     pub icon: Option<String>,
-    #[ts(optional)]
     pub description: Option<String>,
-    #[ts(optional)]
     pub keywords: Option<Vec<String>>,
-    // `#[ts(type = "number")]`: serde_json serialises i64 as a JSON number and
-    // Tauri's invoke yields a JS `number` (ms timestamps stay within
-    // Number.MAX_SAFE_INTEGER); ts-rs would otherwise default i64 to `bigint`.
-    #[ts(optional, type = "number")]
     pub last_used: Option<i64>,
-    // u32 maps to `number` by default — no override needed.
     pub usage_count: u32,
-    // DECISION: `category` is `Option<String>` on the wire, so ts-rs generates
-    // `category?: string`. We intentionally do NOT make ts-rs import a
-    // hand-written `AppCategory` union here — wiring a non-ts-rs type into a
-    // generated file is fragile. The frontend keeps its semantic `AppCategory`
-    // enum (src/shared/types/common.types.ts) as the type used at call sites;
-    // the generated binding stays a plain `string`, which is the literal wire
-    // shape produced by `detect_app_category`.
-    #[ts(optional)]
     pub category: Option<String>,
 }
 
@@ -373,15 +355,15 @@ impl ScanCache {
 }
 
 // Global cache with 5-minute expiry
-static SCAN_CACHE: std::sync::LazyLock<Arc<RwLock<Option<ScanCache>>>> =
-    std::sync::LazyLock::new(|| Arc::new(RwLock::new(None)));
+static SCAN_CACHE: LazyLock<Arc<RwLock<Option<ScanCache>>>> =
+    LazyLock::new(|| Arc::new(RwLock::new(None)));
 
 // Single-flight lock: serializes concurrent fresh scans so a second caller
 // piggybacks on the first's result via the cache instead of running its own
 // scan in parallel. Without this, two simultaneous scan_applications calls
 // would both miss the cache, both run a full scan, and the doubled icon
 // extraction + .lnk parsing can OOM the process.
-static SCAN_LOCK: std::sync::LazyLock<Mutex<()>> = std::sync::LazyLock::new(|| Mutex::new(()));
+static SCAN_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
 
 /// Scans system for installed applications (cross-platform)
 /// Uses caching to avoid expensive rescans
@@ -1159,7 +1141,6 @@ fn parse_desktop_file(path: &std::path::Path) -> Option<AppInfo> {
 /// Searches applications based on query
 #[tauri::command]
 pub async fn search_applications(query: String, apps: Vec<AppInfo>) -> VoltResult<Vec<AppInfo>> {
-    crate::time_command!("search_applications");
     Ok(crate::search::search_applications(&query, apps))
 }
 
@@ -1171,9 +1152,6 @@ pub async fn search_applications_frecency(
     history_state: tauri::State<'_, crate::commands::launcher::LaunchHistoryState>,
     binding_state: tauri::State<'_, crate::commands::launcher::QueryBindingState>,
 ) -> VoltResult<Vec<AppInfoWithScore>> {
-    crate::time_command!("search_applications_frecency");
-    // Project the history into a path→frecency map under the lock instead of
-    // cloning every LaunchRecord just to read its score.
     let frecency = history_state.history.with_records(|records| {
         records
             .iter()
@@ -1184,8 +1162,13 @@ pub async fn search_applications_frecency(
         .store
         .lock()
         .map_err(|e| crate::core::error::VoltError::Unknown(e.to_string()))?;
-    let results =
-        crate::search::search_applications_with_frecency(&query, apps, &frecency, Some(&bindings));
+    let results = crate::search::search_applications_with_frecency(
+        &query,
+        apps,
+        &frecency,
+        Some(&bindings),
+        &std::collections::HashMap::new(),
+    );
     Ok(results
         .into_iter()
         .map(|(app, score)| AppInfoWithScore { app, score })

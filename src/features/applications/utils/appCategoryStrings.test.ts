@@ -13,7 +13,10 @@ import { AppCategory } from '../../../shared/types/common.types';
  * TS enum value, and every TS enum value must be reachable from Rust.
  */
 describe('AppCategory Rust↔TS contract', () => {
-  const appsRsPath = join(__dirname, '../../../../src-tauri/src/commands/launcher/apps.rs');
+  const appsRsPath = join(
+    __dirname,
+    '../../../../src-tauri/src/commands/launcher/apps.rs',
+  );
   // Normalize CRLF→LF: on Windows CI the file is checked out with CRLF and
   // the `\n\}\n` regex anchor below would never match the closing brace.
   const source = readFileSync(appsRsPath, 'utf8').replace(/\r\n/g, '\n');
@@ -21,8 +24,11 @@ describe('AppCategory Rust↔TS contract', () => {
   // Extract every `return "X".to_string();` and the trailing default
   // `"X".to_string()` from the function. The detector lives between
   // `fn detect_app_category` and the next top-level item.
-  const detector = source.match(/fn detect_app_category[\s\S]*?\n\}\n/)?.[0] ?? '';
-  expect(detector, 'detect_app_category function should be findable').not.toBe('');
+  const detector =
+    source.match(/fn detect_app_category[\s\S]*?\n\}\n/)?.[0] ?? '';
+  expect(detector, 'detect_app_category function should be findable').not.toBe(
+    '',
+  );
 
   const literals = new Set<string>();
   for (const m of detector.matchAll(/"([a-zA-Z]+)"\.to_string\(\)/g)) {
@@ -37,16 +43,17 @@ describe('AppCategory Rust↔TS contract', () => {
     for (const lit of literals) {
       expect(
         enumValues.has(lit),
-        `Rust returns category "${lit}" which is not in AppCategory enum`
+        `Rust returns category "${lit}" which is not in AppCategory enum`,
       ).toBe(true);
     }
   });
 
   it('every TS enum value is producible by Rust', () => {
     for (const v of enumValues) {
-      expect(literals.has(v), `AppCategory.${v} has no producer in Rust detect_app_category`).toBe(
-        true
-      );
+      expect(
+        literals.has(v),
+        `AppCategory.${v} has no producer in Rust detect_app_category`,
+      ).toBe(true);
     }
   });
 });

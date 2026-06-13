@@ -22,7 +22,7 @@ import { useAppLifecycle } from './hooks/useAppLifecycle';
 import { useGlobalHotkey } from './hooks/useGlobalHotkey';
 import { useResultActions } from './hooks/useResultActions';
 import { useSearchPipeline } from './hooks/useSearchPipeline';
-import { openSettingsWindow } from './utils';
+import { openSettingsWindow } from './windows';
 import { installPendingUpdate, hasPendingUpdate } from '../features/settings/services/updateService';
 import { resolvePlaceholders } from '../features/ai-quick-actions';
 import { VOLT_EVENTS, onVoltEvent, type VoltHudDetail } from '../shared/events';
@@ -96,13 +96,7 @@ function App() {
   useEffect(() => {
     let unlisten: (() => void) | undefined;
     void listen('volt://restart-onboarding', () => {
-      const current = useAppStore.getState().settings;
-      if (current) {
-        useAppStore.getState().setSettings({
-          ...current,
-          general: { ...current.general, hasSeenOnboarding: false },
-        });
-      }
+      useAppStore.getState().updateGeneralSettings({ hasSeenOnboarding: false });
     }).then((fn) => { unlisten = fn; });
     return () => { unlisten?.(); };
   }, []);
@@ -161,13 +155,7 @@ function App() {
   useEffect(() => {
     let unlisten: (() => void) | undefined;
     void listen('volt://onboarding-complete', () => {
-      const current = useAppStore.getState().settings;
-      if (current) {
-        useAppStore.getState().setSettings({
-          ...current,
-          general: { ...current.general, hasSeenOnboarding: true },
-        });
-      }
+      useAppStore.getState().updateGeneralSettings({ hasSeenOnboarding: true });
     }).then((fn) => { unlisten = fn; });
     return () => { unlisten?.(); };
   }, []);

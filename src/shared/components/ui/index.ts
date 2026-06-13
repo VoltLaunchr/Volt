@@ -1,20 +1,19 @@
 export { Modal } from './Modal';
 export type { ModalProps } from './Modal';
 
-export { Button } from './Button';
-export type { ButtonProps } from './Button';
+export { Button, buttonVariants } from './button';
 
 export { Toggle } from './Toggle';
 export type { ToggleProps } from './Toggle';
 
-export { Spinner } from './Spinner';
+export { Spinner } from './spinner';
 
 export { Icon } from './Icon';
 export * from './Icon';
+export type { SpinnerProps } from './spinner';
 export { AiActionIcon } from './AiActionIcon';
 export { AiProviderLogo } from './AiProviderLogo';
 export type { AiProviderId } from './AiProviderLogo';
-export type { SpinnerProps } from './Spinner';
 
 export { ErrorMessage } from './ErrorMessage';
 export type { ErrorMessageProps } from './ErrorMessage';

@@ -2764,9 +2764,11 @@ pub async fn ext_ai_ask_stream(
         "openai" => ext_ai_openai_stream(&api_key, &prompt, &options, &channel).await,
         "anthropic" => ext_ai_anthropic_stream(&api_key, &prompt, &options, &channel).await,
         "groq" => ext_ai_groq_stream(&api_key, &prompt, &options, &channel).await,
+        "huggingface" => ext_ai_huggingface_stream(&api_key, &prompt, &options, &channel).await,
         other => Err(format!(
-            "Unsupported AI provider '{}'. Supported: openai, anthropic, groq.",
-            other
+            "Unsupported AI provider '{}'. Supported: {}.",
+            other,
+            AI_KNOWN_PROVIDERS.join(", ")
         )),
     };
 
@@ -3035,12 +3037,100 @@ async fn ext_ai_groq_stream(
     Ok(())
 }
 
+/// Hugging Face Inference Providers — OpenAI-compatible chat completions via
+/// `router.huggingface.co/v1`. The router auto-selects the fastest provider
+/// (Together, Fireworks, Novita, DeepInfra, …) for a given model. Users can
+/// force a specific provider by appending a `:provider` suffix to the model
+/// ID (e.g. `deepseek-ai/DeepSeek-V4-Pro:fireworks-ai`). Token format is
+/// `hf_***` with the "Inference Providers" permission.
+///
+/// Docs: https://huggingface.co/docs/inference-providers/tasks/chat-completion
+async fn ext_ai_huggingface_stream(
+    api_key: &str,
+    prompt: &str,
+    opts: &ExtAiOptions,
+    channel: &tauri::ipc::Channel<AiStreamEvent>,
+) -> Result<(), String> {
+    let model = opts
+        .model
+        .as_deref()
+        .map(|m| strip_model_prefix(m, "huggingface"))
+        .unwrap_or("deepseek-ai/DeepSeek-V4-Pro");
+    let max_tokens = opts.max_tokens.unwrap_or(1024);
+
+    let mut messages = vec![];
+    if let Some(system) = &opts.system {
+        messages.push(serde_json::json!({ "role": "system", "content": system }));
+    }
+    messages.push(serde_json::json!({ "role": "user", "content": prompt }));
+
+    let mut body = serde_json::json!({
+        "model": model,
+        "messages": messages,
+        "max_tokens": max_tokens,
+        "stream": true,
+    });
+    if let Some(temp) = resolve_temperature(opts, 2.0) {
+        body["temperature"] = serde_json::json!(temp);
+    }
+
+    let response = reqwest::Client::new()
+        .post("https://router.huggingface.co/v1/chat/completions")
+        .bearer_auth(api_key)
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("Hugging Face request failed: {}", e))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let text = response.text().await.unwrap_or_default();
+        return Err(format!("Hugging Face API error {}: {}", status, text));
+    }
+
+    let mut stream = response.bytes_stream();
+    let mut buf = String::new();
+    let mut full_text = String::new();
+
+    while let Some(chunk) = stream.next().await {
+        let bytes = chunk.map_err(|e| format!("Hugging Face stream read error: {}", e))?;
+        for data in drain_sse_lines(&mut buf, &bytes) {
+            if data == "[DONE]" {
+                channel
+                    .send(AiStreamEvent::Done {
+                        full_text: full_text.clone(),
+                    })
+                    .map_err(|e| e.to_string())?;
+                return Ok(());
+            }
+            if let Ok(json) = serde_json::from_str::<serde_json::Value>(&data)
+                && let Some(text) = json["choices"][0]["delta"]["content"].as_str()
+                && !text.is_empty()
+            {
+                full_text.push_str(text);
+                channel
+                    .send(AiStreamEvent::Chunk {
+                        text: text.to_owned(),
+                    })
+                    .map_err(|e| e.to_string())?;
+            }
+        }
+    }
+
+    channel
+        .send(AiStreamEvent::Done {
+            full_text: full_text.clone(),
+        })
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 // ============================================================================
 // Global AI Key Management
 // ============================================================================
 
 /// Known providers for UI validation
-const AI_KNOWN_PROVIDERS: &[&str] = &["openai", "anthropic", "groq"];
+const AI_KNOWN_PROVIDERS: &[&str] = &["openai", "anthropic", "groq", "huggingface"];
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -3155,6 +3245,22 @@ pub async fn ai_verify_key(provider: String) -> Result<(), String> {
                 Err(format!("Invalid key (HTTP {})", resp.status()))
             }
         }
+        "huggingface" => {
+            // /whoami-v2 is the cheapest authenticated endpoint that requires a
+            // valid token. The Inference Providers router doesn't expose a
+            // dedicated `/models` health check.
+            let resp = client
+                .get("https://huggingface.co/api/whoami-v2")
+                .bearer_auth(&api_key)
+                .send()
+                .await
+                .map_err(|e| format!("Network error: {}", e))?;
+            if resp.status().is_success() {
+                Ok(())
+            } else {
+                Err(format!("Invalid key (HTTP {})", resp.status()))
+            }
+        }
         _ => Err(format!("Unknown provider '{}'", provider)),
     }
 }
@@ -3178,8 +3284,9 @@ pub async fn ai_ask_builtin_stream(
     if !AI_KNOWN_PROVIDERS.contains(&provider.as_str()) {
         let _ = channel.send(AiStreamEvent::Error {
             error: format!(
-                "Unknown provider '{}'. Supported: openai, anthropic, groq.",
-                provider
+                "Unknown provider '{}'. Supported: {}.",
+                provider,
+                AI_KNOWN_PROVIDERS.join(", ")
             ),
         });
         return Err(format!("Unknown provider '{}'", provider));
@@ -3230,6 +3337,7 @@ pub async fn ai_ask_builtin_stream(
         "openai" => ext_ai_openai_stream(&api_key, &prompt, &options, &channel).await,
         "anthropic" => ext_ai_anthropic_stream(&api_key, &prompt, &options, &channel).await,
         "groq" => ext_ai_groq_stream(&api_key, &prompt, &options, &channel).await,
+        "huggingface" => ext_ai_huggingface_stream(&api_key, &prompt, &options, &channel).await,
         other => Err(format!("Unsupported provider '{}'", other)),
     };
 

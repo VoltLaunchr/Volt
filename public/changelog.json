@@ -128,6 +128,55 @@
       }
     },
     {
+      "version": "0.2.1",
+      "date": "2026-05-21",
+      "title": "Polish, install cleanup, more AI providers",
+      "description": "Volt v0.2.1 is a quality-of-life follow-up to the v0.2.0 flagship release. Hugging Face joins OpenAI / Anthropic / Groq as a first-class AI provider, the v0.2.0 features (AI Chat, AI Quick Actions, Custom Emojis) are now surfaced as suggestions in the launcher, and a sweep of Windows console-flash regressions plus the WebView2 bootstrapper are removed for a clean install and a clean runtime.",
+      "sections": [
+        {
+          "type": "features",
+          "title": "Features",
+          "icon": "sparkles",
+          "items": [
+            "Hugging Face AI provider: chat with any Hugging Face Inference API model alongside OpenAI, Anthropic, and Groq",
+            "AI Chat and AI Quick Actions promoted to top-level Suggestions in the launcher — searchable by name, no prefix needed",
+            "Custom Emojis exposed as a dedicated Command that opens the Emoji Picker directly on the Custom tab",
+            "Deep-link to specific Settings sections: opening Settings from the launcher can now land on the right tab (AI, Notes, Extensions…) via URL hash and a Tauri event",
+            "Emoji Picker accepts an `initialCategory` prop so callers can open it on any tab, not just All",
+            "shadcn-ui-aligned component library expanded: badge, button-group, carousel, collapsible, command, dialog, dropdown-menu, hover-card, input-group, scroll-area, select, textarea, tooltip"
+          ]
+        },
+        {
+          "type": "ui",
+          "title": "UI Polish",
+          "icon": "sparkles",
+          "items": [
+            "OpenAI and Groq provider logos now render in white via a CSS invert filter — readable on the dark AI Settings canvas and the AI Chat / Quick AI dropdowns",
+            "AI provider logo handling unified across AiSettingsView, AiChatView, and QuickAiView with a shared monochrome regex"
+          ]
+        },
+        {
+          "type": "fixes",
+          "title": "Bug Fixes",
+          "icon": "shield",
+          "items": [
+            "Windows: PowerShell / cmd console window no longer flashes during normal app usage. New `utils::process::no_window` helper applies `CREATE_NO_WINDOW` to every shell-class child process: app scan (Get-AppxPackage), Windows Search Index queries, Xbox PFN lookup, and game-URI launchers (Steam, Epic, Battle.net, Amazon, Ubisoft, Xbox, generic plugin)",
+            "Windows installer: removed the embedded WebView2 bootstrapper (`webviewInstallMode: skip`). No more PowerShell flash at install time, ~2 MB smaller installer. WebView2 has been pre-installed on Windows 11 since 22H2 and was pushed to supported Windows 10 builds long before EOL, so the bootstrapper is no longer needed",
+            "Settings: deep-link via URL hash falls back to a Tauri event for already-open windows, avoiding a flash of the General tab when the user wanted AI"
+          ]
+        }
+      ],
+      "footer": {
+        "gettingStarted": "Press Ctrl+Space to open Volt. Type `ai` (or `?`) to chat, `ai quick` for quick actions, `:` for emoji.",
+        "feedback": "Have feedback or found a bug? Visit our GitHub repository to report issues or request features.",
+        "links": {
+          "github": "https://github.com/VoltLaunchr/Volt",
+          "releases": "https://github.com/VoltLaunchr/Volt/releases",
+          "docs": "https://voltlaunchr.com/docs"
+        }
+      }
+    },
+    {
       "version": "0.2.0",
       "date": "2026-05-18",
       "title": "Notes, AI, and developer portal",

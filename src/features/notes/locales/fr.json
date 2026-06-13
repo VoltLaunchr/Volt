@@ -16,6 +16,8 @@
   "delete": "Supprimer",
   "pin": "Épingler",
   "unpin": "Désépingler",
+  "minimize": "Réduire",
+  "close": "Fermer",
   "saveStatus": {
     "idle": "",
     "saving": "Enregistrement…",

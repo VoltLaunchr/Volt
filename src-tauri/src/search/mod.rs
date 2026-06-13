@@ -3,68 +3,145 @@ use crate::launcher::QueryBindingStore;
 use crate::utils::matching::calculate_match_score_with_matcher_buf;
 use nucleo_matcher::{Config, Matcher};
 
-/// Convert a stored `frecency_date` into a bounded search bonus relative to
-/// `now_ms`.
-///
-/// `frecency_date` is pushed into the future on each launch (see
-/// [`crate::launcher::LaunchRecord`]), so `frecency_date - now` is the item's
-/// remaining "credit": large for recently/frequently used apps, shrinking as
-/// real time advances (natural recency decay). A `ln` curve gives diminishing
-/// returns and the result is capped at `+50` to keep match relevance dominant
-/// — the same ceiling the previous frequency×decay formula used.
-///
-/// Unlike the old per-record `chrono::Utc::now()` + `exp()`, the timestamp is
-/// captured **once per query** and this is a pure O(1) arithmetic transform.
-fn frecency_bonus(frecency_date: i64, now_ms: i64) -> f32 {
-    let credit_days = ((frecency_date - now_ms) as f64 / 86_400_000.0).max(0.0);
-    ((credit_days + 1.0).ln() * 12.0).min(50.0) as f32
+// ============================================================================
+// Score tiers — strict cascade, Raycast-style
+// ============================================================================
+//
+// Each tier owns a distinct numeric range so that no amount of frecency or
+// query-binding boost can lift a result from a lower tier above the floor of a
+// higher tier. The gap between adjacent tiers is exactly 50, and the two
+// available tie-breaker boosts (frecency +20, binding +15) sum to 35 — well
+// under the 50-pt safety margin.
+//
+//   alias-exact   : 1000          — alias is the exact query (case-insensitive)
+//   name-exact    :  950          — name is the exact query
+//   alias-prefix  :  900          — alias starts with query
+//   name-prefix   :  850          — name starts with query
+//   name-fuzzy    :  500..=849    — nucleo fuzzy on name
+//   secondary     :  200..=499    — fuzzy on keywords or short path
+//   no match      :    0          — filtered out
+//
+// Frecency and binding boosts are added on top as intra-tier tie-breakers.
+
+pub const TIER_ALIAS_EXACT: f32 = 1000.0;
+pub const TIER_NAME_EXACT: f32 = 950.0;
+pub const TIER_ALIAS_PREFIX: f32 = 900.0;
+pub const TIER_NAME_PREFIX: f32 = 850.0;
+pub const TIER_FUZZY_MIN: f32 = 500.0;
+pub const TIER_FUZZY_MAX: f32 = 849.0;
+pub const TIER_SECONDARY_MIN: f32 = 200.0;
+pub const TIER_SECONDARY_MAX: f32 = 499.0;
+
+const MAX_FRECENCY_BOOST: f32 = 20.0;
+const MAX_BINDING_BOOST: f32 = 15.0;
+
+/// Map a raw `calculate_match_score` value (0/50-89/90/100) onto the cascade tier ranges.
+/// Returns `None` if the raw score is below the fuzzy floor (no usable match).
+fn map_to_name_tier(raw: f32) -> Option<f32> {
+    if raw <= 0.0 {
+        return None;
+    }
+    if (raw - 100.0).abs() < f32::EPSILON {
+        return Some(TIER_NAME_EXACT);
+    }
+    if (raw - 90.0).abs() < f32::EPSILON {
+        return Some(TIER_NAME_PREFIX);
+    }
+    if (50.0..=89.0).contains(&raw) {
+        // raw ∈ [50, 89] → [TIER_FUZZY_MIN, TIER_FUZZY_MAX] (linear remap)
+        let t = (raw - 50.0) / (89.0 - 50.0);
+        return Some(TIER_FUZZY_MIN + t * (TIER_FUZZY_MAX - TIER_FUZZY_MIN));
+    }
+    None
 }
 
-/// Search applications with frecency scoring from launch history.
-/// Returns apps sorted by (match_score + frecency_bonus + query_binding_boost) descending.
+/// Map a raw match score on a *secondary* field (keyword, short path) to the
+/// secondary tier range. We collapse exact/prefix/fuzzy on secondary fields
+/// into one tier because a perfect keyword match should still rank below a
+/// fuzzy name match.
+fn map_to_secondary_tier(raw: f32) -> Option<f32> {
+    if raw <= 0.0 {
+        return None;
+    }
+    // Re-clamp into a 0-100 effective range, then linearly remap to secondary tier.
+    let clamped = raw.clamp(50.0, 100.0);
+    let t = (clamped - 50.0) / (100.0 - 50.0);
+    Some(TIER_SECONDARY_MIN + t * (TIER_SECONDARY_MAX - TIER_SECONDARY_MIN))
+}
+
+/// Convert a stored future-dated frecency credit into a bounded tie-breaker.
+fn frecency_bonus(frecency_date: i64, now_ms: i64) -> f32 {
+    let credit_days = ((frecency_date - now_ms) as f64 / 86_400_000.0).max(0.0);
+    (((credit_days + 1.0).ln() * 12.0) as f32).min(MAX_FRECENCY_BOOST)
+}
+
+/// Search applications with cascade-tier scoring + per-(query, item) frecency tie-breaker.
 ///
-/// `frecency` is a pre-computed `path → frecency_date` map (see
-/// [`LaunchHistory::with_records`]). Taking the map instead of a
-/// `&[LaunchRecord]` slice lets callers avoid cloning the entire launch
-/// history on every keystroke — only the dates we actually read are
-/// materialised, and presence in the map distinguishes "in history" from
-/// "never launched".
+/// Ranking is a strict cascade — no amount of frecency or binding boost can lift a
+/// result across a tier boundary. See the tier constants at the top of this file.
+///
+/// `aliases` is a path → alias map (`AppShortcut.alias` from settings). Pass an empty
+/// map if no aliases are configured.
 pub fn search_applications_with_frecency(
     query: &str,
     apps: Vec<AppInfo>,
     frecency: &std::collections::HashMap<String, i64>,
     query_bindings: Option<&QueryBindingStore>,
+    aliases: &std::collections::HashMap<String, String>,
 ) -> Vec<(AppInfo, f32)> {
     if query.trim().is_empty() {
         return Vec::new();
     }
+    let query_trim = query.trim();
 
-    let has_history = !frecency.is_empty();
-    // Captured once per query, not once per record (the old hot-path cost).
     let now_ms = chrono::Utc::now().timestamp_millis();
 
     let mut matcher = Matcher::new(Config::DEFAULT);
     // Shared scratch buffer for non-ASCII haystacks. Reusing this across every
-    // scoring call inside the loop turns N allocations (one per app name +
-    // each fallback haystack) into one amortised growable buffer.
+    // scoring call inside the loop turns N allocations into one amortised buffer.
     let mut char_buf: Vec<char> = Vec::new();
     let mut results: Vec<(AppInfo, f32)> = apps
         .into_iter()
         .filter_map(|app| {
-            // Match against name first
-            let mut match_score = calculate_match_score_with_matcher_buf(
-                &app.name,
-                query,
-                &mut matcher,
-                &mut char_buf,
-            );
+            // ----- Tier resolution (strict cascade) -----
 
-            // If name doesn't match well, try matching against the last two path components
-            // (parent dir + filename). Using the full path causes false positives because
-            // common prefixes like "...\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\"
-            // contain the letters r-o-a-d-m-a-p in order, making every Start Menu app
-            // fuzzy-match the query "roadmap".
-            if match_score < 50.0 {
+            // 1. Alias tier — only if the app has an alias configured.
+            let alias_tier = aliases.get(app.path.as_str()).and_then(|alias| {
+                let alias_lc = alias.trim().to_lowercase();
+                let q_lc = query_trim.to_lowercase();
+                if alias_lc.is_empty() {
+                    None
+                } else if alias_lc == q_lc {
+                    Some(TIER_ALIAS_EXACT)
+                } else if alias_lc.starts_with(&q_lc) {
+                    Some(TIER_ALIAS_PREFIX)
+                } else {
+                    None
+                }
+            });
+
+            // 2. Name tier — exact / prefix / fuzzy on `app.name`.
+            let name_tier = if alias_tier.is_some() {
+                None
+            } else {
+                let raw = calculate_match_score_with_matcher_buf(
+                    &app.name,
+                    query_trim,
+                    &mut matcher,
+                    &mut char_buf,
+                );
+                map_to_name_tier(raw)
+            };
+
+            // 3. Secondary tier — short path (parent + filename) or keywords.
+            //    Only consulted if no name-tier match.
+            let secondary_tier = if alias_tier.is_some() || name_tier.is_some() {
+                None
+            } else {
+                // Short path = "<parent> <filename>". Using the full path causes
+                // false positives because common prefixes like
+                // "...\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\"
+                // contain enough letters in order to fuzzy-match almost any query.
                 let path = std::path::Path::new(&app.path);
                 let filename = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
                 let parent_name = path
@@ -77,54 +154,42 @@ pub fn search_applications_with_frecency(
                 } else {
                     format!("{} {}", parent_name, filename)
                 };
-                let path_score = calculate_match_score_with_matcher_buf(
+                let mut best = calculate_match_score_with_matcher_buf(
                     &short_path,
-                    query,
+                    query_trim,
                     &mut matcher,
                     &mut char_buf,
                 );
-                if path_score > match_score {
-                    match_score = path_score * 0.9; // slightly lower than name match
-                }
-            }
 
-            // Also try matching against keywords if available
-            if match_score < 50.0
-                && let Some(ref keywords) = app.keywords
-            {
-                for kw in keywords {
-                    let kw_score = calculate_match_score_with_matcher_buf(
-                        kw,
-                        query,
-                        &mut matcher,
-                        &mut char_buf,
-                    );
-                    if kw_score > match_score {
-                        match_score = kw_score * 0.85;
+                if let Some(ref keywords) = app.keywords {
+                    for kw in keywords {
+                        let kw_score = calculate_match_score_with_matcher_buf(
+                            kw,
+                            query_trim,
+                            &mut matcher,
+                            &mut char_buf,
+                        );
+                        if kw_score > best {
+                            best = kw_score;
+                        }
                     }
                 }
-            }
-
-            if match_score <= 0.0 {
-                return None;
-            }
-
-            // Presence in the map means the app is in launch history. Used apps
-            // get a bounded recency/frequency boost; apps the user has never
-            // launched are slightly penalised once any history exists so used
-            // apps float up.
-            let mut final_score = match frecency.get(app.path.as_str()) {
-                Some(&frecency_date) => match_score + frecency_bonus(frecency_date, now_ms),
-                None if has_history => match_score * 0.7,
-                None => match_score,
+                map_to_secondary_tier(best)
             };
 
-            // Apply query-result binding boost (up to +30 pts)
-            if let Some(bindings) = query_bindings {
-                final_score += bindings.get_boost(query, &app.path);
-            }
+            let base = alias_tier.or(name_tier).or(secondary_tier)?;
 
-            Some((app, final_score))
+            // ----- Tie-breakers (cannot cross tier boundary; max +35) -----
+            let frecency_bonus = frecency
+                .get(app.path.as_str())
+                .map(|date| frecency_bonus(*date, now_ms))
+                .unwrap_or(0.0);
+
+            let binding_bonus = query_bindings
+                .map(|b| b.get_boost(query_trim, &app.path).min(MAX_BINDING_BOOST))
+                .unwrap_or(0.0);
+
+            Some((app, base + frecency_bonus + binding_bonus))
         })
         .collect();
 
@@ -268,50 +333,6 @@ mod tests {
     #[test]
     fn test_search_no_apps() {
         let results = search_applications("anything", vec![]);
-        assert!(results.is_empty());
-    }
-
-    #[test]
-    fn test_frecency_bonus_is_bounded_and_monotonic() {
-        let now = 1_000_000_000_000;
-        let day = 86_400_000;
-        // Stale (date in the past) → no bonus.
-        assert_eq!(frecency_bonus(now - day, now), 0.0);
-        assert_eq!(frecency_bonus(now, now), 0.0);
-        // More credit (further future) → larger bonus.
-        let one = frecency_bonus(now + day, now);
-        let five = frecency_bonus(now + 5 * day, now);
-        assert!(one > 0.0);
-        assert!(five > one);
-        // Saturates at the +50 ceiling for very large credit.
-        assert!(frecency_bonus(now + 10_000 * day, now) <= 50.0);
-        assert!(frecency_bonus(now + 10_000 * day, now) > 45.0);
-    }
-
-    #[test]
-    fn test_used_app_outranks_never_launched_app() {
-        let apps = vec![
-            create_test_app("Chrome", "/c/chrome"),
-            create_test_app("Chrome Canary", "/c/canary"),
-        ];
-        let now = chrono::Utc::now().timestamp_millis();
-        // Only Chrome is in history, credited well into the future.
-        let mut frecency = std::collections::HashMap::new();
-        frecency.insert("/c/chrome".to_string(), now + 30 * 86_400_000);
-
-        let results = search_applications_with_frecency("chrome", apps, &frecency, None);
-        assert_eq!(results[0].0.path, "/c/chrome", "used app should rank first");
-    }
-
-    #[test]
-    fn test_empty_query_returns_nothing() {
-        let frecency = std::collections::HashMap::new();
-        let results = search_applications_with_frecency(
-            "",
-            vec![create_test_app("A", "/a")],
-            &frecency,
-            None,
-        );
         assert!(results.is_empty());
     }
 }

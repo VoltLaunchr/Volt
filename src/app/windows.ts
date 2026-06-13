@@ -8,17 +8,25 @@ import { logger } from '../shared/utils/logger';
  * and the various hooks (lifecycle event handlers, hotkeys, suggestion
  * actions) without tangling those imports through the component module.
  */
-export const openSettingsWindow = async (): Promise<void> => {
+export const openSettingsWindow = async (section?: string): Promise<void> => {
   // Check if window already exists
   const existingWindow = await WebviewWindow.getByLabel('settings');
   if (existingWindow) {
     await existingWindow.show();
     await existingWindow.setFocus();
+    if (section) {
+      // Window is already open — emit a Tauri event so SettingsApp can switch.
+      // The settings window listens via @tauri-apps/api/event.
+      const { emit } = await import('@tauri-apps/api/event');
+      await emit('volt://settings-navigate', { section });
+    }
     return;
   }
-  // Create new settings window
+  // Create new settings window. We pass the section through the URL hash so
+  // SettingsApp can pick it up on first mount before any user interaction.
+  const url = section ? `index.html#${encodeURIComponent(section)}` : 'index.html';
   const settingsWindow = new WebviewWindow('settings', {
-    url: 'index.html',
+    url,
     title: 'Volt Settings',
     width: 900,
     height: 600,
