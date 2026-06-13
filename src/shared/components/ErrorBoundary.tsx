@@ -1,5 +1,6 @@
 import { Component, type CSSProperties, type ErrorInfo, type ReactNode } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
+import { AlertTriangle, Check } from 'lucide-react';
 import { logger } from '../utils/logger';
 
 interface Props {
@@ -38,7 +39,9 @@ export class ErrorBoundary extends Component<Props, State> {
     this.setState({ componentStack: info.componentStack ?? null });
     // The window may still be hidden (visible: false in tauri.conf.json) if
     // the crash happened before the happy-path win.show() useEffect fired.
-    void getCurrentWindow().show().catch(() => {});
+    void getCurrentWindow()
+      .show()
+      .catch(() => {});
   }
 
   private handleCopyError = (): void => {
@@ -50,7 +53,9 @@ export class ErrorBoundary extends Component<Props, State> {
 
     void navigator.clipboard.writeText(parts.join('\n')).then(() => {
       this.setState({ copied: true });
-      window.setTimeout(() => { this.setState({ copied: false }); }, 2000);
+      window.setTimeout(() => {
+        this.setState({ copied: false });
+      }, 2000);
     });
   };
 
@@ -70,21 +75,25 @@ export class ErrorBoundary extends Component<Props, State> {
       <div style={styles.root}>
         <div style={styles.card}>
           <div style={styles.iconRow}>
-            <span style={styles.icon} aria-hidden="true">⚠</span>
+            <AlertTriangle style={styles.icon} aria-hidden="true" size={36} />
           </div>
 
           <h1 style={styles.title}>Something went wrong</h1>
 
-          <p style={styles.message}>
-            {error?.message ?? 'An unexpected error occurred.'}
-          </p>
+          <p style={styles.message}>{error?.message ?? 'An unexpected error occurred.'}</p>
 
           <div style={styles.actions}>
-            <button style={styles.btnPrimary} onClick={() => { window.location.reload(); }}>
+            <button
+              style={styles.btnPrimary}
+              onClick={() => {
+                window.location.reload();
+              }}
+            >
               Reload
             </button>
             <button style={styles.btnSecondary} onClick={this.handleCopyError}>
-              {copied ? '✓ Copied' : 'Copy error'}
+              {copied && <Check size={13} style={{ marginRight: 5, verticalAlign: -2 }} />}
+              {copied ? 'Copied' : 'Copy error'}
             </button>
           </div>
 
@@ -95,7 +104,10 @@ export class ErrorBoundary extends Component<Props, State> {
               </button>
               {showDetails && (
                 <pre style={styles.detailsPre}>
-                  {[error?.stack ?? error?.message, componentStack ? `\nComponent Stack:${componentStack}` : '']
+                  {[
+                    error?.stack ?? error?.message,
+                    componentStack ? `\nComponent Stack:${componentStack}` : '',
+                  ]
                     .filter(Boolean)
                     .join('')}
                 </pre>

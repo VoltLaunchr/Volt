@@ -3,6 +3,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Send, Plus, ChevronDown, ArrowLeft, Loader2, AlertCircle } from 'lucide-react';
 import { useAiChat, type ChatMessage } from '../hooks/useAiChat';
 import { AI_PRESETS } from '../presets';
+import { AiActionIcon, AiProviderLogo } from '../../../../../shared/components/ui';
 
 interface ProviderStatus {
   provider: string;
@@ -19,12 +20,6 @@ const PROVIDER_LABELS: Record<string, string> = {
   openai: 'OpenAI',
   anthropic: 'Anthropic',
   groq: 'Groq',
-};
-
-const PROVIDER_LOGOS: Record<string, string> = {
-  openai: '/ai/openai-color.svg',
-  anthropic: '/ai/claude-color.svg',
-  groq: '/ai/groq.svg',
 };
 
 const PROVIDER_MODELS: Record<string, { id: string; label: string }[]> = {
@@ -274,15 +269,12 @@ export function AiChatView({ onClose, initialQuery, systemPrompt }: AiChatViewPr
     [handleSend, onClose]
   );
 
-  const handlePreset = useCallback(
-    (presetId: string) => {
-      const preset = AI_PRESETS.find((p) => p.id === presetId);
-      if (!preset) return;
-      setActiveSystemPrompt(preset.system);
-      inputRef.current?.focus();
-    },
-    []
-  );
+  const handlePreset = useCallback((presetId: string) => {
+    const preset = AI_PRESETS.find((p) => p.id === presetId);
+    if (!preset) return;
+    setActiveSystemPrompt(preset.system);
+    inputRef.current?.focus();
+  }, []);
 
   const handleNewChat = useCallback(() => {
     clear();
@@ -353,15 +345,7 @@ export function AiChatView({ onClose, initialQuery, systemPrompt }: AiChatViewPr
         </span>
 
         {/* Provider selector */}
-        {configuredProviders.length >= 1 && PROVIDER_LOGOS[provider] && (
-          <img
-            src={PROVIDER_LOGOS[provider]}
-            alt=""
-            width={16}
-            height={16}
-            style={{ borderRadius: 4, objectFit: 'contain' }}
-          />
-        )}
+        {configuredProviders.length >= 1 && <AiProviderLogo provider={provider} size={16} />}
         {configuredProviders.length > 1 && (
           <ProviderDropdown
             value={provider}
@@ -372,11 +356,7 @@ export function AiChatView({ onClose, initialQuery, systemPrompt }: AiChatViewPr
 
         {/* Model selector */}
         {models.length > 1 && (
-          <ProviderDropdown
-            value={model}
-            options={models}
-            onChange={setModel}
-          />
+          <ProviderDropdown value={model} options={models} onChange={setModel} />
         )}
 
         {/* New chat */}
@@ -436,7 +416,10 @@ export function AiChatView({ onClose, initialQuery, systemPrompt }: AiChatViewPr
           }}
         >
           <span>
-            Preset active: <strong>{AI_PRESETS.find((p) => p.system === activeSystemPrompt)?.label ?? 'Custom'}</strong>
+            Preset active:{' '}
+            <strong>
+              {AI_PRESETS.find((p) => p.system === activeSystemPrompt)?.label ?? 'Custom'}
+            </strong>
           </span>
           <button
             onClick={() => setActiveSystemPrompt(undefined)}
@@ -474,7 +457,13 @@ export function AiChatView({ onClose, initialQuery, systemPrompt }: AiChatViewPr
               color: 'var(--color-mute)',
             }}
           >
-            <img src="/icons/app/ai_icon.svg" alt="" width={48} height={48} style={{ opacity: 0.6 }} />
+            <img
+              src="/icons/app/ai_icon.svg"
+              alt=""
+              width={48}
+              height={48}
+              style={{ opacity: 0.6 }}
+            />
             <p style={{ margin: 0, fontSize: 13 }}>
               {noKeys ? 'Add an API key to start chatting' : 'Ask anything'}
             </p>
@@ -512,7 +501,9 @@ export function AiChatView({ onClose, initialQuery, systemPrompt }: AiChatViewPr
               borderRadius: 20,
               border: `1px solid ${activeSystemPrompt === preset.system ? 'var(--color-accent)' : 'var(--color-hairline)'}`,
               background:
-                activeSystemPrompt === preset.system ? 'rgba(168,85,247,0.1)' : 'var(--color-surface)',
+                activeSystemPrompt === preset.system
+                  ? 'rgba(168,85,247,0.1)'
+                  : 'var(--color-surface)',
               color:
                 activeSystemPrompt === preset.system ? 'var(--color-accent)' : 'var(--color-mute)',
               fontSize: 11,
@@ -522,7 +513,7 @@ export function AiChatView({ onClose, initialQuery, systemPrompt }: AiChatViewPr
               flexShrink: 0,
             }}
           >
-            <span aria-hidden>{preset.icon}</span>
+            <AiActionIcon actionId={preset.id} size={13} />
             {preset.label}
           </button>
         ))}
@@ -561,7 +552,7 @@ export function AiChatView({ onClose, initialQuery, systemPrompt }: AiChatViewPr
             fontFamily: 'inherit',
             maxHeight: 120,
             overflow: 'auto',
-            opacity: (isStreaming || noKeys) ? 0.6 : 1,
+            opacity: isStreaming || noKeys ? 0.6 : 1,
           }}
         />
         <button
@@ -575,7 +566,10 @@ export function AiChatView({ onClose, initialQuery, systemPrompt }: AiChatViewPr
             height: 36,
             borderRadius: 10,
             border: 'none',
-            background: !input.trim() || isStreaming || noKeys ? 'var(--color-surface)' : 'var(--color-accent)',
+            background:
+              !input.trim() || isStreaming || noKeys
+                ? 'var(--color-surface)'
+                : 'var(--color-accent)',
             color: !input.trim() || isStreaming || noKeys ? 'var(--color-mute)' : '#fff',
             cursor: !input.trim() || isStreaming || noKeys ? 'not-allowed' : 'pointer',
             flexShrink: 0,
@@ -583,7 +577,11 @@ export function AiChatView({ onClose, initialQuery, systemPrompt }: AiChatViewPr
           }}
           title="Send (Enter)"
         >
-          {isStreaming ? <Loader2 size={15} style={{ animation: 'spin 1s linear infinite' }} /> : <Send size={15} />}
+          {isStreaming ? (
+            <Loader2 size={15} style={{ animation: 'spin 1s linear infinite' }} />
+          ) : (
+            <Send size={15} />
+          )}
         </button>
       </div>
 

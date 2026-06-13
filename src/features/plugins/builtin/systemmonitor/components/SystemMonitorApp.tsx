@@ -8,15 +8,16 @@ import { LiveLineChart } from '../../../../../components/charts/live-line-chart'
 import { LiveLine } from '../../../../../components/charts/live-line';
 import { logger } from '../../../../../shared/utils/logger';
 import type { CpuCoreInfo, ProcessInfo, DiskInfo, ComponentInfo } from '../types';
+import { X } from 'lucide-react';
 
 // ── Semantic accent colors ────────────────────────────────────────────────────
 const A = {
-  cpu:  '#2dd4bf',
-  mem:  '#a78bfa',
+  cpu: '#2dd4bf',
+  mem: '#a78bfa',
   disk: '#fb923c',
-  rx:   '#34d399',
-  tx:   '#f472b6',
-  red:  '#f87171',
+  rx: '#34d399',
+  tx: '#f472b6',
+  red: '#f87171',
 } as const;
 
 // ── Shared panel style (inline, no CSS file needed) ───────────────────────────
@@ -418,7 +419,7 @@ function ProcessRow({
               borderRadius: '4px',
             }}
           >
-            ✕
+            <X size={13} />
           </button>
         </div>
       ) : (
@@ -443,7 +444,7 @@ function ProcessRow({
             flexShrink: 0,
           }}
         >
-          ✕
+          <X size={13} />
         </button>
       )}
     </div>
@@ -659,11 +660,11 @@ export function SystemMonitorApp(): React.JSX.Element {
   const [killError, setKillError] = useState<string | null>(null);
   const [processTab, setProcessTab] = useState<'cpu' | 'memory'>('cpu');
 
-  const cpuPoints  = useMemo(() => toPoints(history, (s) => s.cpuUsage),    [history]);
-  const memPoints  = useMemo(() => toPoints(history, (s) => s.memoryUsage),  [history]);
-  const diskPoints = useMemo(() => toPoints(history, (s) => s.diskUsage),    [history]);
-  const rxPoints   = useMemo(() => toPoints(history, (s) => s.networkRxBps), [history]);
-  const txPoints   = useMemo(() => toPoints(history, (s) => s.networkTxBps), [history]);
+  const cpuPoints = useMemo(() => toPoints(history, (s) => s.cpuUsage), [history]);
+  const memPoints = useMemo(() => toPoints(history, (s) => s.memoryUsage), [history]);
+  const diskPoints = useMemo(() => toPoints(history, (s) => s.diskUsage), [history]);
+  const rxPoints = useMemo(() => toPoints(history, (s) => s.networkRxBps), [history]);
+  const txPoints = useMemo(() => toPoints(history, (s) => s.networkTxBps), [history]);
 
   const handleKill = useCallback(async (pid: number, name: string) => {
     try {
@@ -702,24 +703,21 @@ export function SystemMonitorApp(): React.JSX.Element {
     }
   }, []);
 
-  const handleTitlebarMouseDown = useCallback(
-    (e: React.MouseEvent<HTMLDivElement>) => {
-      if (e.button !== 0) return;
-      if ((e.target as HTMLElement).closest('button')) return;
-      void (async () => {
-        try {
-          if (e.detail === 2) {
-            await getCurrentWindow().toggleMaximize();
-          } else {
-            await getCurrentWindow().startDragging();
-          }
-        } catch (err) {
-          logger.error('startDragging failed:', err);
+  const handleTitlebarMouseDown = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    if (e.button !== 0) return;
+    if ((e.target as HTMLElement).closest('button')) return;
+    void (async () => {
+      try {
+        if (e.detail === 2) {
+          await getCurrentWindow().toggleMaximize();
+        } else {
+          await getCurrentWindow().startDragging();
         }
-      })();
-    },
-    [],
-  );
+      } catch (err) {
+        logger.error('startDragging failed:', err);
+      }
+    })();
+  }, []);
 
   const rootStyle: React.CSSProperties = {
     width: '100vw',
@@ -793,9 +791,7 @@ export function SystemMonitorApp(): React.JSX.Element {
           System Monitor
         </span>
 
-        <div
-          style={{ width: 1, height: 14, background: 'var(--color-hairline)', marginLeft: 2 }}
-        />
+        <div style={{ width: 1, height: 14, background: 'var(--color-hairline)', marginLeft: 2 }} />
 
         <span
           style={{
@@ -809,9 +805,29 @@ export function SystemMonitorApp(): React.JSX.Element {
 
         <div style={{ flex: 1 }} />
 
-        <Btn onClick={() => { void handleExport(); }}>Export CSV</Btn>
-        <Btn onClick={() => { void handleTaskManager(); }}>Task Manager</Btn>
-        <Btn onClick={() => { void handleClose(); }} danger square>✕</Btn>
+        <Btn
+          onClick={() => {
+            void handleExport();
+          }}
+        >
+          Export CSV
+        </Btn>
+        <Btn
+          onClick={() => {
+            void handleTaskManager();
+          }}
+        >
+          Task Manager
+        </Btn>
+        <Btn
+          onClick={() => {
+            void handleClose();
+          }}
+          danger
+          square
+        >
+          <X size={13} />
+        </Btn>
       </div>
 
       {/* ── Scrollable body ───────────────────────────────────────────────── */}
@@ -856,7 +872,7 @@ export function SystemMonitorApp(): React.JSX.Element {
                 flexShrink: 0,
               }}
             >
-              ✕
+              <X size={13} />
             </button>
           </div>
         )}
@@ -936,11 +952,8 @@ export function SystemMonitorApp(): React.JSX.Element {
                     background: 'transparent',
                     border: 'none',
                     borderBottom:
-                      processTab === tab
-                        ? `2px solid ${A.cpu}`
-                        : '2px solid transparent',
-                    color:
-                      processTab === tab ? 'var(--color-ink)' : 'var(--color-ash)',
+                      processTab === tab ? `2px solid ${A.cpu}` : '2px solid transparent',
+                    color: processTab === tab ? 'var(--color-ink)' : 'var(--color-ash)',
                     cursor: 'pointer',
                     transition: 'color 0.15s',
                     marginBottom: -1,

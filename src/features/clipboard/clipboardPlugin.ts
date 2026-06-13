@@ -5,6 +5,12 @@ import { isClipboardItem } from '../../shared/utils/typeGuards';
 import type { ClipboardItem } from '../../shared/types/clipboard';
 import { VOLT_EVENTS, emitVoltEvent } from '../../shared/events';
 
+const CLIPBOARD_ICONS = {
+  image: '/icons/image-03-stroke-rounded.svg',
+  text: '/icons/text-creation-stroke-rounded.svg',
+  files: '/icons/text-creation-stroke-rounded.svg',
+} as const;
+
 /**
  * Clipboard History Plugin
  *
@@ -142,16 +148,6 @@ export class ClipboardPlugin implements Plugin {
       timeAgo = date.toLocaleDateString();
     }
 
-    // Determine icon based on type
-    let icon = '📋';
-    if (item.contentType === 'image') {
-      icon = '🖼️';
-    } else if (item.contentType === 'files') {
-      icon = '📁';
-    } else if (item.pinned) {
-      icon = '📌';
-    }
-
     // Create subtitle with metadata
     const subtitle = `${timeAgo}${item.pinned ? ' • Pinned' : ''} • ${item.content.length} chars`;
 
@@ -160,7 +156,7 @@ export class ClipboardPlugin implements Plugin {
       type: PluginResultType.Clipboard,
       title: item.preview,
       subtitle,
-      icon,
+      icon: CLIPBOARD_ICONS[item.contentType],
       score,
       data: item as unknown as Record<string, unknown>,
       pluginId: this.id,

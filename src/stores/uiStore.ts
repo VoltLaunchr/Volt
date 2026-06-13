@@ -61,7 +61,7 @@ interface UiActions {
 }
 
 export const useUiStore = create<UiState & UiActions>()((set) => ({
-  activeView: { type: 'search' } as ActiveView,
+  activeView: { type: 'search' },
   contextMenu: { isOpen: false, position: { x: 0, y: 0 }, result: null },
   isPropertiesOpen: false,
   propertiesResult: null,

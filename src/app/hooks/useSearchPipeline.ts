@@ -16,6 +16,7 @@ import { parseQuery } from '../../shared/utils/queryParser';
 import { detectUrl } from '../../shared/utils/urlDetector';
 import { useAppStore } from '../../stores/appStore';
 import { useSearchStore } from '../../stores/searchStore';
+import { mergeSearchResults } from '../searchResults';
 
 /** Shorten a file path for display: C:\Users\Noluc\Documents\foo.txt → ~\Documents\foo.txt */
 function shortenPath(fullPath: string): string {
@@ -128,7 +129,7 @@ const convertApps = (
         subtitle: appWithScore.description || undefined,
         icon: appWithScore.icon,
         score: SEARCH_SCORING.APPLICATION + adjustedScore,
-        data: appWithScore as AppInfo,
+        data: appWithScore,
       };
     });
 };
@@ -156,7 +157,7 @@ const convertFiles = (files: FileSearchResultCompact[]): SearchResult[] => {
       subtitle: shortenPath(file.path),
       icon: file.icon,
       score: SEARCH_SCORING.FILE + Math.round((file.score / maxFileScore) * 50),
-      data: file as unknown as FileInfo,
+      data: file,
     }));
 };
 
@@ -280,7 +281,7 @@ export function useSearchPipeline({
                 name: record.name,
                 path: record.path,
                 usageCount: record.launchCount,
-              } as AppInfo,
+              },
             }));
             setResults(predictiveResults);
           } else {
@@ -348,12 +349,9 @@ export function useSearchPipeline({
       try {
         const searchId = ++latestSearchId.current;
 
-        // Merge helper: sort by score, limit
+        // Merge helper: sort by score, collapse duplicate apps, then limit.
         const mergeResults = (...sources: SearchResult[][]): SearchResult[] =>
-          sources
-            .flat()
-            .sort((a, b) => b.score - a.score)
-            .slice(0, maxResults + 4);
+          mergeSearchResults(maxResults + SEARCH_LIMITS.MAX_RESULTS_BUFFER, ...sources);
 
         // Accumulated partial results from streaming
         let streamedApps: SearchResult[] = [];
@@ -452,7 +450,7 @@ export function useSearchPipeline({
               subtitle: 'Press Enter to open in browser',
               score: SEARCH_SCORING.PLUGIN_KEYWORD_BOOST + 200,
               data: { url: detectedUrl },
-            } as import('../../shared/types/common.types').PluginResultData,
+            },
           };
           allResults.unshift(urlResult);
           // Re-sort so score ordering is respected
@@ -483,7 +481,7 @@ export function useSearchPipeline({
                 subtitle: 'Press Enter to open in browser',
                 score: 90,
                 data: { query: effectiveQuery, engine, url },
-              } as PluginResultData,
+              },
             });
           });
         }

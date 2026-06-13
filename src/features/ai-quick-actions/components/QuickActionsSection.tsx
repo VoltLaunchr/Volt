@@ -2,6 +2,7 @@ import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Plus, Trash2, CheckCircle, AlertCircle, Edit3, X } from 'lucide-react';
 import { HotkeyCapture } from '../../../shared/components/ui/HotkeyCapture';
+import { AiActionIcon } from '../../../shared/components/ui/AiActionIcon';
 import { useQuickActions } from '../hooks/useQuickActions';
 import { PLACEHOLDER_DOCS } from '../placeholders';
 import type { AiQuickAction } from '../types';
@@ -77,9 +78,7 @@ function HotkeyChip({
           padding: '4px 10px',
           borderRadius: 6,
           background: bindError ? 'rgba(239,68,68,0.12)' : 'var(--color-surface)',
-          border: bindError
-            ? '1px solid rgba(239,68,68,0.3)'
-            : '1px solid var(--color-hairline)',
+          border: bindError ? '1px solid rgba(239,68,68,0.3)' : '1px solid var(--color-hairline)',
           color: bindError ? '#f87171' : 'var(--color-ink)',
           cursor: 'pointer',
         }}
@@ -151,7 +150,9 @@ function EditPromptModal({ action, onClose, onSave }: EditPromptModalProps) {
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        onKeyDown={(e) => { if (e.key === 'Escape') onClose(); }}
+        onKeyDown={(e) => {
+          if (e.key === 'Escape') onClose();
+        }}
         style={{
           background: 'var(--color-canvas)',
           borderRadius: 12,
@@ -162,11 +163,15 @@ function EditPromptModal({ action, onClose, onSave }: EditPromptModalProps) {
           boxShadow: '0 20px 60px rgba(0,0,0,0.4)',
         }}
       >
-        <h3 style={{ margin: '0 0 16px', fontSize: 15, fontWeight: 600, color: 'var(--color-ink)' }}>
+        <h3
+          style={{ margin: '0 0 16px', fontSize: 15, fontWeight: 600, color: 'var(--color-ink)' }}
+        >
           {t('ai.quickActions.modal.title')}
         </h3>
 
-        <label style={{ display: 'block', marginBottom: 4, fontSize: 12, color: 'var(--color-mute)' }}>
+        <label
+          style={{ display: 'block', marginBottom: 4, fontSize: 12, color: 'var(--color-mute)' }}
+        >
           {t('ai.quickActions.modal.label')}
         </label>
         <input
@@ -186,7 +191,9 @@ function EditPromptModal({ action, onClose, onSave }: EditPromptModalProps) {
           }}
         />
 
-        <label style={{ display: 'block', marginBottom: 4, fontSize: 12, color: 'var(--color-mute)' }}>
+        <label
+          style={{ display: 'block', marginBottom: 4, fontSize: 12, color: 'var(--color-mute)' }}
+        >
           {t('ai.quickActions.modal.systemPrompt')}
         </label>
         <textarea
@@ -210,7 +217,9 @@ function EditPromptModal({ action, onClose, onSave }: EditPromptModalProps) {
           }}
         />
 
-        <div style={{ marginBottom: 20, fontSize: 11, color: 'var(--color-mute)', lineHeight: 1.5 }}>
+        <div
+          style={{ marginBottom: 20, fontSize: 11, color: 'var(--color-mute)', lineHeight: 1.5 }}
+        >
           <div style={{ marginBottom: 4 }}>{t('ai.quickActions.modal.placeholdersIntro')}</div>
           <ul style={{ margin: 0, padding: 0, listStyle: 'none' }}>
             {PLACEHOLDER_DOCS.map((p) => (
@@ -264,7 +273,8 @@ function EditPromptModal({ action, onClose, onSave }: EditPromptModalProps) {
 
 export function QuickActionsSection() {
   const { t } = useTranslation('settings');
-  const { actions, loading, report, error, updateAction, createAction, deleteAction } = useQuickActions();
+  const { actions, loading, report, error, updateAction, createAction, deleteAction } =
+    useQuickActions();
   const [editing, setEditing] = useState<AiQuickAction | null>(null);
 
   const handleAddCustom = useCallback(async () => {
@@ -286,7 +296,7 @@ export function QuickActionsSection() {
     <>
       <div
         style={{
-          background: 'var(--color-surface)',
+          background: 'linear-gradient(180deg, var(--color-surface) 0%, var(--color-canvas) 100%)',
           borderRadius: 12,
           border: '1px solid var(--color-hairline)',
           overflow: 'hidden',
@@ -298,7 +308,7 @@ export function QuickActionsSection() {
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            padding: '12px 16px',
+            padding: '14px 16px',
             borderBottom: '1px solid var(--color-hairline)',
           }}
         >
@@ -324,6 +334,7 @@ export function QuickActionsSection() {
               fontSize: 12,
               fontWeight: 500,
               cursor: 'pointer',
+              transition: 'border-color 0.15s ease, background 0.15s ease',
             }}
           >
             <Plus size={13} /> {t('ai.quickActions.add')}
@@ -331,11 +342,15 @@ export function QuickActionsSection() {
         </div>
 
         {loading ? (
-          <div style={{ padding: 30, textAlign: 'center', color: 'var(--color-mute)', fontSize: 13 }}>
+          <div
+            style={{ padding: 30, textAlign: 'center', color: 'var(--color-mute)', fontSize: 13 }}
+          >
             {t('ai.quickActions.loading')}
           </div>
         ) : actions.length === 0 ? (
-          <div style={{ padding: 30, textAlign: 'center', color: 'var(--color-mute)', fontSize: 13 }}>
+          <div
+            style={{ padding: 30, textAlign: 'center', color: 'var(--color-mute)', fontSize: 13 }}
+          >
             {t('ai.quickActions.empty')}
           </div>
         ) : (
@@ -345,35 +360,36 @@ export function QuickActionsSection() {
             return (
               <div
                 key={action.id}
+                className="transition-colors hover:bg-white/[0.025]"
                 style={{
                   display: 'flex',
                   alignItems: 'center',
+                  flexWrap: 'wrap',
                   gap: 12,
-                  padding: '12px 16px',
-                  borderBottom: idx < actions.length - 1 ? '1px solid var(--color-hairline)' : 'none',
+                  padding: '14px 16px',
+                  borderBottom:
+                    idx < actions.length - 1 ? '1px solid var(--color-hairline)' : 'none',
                   opacity: action.enabled ? 1 : 0.5,
                 }}
               >
-                {action.icon && (
-                  <div
-                    style={{
-                      width: 28,
-                      height: 28,
-                      borderRadius: 8,
-                      background: 'var(--color-canvas)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      fontSize: 14,
-                      color: 'var(--color-ink)',
-                      flexShrink: 0,
-                    }}
-                  >
-                    {action.icon}
-                  </div>
-                )}
+                <div
+                  style={{
+                    width: 36,
+                    height: 36,
+                    borderRadius: 10,
+                    background: 'rgba(99, 102, 241, 0.1)',
+                    border: '1px solid rgba(99, 102, 241, 0.18)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: 'var(--color-accent)',
+                    flexShrink: 0,
+                  }}
+                >
+                  <AiActionIcon actionId={action.id} size={17} />
+                </div>
 
-                <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ flex: '1 1 220px', minWidth: 0 }}>
                   <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--color-ink)' }}>
                     {action.label}
                   </div>
@@ -384,7 +400,6 @@ export function QuickActionsSection() {
                       whiteSpace: 'nowrap',
                       overflow: 'hidden',
                       textOverflow: 'ellipsis',
-                      maxWidth: 320,
                     }}
                     title={action.systemPrompt}
                   >
@@ -392,64 +407,83 @@ export function QuickActionsSection() {
                   </div>
                 </div>
 
-                <HotkeyChip
-                  value={action.hotkey}
-                  bindError={bindError}
-                  onChange={(hk) => void updateAction(action.id, { hotkey: hk })}
-                  onClear={() => void updateAction(action.id, { hotkey: null })}
-                />
-
-                {bindStatus === 'ok' && (
-                  <CheckCircle size={13} style={{ color: '#22c55e', flexShrink: 0 }} />
-                )}
-
-                <button
-                  onClick={() => void updateAction(action.id, { enabled: !action.enabled })}
+                <div
                   style={{
-                    fontSize: 11,
-                    padding: '3px 8px',
-                    borderRadius: 6,
-                    border: '1px solid var(--color-hairline)',
-                    background: 'var(--color-canvas)',
-                    color: action.enabled ? 'var(--color-ink)' : 'var(--color-mute)',
-                    cursor: 'pointer',
-                  }}
-                  title={action.enabled ? t('ai.quickActions.disable') : t('ai.quickActions.enable')}
-                >
-                  {action.enabled ? t('ai.quickActions.on') : t('ai.quickActions.off')}
-                </button>
-
-                <button
-                  onClick={() => setEditing(action)}
-                  style={{
-                    padding: 5,
-                    borderRadius: 6,
-                    border: '1px solid var(--color-hairline)',
-                    background: 'none',
-                    color: 'var(--color-mute)',
-                    cursor: 'pointer',
                     display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'flex-end',
+                    gap: 6,
+                    flex: '1 1 auto',
+                    flexWrap: 'wrap',
                   }}
-                  title={t('ai.quickActions.edit')}
                 >
-                  <Edit3 size={12} />
-                </button>
+                  <HotkeyChip
+                    value={action.hotkey}
+                    bindError={bindError}
+                    onChange={(hk) => void updateAction(action.id, { hotkey: hk })}
+                    onClear={() => void updateAction(action.id, { hotkey: null })}
+                  />
 
-                <button
-                  onClick={() => void deleteAction(action.id)}
-                  style={{
-                    padding: 5,
-                    borderRadius: 6,
-                    border: '1px solid var(--color-hairline)',
-                    background: 'none',
-                    color: 'var(--color-accent-red)',
-                    cursor: 'pointer',
-                    display: 'flex',
-                  }}
-                  title={t('ai.quickActions.delete')}
-                >
-                  <Trash2 size={12} />
-                </button>
+                  {bindStatus === 'ok' && (
+                    <CheckCircle size={13} style={{ color: '#22c55e', flexShrink: 0 }} />
+                  )}
+
+                  <button
+                    onClick={() => void updateAction(action.id, { enabled: !action.enabled })}
+                    style={{
+                      fontSize: 11,
+                      padding: '4px 9px',
+                      borderRadius: 999,
+                      border: '1px solid var(--color-hairline)',
+                      background: action.enabled ? 'rgba(16,185,129,0.1)' : 'var(--color-canvas)',
+                      color: action.enabled ? 'var(--color-accent-green)' : 'var(--color-mute)',
+                      cursor: 'pointer',
+                    }}
+                    title={
+                      action.enabled ? t('ai.quickActions.disable') : t('ai.quickActions.enable')
+                    }
+                  >
+                    {action.enabled ? t('ai.quickActions.on') : t('ai.quickActions.off')}
+                  </button>
+
+                  <button
+                    onClick={() => setEditing(action)}
+                    style={{
+                      width: 28,
+                      height: 28,
+                      borderRadius: 7,
+                      border: '1px solid var(--color-hairline)',
+                      background: 'var(--color-canvas)',
+                      color: 'var(--color-mute)',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                    title={t('ai.quickActions.edit')}
+                  >
+                    <Edit3 size={13} />
+                  </button>
+
+                  <button
+                    onClick={() => void deleteAction(action.id)}
+                    style={{
+                      width: 28,
+                      height: 28,
+                      borderRadius: 7,
+                      border: '1px solid var(--color-hairline)',
+                      background: 'var(--color-canvas)',
+                      color: 'var(--color-accent-red)',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                    title={t('ai.quickActions.delete')}
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                </div>
               </div>
             );
           })

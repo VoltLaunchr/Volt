@@ -123,7 +123,7 @@ describe('ShellCommandPlugin', () => {
         title: 'rm -rf /',
         score: 100,
         pluginId: 'shellcommand',
-        data: { command: 'rm -rf /', status: 'pending' } as unknown as Record<string, unknown>,
+        data: { command: 'rm -rf /', status: 'pending' },
       });
 
       off();
@@ -141,7 +141,7 @@ describe('ShellCommandPlugin', () => {
         title: '',
         score: 100,
         pluginId: 'shellcommand',
-        data: { command: '', status: 'pending' } as unknown as Record<string, unknown>,
+        data: { command: '', status: 'pending' },
       });
       // No error thrown
     });

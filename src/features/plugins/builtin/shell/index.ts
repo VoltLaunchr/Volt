@@ -211,10 +211,7 @@ export class ShellCommandPlugin implements Plugin {
               badge: 'Shell',
               score: 100,
               pluginId: this.id,
-              data: { command: last.command, status: 'pending' } as unknown as Record<
-                string,
-                unknown
-              >,
+              data: { command: last.command, status: 'pending' },
             },
           ];
         }
@@ -230,7 +227,7 @@ export class ShellCommandPlugin implements Plugin {
           badge: 'Shell',
           score: 100,
           pluginId: this.id,
-          data: { command: '', status: 'pending' } as unknown as Record<string, unknown>,
+          data: { command: '', status: 'pending' },
         },
       ];
     }
@@ -251,10 +248,7 @@ export class ShellCommandPlugin implements Plugin {
             badge: record.runCount > 1 ? `×${record.runCount}` : 'Shell',
             score: 100 - i,
             pluginId: this.id,
-            data: { command: record.command, status: 'pending' } as unknown as Record<
-              string,
-              unknown
-            >,
+            data: { command: record.command, status: 'pending' },
           }));
         }
       } catch (err) {
@@ -277,10 +271,7 @@ export class ShellCommandPlugin implements Plugin {
             badge: 'Shell',
             score: 100 - i,
             pluginId: this.id,
-            data: { command: record.command, status: 'pending' } as unknown as Record<
-              string,
-              unknown
-            >,
+            data: { command: record.command, status: 'pending' },
           }));
         }
       } catch (err) {
@@ -333,10 +324,7 @@ export class ShellCommandPlugin implements Plugin {
           badge: 'Shell',
           score: 90 - i,
           pluginId: this.id,
-          data: { command: record.command, status: 'pending' } as unknown as Record<
-            string,
-            unknown
-          >,
+          data: { command: record.command, status: 'pending' },
         });
       }
     } catch (err) {

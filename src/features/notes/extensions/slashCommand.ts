@@ -59,8 +59,7 @@ export const SLASH_COMMANDS: readonly SlashCommandItem[] = [
     description: 'Unordered list of items',
     icon: '•',
     aliases: ['ul', 'bullet', 'list'],
-    command: (editor, range) =>
-      editor.chain().focus().deleteRange(range).toggleBulletList().run(),
+    command: (editor, range) => editor.chain().focus().deleteRange(range).toggleBulletList().run(),
   },
   {
     id: 'ordered',
@@ -68,14 +67,13 @@ export const SLASH_COMMANDS: readonly SlashCommandItem[] = [
     description: 'Ordered list of items',
     icon: '1.',
     aliases: ['ol', 'numbered', 'ordered'],
-    command: (editor, range) =>
-      editor.chain().focus().deleteRange(range).toggleOrderedList().run(),
+    command: (editor, range) => editor.chain().focus().deleteRange(range).toggleOrderedList().run(),
   },
   {
     id: 'task',
     title: 'Task list',
     description: 'Checklist with checkboxes',
-    icon: '☐',
+    icon: 'task',
     aliases: ['todo', 'task', 'checkbox', 'check'],
     command: (editor, range) => editor.chain().focus().deleteRange(range).toggleTaskList().run(),
   },
@@ -94,8 +92,7 @@ export const SLASH_COMMANDS: readonly SlashCommandItem[] = [
     description: 'Blockquote',
     icon: '"',
     aliases: ['quote', 'blockquote'],
-    command: (editor, range) =>
-      editor.chain().focus().deleteRange(range).setBlockquote().run(),
+    command: (editor, range) => editor.chain().focus().deleteRange(range).setBlockquote().run(),
   },
   {
     id: 'divider',
@@ -103,14 +100,13 @@ export const SLASH_COMMANDS: readonly SlashCommandItem[] = [
     description: 'Horizontal rule',
     icon: '—',
     aliases: ['divider', 'hr', 'rule', 'separator'],
-    command: (editor, range) =>
-      editor.chain().focus().deleteRange(range).setHorizontalRule().run(),
+    command: (editor, range) => editor.chain().focus().deleteRange(range).setHorizontalRule().run(),
   },
   {
     id: 'date',
     title: 'Date',
     description: 'Insert today’s date (YYYY-MM-DD)',
-    icon: '📅',
+    icon: 'date',
     aliases: ['date', 'today'],
     command: (editor, range) => {
       const text = formatDateToday();
@@ -121,7 +117,7 @@ export const SLASH_COMMANDS: readonly SlashCommandItem[] = [
     id: 'time',
     title: 'Time',
     description: 'Insert the current time (HH:MM)',
-    icon: '🕒',
+    icon: 'time',
     aliases: ['time', 'now'],
     command: (editor, range) => {
       const text = formatTimeNow();
@@ -159,7 +155,7 @@ interface SlashCommandExtensionOptions {
  * reused server-side).
  */
 export function createSlashCommandExtension(
-  options: SlashSuggestionOptions,
+  options: SlashSuggestionOptions
 ): Extension<SlashCommandExtensionOptions> {
   return Extension.create<SlashCommandExtensionOptions>({
     name: 'slashCommand',

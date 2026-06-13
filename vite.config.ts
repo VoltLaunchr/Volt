@@ -61,15 +61,10 @@ export default defineConfig(async () => ({
             return undefined;
           }
 
-          // Emoji data (app-side) — large static JSON.
-          if (id.includes('emojiData')) {
-            return 'emoji-data';
-          }
-
-          // Plugin builtin components.
-          if (id.includes('features/plugins/builtin') && !id.includes('emojiData')) {
-            return 'plugins-builtin';
-          }
+          // App-side modules are intentionally left to Rollup. The emoji data
+          // loader and builtin plugin graph reference each other, so forcing
+          // them into separate chunks creates an initialization cycle.
+          return undefined;
         },
       },
     },

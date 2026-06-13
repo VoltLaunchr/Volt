@@ -2,6 +2,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
+import { AlertTriangle } from 'lucide-react';
 import { initI18n } from './i18n';
 import './styles/global.css';
 
@@ -21,7 +22,9 @@ async function renderFatalError(error: unknown): Promise<void> {
   // Show the window first so the error UI is actually visible to the user.
   try {
     await getCurrentWindow().show();
-  } catch { /* best-effort — ignore if the window API is unavailable */ }
+  } catch {
+    /* best-effort — ignore if the window API is unavailable */
+  }
 
   root.render(
     <div
@@ -40,7 +43,7 @@ async function renderFatalError(error: unknown): Promise<void> {
         boxSizing: 'border-box',
       }}
     >
-      <span style={{ fontSize: '32px', color: '#f59e0b' }} aria-hidden="true">⚠</span>
+      <AlertTriangle size={32} color="#f59e0b" aria-hidden="true" />
       <h1 style={{ fontSize: '18px', fontWeight: 600, margin: 0, color: '#f0f0f0' }}>
         Volt failed to start
       </h1>
@@ -57,7 +60,9 @@ async function renderFatalError(error: unknown): Promise<void> {
         {message}
       </p>
       <button
-        onClick={() => { window.location.reload(); }}
+        onClick={() => {
+          window.location.reload();
+        }}
         style={{
           marginTop: '8px',
           padding: '8px 20px',
@@ -92,8 +97,8 @@ function armWatchdog(): void {
     void renderFatalError(
       new Error(
         'Volt took too long to start (> 10 s).\n' +
-        'This usually means the IPC bridge is unavailable or a background task is hanging.\n' +
-        'Try restarting the application.'
+          'This usually means the IPC bridge is unavailable or a background task is hanging.\n' +
+          'Try restarting the application.'
       )
     );
   }, WATCHDOG_MS);

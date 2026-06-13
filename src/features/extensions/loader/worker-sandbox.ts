@@ -912,7 +912,7 @@ export class WorkerPlugin implements Plugin {
       }>('extension_authenticated_fetch', {
         extensionId: this.id,
         url,
-        method: (safeOptions.method as string) ?? 'GET',
+        method: (safeOptions.method) ?? 'GET',
         headers,
         body: typeof safeOptions.body === 'string' ? safeOptions.body : null,
       });

@@ -36,6 +36,7 @@ import { useToastStore } from '../../shared/components/ui/toast-store';
 import { useAppStore } from '../../stores/appStore';
 import { useUiStore } from '../../stores/uiStore';
 import type { ExtensionPermission } from '../../features/extensions/types/extension.types';
+import { FileWatcherLifecycle } from './fileWatcherLifecycle';
 
 export interface UseAppLifecycleResult {
   allApps: AppInfo[];
@@ -70,6 +71,11 @@ export function useAppLifecycle(): UseAppLifecycleResult {
 
   const indexingStarted = useRef(false); // Prevent double indexing (StrictMode)
   const updateCheckDone = useRef(false); // Prevent double update check
+  const indexingRunIdRef = useRef(0);
+  const fileWatcherRef = useRef<FileWatcherLifecycle | null>(null);
+  if (fileWatcherRef.current === null) {
+    fileWatcherRef.current = new FileWatcherLifecycle();
+  }
   // Tracks the active `indexing-progress` Tauri listener so both effects below
   // (settings-changed restart + start-indexing-on-mount) can tear it down.
   // Declared at the top so both effects see the same ref instance.
@@ -297,14 +303,20 @@ export function useAppLifecycle(): UseAppLifecycleResult {
         JSON.stringify(newSettings.indexing.fileExtensions) !==
           JSON.stringify(currentSettings.indexing.fileExtensions);
 
-      if ((foldersChanged || extensionsChanged) && newSettings.indexing.folders.length > 0) {
-        const restart = async () => {
-          // Tear down any active progress listener from a previous indexing run
-          // before registering a new one, so we don't double-fire setIsIndexing.
-          indexingUnlistenRef.current?.();
-          indexingUnlistenRef.current = null;
+      if (foldersChanged || extensionsChanged) {
+        const indexingRunId = ++indexingRunIdRef.current;
+        indexingUnlistenRef.current?.();
+        indexingUnlistenRef.current = null;
 
+        const restart = async () => {
           try {
+            await fileWatcherRef.current?.stop();
+            if (cancelled || indexingRunId !== indexingRunIdRef.current) return;
+            if (newSettings.indexing.folders.length === 0) {
+              setIsIndexing(false);
+              return;
+            }
+
             setIsIndexing(true);
             const { addToast } = useToastStore.getState();
             addToast(`Indexing ${newSettings.indexing.folders.length} folder(s)...`, 'info');
@@ -313,12 +325,15 @@ export function useAppLifecycle(): UseAppLifecycleResult {
               phase: string;
               indexedFiles: number;
             }>('indexing-progress', (evt) => {
+              if (indexingRunId !== indexingRunIdRef.current) return;
+
               const { phase, indexedFiles } = evt.payload;
               if (phase === 'complete') {
                 setIsIndexing(false);
                 addToast(`Indexing complete — ${indexedFiles} files indexed`, 'success');
                 unlisten();
                 indexingUnlistenRef.current = null;
+                void fileWatcherRef.current?.start();
               } else if (phase === 'error') {
                 setIsIndexing(false);
                 addToast('Indexing failed', 'error', 0);
@@ -326,6 +341,10 @@ export function useAppLifecycle(): UseAppLifecycleResult {
                 indexingUnlistenRef.current = null;
               }
             });
+            if (cancelled || indexingRunId !== indexingRunIdRef.current) {
+              unlisten();
+              return;
+            }
             indexingUnlistenRef.current = unlisten;
 
             await invoke<void>('start_indexing', {
@@ -336,6 +355,7 @@ export function useAppLifecycle(): UseAppLifecycleResult {
               deepSearch: newSettings.indexing.deepSearch,
             });
           } catch (err) {
+            if (cancelled || indexingRunId !== indexingRunIdRef.current) return;
             logger.error('Failed to restart indexing after settings change:', err);
             setIsIndexing(false);
             indexingUnlistenRef.current?.();
@@ -352,11 +372,6 @@ export function useAppLifecycle(): UseAppLifecycleResult {
     return () => {
       cancelled = true;
       unlistenFn?.();
-      // Tear down any indexing-progress listener installed by an in-flight
-      // restart. Without this, an unmount mid-restart leaks the listener and
-      // fires setIsIndexing/addToast on a torn-down store subscriber.
-      indexingUnlistenRef.current?.();
-      indexingUnlistenRef.current = null;
     };
   }, [setSettings, setIsIndexing]);
 
@@ -366,9 +381,6 @@ export function useAppLifecycle(): UseAppLifecycleResult {
   // every unrelated settings change (which would tear down the active
   // indexing-progress listener mid-scan).
   const indexOnStartup = settings?.indexing.indexOnStartup;
-  const indexingFolders = settings?.indexing.folders;
-  const indexingExcludedPaths = settings?.indexing.excludedPaths;
-  const indexingFileExtensions = settings?.indexing.fileExtensions;
   useEffect(() => {
     const startFileIndexing = async () => {
       // Prevent double indexing (StrictMode)
@@ -380,6 +392,7 @@ export function useAppLifecycle(): UseAppLifecycleResult {
       }
 
       indexingStarted.current = true;
+      const indexingRunId = ++indexingRunIdRef.current;
 
       // If no folders configured, auto-configure with default folders
       let foldersToIndex = currentSettings.indexing.folders;
@@ -404,6 +417,8 @@ export function useAppLifecycle(): UseAppLifecycleResult {
       if (foldersToIndex.length === 0) {
         return;
       }
+
+      if (indexingRunId !== indexingRunIdRef.current) return;
 
       // Detect if the indexing config changed since the last app session.
       // When it changes (e.g. folders added, or file_extensions migrated from ["exe","lnk"]→[]),
@@ -431,6 +446,8 @@ export function useAppLifecycle(): UseAppLifecycleResult {
           totalFiles: number;
           isComplete: boolean;
         }>('indexing-progress', (event) => {
+          if (indexingRunId !== indexingRunIdRef.current) return;
+
           const { phase, indexedFiles } = event.payload;
 
           if (phase === 'complete') {
@@ -438,6 +455,7 @@ export function useAppLifecycle(): UseAppLifecycleResult {
             addToast(`Indexing complete — ${indexedFiles} files indexed`, 'success');
             unlisten();
             indexingUnlistenRef.current = null;
+            void fileWatcherRef.current?.start();
           } else if (phase === 'error') {
             setIsIndexing(false);
             addToast('Indexing failed', 'error', 0); // duration 0 = persistent
@@ -445,6 +463,11 @@ export function useAppLifecycle(): UseAppLifecycleResult {
             indexingUnlistenRef.current = null;
           }
         });
+
+        if (indexingRunId !== indexingRunIdRef.current) {
+          unlisten();
+          return;
+        }
 
         // Store unlisten for cleanup on unmount
         indexingUnlistenRef.current = unlisten;
@@ -459,24 +482,29 @@ export function useAppLifecycle(): UseAppLifecycleResult {
           deepSearch: currentSettings.indexing.deepSearch,
         });
       } catch (err) {
+        if (indexingRunId !== indexingRunIdRef.current) return;
         logger.error('Failed to start file indexing:', err);
         useToastStore.getState().addToast('Indexing failed', 'error', 0);
         setIsIndexing(false);
+        indexingUnlistenRef.current?.();
+        indexingUnlistenRef.current = null;
       }
     };
 
     if (indexOnStartup !== undefined) {
       void startFileIndexing();
     }
+  }, [indexOnStartup, setIsIndexing]);
 
+  useEffect(() => {
     return () => {
-      // Clean up indexing listener on unmount
-      if (indexingUnlistenRef.current) {
-        indexingUnlistenRef.current();
-        indexingUnlistenRef.current = null;
-      }
+      indexingRunIdRef.current += 1;
+      indexingStarted.current = false;
+      indexingUnlistenRef.current?.();
+      indexingUnlistenRef.current = null;
+      void fileWatcherRef.current?.stop();
     };
-  }, [indexOnStartup, indexingFolders, indexingExcludedPaths, indexingFileExtensions, setIsIndexing]);
+  }, []);
 
   return {
     allApps,

@@ -4,18 +4,18 @@
  */
 
 import React from 'react';
-import { Pause, Play, X } from 'lucide-react';
+import { Coffee, Focus, MoonStar, Pause, Play, Timer, X, type LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useTimers } from './useTimers';
 import { timerStore } from './timerStore';
 
 type TimerMode = 'focus' | 'short' | 'long' | 'custom';
 
-const MODE_META: Record<TimerMode, { color: string; label: string; emoji: string }> = {
-  focus: { color: '#FF3B30', label: 'Focus', emoji: '🍅' },
-  short: { color: '#34C759', label: 'Short break', emoji: '☕' },
-  long: { color: '#007AFF', label: 'Long break', emoji: '🌴' },
-  custom: { color: '#FF9500', label: 'Timer', emoji: '⏱️' },
+const MODE_META: Record<TimerMode, { color: string; label: string; icon: LucideIcon }> = {
+  focus: { color: '#FF3B30', label: 'Focus', icon: Focus },
+  short: { color: '#34C759', label: 'Short break', icon: Coffee },
+  long: { color: '#007AFF', label: 'Long break', icon: MoonStar },
+  custom: { color: '#FF9500', label: 'Timer', icon: Timer },
 };
 
 function detectMode(label: string): TimerMode {
@@ -49,13 +49,11 @@ export function TimerDisplay({ onOpenView }: TimerDisplayProps): React.JSX.Eleme
     >
       {activeTimers.map((timer) => {
         const remaining = timerStore.getRemainingTime(timer.id);
-        const pct =
-          timer.duration > 0
-            ? Math.min(1, Math.max(0, remaining / timer.duration))
-            : 0;
+        const pct = timer.duration > 0 ? Math.min(1, Math.max(0, remaining / timer.duration)) : 0;
         const dashOffset = RING_CIRCUM * (1 - pct);
         const mode = detectMode(timer.label);
         const meta = MODE_META[mode];
+        const ModeIcon = meta.icon;
         const lowTime = remaining > 0 && remaining <= 10_000;
 
         return (
@@ -105,9 +103,7 @@ export function TimerDisplay({ onOpenView }: TimerDisplayProps): React.JSX.Eleme
                     style={{ transition: 'stroke-dashoffset 1s linear' }}
                   />
                 </svg>
-                <span className="relative text-sm leading-none" style={{ filter: 'saturate(1.1)' }}>
-                  {meta.emoji}
-                </span>
+                <ModeIcon className="relative" size={15} style={{ color: meta.color }} />
               </div>
 
               {/* Info column */}

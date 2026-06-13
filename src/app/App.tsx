@@ -245,31 +245,33 @@ function App() {
     let unlisten: (() => void) | undefined;
     void listen<{ actionId: string; label: string; systemPrompt: string; provider?: string | null }>(
       'volt://ai-quick-action',
-      async ({ payload }) => {
-        try {
-          const clipboardText = await invoke<string>('ai_quick_actions_read_clipboard');
-          if (!clipboardText?.trim()) {
+      ({ payload }) => {
+        void (async () => {
+          try {
+            const clipboardText = await invoke<string>('ai_quick_actions_read_clipboard');
+            if (!clipboardText?.trim()) {
+              useToastStore
+                .getState()
+                .addToast(
+                  `Quick Action "${payload.label}" — clipboard is empty. Copy some text first.`,
+                  'error',
+                  4000
+                );
+              return;
+            }
+            const trimmedClipboard = clipboardText.trim();
+            const resolvedSystemPrompt = resolvePlaceholders(payload.systemPrompt, {
+              clipboard: trimmedClipboard,
+              lang: navigator.language,
+              now: new Date(),
+            });
+            handleOpenAiChatView(trimmedClipboard, resolvedSystemPrompt);
+          } catch (err) {
             useToastStore
               .getState()
-              .addToast(
-                `Quick Action "${payload.label}" — clipboard is empty. Copy some text first.`,
-                'error',
-                4000
-              );
-            return;
+              .addToast(`Quick Action failed: ${String(err)}`, 'error', 4000);
           }
-          const trimmedClipboard = clipboardText.trim();
-          const resolvedSystemPrompt = resolvePlaceholders(payload.systemPrompt, {
-            clipboard: trimmedClipboard,
-            lang: navigator.language,
-            now: new Date(),
-          });
-          handleOpenAiChatView(trimmedClipboard, resolvedSystemPrompt);
-        } catch (err) {
-          useToastStore
-            .getState()
-            .addToast(`Quick Action failed: ${String(err)}`, 'error', 4000);
-        }
+        })();
       }
     ).then((fn) => { unlisten = fn; });
     return () => { unlisten?.(); };

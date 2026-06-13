@@ -7,13 +7,18 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ArrowLeft,
   Check,
+  Coffee,
+  Focus,
+  MoonStar,
   Pause,
   Play,
   Plus,
   RotateCcw,
   SkipForward,
   Trash2,
+  Timer,
   X,
+  type LucideIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { parseDurationFlexible, MAX_DURATION_MS } from './index';
@@ -30,20 +35,27 @@ interface ModeCfg {
   short: string;
   minutes: number;
   color: string;
-  emoji: string;
+  icon: LucideIcon;
 }
 
 const DEFAULT_CUSTOM_MINUTES = 10;
 
 const MODES: Record<Mode, ModeCfg> = {
-  focus: { key: 'focus', label: 'Focus', short: 'Focus', minutes: 25, color: '#FF3B30', emoji: '🍅' },
+  focus: {
+    key: 'focus',
+    label: 'Focus',
+    short: 'Focus',
+    minutes: 25,
+    color: '#FF3B30',
+    icon: Focus,
+  },
   short: {
     key: 'short',
     label: 'Short break',
     short: 'Short break',
     minutes: 5,
     color: '#34C759',
-    emoji: '☕',
+    icon: Coffee,
   },
   long: {
     key: 'long',
@@ -51,7 +63,7 @@ const MODES: Record<Mode, ModeCfg> = {
     short: 'Long break',
     minutes: 15,
     color: '#007AFF',
-    emoji: '🌴',
+    icon: MoonStar,
   },
   custom: {
     key: 'custom',
@@ -59,7 +71,7 @@ const MODES: Record<Mode, ModeCfg> = {
     short: 'Custom',
     minutes: DEFAULT_CUSTOM_MINUTES,
     color: '#FF9500',
-    emoji: '⏱️',
+    icon: Timer,
   },
 };
 
@@ -148,14 +160,14 @@ export function TimerView({ onClose }: TimerViewProps): React.JSX.Element {
   const customInputRef = useRef<HTMLInputElement>(null);
 
   const currentMode = MODES[session.mode];
-  const totalMs =
-    session.mode === 'custom' ? session.customMs : currentMode.minutes * 60 * 1000;
+  const CurrentModeIcon = currentMode.icon;
+  const totalMs = session.mode === 'custom' ? session.customMs : currentMode.minutes * 60 * 1000;
 
   // Resolve the active timer (if our stored id still exists in store)
-  const activeTimer = session.activeTimerId ? timerStore.getTimer(session.activeTimerId) : undefined;
-  const remaining = activeTimer
-    ? timerStore.getRemainingTime(activeTimer.id)
-    : totalMs;
+  const activeTimer = session.activeTimerId
+    ? timerStore.getTimer(session.activeTimerId)
+    : undefined;
+  const remaining = activeTimer ? timerStore.getRemainingTime(activeTimer.id) : totalMs;
   const running = !!activeTimer && !activeTimer.isPaused;
   const paused = !!activeTimer && activeTimer.isPaused;
   const pct = totalMs > 0 ? Math.min(1, Math.max(0, remaining / totalMs)) : 0;
@@ -246,8 +258,7 @@ export function TimerView({ onClose }: TimerViewProps): React.JSX.Element {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
-      const isInput =
-        target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA');
+      const isInput = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA');
       if (e.key === 'Escape' && !isInput) {
         e.preventDefault();
         onClose();
@@ -348,9 +359,7 @@ export function TimerView({ onClose }: TimerViewProps): React.JSX.Element {
           <ArrowLeft size={16} strokeWidth={2} />
         </button>
         <div className="flex-1 flex items-center gap-2 min-w-0">
-          <span className="text-base leading-none" aria-hidden="true" style={{ filter: 'saturate(1.1)' }}>
-            {currentMode.emoji}
-          </span>
+          <CurrentModeIcon size={16} aria-hidden="true" style={{ color: currentMode.color }} />
           <span className="text-sm font-semibold tracking-[-0.2px] text-ink">Focus Timer</span>
         </div>
         {session.mode !== 'custom' ? (
@@ -359,11 +368,8 @@ export function TimerView({ onClose }: TimerViewProps): React.JSX.Element {
             title="Pomodoro sessions completed"
           >
             Session{' '}
-            {Math.min(
-              session.sessionsDone + (session.mode === 'focus' ? 1 : 0),
-              MAX_SESSIONS
-            )}{' '}
-            / {MAX_SESSIONS}
+            {Math.min(session.sessionsDone + (session.mode === 'focus' ? 1 : 0), MAX_SESSIONS)} /{' '}
+            {MAX_SESSIONS}
           </div>
         ) : (
           <div
@@ -376,7 +382,10 @@ export function TimerView({ onClose }: TimerViewProps): React.JSX.Element {
       </header>
 
       {/* Body: two-column layout */}
-      <div className="flex-1 grid min-h-0" style={{ gridTemplateColumns: 'minmax(0,1.1fr) minmax(260px,0.9fr)' }}>
+      <div
+        className="flex-1 grid min-h-0"
+        style={{ gridTemplateColumns: 'minmax(0,1.1fr) minmax(260px,0.9fr)' }}
+      >
         {/* LEFT — timer column */}
         <section
           className="flex flex-col items-center gap-4 px-6 py-[18px] border-r border-hairline overflow-visible"
@@ -583,9 +592,7 @@ export function TimerView({ onClose }: TimerViewProps): React.JSX.Element {
                 Tasks
               </span>
               {tasks.length > 0 && (
-                <span className="text-[11px] text-ash tabular-nums">
-                  {remainingTasks} open
-                </span>
+                <span className="text-[11px] text-ash tabular-nums">{remainingTasks} open</span>
               )}
             </div>
             <button
