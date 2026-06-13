@@ -9,6 +9,15 @@ pub mod search;
 pub mod utils;
 mod window;
 
+/// Narrow public surface used by Criterion benches without exposing the
+/// complete internal indexer module as application API.
+#[cfg(feature = "tantivy-search")]
+#[doc(hidden)]
+pub mod benchmark_api {
+    pub use crate::indexer::fulltext::FulltextIndex;
+    pub use crate::indexer::{FileCategory, FileInfo, SearchEngine, SearchOptions};
+}
+
 use commands::clipboard::ClipboardManagerState;
 use commands::files::{FileHistoryState, FileIndexState, WatcherState};
 use commands::launcher::LaunchHistoryState;

@@ -5,6 +5,8 @@
 //! the DB with individual updates.
 
 use crate::indexer::database::FileIndexDb;
+#[cfg(feature = "tantivy-search")]
+use crate::indexer::fulltext::FulltextIndex;
 use crate::indexer::scanner::{create_directory_info_pub, create_file_info_pub};
 use crate::indexer::types::FileInfo;
 use notify::{
@@ -20,6 +22,11 @@ use tracing::{debug, error, info, warn};
 
 /// How long to wait (ms) before flushing a debounced batch.
 const DEBOUNCE_MS: u64 = 100;
+#[cfg(feature = "tantivy-search")]
+const FULLTEXT_DIRTY_META_KEY: &str = "tantivy_dirty";
+
+type SharedFileCache = Arc<Mutex<Arc<Vec<FileInfo>>>>;
+type SharedFileLookup = Arc<Mutex<Arc<HashMap<String, usize>>>>;
 
 // ---------------------------------------------------------------------------
 // WatcherState
@@ -32,6 +39,9 @@ pub struct WatcherHandle {
     /// wakes the background thread immediately instead of waiting up to
     /// `DEBOUNCE_MS` for the next poll.
     watcher: Mutex<Option<RecommendedWatcher>>,
+    /// Worker thread draining notify events. Joining it during `stop()` makes
+    /// shutdown a synchronization barrier before an index rebuild clears data.
+    worker: Mutex<Option<std::thread::JoinHandle<()>>>,
     /// Shared atomic flag; set to `false` to signal the worker thread to exit.
     /// Uses `AtomicBool` so the thread can observe the shutdown without
     /// locking a Mutex on every iteration.
@@ -49,6 +59,12 @@ impl WatcherHandle {
         // Drop the notify watcher (closes the event channel).
         if let Ok(mut guard) = self.watcher.lock() {
             guard.take();
+        }
+        if let Ok(mut worker) = self.worker.lock()
+            && let Some(handle) = worker.take()
+            && handle.join().is_err()
+        {
+            error!("File watcher worker panicked during shutdown");
         }
     }
 
@@ -72,7 +88,9 @@ impl WatcherHandle {
 pub fn start_watcher(
     directories: Vec<String>,
     db: Arc<FileIndexDb>,
-    in_memory_files: Option<Arc<Mutex<Arc<Vec<FileInfo>>>>>,
+    #[cfg(feature = "tantivy-search")] fulltext_index: Option<Arc<FulltextIndex>>,
+    in_memory_files: Option<SharedFileCache>,
+    in_memory_lookup: Option<SharedFileLookup>,
 ) -> Result<WatcherHandle, String> {
     if directories.is_empty() {
         return Err("No directories to watch".to_string());
@@ -102,8 +120,11 @@ pub fn start_watcher(
 
     // Spawn a background thread that drains events with a simple debounce.
     let db_thread = db.clone();
+    #[cfg(feature = "tantivy-search")]
+    let fulltext_thread = fulltext_index;
     let files_thread = in_memory_files;
-    std::thread::spawn(move || {
+    let lookup_thread = in_memory_lookup;
+    let worker = std::thread::spawn(move || {
         // pending_events: path → last-seen EventKind
         let mut pending: HashMap<PathBuf, EventKind> = HashMap::new();
         let mut last_flush = Instant::now();
@@ -144,7 +165,21 @@ pub fn start_watcher(
 
             // Flush if debounce window elapsed.
             if last_flush.elapsed() >= Duration::from_millis(DEBOUNCE_MS) && !pending.is_empty() {
-                flush_events(&db_thread, files_thread.as_ref(), &pending);
+                #[cfg(feature = "tantivy-search")]
+                flush_events(
+                    &db_thread,
+                    files_thread.as_ref(),
+                    lookup_thread.as_ref(),
+                    fulltext_thread.as_ref(),
+                    &pending,
+                );
+                #[cfg(not(feature = "tantivy-search"))]
+                flush_events(
+                    &db_thread,
+                    files_thread.as_ref(),
+                    lookup_thread.as_ref(),
+                    &pending,
+                );
                 pending.clear();
                 last_flush = Instant::now();
             }
@@ -160,6 +195,7 @@ pub fn start_watcher(
 
     Ok(WatcherHandle {
         watcher: Mutex::new(Some(watcher)),
+        worker: Mutex::new(Some(worker)),
         active,
     })
 }
@@ -171,12 +207,21 @@ pub fn start_watcher(
 #[allow(clippy::collapsible_if)]
 fn flush_events(
     db: &FileIndexDb,
-    in_memory: Option<&Arc<Mutex<Arc<Vec<FileInfo>>>>>,
+    in_memory: Option<&SharedFileCache>,
+    in_memory_lookup: Option<&SharedFileLookup>,
+    #[cfg(feature = "tantivy-search")] fulltext: Option<&Arc<FulltextIndex>>,
     events: &HashMap<PathBuf, EventKind>,
 ) {
     // Collect changes to apply to the in-memory vec in one batch.
     let mut upserts: Vec<FileInfo> = Vec::new();
     let mut removals: Vec<String> = Vec::new();
+
+    #[cfg(feature = "tantivy-search")]
+    let tracks_fulltext = fulltext.is_some();
+    #[cfg(feature = "tantivy-search")]
+    if tracks_fulltext && let Err(e) = db.set_meta(FULLTEXT_DIRTY_META_KEY, "1") {
+        error!("Watcher could not mark fulltext index dirty: {}", e);
+    }
 
     for (path, kind) in events {
         match kind {
@@ -275,6 +320,26 @@ fn flush_events(
         }
     }
 
+    #[cfg(feature = "tantivy-search")]
+    if let Some(fulltext) = fulltext
+        && (!upserts.is_empty() || !removals.is_empty())
+    {
+        match fulltext.apply_batch(&upserts, &removals) {
+            Ok(()) => {
+                if let Err(e) = db.set_meta(FULLTEXT_DIRTY_META_KEY, "0") {
+                    error!("Watcher could not mark fulltext index clean: {}", e);
+                }
+            }
+            Err(e) => error!("Watcher fulltext sync failed: {}", e),
+        }
+    } else if tracks_fulltext {
+        // No successful SQLite mutation was collected, so there is no derived
+        // index work to commit and the prior clean state remains valid.
+        if let Err(e) = db.set_meta(FULLTEXT_DIRTY_META_KEY, "0") {
+            error!("Watcher could not restore fulltext clean marker: {}", e);
+        }
+    }
+
     // Apply collected changes to the in-memory cache in one lock acquisition.
     if let Some(files_mutex) = in_memory {
         if !upserts.is_empty() || !removals.is_empty() {
@@ -297,7 +362,21 @@ fn flush_events(
                     }
                 }
 
-                *guard = Arc::new(new_files);
+                let new_lookup = Arc::new(
+                    new_files
+                        .iter()
+                        .enumerate()
+                        .map(|(index, file)| (file.path.clone(), index))
+                        .collect(),
+                );
+                if let Some(lookup_mutex) = in_memory_lookup
+                    && let Ok(mut lookup_guard) = lookup_mutex.lock()
+                {
+                    *guard = Arc::new(new_files);
+                    *lookup_guard = new_lookup;
+                } else if in_memory_lookup.is_none() {
+                    *guard = Arc::new(new_files);
+                }
             }
         }
     }

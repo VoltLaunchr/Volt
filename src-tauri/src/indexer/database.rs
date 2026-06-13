@@ -214,6 +214,53 @@ impl FileIndexDb {
         Ok(())
     }
 
+    /// Atomically replace the complete file snapshot.
+    ///
+    /// Full scans use this instead of `clear_all` followed by `upsert_files`,
+    /// so readers never observe an empty/partial persistent index and stale
+    /// rows cannot survive a rescan.
+    pub fn replace_files(&self, files: &[FileInfo]) -> Result<(), String> {
+        let mut conn = self
+            .conn
+            .lock()
+            .map_err(|e| format!("DB lock poisoned: {}", e))?;
+        let tx = conn
+            .transaction()
+            .map_err(|e| format!("Failed to begin replacement transaction: {}", e))?;
+        tx.execute("DELETE FROM files", [])
+            .map_err(|e| format!("Failed to clear files for replacement: {}", e))?;
+
+        let now = chrono::Utc::now().timestamp();
+        {
+            let mut stmt = tx
+                .prepare(
+                    "INSERT INTO files (path, name, extension, size, modified_at, indexed_at, category)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                )
+                .map_err(|e| format!("Failed to prepare replacement insert: {}", e))?;
+            for file in files {
+                let category = serde_json::to_string(&file.category)
+                    .unwrap_or_else(|_| "\"other\"".to_string())
+                    .trim_matches('"')
+                    .to_string();
+                stmt.execute(params![
+                    file.path,
+                    file.name,
+                    file.extension,
+                    file.size as i64,
+                    file.modified,
+                    now,
+                    category
+                ])
+                .map_err(|e| format!("Failed to replace file '{}': {}", file.path, e))?;
+            }
+        }
+        tx.commit()
+            .map_err(|e| format!("Failed to commit file replacement: {}", e))?;
+        info!("Replaced file index with {} files", files.len());
+        Ok(())
+    }
+
     /// Remove a file from the index by its path.
     pub fn remove_file(&self, path: &str) -> Result<(), String> {
         let conn = self
@@ -518,6 +565,24 @@ mod tests {
 
         db.upsert_files(&files).unwrap();
         assert_eq!(db.count().unwrap(), 100);
+    }
+
+    #[test]
+    fn test_replace_files_removes_stale_rows() {
+        let dir = tempdir().unwrap();
+        let db = FileIndexDb::open(dir.path().join("t.db")).unwrap();
+        db.upsert_files(&[
+            make_file("old.txt", "/tmp/old.txt"),
+            make_file("keep.txt", "/tmp/keep.txt"),
+        ])
+        .unwrap();
+
+        db.replace_files(&[make_file("keep.txt", "/tmp/keep.txt")])
+            .unwrap();
+
+        let files = db.get_all_files().unwrap();
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].path, "/tmp/keep.txt");
     }
 
     #[test]

@@ -148,8 +148,8 @@ impl ClipboardManagerPlugin {
 
     /// Initialize database
     fn init_database(&self, db_path: &PathBuf) -> Result<(), String> {
-        let conn =
-            Connection::open(db_path).map_err(|e| format!("Failed to open database: {}", e))?;
+        let conn = crate::core::encrypted_db::open_db(db_path)
+            .map_err(|e| format!("Failed to open database: {}", e))?;
 
         conn.execute(
             "CREATE TABLE IF NOT EXISTS clipboard_history (
@@ -232,7 +232,8 @@ impl ClipboardManagerPlugin {
             .map_err(|e| format!("clipboard db lock poisoned: {}", e))?;
         let conn = conn_guard.as_ref().ok_or("Database not initialized")?;
 
-        let limit = limit.unwrap_or(50);
+        let limit = i64::try_from(limit.unwrap_or(50))
+            .map_err(|_| "Clipboard history limit exceeds SQLite integer range".to_string())?;
         let mut stmt = conn
             .prepare(
                 "SELECT id, content_type, content, preview, timestamp, pinned, content_hash,
@@ -292,7 +293,8 @@ impl ClipboardManagerPlugin {
             .map_err(|e| format!("clipboard db lock poisoned: {}", e))?;
         let conn = conn_guard.as_ref().ok_or("Database not initialized")?;
 
-        let limit = limit.unwrap_or(50);
+        let limit = i64::try_from(limit.unwrap_or(50))
+            .map_err(|_| "Clipboard search limit exceeds SQLite integer range".to_string())?;
         let escaped = query.replace('%', "\\%").replace('_', "\\_");
         let search_pattern = format!("%{}%", escaped);
 
@@ -901,6 +903,8 @@ impl ClipboardManagerPlugin {
     ) -> Result<(), String> {
         let preview = Self::generate_preview_static(content, &content_type);
         let timestamp = Utc::now().timestamp();
+        let max_items = i64::try_from(max_items)
+            .map_err(|_| "Clipboard retention limit exceeds SQLite integer range".to_string())?;
 
         let (word_count, char_count, image_width, image_height, file_size) =
             Self::calculate_metadata_static(&content_type, content);
@@ -1070,7 +1074,7 @@ impl Plugin for ClipboardManagerPlugin {
                 self.init_database(&db_path)?;
 
                 // Open the long-lived reused connection
-                let conn = Connection::open(&db_path)
+                let conn = crate::core::encrypted_db::open_db(&db_path)
                     .map_err(|e| format!("Failed to open database: {}", e))?;
                 *self
                     .conn

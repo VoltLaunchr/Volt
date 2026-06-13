@@ -405,3 +405,29 @@ fn create_directory_info(path: &Path, metadata: &fs::Metadata) -> Option<FileInf
         category,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn read_dir_scanner_remains_the_cross_platform_fallback() {
+        let root = tempfile::tempdir().expect("temporary scan root");
+        let nested = root.path().join("nested");
+        fs::create_dir(&nested).expect("create nested directory");
+        let expected = nested.join("resume.txt");
+        fs::write(&expected, b"fallback").expect("write fixture");
+
+        let config = IndexConfig {
+            folders: vec![root.path().to_string_lossy().into_owned()],
+            excluded_paths: Vec::new(),
+            file_extensions: vec!["txt".to_string()],
+            max_depth: 10,
+            max_file_size: 1024,
+        };
+
+        let files = scan_files(&config).expect("read_dir fallback scan");
+        let expected = expected.to_string_lossy();
+        assert!(files.iter().any(|file| file.path == expected));
+    }
+}

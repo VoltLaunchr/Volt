@@ -51,7 +51,8 @@ arboard = "3.4"
 # so the default build keeps plain bundled SQLite while `--features sqlcipher`
 # can swap in bundled SQLCipher. `libsqlite3-sys` links exactly one amalgamation,
 # so `bundled` and `bundled-sqlcipher` are mutually exclusive by design.
-rusqlite = { version = "0.32" }
+rusqlite = { version = "0.40.1" }
+fs4 = "0.13.1"
 notify = { version = "6.1", features = ["macos_fsevent"] }
 image = "0.25"
 base64 = "0.22"

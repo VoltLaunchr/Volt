@@ -1,0 +1,91 @@
+name: Search Benchmark
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, dev]
+    paths:
+      - '.github/workflows/search-benchmark.yml'
+      - 'src-tauri/benches/search_bench.rs'
+      - 'src-tauri/Cargo.toml'
+      - 'src-tauri/Cargo.lock'
+      - 'src-tauri/src/indexer/**'
+      - 'src-tauri/src/search/**'
+      - 'src-tauri/src/launcher/**'
+      - 'src-tauri/src/commands/launcher/**'
+      - 'src-tauri/src/utils/matching.rs'
+      - 'src-tauri/src/lib.rs'
+  pull_request:
+    branches: [main, dev]
+    paths:
+      - '.github/workflows/search-benchmark.yml'
+      - 'src-tauri/benches/search_bench.rs'
+      - 'src-tauri/Cargo.toml'
+      - 'src-tauri/Cargo.lock'
+      - 'src-tauri/src/indexer/**'
+      - 'src-tauri/src/search/**'
+      - 'src-tauri/src/launcher/**'
+      - 'src-tauri/src/commands/launcher/**'
+      - 'src-tauri/src/utils/matching.rs'
+      - 'src-tauri/src/lib.rs'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: search-benchmark-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  criterion:
+    name: Criterion D1 Tantivy
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          shared-key: search-benchmark-tantivy
+
+      - name: Install Tauri Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            curl \
+            file \
+            libayatana-appindicator3-dev \
+            libgtk-3-dev \
+            librsvg2-dev \
+            libssl-dev \
+            libwebkit2gtk-4.1-dev \
+            wget
+
+      - name: Run Criterion search benchmark
+        working-directory: src-tauri
+        run: |
+          set -o pipefail
+          cargo bench \
+            --profile release \
+            --features tantivy-search \
+            --bench search_bench \
+            2>&1 | tee benchmark-output.txt
+
+      - name: Upload Criterion results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: criterion-search-benchmark-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            src-tauri/target/criterion/
+            src-tauri/benchmark-output.txt
+          if-no-files-found: warn
+          retention-days: 30
