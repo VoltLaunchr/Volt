@@ -187,8 +187,12 @@ pub async fn extension_authenticated_fetch(
                 return attempt.stop();
             }
             match url.host() {
-                Some(url::Host::Ipv4(a)) if super::extensions::is_private_ipv4(a) => attempt.stop(),
-                Some(url::Host::Ipv6(a)) if super::extensions::is_private_ipv6(a) => attempt.stop(),
+                Some(url::Host::Ipv4(a)) if crate::commands::extensions::is_private_ipv4(a) => {
+                    attempt.stop()
+                }
+                Some(url::Host::Ipv6(a)) if crate::commands::extensions::is_private_ipv6(a) => {
+                    attempt.stop()
+                }
                 Some(url::Host::Domain(d)) => {
                     let lower = d.to_ascii_lowercase();
                     if lower == "localhost" || lower.ends_with(".localhost") {

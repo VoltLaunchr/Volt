@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-set-clipboard-retention-days"
+description = "Enables the set_clipboard_retention_days command without any pre-configured scope."
+commands.allow = ["set_clipboard_retention_days"]
+
+[[permission]]
+identifier = "deny-set-clipboard-retention-days"
+description = "Denies the set_clipboard_retention_days command without any pre-configured scope."
+commands.deny = ["set_clipboard_retention_days"]

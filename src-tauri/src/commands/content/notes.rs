@@ -80,7 +80,7 @@ impl NoteState {
             std::fs::create_dir_all(&data_dir).map_err(VoltError::from)?;
         }
         let db_path = data_dir.join("notes.db");
-        let conn = Connection::open(&db_path)
+        let conn = crate::core::encrypted_db::open_db(&db_path)
             .map_err(|e| VoltError::Unknown(format!("Failed to open notes DB: {}", e)))?;
 
         Self::configure(&conn)?;

@@ -174,6 +174,10 @@ fn main() {
         "start_clipboard_monitoring",
         "stop_clipboard_monitoring",
         "is_clipboard_monitoring",
+        "set_clipboard_retention_days",
+        "set_clipboard_disabled_apps",
+        "paste_text",
+        "paste_sequentially",
         // Extension store commands
         "fetch_extension_registry",
         "get_installed_extensions",

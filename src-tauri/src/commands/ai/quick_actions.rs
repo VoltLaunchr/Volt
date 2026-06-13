@@ -59,7 +59,7 @@ fn default_actions() -> Vec<AiQuickAction> {
             hotkey: None,
             enabled: true,
             provider: None,
-            icon: Some("✦".into()),
+            icon: None,
         },
         AiQuickAction {
             id: "fix-grammar".into(),
@@ -68,7 +68,7 @@ fn default_actions() -> Vec<AiQuickAction> {
             hotkey: None,
             enabled: true,
             provider: None,
-            icon: Some("✓".into()),
+            icon: None,
         },
         AiQuickAction {
             id: "translate".into(),
@@ -77,7 +77,7 @@ fn default_actions() -> Vec<AiQuickAction> {
             hotkey: None,
             enabled: true,
             provider: None,
-            icon: Some("🌐".into()),
+            icon: None,
         },
         AiQuickAction {
             id: "explain-code".into(),
@@ -86,7 +86,7 @@ fn default_actions() -> Vec<AiQuickAction> {
             hotkey: None,
             enabled: true,
             provider: None,
-            icon: Some("</>".into()),
+            icon: None,
         },
         AiQuickAction {
             id: "summarize".into(),
@@ -95,7 +95,7 @@ fn default_actions() -> Vec<AiQuickAction> {
             hotkey: None,
             enabled: true,
             provider: None,
-            icon: Some("≡".into()),
+            icon: None,
         },
     ]
 }

@@ -2132,7 +2132,7 @@ fn ext_storage_db_path(
 }
 
 fn ext_storage_open(path: &std::path::Path) -> VoltResult<rusqlite::Connection> {
-    let conn = rusqlite::Connection::open(path)
+    let conn = crate::core::encrypted_db::open_db(path)
         .map_err(|e| VoltError::FileSystem(format!("Failed to open storage DB: {}", e)))?;
     conn.execute_batch(
         "PRAGMA journal_mode=WAL;

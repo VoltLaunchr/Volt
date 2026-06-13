@@ -7,6 +7,7 @@ use crate::plugins::builtin::system_monitor::{
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
 use tauri::State;
+use ts_rs::TS;
 
 /// Persistent system monitor instance for accurate readings (especially CPU).
 /// A single instance is reused across calls so that `sysinfo::System` can
@@ -16,8 +17,9 @@ pub struct SystemMonitorState {
 }
 
 /// System metrics information
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "SystemMetrics.ts")]
 pub struct SystemMetrics {
     pub cpu_usage: f32,
     pub memory_usage: f32,
@@ -122,8 +124,9 @@ pub async fn get_system_metrics(
 /// (so existing callers can be migrated painlessly) plus per-core CPU,
 /// per-disk breakdown, network throughput, top processes, uptime, and
 /// hardware temperatures.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "SystemMetricsV2.ts")]
 pub struct SystemMetricsV2 {
     pub cpu_usage: f32,
     pub memory_usage: f32,
@@ -137,6 +140,7 @@ pub struct SystemMetricsV2 {
     pub network: NetworkInfo,
     pub top_cpu_processes: Vec<ProcessInfo>,
     pub top_memory_processes: Vec<ProcessInfo>,
+    #[ts(type = "number")]
     pub uptime_seconds: u64,
     pub components: Vec<ComponentInfo>,
 }

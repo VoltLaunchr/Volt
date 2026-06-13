@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-paste-sequentially"
+description = "Enables the paste_sequentially command without any pre-configured scope."
+commands.allow = ["paste_sequentially"]
+
+[[permission]]
+identifier = "deny-paste-sequentially"
+description = "Denies the paste_sequentially command without any pre-configured scope."
+commands.deny = ["paste_sequentially"]
