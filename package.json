@@ -105,7 +105,7 @@
   },
   "devDependencies": {
     "@commitlint/cli": "^20.5.3",
-    "@commitlint/config-conventional": "^20.5.3",
+    "@commitlint/config-conventional": "^21.0.2",
     "@eslint/js": "^9.39.4",
     "@playwright/test": "^1.60.0",
     "@tauri-apps/cli": "^2.11.2",
