@@ -38,57 +38,83 @@ static MIGRATION_DONE: OnceLock<()> = OnceLock::new();
 
 /// Persist `secret` for the given `account` in the OS keyring.
 pub fn store(account: &str, secret: &str) -> Result<(), String> {
-    let entry = keyring::Entry::new(KEYRING_SERVICE, account)
-        .map_err(|e| format!("Keyring entry creation failed for '{}': {}", account, e))?;
-    entry
-        .set_password(secret)
-        .map_err(|e| format!("Keyring set_password failed for '{}': {}", account, e))?;
-    debug!("Keyring: stored '{}'", account);
-    Ok(())
+    #[cfg(test)]
+    {
+        mem_store::store(account, secret);
+        debug!("Keyring(test): stored '{}'", account);
+        Ok(())
+    }
+    #[cfg(not(test))]
+    {
+        let entry = keyring::Entry::new(KEYRING_SERVICE, account)
+            .map_err(|e| format!("Keyring entry creation failed for '{}': {}", account, e))?;
+        entry
+            .set_password(secret)
+            .map_err(|e| format!("Keyring set_password failed for '{}': {}", account, e))?;
+        debug!("Keyring: stored '{}'", account);
+        Ok(())
+    }
 }
 
 /// Retrieve the secret for `account` from the OS keyring.
 /// Returns `None` if no entry exists (not an error).
 pub fn retrieve(account: &str) -> Result<Option<String>, String> {
-    let entry = keyring::Entry::new(KEYRING_SERVICE, account)
-        .map_err(|e| format!("Keyring entry creation failed for '{}': {}", account, e))?;
-    match entry.get_password() {
-        Ok(secret) => {
-            debug!("Keyring: retrieved '{}'", account);
-            Ok(Some(secret))
+    #[cfg(test)]
+    {
+        debug!("Keyring(test): retrieve '{}'", account);
+        Ok(mem_store::retrieve(account))
+    }
+    #[cfg(not(test))]
+    {
+        let entry = keyring::Entry::new(KEYRING_SERVICE, account)
+            .map_err(|e| format!("Keyring entry creation failed for '{}': {}", account, e))?;
+        match entry.get_password() {
+            Ok(secret) => {
+                debug!("Keyring: retrieved '{}'", account);
+                Ok(Some(secret))
+            }
+            Err(keyring::Error::NoEntry) => {
+                debug!("Keyring: no entry for '{}'", account);
+                Ok(None)
+            }
+            Err(e) => Err(format!(
+                "Keyring get_password failed for '{}': {}",
+                account, e
+            )),
         }
-        Err(keyring::Error::NoEntry) => {
-            debug!("Keyring: no entry for '{}'", account);
-            Ok(None)
-        }
-        Err(e) => Err(format!(
-            "Keyring get_password failed for '{}': {}",
-            account, e
-        )),
     }
 }
 
 /// Remove the entry for `account` from the OS keyring.
 /// Deleting a non-existent entry is treated as a no-op.
 pub fn remove(account: &str) -> Result<(), String> {
-    let entry = keyring::Entry::new(KEYRING_SERVICE, account)
-        .map_err(|e| format!("Keyring entry creation failed for '{}': {}", account, e))?;
-    match entry.delete_credential() {
-        Ok(_) => {
-            debug!("Keyring: removed '{}'", account);
-            Ok(())
+    #[cfg(test)]
+    {
+        mem_store::remove(account);
+        debug!("Keyring(test): removed '{}'", account);
+        Ok(())
+    }
+    #[cfg(not(test))]
+    {
+        let entry = keyring::Entry::new(KEYRING_SERVICE, account)
+            .map_err(|e| format!("Keyring entry creation failed for '{}': {}", account, e))?;
+        match entry.delete_credential() {
+            Ok(_) => {
+                debug!("Keyring: removed '{}'", account);
+                Ok(())
+            }
+            Err(keyring::Error::NoEntry) => {
+                debug!(
+                    "Keyring: delete_credential — no entry for '{}', skipping",
+                    account
+                );
+                Ok(())
+            }
+            Err(e) => Err(format!(
+                "Keyring delete_credential failed for '{}': {}",
+                account, e
+            )),
         }
-        Err(keyring::Error::NoEntry) => {
-            debug!(
-                "Keyring: delete_credential — no entry for '{}', skipping",
-                account
-            );
-            Ok(())
-        }
-        Err(e) => Err(format!(
-            "Keyring delete_credential failed for '{}': {}",
-            account, e
-        )),
     }
 }
 
@@ -312,4 +338,47 @@ pub fn migrate_from_json_if_needed() {
             info!("Migration: deleted legacy credentials.json");
         }
     });
+}
+
+/// Process-global in-memory keyring used by unit tests.
+///
+/// Touching the real OS keyring from `cargo test` is unsafe: on macOS the
+/// first access to a Keychain item created by a *different* (unsigned) test
+/// binary blocks forever on a headless "allow access?" authorization dialog —
+/// this is exactly the v0.3.0 macOS "SQLCipher Tests" 6-hour hang (the
+/// `extension_state_sig` HMAC-key load reached the Keychain and never
+/// returned). Under `#[cfg(test)]` every `store`/`retrieve`/`remove` is served
+/// from this map instead, so the keyring abstraction is exercised end-to-end
+/// without any platform dependency. Production builds never compile this.
+#[cfg(test)]
+mod mem_store {
+    use std::collections::HashMap;
+    use std::sync::{Mutex, OnceLock};
+
+    fn map() -> &'static Mutex<HashMap<String, String>> {
+        static STORE: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
+        STORE.get_or_init(|| Mutex::new(HashMap::new()))
+    }
+
+    pub(super) fn store(account: &str, secret: &str) {
+        map()
+            .lock()
+            .expect("in-memory keyring mutex poisoned")
+            .insert(account.to_string(), secret.to_string());
+    }
+
+    pub(super) fn retrieve(account: &str) -> Option<String> {
+        map()
+            .lock()
+            .expect("in-memory keyring mutex poisoned")
+            .get(account)
+            .cloned()
+    }
+
+    pub(super) fn remove(account: &str) {
+        map()
+            .lock()
+            .expect("in-memory keyring mutex poisoned")
+            .remove(account);
+    }
 }
