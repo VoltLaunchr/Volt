@@ -39,7 +39,11 @@ concurrency:
 jobs:
   criterion:
     name: Criterion D1 Tantivy
-    runs-on: ubuntu-22.04
+    # ubuntu-24.04 (glibc 2.39): the prebuilt ONNX Runtime shipped by `ort`
+    # (via fastembed) references C23 symbols (__isoc23_strtoll/strtoull/strtol)
+    # introduced in glibc 2.38, so linking the bench fails on ubuntu-22.04
+    # (glibc 2.35) with `rust-lld: undefined symbol`.
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
 
     steps:
