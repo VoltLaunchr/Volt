@@ -22,6 +22,7 @@ import type { Plugin, PluginContext, PluginResult } from '../../types';
 import { PluginResultType } from '../../types';
 import { logger } from '../../../../shared/utils/logger';
 import type { Settings } from '../../../settings/types/settings.types';
+import { VOLT_EVENTS, emitVoltEvent } from '../../../../shared/events';
 
 // ── Dangerous command validation ──────────────────────────────────────────────
 
@@ -129,8 +130,9 @@ export interface ShellOutputData {
 }
 
 export function stripAnsi(str: string): string {
-  // eslint-disable-next-line no-control-regex
-  return str.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '');
+  // ESC (0x1b) built via fromCharCode so no control char appears in source.
+  const ansiRegex = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*[a-zA-Z]`, 'g');
+  return str.replace(ansiRegex, '');
 }
 
 let executionCounter = 0;
@@ -209,10 +211,7 @@ export class ShellCommandPlugin implements Plugin {
               badge: 'Shell',
               score: 100,
               pluginId: this.id,
-              data: { command: last.command, status: 'pending' } as unknown as Record<
-                string,
-                unknown
-              >,
+              data: { command: last.command, status: 'pending' },
             },
           ];
         }
@@ -228,7 +227,7 @@ export class ShellCommandPlugin implements Plugin {
           badge: 'Shell',
           score: 100,
           pluginId: this.id,
-          data: { command: '', status: 'pending' } as unknown as Record<string, unknown>,
+          data: { command: '', status: 'pending' },
         },
       ];
     }
@@ -249,10 +248,7 @@ export class ShellCommandPlugin implements Plugin {
             badge: record.runCount > 1 ? `×${record.runCount}` : 'Shell',
             score: 100 - i,
             pluginId: this.id,
-            data: { command: record.command, status: 'pending' } as unknown as Record<
-              string,
-              unknown
-            >,
+            data: { command: record.command, status: 'pending' },
           }));
         }
       } catch (err) {
@@ -275,10 +271,7 @@ export class ShellCommandPlugin implements Plugin {
             badge: 'Shell',
             score: 100 - i,
             pluginId: this.id,
-            data: { command: record.command, status: 'pending' } as unknown as Record<
-              string,
-              unknown
-            >,
+            data: { command: record.command, status: 'pending' },
           }));
         }
       } catch (err) {
@@ -331,10 +324,7 @@ export class ShellCommandPlugin implements Plugin {
           badge: 'Shell',
           score: 90 - i,
           pluginId: this.id,
-          data: { command: record.command, status: 'pending' } as unknown as Record<
-            string,
-            unknown
-          >,
+          data: { command: record.command, status: 'pending' },
         });
       }
     } catch (err) {
@@ -384,9 +374,7 @@ export class ShellCommandPlugin implements Plugin {
       };
       const blockedId = `shell-blocked-${Date.now()}`;
       this.outputCache.set(blockedId, blockedData);
-      window.dispatchEvent(
-        new CustomEvent('volt:shell-output', { detail: { command, data: blockedData } }),
-      );
+      emitVoltEvent(VOLT_EVENTS.SHELL_OUTPUT, { command, data: blockedData });
       return;
     }
 
@@ -396,9 +384,7 @@ export class ShellCommandPlugin implements Plugin {
 
     const runningData: ShellOutputData = { command, status: 'running', executionId };
     this.outputCache.set(executionId, runningData);
-    window.dispatchEvent(
-      new CustomEvent('volt:shell-output', { detail: { command, data: runningData } }),
-    );
+    emitVoltEvent(VOLT_EVENTS.SHELL_OUTPUT, { command, data: runningData });
 
     try {
       await this.executeStreaming(command, executionId, timeoutMs);
@@ -421,9 +407,7 @@ export class ShellCommandPlugin implements Plugin {
           executionId,
         };
         this.outputCache.set(executionId, doneData);
-        window.dispatchEvent(
-          new CustomEvent('volt:shell-output', { detail: { command, data: doneData } }),
-        );
+        emitVoltEvent(VOLT_EVENTS.SHELL_OUTPUT, { command, data: doneData });
       } catch (err) {
         const errorData: ShellOutputData = {
           command,
@@ -432,9 +416,7 @@ export class ShellCommandPlugin implements Plugin {
           executionId,
         };
         this.outputCache.set(executionId, errorData);
-        window.dispatchEvent(
-          new CustomEvent('volt:shell-output', { detail: { command, data: errorData } }),
-        );
+        emitVoltEvent(VOLT_EVENTS.SHELL_OUTPUT, { command, data: errorData });
       }
     }
   }
@@ -470,9 +452,7 @@ export class ShellCommandPlugin implements Plugin {
               executionId,
             };
             this.outputCache.set(executionId, runningData);
-            window.dispatchEvent(
-              new CustomEvent('volt:shell-output', { detail: { command, data: runningData } }),
-            );
+            emitVoltEvent(VOLT_EVENTS.SHELL_OUTPUT, { command, data: runningData });
             break;
           }
           case 'stderr': {
@@ -485,11 +465,7 @@ export class ShellCommandPlugin implements Plugin {
               executionId,
             };
             this.outputCache.set(executionId, runningStderr);
-            window.dispatchEvent(
-              new CustomEvent('volt:shell-output', {
-                detail: { command, data: runningStderr },
-              }),
-            );
+            emitVoltEvent(VOLT_EVENTS.SHELL_OUTPUT, { command, data: runningStderr });
             break;
           }
           case 'exit': {
@@ -504,9 +480,7 @@ export class ShellCommandPlugin implements Plugin {
               executionId,
             };
             this.outputCache.set(executionId, doneData);
-            window.dispatchEvent(
-              new CustomEvent('volt:shell-output', { detail: { command, data: doneData } }),
-            );
+            emitVoltEvent(VOLT_EVENTS.SHELL_OUTPUT, { command, data: doneData });
             finalize();
             break;
           }
@@ -521,9 +495,7 @@ export class ShellCommandPlugin implements Plugin {
               executionId,
             };
             this.outputCache.set(executionId, errorData);
-            window.dispatchEvent(
-              new CustomEvent('volt:shell-output', { detail: { command, data: errorData } }),
-            );
+            emitVoltEvent(VOLT_EVENTS.SHELL_OUTPUT, { command, data: errorData });
             finalize();
             break;
           }
@@ -539,11 +511,7 @@ export class ShellCommandPlugin implements Plugin {
               executionId,
             };
             this.outputCache.set(executionId, timedOutData);
-            window.dispatchEvent(
-              new CustomEvent('volt:shell-output', {
-                detail: { command, data: timedOutData },
-              }),
-            );
+            emitVoltEvent(VOLT_EVENTS.SHELL_OUTPUT, { command, data: timedOutData });
             finalize();
             break;
           }
@@ -572,11 +540,7 @@ export class ShellCommandPlugin implements Plugin {
                 executionId,
               };
               this.outputCache.set(executionId, fallbackData);
-              window.dispatchEvent(
-                new CustomEvent('volt:shell-output', {
-                  detail: { command, data: fallbackData },
-                }),
-              );
+              emitVoltEvent(VOLT_EVENTS.SHELL_OUTPUT, { command, data: fallbackData });
               finalize();
             }
           }, STREAMING_DRAIN_MS);

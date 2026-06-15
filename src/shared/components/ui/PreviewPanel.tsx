@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { invoke, convertFileSrc } from '@tauri-apps/api/core';
+import { File, Folder } from 'lucide-react';
 import { SearchResult, SearchResultType } from '../../types/common.types';
 import type { ShellOutputData } from '../../../features/plugins/builtin/shell';
 import { Terminal } from '@/components/ai-elements/terminal';
@@ -62,8 +63,7 @@ export function PreviewPanel({ result, isOpen }: PreviewPanelProps) {
       return;
     }
 
-    const path =
-      (result.data as { path?: string })?.path || result.subtitle || '';
+    const path = (result.data as { path?: string })?.path || result.subtitle || '';
 
     if (!path) return;
 
@@ -138,9 +138,7 @@ export function PreviewPanel({ result, isOpen }: PreviewPanelProps) {
   if (loading) {
     return (
       <div className="flex flex-col bg-surface border-l border-hairline h-full overflow-hidden w-[300px] shrink-0">
-        <div className="flex items-center justify-center h-full text-mute text-xs">
-          Loading...
-        </div>
+        <div className="flex items-center justify-center h-full text-mute text-xs">Loading...</div>
       </div>
     );
   }
@@ -199,7 +197,7 @@ export function PreviewPanel({ result, isOpen }: PreviewPanelProps) {
                 key={child}
                 className={`py-1 text-xs flex items-center gap-1 ${child.endsWith('/') ? 'text-accent-blue font-medium' : 'text-body'}`}
               >
-                {child.endsWith('/') ? '📁' : '📄'} {child}
+                {child.endsWith('/') ? <Folder size={13} /> : <File size={13} />} {child}
               </li>
             ))}
           </ul>
@@ -223,7 +221,9 @@ export function PreviewPanel({ result, isOpen }: PreviewPanelProps) {
             <span className="text-sm text-body">{preview.metadata.size_formatted}</span>
           </div>
           <div className="flex flex-col gap-0.5">
-            <span className="text-[11px] text-ash uppercase tracking-wide font-medium">Modified</span>
+            <span className="text-[11px] text-ash uppercase tracking-wide font-medium">
+              Modified
+            </span>
             <span className="text-sm text-body">{formatDate(preview.modified)}</span>
           </div>
           <div className="flex flex-col gap-0.5">

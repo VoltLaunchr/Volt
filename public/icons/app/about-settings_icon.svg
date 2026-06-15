@@ -1,15 +1,54 @@
-<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
-<g clip-path="url(#clip0_134_181)">
-<path d="M384 0H128C57.3075 0 0 57.3075 0 128V384C0 454.692 57.3075 512 128 512H384C454.692 512 512 454.692 512 384V128C512 57.3075 454.692 0 384 0Z" fill="url(#paint0_radial_134_181)"/>
-<path d="M256.523 147.303V259.658L230.916 245.026C185.452 218.897 157.232 170.297 157.232 117.516H138.419V246.071C138.419 287.877 162.458 326.548 200.607 344.839L257.045 372.013V259.658L282.652 274.29C328.116 300.419 356.336 349.019 356.336 401.8H375.149V273.245C375.149 231.439 351.11 192.768 312.961 174.477L256.523 147.303Z" fill="white"/>
-</g>
-<defs>
-<radialGradient id="paint0_radial_134_181" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(256 256) scale(512)">
-<stop stop-color="#4D4D4D"/>
-<stop offset="1"/>
-</radialGradient>
-<clipPath id="clip0_134_181">
-<rect width="512" height="512" fill="white"/>
-</clipPath>
-</defs>
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48" fill="none">
+  <defs>
+    <linearGradient id="surface" x1="7" y1="4" x2="41" y2="45" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#202330" />
+      <stop offset="0.52" stop-color="#151821" />
+      <stop offset="1" stop-color="#0D0F16" />
+    </linearGradient>
+    <radialGradient id="glow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(13 8) rotate(43) scale(44)">
+      <stop stop-color="#6366f1" stop-opacity="0.72" />
+      <stop offset="0.42" stop-color="#4338ca" stop-opacity="0.28" />
+      <stop offset="1" stop-color="#4338ca" stop-opacity="0" />
+    </radialGradient>
+    <linearGradient id="edge" x1="7" y1="4" x2="42" y2="43" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#6366f1" stop-opacity="0.92" />
+      <stop offset="0.36" stop-color="#FFFFFF" stop-opacity="0.15" />
+      <stop offset="0.72" stop-color="#FFFFFF" stop-opacity="0.05" />
+      <stop offset="1" stop-color="#4338ca" stop-opacity="0.55" />
+    </linearGradient>
+    <linearGradient id="top-line" x1="11" y1="5" x2="34" y2="5" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#6366f1" stop-opacity="0" />
+      <stop offset="0.5" stop-color="#FFFFFF" stop-opacity="0.48" />
+      <stop offset="1" stop-color="#6366f1" stop-opacity="0" />
+    </linearGradient>
+    <filter id="shadow" x="-30%" y="-30%" width="160%" height="170%">
+      <feDropShadow dx="0" dy="3" stdDeviation="3" flood-color="#02030A" flood-opacity="0.52" />
+    </filter>
+    <filter id="glyph-glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="1.7" />
+    </filter>
+    <clipPath id="clip">
+      <rect x="2" y="2" width="44" height="44" rx="13" />
+    </clipPath>
+  </defs>
+  <g filter="url(#shadow)">
+    <rect x="2" y="2" width="44" height="44" rx="13" fill="url(#surface)" />
+    <g clip-path="url(#clip)">
+      <rect x="2" y="2" width="44" height="44" fill="url(#glow)" />
+      <circle cx="39" cy="40" r="13" fill="#4338ca" fill-opacity="0.1" />
+    </g>
+    <rect x="2.5" y="2.5" width="43" height="43" rx="12.5" stroke="url(#edge)" />
+    <path d="M12 4.5H34" stroke="url(#top-line)" stroke-linecap="round" />
+  </g>
+  <g transform="translate(12 12)" stroke="#6366f1" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" opacity="0.28" filter="url(#glyph-glow)">
+    <circle cx="12" cy="12" r="10" />
+    <path d="M12 16v-4" />
+    <path d="M12 8h.01" />
+  </g>
+  <g transform="translate(12 12)" stroke="#F8FAFF" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="12" cy="12" r="10" />
+    <path d="M12 16v-4" />
+    <path d="M12 8h.01" />
+  </g>
 </svg>

@@ -253,6 +253,33 @@ cargo test -- --nocapture
 - [ ] Plugin API documentation
 - [ ] Third-party plugin support
 
+## 🔍 Logging & IPC command timing
+
+Logging uses `tracing` with an `EnvFilter` that defaults to `info`. Override it
+with the `RUST_LOG` environment variable.
+
+High-traffic Tauri commands (search / apps / files / clipboard / launcher query
+paths) are instrumented with a lightweight timing guard
+(`utils::timing::TimedSpan` + the `time_command!` macro). The guard logs elapsed
+time at the `debug` level and is **zero-cost when `debug` is filtered out** — no
+`Instant` is taken unless `debug` is enabled.
+
+Enable timing logs by raising the level for the `volt` target:
+
+```bash
+# Windows (PowerShell)
+$env:RUST_LOG = "volt=debug"; volt.exe
+
+# Unix
+RUST_LOG=volt=debug volt
+```
+
+Each instrumented command then emits a line such as:
+
+```text
+DEBUG volt::utils::timing: ipc command finished command="search_files" elapsed_us=842
+```
+
 ## 🤝 Contributing
 
 When adding new features:

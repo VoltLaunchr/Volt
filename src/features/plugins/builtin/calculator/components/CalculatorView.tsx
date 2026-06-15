@@ -6,6 +6,7 @@ import { addToHistory, clearHistory, getHistory, CalculationHistoryItem } from '
 import { logger } from '../../../../../shared/utils/logger';
 import { cn } from '@/lib/utils';
 import { HighlightedExpression } from '../utils/highlight';
+import { AlertTriangle, Clipboard, Globe2 } from 'lucide-react';
 
 interface CalculatorViewProps {
   onClose: () => void;
@@ -172,7 +173,7 @@ export function CalculatorView({
           <div className="mt-3 min-h-14">
             {error && (
               <div className="flex items-center gap-2 px-4 py-3 bg-[rgba(239,68,68,0.1)] border border-[rgba(239,68,68,0.3)] rounded-md text-accent-red text-sm">
-                <span className="text-base">⚠</span>
+                <AlertTriangle size={16} />
                 {error}
               </div>
             )}
@@ -193,7 +194,7 @@ export function CalculatorView({
                   }}
                   title={t('view.copyResult')}
                 >
-                  <span className="text-base">📋</span>
+                  <Clipboard size={15} />
                   {t('view.copy')}
                 </button>
               </div>
@@ -228,7 +229,7 @@ export function CalculatorView({
             className="flex flex-col items-center gap-1 py-3 px-2 border border-hairline rounded-md text-mute text-xs hover:bg-surface-elevated hover:border-hairline-strong hover:text-ink transition-colors"
             onClick={() => setExpression('time in ')}
           >
-            <span className="text-base">🌍</span>
+            <Globe2 size={16} />
             <span className="font-medium">{t('view.quickActions.timezone')}</span>
           </button>
         </div>

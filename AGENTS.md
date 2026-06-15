@@ -17,17 +17,20 @@ Ce fichier complète `.github/copilot-instructions.md` avec des règles plus dé
 
 ## Indexation fichiers (comment ça marche vraiment)
 
-- État en mémoire ET persistance SQLite: `FileIndexState` (Arc<Mutex<Vec<FileInfo>>>) dans [src-tauri/src/commands/files.rs](src-tauri/src/commands/files.rs), avec une base SQLite `file_history.db` (via rusqlite) pour la persistance entre sessions.
+- État en mémoire ET persistance SQLite: `FileIndexState` conserve un snapshot `Arc<Vec<FileInfo>>`, un lookup `HashMap<path, index>` cohérent avec ce snapshot, et la base SQLite `file_history.db` (rusqlite) pour la persistance entre sessions.
 - `start_indexing(...)` lance un scan en tâche de fond (`tauri::async_runtime::spawn`) et met à jour `IndexStatus`.
 - Scan filesystem: [src-tauri/src/indexer/scanner.rs](src-tauri/src/indexer/scanner.rs)
   - Filtrage exclusions: `excluded_paths` est un simple `contains` sur le chemin (attention aux faux positifs).
   - Limites: `max_depth = 10`, `max_file_size = 100MB` (hardcodés dans `start_indexing`).
   - Extensions: si `file_extensions` est vide → indexe tout; sinon ne garde que les extensions listées (et ignore les fichiers sans extension).
   - Dossiers: les répertoires sont aussi indexés aux profondeurs 0–1 (permet de trouver des “dossiers jeux”, etc.).
-- Base de données: [src-tauri/src/indexer/database.rs](src-tauri/src/indexer/database.rs) — opérations CRUD SQLite pour l'index fichiers.
-- Watcher filesystem: [src-tauri/src/indexer/watcher.rs](src-tauri/src/indexer/watcher.rs) — surveillance des changements en temps réel.
+- Base de données: [src-tauri/src/indexer/database.rs](src-tauri/src/indexer/database.rs) — CRUD SQLite et remplacement transactionnel du snapshot après un scan réussi. Ne pas vider l'ancien index avant la fin du scan.
+- Watcher filesystem: [src-tauri/src/indexer/watcher.rs](src-tauri/src/indexer/watcher.rs) — surveillance temps réel, debounce 100ms, synchronisation SQLite/cache/Tantivy. `stop()` rejoint le worker et constitue une barrière avant rebuild.
 - Recherche index: [src-tauri/src/indexer/search.rs](src-tauri/src/indexer/search.rs) et [src-tauri/src/indexer/search_engine.rs](src-tauri/src/indexer/search_engine.rs)
-  - Scoring simple (exact/startsWith/contains/fuzzy), tri par score, puis `limit` côté commande.
+  - Build par défaut: nucleo (exact/startsWith/contains/fuzzy), avec exclusion des fichiers cachés.
+  - Feature `tantivy-search`: index persistant dans `file_history.tantivy`, scoring exact + BM25 + préfixe + fuzzy Levenshtein avec transpositions.
+  - L'index Tantivy est réutilisé au démarrage uniquement si le marqueur SQLite `tantivy_dirty` est propre et si le nombre de documents concorde; sinon il est reconstruit depuis SQLite.
+  - Tantivy est un index dérivé: SQLite reste la source de vérité et le fallback nucleo reste disponible.
 
 ## Plugins (conventions importantes)
 
@@ -69,4 +72,4 @@ Ce fichier complète `.github/copilot-instructions.md` avec des règles plus dé
 - Éviter de casser la recherche: conserver le debounce 150ms + protection anti-réponses obsolètes (`latestSearchId`) dans `useSearchPipeline.ts`.
 - Si vous ajoutez une commande Tauri: ajouter `#[tauri::command]` → exporter dans [src-tauri/src/commands/mod.rs](src-tauri/src/commands/mod.rs) → enregistrer dans [src-tauri/src/lib.rs](src-tauri/src/lib.rs) → appeler via `invoke()`.
 - Synchronisation types Rust/TS: TS est en `camelCase`, Rust en `snake_case`; utiliser `serde(rename_all = "camelCase")` quand une structure traverse la frontière.
-- Tests: vérifier avant de merger. Frontend: 130+ tests vitest (`bun run test`). Backend: 113+ tests cargo (`cargo test` dans `src-tauri/`).
+- Tests: vérifier avant de merger. État validé le 12 juin 2026: 345 tests Vitest, 303 tests Rust par défaut, 321 avec `tantivy-search`, 15 tests ciblés SQLCipher. Exécuter aussi les deux matrices Clippy strictes documentées dans le README.

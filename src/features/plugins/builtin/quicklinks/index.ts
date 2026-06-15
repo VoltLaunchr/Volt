@@ -20,7 +20,7 @@ const TYPE_ICONS: Record<Quicklink['type'], string> = {
 };
 
 // Keywords that trigger the quicklinks plugin
-const QUICKLINK_KEYWORDS = ['quicklink', 'link', 'bookmark', 'ql'];
+const QUICKLINK_KEYWORDS = ['quicklink', 'quicklinks', 'link', 'bookmark', 'ql'];
 
 // Management command prefixes
 const MANAGEMENT_COMMANDS: Record<string, string> = {

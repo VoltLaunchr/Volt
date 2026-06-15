@@ -1,56 +1,25 @@
-/// Shared OS keyring abstraction (used by `auth` and `credentials`).
-pub mod keyring_store;
+//! Tauri IPC commands grouped by product domain.
+//!
+//! Domain modules are the preferred paths for new backend code. The public
+//! re-exports keep legacy paths such as `commands::files` and
+//! `commands::ai_profile` working while call sites migrate incrementally.
 
-pub mod ai_profile;
-pub mod ai_quick_actions;
-pub mod apps;
+pub mod ai;
 pub mod auth;
-pub mod autostart;
-pub mod clipboard;
-pub mod credentials;
-pub mod custom_emojis;
-pub mod embeddings;
+pub mod content;
 pub mod extensions;
 pub mod files;
-pub mod games;
 pub mod launcher;
-pub mod logging;
-pub mod notes;
-pub mod oauth;
-pub mod plugins;
-pub mod preview;
-pub mod quicklinks;
-pub mod search;
-pub mod settings;
 pub mod shell;
-pub mod shell_history;
-pub mod snippets;
-pub mod steam;
-pub mod sync;
-pub mod system_monitor;
-pub mod window_management;
+pub mod system;
 
-pub use apps::*;
+// Compatibility facade for the pre-domain module layout. Tauri command names
+// are based on function names, so these re-exports do not change the IPC API.
+pub use ai::*;
 pub use auth::*;
-pub use autostart::*;
-pub use clipboard::*;
-pub use credentials::*;
+pub use content::*;
 pub use extensions::*;
 pub use files::*;
-pub use games::*;
 pub use launcher::*;
-pub use logging::*;
-pub use notes::*;
-pub use oauth::*;
-pub use plugins::*;
-pub use preview::*;
-pub use quicklinks::*;
-pub use search::*;
-pub use settings::*;
 pub use shell::*;
-pub use shell_history::*;
-pub use snippets::*;
-pub use steam::*;
-pub use sync::*;
-pub use system_monitor::*;
-pub use window_management::*;
+pub use system::*;

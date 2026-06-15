@@ -25,11 +25,28 @@ export class SnippetsPlugin implements Plugin {
   enabled = true;
 
   canHandle(context: PluginContext): boolean {
-    return context.query.startsWith(';');
+    const q = context.query.toLowerCase().trim();
+    return (
+      q.startsWith(';') ||
+      q === 'snippet' ||
+      q === 'snippets' ||
+      q.startsWith('snippet ') ||
+      q.startsWith('snippets ')
+    );
   }
 
   async match(context: PluginContext): Promise<PluginResult[]> {
-    const query = context.query.substring(1).toLowerCase(); // strip `;`
+    // Accept both the `;` prefix and the `snippet(s)` keyword for discoverability.
+    const raw = context.query.trim();
+    const lower = raw.toLowerCase();
+    let query = '';
+    if (lower.startsWith(';')) {
+      query = raw.slice(1).trim().toLowerCase();
+    } else if (lower.startsWith('snippets')) {
+      query = raw.slice('snippets'.length).trim().toLowerCase();
+    } else if (lower.startsWith('snippet')) {
+      query = raw.slice('snippet'.length).trim().toLowerCase();
+    }
 
     let snippets: Snippet[];
     try {

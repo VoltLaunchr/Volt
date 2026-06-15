@@ -8,6 +8,7 @@ use sysinfo::{
     Components, CpuRefreshKind, DiskKind, Disks, MemoryRefreshKind, Networks, Pid,
     ProcessRefreshKind, ProcessesToUpdate, RefreshKind, System,
 };
+use ts_rs::TS;
 
 /// System monitoring plugin
 ///
@@ -83,44 +84,66 @@ pub struct SystemInfo {
 }
 
 /// Per-core CPU snapshot.
-#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "CpuCoreInfo.ts")]
 pub struct CpuCoreInfo {
     pub name: String,
     pub usage_percent: f32,
+    #[ts(type = "number")]
     pub frequency_mhz: u64,
+}
+
+#[derive(Debug, Clone, Copy, Default, serde::Serialize, serde::Deserialize, TS)]
+#[ts(export, export_to = "StorageKind.ts")]
+pub enum StorageKind {
+    #[default]
+    #[serde(rename = "Unknown")]
+    Unknown,
+    #[serde(rename = "SSD")]
+    Ssd,
+    #[serde(rename = "HDD")]
+    Hdd,
 }
 
 /// Per-disk snapshot. `available_gb` is derived for convenience; consumers can
 /// verify against `used_gb = total_gb - available_gb` (within f32 rounding).
-#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "DiskInfo.ts")]
 pub struct DiskInfo {
     pub mount_point: String,
     pub total_gb: f32,
     pub used_gb: f32,
     pub available_gb: f32,
     pub file_system: String,
-    /// Storage kind: "SSD", "HDD", or "Unknown".
-    pub kind: String,
+    pub kind: StorageKind,
 }
 
 /// Aggregate + per-interface network throughput.
-#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "NetworkInfo.ts")]
 pub struct NetworkInfo {
+    #[ts(type = "number")]
     pub received_bytes_per_sec: u64,
+    #[ts(type = "number")]
     pub transmitted_bytes_per_sec: u64,
     pub interfaces: Vec<NetworkInterfaceInfo>,
 }
 
-#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "NetworkInterfaceInfo.ts")]
 pub struct NetworkInterfaceInfo {
     pub name: String,
+    #[ts(type = "number")]
     pub received_bytes_per_sec: u64,
+    #[ts(type = "number")]
     pub transmitted_bytes_per_sec: u64,
+    #[ts(type = "number")]
     pub total_received_bytes: u64,
+    #[ts(type = "number")]
     pub total_transmitted_bytes: u64,
 }
 
@@ -129,20 +152,23 @@ pub struct NetworkInterfaceInfo {
 /// `cpu_usage_percent` is a single-core percentage (sysinfo convention matches
 /// htop / Task Manager "Details" tab) — values can exceed 100% on multithreaded
 /// processes.
-#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "ProcessInfo.ts")]
 pub struct ProcessInfo {
     pub pid: u32,
     pub name: String,
     pub cpu_usage_percent: f32,
+    #[ts(type = "number")]
     pub memory_bytes: u64,
 }
 
 /// Hardware component (CPU package, GPU, SSD, etc) temperature reading. May be
 /// empty on platforms without sensor support (e.g. Windows without vendor
 /// drivers).
-#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "ComponentInfo.ts")]
 pub struct ComponentInfo {
     pub label: String,
     pub temperature_c: Option<f32>,
@@ -430,9 +456,9 @@ impl SystemMonitorPlugin {
                     available_gb: bytes_to_gb(available),
                     file_system: d.file_system().to_string_lossy().into_owned(),
                     kind: match d.kind() {
-                        DiskKind::SSD => "SSD".to_string(),
-                        DiskKind::HDD => "HDD".to_string(),
-                        DiskKind::Unknown(_) => "Unknown".to_string(),
+                        DiskKind::SSD => StorageKind::Ssd,
+                        DiskKind::HDD => StorageKind::Hdd,
+                        DiskKind::Unknown(_) => StorageKind::Unknown,
                     },
                 }
             })

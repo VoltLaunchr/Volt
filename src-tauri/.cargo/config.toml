@@ -1,3 +1,10 @@
+[env]
+# Base directory for ts-rs generated bindings. Points at the frontend source
+# tree (which tsconfig already covers) so `cargo test` emits the IPC type
+# bindings where the frontend can import them. `relative = true` resolves it
+# against this config file's location, independent of the caller's cwd.
+TS_RS_EXPORT_DIR = { value = "../src/shared/types/generated", relative = true }
+
 [build]
 # Limit parallel rustc instances to avoid OOM / STATUS_STACK_BUFFER_OVERRUN on Windows
 # when compiling heavy Tauri deps (windows-sys, tauri-plugin-*, image, etc.)

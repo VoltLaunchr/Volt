@@ -1,6 +1,7 @@
 import { Plugin, PluginContext, PluginResult, PluginResultType } from '../../types';
 import { copyToClipboard } from '../../utils/helpers';
 import { logger } from '../../../../shared/utils/logger';
+import { VOLT_EVENTS, emitVoltEvent } from '../../../../shared/events';
 import { detectQueryType, parseQuery } from './parsers/queryParser';
 import { evaluateMathExpression } from './converters/math';
 import { convertUnit } from './converters/units';
@@ -93,7 +94,7 @@ export class CalculatorPlugin implements Plugin {
     // Handle "open calculator view" action
     if (result.data?.action === 'open-calculator-view') {
       // Dispatch custom event to open calculator view in App.tsx
-      window.dispatchEvent(new CustomEvent('volt:open-calculator'));
+      emitVoltEvent(VOLT_EVENTS.OPEN_CALCULATOR);
       return;
     }
 

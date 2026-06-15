@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, type Mock } from 'vitest';
 import { invoke } from '@tauri-apps/api/core';
 import { pluginRegistry } from '../features/plugins/core';
 import { WebSearchPlugin } from '../features/plugins/builtin/websearch';
@@ -6,7 +6,7 @@ import { CalculatorPlugin } from '../features/plugins/builtin/calculator';
 import { applicationService } from '../features/applications/services/applicationService';
 import type { AppInfo, FileInfo, FileSearchResult } from '../shared/types/common.types';
 
-const mockedInvoke = invoke as unknown as ReturnType<typeof vi.fn>;
+const mockedInvoke = invoke as unknown as Mock<(cmd: string) => Promise<unknown>>;
 
 const fakeApps: AppInfo[] = [
   {
@@ -26,6 +26,7 @@ const fakeFiles: FileInfo[] = [
     extension: 'md',
     size: 100,
     modified: Date.now(),
+    category: 'document',
   },
 ];
 

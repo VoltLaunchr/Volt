@@ -12,6 +12,7 @@ import { copyToClipboard, openUrl } from '../../plugins/utils/helpers';
 import { generateWorkerBootstrap, type ActionCommand, type WorkerResponse } from './worker-bootstrap';
 import { logger } from '../../../shared/utils/logger';
 import { useUiStore } from '../../../stores/uiStore';
+import { VOLT_EVENTS, emitVoltEvent } from '../../../shared/events';
 import { setPendingHud } from './hud-queue';
 
 interface OAuthRequestPayload {
@@ -911,7 +912,7 @@ export class WorkerPlugin implements Plugin {
       }>('extension_authenticated_fetch', {
         extensionId: this.id,
         url,
-        method: (safeOptions.method as string) ?? 'GET',
+        method: (safeOptions.method) ?? 'GET',
         headers,
         body: typeof safeOptions.body === 'string' ? safeOptions.body : null,
       });
@@ -1048,38 +1049,31 @@ export class WorkerPlugin implements Plugin {
             console.warn(`[WorkerPlugin:${this.id}] Blocked notification — permission not granted`);
             break;
           }
-          window.dispatchEvent(
-            new CustomEvent('volt:notification', {
-              detail: { message: action.message, type: action.type || 'info' },
-            })
-          );
+          emitVoltEvent(VOLT_EVENTS.NOTIFICATION, {
+            message: action.message,
+            type: action.type || 'info',
+          });
           break;
         case 'toast':
-          window.dispatchEvent(
-            new CustomEvent('volt:toast', {
-              detail: {
-                message: action.message,
-                subtitle: action.subtitle,
-                style: action.style ?? 'info',
-                duration: action.duration,
-              },
-            })
-          );
+          emitVoltEvent(VOLT_EVENTS.TOAST, {
+            message: action.message,
+            subtitle: action.subtitle,
+            style: action.style ?? 'info',
+            duration: action.duration,
+          });
           break;
         case 'noop':
           break;
         case 'hud':
           setPendingHud(action.message);
-          window.dispatchEvent(
-            new CustomEvent('volt:hud', { detail: { message: action.message } })
-          );
+          emitVoltEvent(VOLT_EVENTS.HUD, { message: action.message });
           break;
         case 'updateMetadata':
-          window.dispatchEvent(
-            new CustomEvent('volt:update-metadata', {
-              detail: { pluginId: this.id, title: action.title, subtitle: action.subtitle },
-            })
-          );
+          emitVoltEvent(VOLT_EVENTS.UPDATE_METADATA, {
+            pluginId: this.id,
+            title: action.title,
+            subtitle: action.subtitle,
+          });
           break;
         case 'pasteText': {
           if (!this.hasPermission('clipboard')) {
@@ -1387,7 +1381,7 @@ export class WorkerPlugin implements Plugin {
 
     if (now - this.lastErrorEventAt > 1000) {
       this.lastErrorEventAt = now;
-      window.dispatchEvent(new CustomEvent('volt:extension-error', { detail: entry }));
+      emitVoltEvent(VOLT_EVENTS.EXTENSION_ERROR, entry);
     }
 
     logger.warn(`[WorkerPlugin:${this.id}] Extension error captured:`, entry.message);

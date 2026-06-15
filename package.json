@@ -1,7 +1,7 @@
 {
   "name": "volt",
   "private": true,
-  "version": "0.2.1",
+  "version": "0.3.0",
   "type": "module",
   "description": "Lightning-fast keyboard-driven launcher for Windows, macOS, and Linux. Built with Tauri 2 + React + Rust.",
   "license": "Apache-2.0",
@@ -27,8 +27,10 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
+    "bump-version": "node scripts/bump-version.mjs",
     "sync-version": "node scripts/sync-version.mjs",
     "generate-changelog": "node scripts/generate-changelog.mjs",
+    "generate:app-icons": "node scripts/generate-app-icons.mjs",
     "check-version": "node scripts/sync-version.mjs --check",
     "setup-hooks": "node scripts/setup-hooks.mjs",
     "test:e2e": "playwright test",
@@ -130,6 +132,7 @@
     "postcss": ">=8.5.10",
     "picomatch": ">=4.0.4",
     "flatted": ">=3.4.2",
-    "rollup": ">=4.59.0"
+    "rollup": ">=4.59.0",
+    "esbuild": ">=0.28.1"
   }
 }

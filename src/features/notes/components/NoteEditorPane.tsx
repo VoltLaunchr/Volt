@@ -1,14 +1,13 @@
 import { Suspense, lazy, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Pin, PinOff, Trash2 } from 'lucide-react';
 import type { NoteDraft, UseNoteResult } from '../hooks/useNote';
 import type { Note, SaveState } from '../types/notes.types';
 import './NoteEditorPane.css';
 
 // Lazy load TipTap on-demand. The Notes window can render the shell + sidebar
 // while the editor chunk (~250 KB) downloads. Suspense keeps the UX coherent.
-const NoteEditor = lazy(() =>
-  import('./NoteEditor').then((m) => ({ default: m.NoteEditor })),
-);
+const NoteEditor = lazy(() => import('./NoteEditor').then((m) => ({ default: m.NoteEditor })));
 
 export interface NoteEditorPaneProps {
   note: Note;
@@ -33,14 +32,14 @@ export function NoteEditorPane({
     (e: React.ChangeEvent<HTMLInputElement>): void => {
       onDraftChange({ title: e.target.value });
     },
-    [onDraftChange],
+    [onDraftChange]
   );
 
   const handleContentChange = useCallback(
     (markdown: string): void => {
       onDraftChange({ content: markdown });
     },
-    [onDraftChange],
+    [onDraftChange]
   );
 
   const handleTogglePin = useCallback((): void => {
@@ -84,7 +83,7 @@ export function NoteEditorPane({
             aria-pressed={note.pinned}
             title={note.pinned ? t('unpin') : t('pin')}
           >
-            {note.pinned ? '★' : '☆'}
+            {note.pinned ? <PinOff size={15} /> : <Pin size={15} />}
           </button>
           <button
             type="button"
@@ -93,7 +92,7 @@ export function NoteEditorPane({
             title={t('delete')}
             aria-label={t('delete')}
           >
-            ⌫
+            <Trash2 size={15} />
           </button>
         </div>
       </header>

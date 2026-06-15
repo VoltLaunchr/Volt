@@ -102,7 +102,7 @@ export function ExtensionsStore(_props: ExtensionsStoreProps): React.JSX.Element
           .catch(() => ({ extensions: [] as ExtensionInfo[], version: '0', lastUpdated: '' })),
         extensionService.getInstalledExtensions().catch(() => [] as InstalledExtension[]),
         extensionService.getDevExtensions().catch(() => [] as DevExtension[]),
-        extensionService.fetchDownloadCounts().catch(() => ({}) as Record<string, number>),
+        extensionService.fetchDownloadCounts().catch((): Record<string, number> => ({})),
       ]);
 
       const extensions = registry.extensions.map((ext) => {

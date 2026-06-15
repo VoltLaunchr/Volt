@@ -18,6 +18,7 @@ import type { ShellOutputData } from '../../plugins/builtin/shell';
 import { stripAnsi } from '../../plugins/builtin/shell';
 import { AnsiText } from '../../plugins/builtin/shell/ansiParser';
 import { highlightMatch, HighlightSegment } from '../../../shared/utils/highlightMatch';
+import { VOLT_EVENTS, onVoltEvent } from '../../../shared/events';
 import { useSearchStore } from '../../../stores/searchStore';
 import { cn } from '@/lib/utils';
 import { HighlightedExpression } from '../../plugins/builtin/calculator/utils/highlight';
@@ -40,6 +41,20 @@ const getCalculatorData = (data: unknown): CalculatorInnerData | null => {
     return inner as unknown as CalculatorInnerData;
   }
   return null;
+};
+
+/**
+ * Extract shell-specific data from the SearchResult data. For plugin results the
+ * pipeline passes the full PluginResult through as `data`, so the actual
+ * ShellOutputData payload lives one level deeper at `.data.data`. Reading
+ * `result.data` directly yields the PluginResult (no `command`/`status` fields),
+ * which is what rendered "> undefined" / "No output".
+ */
+const getShellData = (data: unknown): ShellOutputData | null => {
+  if (typeof data !== 'object' || data === null) return null;
+  const inner = (data as Record<string, unknown>).data;
+  if (!inner || typeof inner !== 'object') return null;
+  return inner as ShellOutputData;
 };
 
 // System Monitor data interface
@@ -66,6 +81,8 @@ const isSystemMonitorData = (data: unknown): data is SystemMonitorData => {
 interface ResultItemProps {
   result: SearchResult;
   isSelected: boolean;
+  /** Position in the flat result list — drives the Alt+N quick-launch badge. */
+  globalIndex?: number;
 }
 
 /** Single Raycast-style accessory chip */
@@ -117,8 +134,13 @@ function HighlightedText({
   );
 }
 
-export function ResultItem({ result, isSelected }: ResultItemProps) {
+export function ResultItem({ result, isSelected, globalIndex }: ResultItemProps) {
   const searchQuery = useSearchStore((s) => s.searchQuery);
+
+  // Alt+1..9 quick-launches the first nine results (see useGlobalHotkey). Surface
+  // the shortcut so the affordance is discoverable.
+  const altNumber =
+    globalIndex !== undefined && globalIndex >= 0 && globalIndex < 9 ? globalIndex + 1 : null;
 
   const titleSegments = useMemo(
     () => highlightMatch(result.title, searchQuery),
@@ -176,19 +198,18 @@ export function ResultItem({ result, isSelected }: ResultItemProps) {
 
   // Shell command output state — updated via DOM events from the plugin
   const isShellCommand = result.type === SearchResultType.ShellCommand;
-  const initialData = isShellCommand ? (result.data as unknown as ShellOutputData) : null;
+  const initialData = isShellCommand ? getShellData(result.data) : null;
   const [shellData, setShellData] = useState<ShellOutputData | null>(initialData);
 
   useEffect(() => {
     if (!isShellCommand) return;
-    const handler = (e: Event) => {
-      const detail = (e as CustomEvent).detail as { command: string; data: ShellOutputData };
-      if (detail.command === (result.data as unknown as ShellOutputData)?.command) {
+    // Typed event bus (A) + the .data.data narrowing fix (getShellData) so the
+    // command match reads the real ShellOutputData, not the wrapping PluginResult.
+    return onVoltEvent(VOLT_EVENTS.SHELL_OUTPUT, (detail) => {
+      if (detail.command === getShellData(result.data)?.command) {
         setShellData({ ...detail.data });
       }
-    };
-    window.addEventListener('volt:shell-output', handler);
-    return () => window.removeEventListener('volt:shell-output', handler);
+    });
   }, [isShellCommand, result.data]);
 
   const handleCopyOutput = useCallback((text: string) => {
@@ -439,6 +460,17 @@ export function ResultItem({ result, isSelected }: ResultItemProps) {
             {result.type === SearchResultType.SystemMonitor && 'System'}
             {result.type === SearchResultType.Plugin && 'Plugin'}
           </span>
+        )}
+        {altNumber !== null && (
+          <kbd
+            className={cn(
+              'inline-flex items-center justify-center rounded px-1 py-0.5 text-[10px] font-medium leading-none tabular-nums border border-hairline',
+              isSelected ? 'text-on-dark bg-surface' : 'text-ash bg-surface/60',
+            )}
+            aria-hidden="true"
+          >
+            ⌥{altNumber}
+          </kbd>
         )}
       </div>
     </div>

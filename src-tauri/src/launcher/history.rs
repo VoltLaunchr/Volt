@@ -8,10 +8,23 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
+use ts_rs::TS;
+
+/// Credit (in ms) added to an item's `frecency_date` on each launch.
+///
+/// One day per use: a single launch keeps an app boosted for roughly a day,
+/// while heavy use accumulates credit that decays proportionally slower (the
+/// "frecency" self-balancing of frequency and recency). Tunable.
+const FRECENCY_LAUNCH_WEIGHT: i64 = 86_400_000; // 1 day
+
+/// Cap on the launch count counted when backfilling a legacy record, so a
+/// long-lived history doesn't translate into an unbounded future date.
+const FRECENCY_BACKFILL_CAP: i64 = 30;
 
 /// A single launch record
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "LaunchRecord.ts")]
 pub struct LaunchRecord {
     /// Application path
     pub path: String,
@@ -22,13 +35,31 @@ pub struct LaunchRecord {
     /// Total number of launches
     pub launch_count: u32,
 
-    /// Timestamp of first launch
+    /// Timestamp of first launch. `#[ts(type = "number")]`: serde_json
+    /// serialises i64 as a JSON number and Tauri's invoke yields a JS `number`
+    /// (ms timestamps stay well within Number.MAX_SAFE_INTEGER) — ts-rs would
+    /// otherwise default i64/u64 to `bigint`, which the wire never produces.
+    #[ts(type = "number")]
     pub first_launched: i64,
 
     /// Timestamp of most recent launch
+    #[ts(type = "number")]
     pub last_launched: i64,
 
+    /// Monotonic "frecency date" (ms), pushed further into the future on each
+    /// launch (Mozilla-style frecency). Ranking the per-keystroke search hot
+    /// path by this single value needs no recency math at query time — see
+    /// [`crate::search`]. Kept alongside `launch_count`/`last_launched`, which
+    /// still drive the distinct "most frequent" and "most recent" app lists.
+    ///
+    /// `#[serde(default)]` lets records written before this field existed load
+    /// with `0`, a sentinel [`backfill_frecency_date`] replaces on load.
+    #[serde(default)]
+    #[ts(type = "number")]
+    pub frecency_date: i64,
+
     /// Total time spent in app (if tracked)
+    #[ts(optional, type = "number")]
     pub total_time_ms: Option<u64>,
 
     /// Tags/categories assigned by user
@@ -48,6 +79,7 @@ impl LaunchRecord {
             launch_count: 1,
             first_launched: now,
             last_launched: now,
+            frecency_date: now + FRECENCY_LAUNCH_WEIGHT,
             total_time_ms: None,
             tags: Vec::new(),
             pinned: false,
@@ -56,8 +88,25 @@ impl LaunchRecord {
 
     /// Record a new launch of this application
     pub fn record_launch(&mut self) {
+        let now = chrono::Utc::now().timestamp_millis();
         self.launch_count += 1;
-        self.last_launched = chrono::Utc::now().timestamp_millis();
+        self.last_launched = now;
+        // Anchor on `max(now, frecency_date)` so a long idle gap pulls the date
+        // back toward `now` (recency), then add the per-use credit (frequency
+        // accumulates). The value only ever moves forward.
+        self.frecency_date = self.frecency_date.max(now) + FRECENCY_LAUNCH_WEIGHT;
+    }
+
+    /// Backfill `frecency_date` for a record loaded from a pre-`frecency_date`
+    /// history file (serde fills the missing field with `0`). Derives a stable
+    /// monotonic value from the legacy recency + (capped) frequency so search
+    /// ranking stays sensible across the upgrade. No-op once migrated.
+    fn backfill_frecency_date(&mut self) {
+        if self.frecency_date == 0 {
+            let credit =
+                (self.launch_count as i64).min(FRECENCY_BACKFILL_CAP) * FRECENCY_LAUNCH_WEIGHT;
+            self.frecency_date = self.last_launched + credit;
+        }
     }
 
     /// Add time spent in the app
@@ -129,7 +178,12 @@ impl LaunchHistory {
         }
 
         let content = fs::read_to_string(path).ok()?;
-        serde_json::from_str(&content).ok()
+        let mut records: HashMap<String, LaunchRecord> = serde_json::from_str(&content).ok()?;
+        // Backfill frecency_date for records written before the field existed.
+        for record in records.values_mut() {
+            record.backfill_frecency_date();
+        }
+        Some(records)
     }
 
     /// Save history to file
@@ -230,6 +284,24 @@ impl LaunchHistory {
             poisoned.into_inner()
         });
         records.values().cloned().collect()
+    }
+
+    /// Run `f` against the raw record map while holding the lock.
+    ///
+    /// This lets hot paths (per-keystroke search scoring) derive a cheap
+    /// projection — e.g. a `path → frecency` score map — without cloning the
+    /// entire `HashMap<String, LaunchRecord>` first (each `LaunchRecord` owns
+    /// two `String`s and a `Vec<String>`). The closure must not hold onto the
+    /// borrow past its return.
+    pub fn with_records<R>(&self, f: impl FnOnce(&HashMap<String, LaunchRecord>) -> R) -> R {
+        let records = self.records.lock().unwrap_or_else(|poisoned| {
+            log::error!(
+                "Launch history mutex poisoned in with_records(): {:?}",
+                poisoned
+            );
+            poisoned.into_inner()
+        });
+        f(&records)
     }
 
     /// Get most recently launched apps.
@@ -475,18 +547,14 @@ pub struct QueryBindingStore {
     bindings: HashMap<String, Vec<QueryBinding>>,
 }
 
-/// Maximum number of unique query keys to keep (prevents unbounded growth)
-const MAX_BINDING_KEYS: usize = 1000;
-/// Maximum stored query length (truncated to keep the JSON file bounded).
-/// Raycast-style per-(query, item) frecency keys the boost off the *normalized*
-/// query string the user typed when they launched the item.
-const MAX_QUERY_LEN: usize = 64;
+/// Maximum number of unique prefixes to keep (prevents unbounded growth)
+const MAX_BINDING_PREFIXES: usize = 1000;
+/// Maximum prefix length to record
+const MAX_PREFIX_LEN: usize = 8;
 
 impl QueryBindingStore {
-    /// Record a binding for every prefix of the normalized `query`, up to
-    /// `MAX_QUERY_LEN`. Storing each prefix means typing "ch" then later "chr"
-    /// both get boosted — the cheap way to get per-(prefix, item) without
-    /// running a substring scan at lookup time.
+    /// Record a binding for every prefix of `query` (length 1..min(8, query.len())).
+    /// Increments count and updates last_used for existing bindings, or inserts new ones.
     pub fn record_binding(&mut self, query: &str, result_id: &str) {
         let query_lower = query.to_lowercase();
         let query_lower = query_lower.trim();
@@ -495,26 +563,14 @@ impl QueryBindingStore {
         }
 
         let now = chrono::Utc::now().timestamp_millis();
-        // Truncate to MAX_QUERY_LEN on a char boundary so we never overflow the
-        // store on pathologically long pastes.
-        let truncated = if query_lower.len() <= MAX_QUERY_LEN {
-            query_lower
-        } else {
-            // Walk char boundaries down from MAX_QUERY_LEN.
-            let mut end = MAX_QUERY_LEN;
-            while end > 0 && !query_lower.is_char_boundary(end) {
-                end -= 1;
-            }
-            &query_lower[..end]
-        };
+        let max_len = MAX_PREFIX_LEN.min(query_lower.len());
 
-        // Char-boundary-aware prefix enumeration. We index by byte offset to keep
-        // the loop simple but only emit on valid char boundaries.
-        for end in 1..=truncated.len() {
-            if !truncated.is_char_boundary(end) {
-                continue;
-            }
-            let prefix = &truncated[..end];
+        for end in 1..=max_len {
+            // Ensure we split on a char boundary
+            let prefix = match query_lower.get(..end) {
+                Some(p) => p,
+                None => continue,
+            };
 
             let entries = self.bindings.entry(prefix.to_string()).or_default();
 
@@ -531,7 +587,7 @@ impl QueryBindingStore {
             }
         }
 
-        // Prune if we exceed the max number of unique query keys
+        // Prune if we exceed the max number of unique prefixes
         self.prune_if_needed();
     }
 
@@ -586,29 +642,29 @@ impl QueryBindingStore {
         serde_json::from_str(&content).unwrap_or_default()
     }
 
-    /// Prune the LRU-oldest query keys when we exceed the limit.
+    /// Prune oldest prefixes when exceeding the limit.
     fn prune_if_needed(&mut self) {
-        if self.bindings.len() <= MAX_BINDING_KEYS {
+        if self.bindings.len() <= MAX_BINDING_PREFIXES {
             return;
         }
 
-        // Find the most recent last_used per key, then drop the oldest keys.
-        let mut key_ages: Vec<(String, i64)> = self
+        // Find the oldest last_used per prefix, then drop the oldest prefixes
+        let mut prefix_ages: Vec<(String, i64)> = self
             .bindings
             .iter()
-            .map(|(key, entries)| {
+            .map(|(prefix, entries)| {
                 let max_last_used = entries.iter().map(|b| b.last_used).max().unwrap_or(0);
-                (key.clone(), max_last_used)
+                (prefix.clone(), max_last_used)
             })
             .collect();
 
         // Sort oldest first
-        key_ages.sort_by_key(|(_, age)| *age);
+        prefix_ages.sort_by_key(|(_, age)| *age);
 
         // Remove oldest entries until we're under the limit
-        let to_remove = self.bindings.len() - MAX_BINDING_KEYS;
-        for (key, _) in key_ages.into_iter().take(to_remove) {
-            self.bindings.remove(&key);
+        let to_remove = self.bindings.len() - MAX_BINDING_PREFIXES;
+        for (prefix, _) in prefix_ages.into_iter().take(to_remove) {
+            self.bindings.remove(&prefix);
         }
     }
 }
@@ -640,6 +696,71 @@ mod tests {
 
         let record = history.get("C:\\app.exe").unwrap();
         assert_eq!(record.launch_count, 3);
+    }
+
+    #[test]
+    fn test_new_record_frecency_date_in_future() {
+        let now = chrono::Utc::now().timestamp_millis();
+        let record = LaunchRecord::new("C:\\app.exe", "App");
+        // A fresh record is credited one launch weight ahead of now.
+        assert!(record.frecency_date >= now + FRECENCY_LAUNCH_WEIGHT);
+    }
+
+    #[test]
+    fn test_record_launch_pushes_frecency_date_forward() {
+        let mut record = LaunchRecord::new("C:\\app.exe", "App");
+        let after_first = record.frecency_date;
+        record.record_launch();
+        // Each launch moves the date strictly further into the future, so a
+        // frequently used app accumulates credit (and outranks a rarely used one).
+        assert!(record.frecency_date > after_first);
+        assert_eq!(record.frecency_date, after_first + FRECENCY_LAUNCH_WEIGHT);
+    }
+
+    #[test]
+    fn test_backfill_frecency_date_for_legacy_record() {
+        // Simulate a record loaded from a pre-frecency_date history file: serde
+        // would fill the field with 0.
+        let mut legacy = LaunchRecord {
+            path: "C:\\old.exe".into(),
+            name: "Old".into(),
+            launch_count: 5,
+            first_launched: 1_000,
+            last_launched: 2_000,
+            frecency_date: 0,
+            total_time_ms: None,
+            tags: Vec::new(),
+            pinned: false,
+        };
+        legacy.backfill_frecency_date();
+        assert_eq!(legacy.frecency_date, 2_000 + 5 * FRECENCY_LAUNCH_WEIGHT);
+
+        // Backfill is idempotent — a second pass must not move an already
+        // migrated value.
+        let migrated = legacy.frecency_date;
+        legacy.backfill_frecency_date();
+        assert_eq!(legacy.frecency_date, migrated);
+    }
+
+    #[test]
+    fn test_backfill_caps_launch_count() {
+        let mut legacy = LaunchRecord {
+            path: "C:\\heavy.exe".into(),
+            name: "Heavy".into(),
+            launch_count: 10_000,
+            first_launched: 0,
+            last_launched: 0,
+            frecency_date: 0,
+            total_time_ms: None,
+            tags: Vec::new(),
+            pinned: false,
+        };
+        legacy.backfill_frecency_date();
+        // Capped so a long history doesn't produce an unbounded future date.
+        assert_eq!(
+            legacy.frecency_date,
+            FRECENCY_BACKFILL_CAP * FRECENCY_LAUNCH_WEIGHT
+        );
     }
 
     #[test]

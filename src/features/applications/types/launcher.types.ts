@@ -3,27 +3,12 @@
  * These types mirror the Rust backend launcher types
  */
 
-/**
- * A launch record tracking app usage history
- */
-export interface LaunchRecord {
-  /** Application path */
-  path: string;
-  /** Application name */
-  name: string;
-  /** Total number of launches */
-  launchCount: number;
-  /** Timestamp of first launch (ms) */
-  firstLaunched: number;
-  /** Timestamp of most recent launch (ms) */
-  lastLaunched: number;
-  /** Total time spent in app in ms (if tracked) */
-  totalTimeMs?: number;
-  /** Tags/categories assigned by user */
-  tags: string[];
-  /** Whether this app is pinned/favorited */
-  pinned: boolean;
-}
+// `LaunchRecord` is the single source of truth generated from the Rust struct
+// by ts-rs (run `cargo test`); imported for local use and re-exported so
+// existing imports keep working. Change the shape in
+// src-tauri/src/launcher/history.rs, not here.
+import type { LaunchRecord } from '../../../shared/types/generated/LaunchRecord';
+export type { LaunchRecord };
 
 /**
  * Options for launching an application

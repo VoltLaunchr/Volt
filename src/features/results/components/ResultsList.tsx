@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { SearchResult, SearchResultType } from '../../../shared/types/common.types';
 import { ResultItem } from './ResultItem';
 import { cn } from '@/lib/utils';
+import { getSectionOrder } from '../resultSections';
 
 interface ResultsListProps {
   results: SearchResult[];
@@ -38,22 +39,6 @@ function getSectionKey(type: SearchResultType): string {
     default:
       return 'results';
   }
-}
-
-/** Get section order — prioritize sections that have the most results.
- *
- * 'system' and 'results' carry plugin direct-answers (CPU %, timer, calculator,
- * web search) which are single-value replies to the query, not a list to
- * browse — surface them above the long app list so the user never has to
- * scroll to see them. */
-function getSectionOrder(grouped: Map<string, unknown[]>): string[] {
-  const base = ['system', 'results', 'applications', 'commands', 'games', 'shell', 'files'];
-  const gameCount = grouped.get('games')?.length ?? 0;
-  const appCount = grouped.get('applications')?.length ?? 0;
-  if (gameCount > appCount) {
-    return ['system', 'results', 'games', 'applications', 'commands', 'shell', 'files'];
-  }
-  return base;
 }
 
 export function ResultsList({
@@ -175,7 +160,7 @@ export function ResultsList({
                       }
                     }}
                   >
-                    <ResultItem result={result} isSelected={globalIndex === selectedIndex} />
+                    <ResultItem result={result} isSelected={globalIndex === selectedIndex} globalIndex={globalIndex} />
                   </div>
                 ))}
               </div>
@@ -211,7 +196,7 @@ export function ResultsList({
                         }
                       }}
                     >
-                      <ResultItem result={result} isSelected={globalIndex === selectedIndex} />
+                      <ResultItem result={result} isSelected={globalIndex === selectedIndex} globalIndex={globalIndex} />
                     </div>
                   </Fragment>
                 );

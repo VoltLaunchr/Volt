@@ -17,6 +17,7 @@ import {
   Gamepad2,
   Clipboard as ClipboardIcon,
   Folder,
+  FolderPlus,
   FolderOpen,
   FolderX,
   Lightbulb,
@@ -29,6 +30,8 @@ import {
   Download,
   Upload,
   RefreshCw,
+  Plus,
+  X,
 } from 'lucide-react';
 import { Button, HotkeyCapture, Spinner, Toggle } from '../../shared/components/ui';
 import { extractErrorMessage } from '../../shared/utils/error';
@@ -104,7 +107,9 @@ export function SettingsApp() {
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [diagnosticsCopied, setDiagnosticsCopied] = useState(false);
   const [isScanningApps, setIsScanningApps] = useState(false);
-  const [scanResult, setScanResult] = useState<{ count: number; error: string | null } | null>(null);
+  const [scanResult, setScanResult] = useState<{ count: number; error: string | null } | null>(
+    null
+  );
   const [exportImportStatus, setExportImportStatus] = useState<{
     type: 'success' | 'error';
     message: string;
@@ -120,8 +125,8 @@ export function SettingsApp() {
   const [appVersion, setAppVersion] = useState<string>('');
   const [emojiSkinTone, setEmojiSkinToneState] = useState<SkinTone>(() => getPreferredSkinTone());
   const [emojiColumns, setEmojiColumnsState] = useState<number>(() => getEmojiColumns());
-  const [emojiPrimaryAction, setEmojiPrimaryActionState] = useState<'copy' | 'paste'>(
-    () => getEmojiPrimaryAction()
+  const [emojiPrimaryAction, setEmojiPrimaryActionState] = useState<'copy' | 'paste'>(() =>
+    getEmojiPrimaryAction()
   );
 
   useEffect(() => {
@@ -469,7 +474,9 @@ export function SettingsApp() {
                     <category.icon size={18} className="shrink-0" />
                   )}
                   <span className="flex-1">
-                    {t(`sections.${category.id === 'file-search' ? 'fileSearch' : category.id === 'clipboard' ? 'clipboard' : category.id}`)}
+                    {t(
+                      `sections.${category.id === 'file-search' ? 'fileSearch' : category.id === 'clipboard' ? 'clipboard' : category.id}`
+                    )}
                   </span>
                 </button>
               </div>
@@ -572,7 +579,9 @@ export function SettingsApp() {
 
         <div className="flex items-center justify-between py-3 border-b border-hairline last:border-0">
           <div className="flex flex-col gap-0.5">
-            <span className="text-sm text-body" id="hotkey-label">{t('general.voltHotkey')}</span>
+            <span className="text-sm text-body" id="hotkey-label">
+              {t('general.voltHotkey')}
+            </span>
             <span className="text-xs text-mute mt-0.5" id="hotkey-desc">
               {t('general.hotkeyDesc')}
             </span>
@@ -700,7 +709,12 @@ export function SettingsApp() {
                 </option>
               ))}
             </select>
-            <Button variant="secondary" onClick={() => { void syncAppShortcuts(); }}>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                void syncAppShortcuts();
+              }}
+            >
               {t('shortcuts.syncApps')}
             </Button>
           </div>
@@ -729,7 +743,8 @@ export function SettingsApp() {
 
                 {isExpanded && (
                   <div className="bg-surface-elevated/20 rounded-lg overflow-hidden">
-                    <div className="grid gap-4 px-4 py-2.5 bg-black/20 text-[12px] font-semibold text-mute uppercase tracking-[0.5px]"
+                    <div
+                      className="grid gap-4 px-4 py-2.5 bg-black/20 text-[12px] font-semibold text-mute uppercase tracking-[0.5px]"
                       style={{ gridTemplateColumns: '1fr 120px 160px 60px' }}
                     >
                       <span>{t('shortcuts.tableHeaders.name')}</span>
@@ -813,9 +828,7 @@ export function SettingsApp() {
 
           {Object.keys(filteredShortcuts).length === 0 && (
             <div className="text-center py-10 text-mute">
-              {appShortcuts.length === 0
-                ? t('shortcuts.noShortcuts')
-                : t('shortcuts.noMatch')}
+              {appShortcuts.length === 0 ? t('shortcuts.noShortcuts') : t('shortcuts.noMatch')}
             </div>
           )}
         </div>
@@ -953,19 +966,22 @@ export function SettingsApp() {
                   themeOption === 'auto' && 'bg-gradient-to-br from-[#f3f4f6] to-[#1f2937]'
                 )}
               >
-                <div className={cn(
-                  'h-3',
-                  themeOption === 'light' ? 'bg-black/10' : 'bg-white/10'
-                )} />
-                <div className={cn(
-                  'flex-1 m-2 rounded-xs',
-                  themeOption === 'light' ? 'bg-black/5' : 'bg-white/5'
-                )} />
+                <div
+                  className={cn('h-3', themeOption === 'light' ? 'bg-black/10' : 'bg-white/10')}
+                />
+                <div
+                  className={cn(
+                    'flex-1 m-2 rounded-xs',
+                    themeOption === 'light' ? 'bg-black/5' : 'bg-white/5'
+                  )}
+                />
               </div>
-              <span className={cn(
-                'text-[13px] font-medium',
-                settings.appearance.theme === themeOption ? 'text-accent-blue' : 'text-body'
-              )}>
+              <span
+                className={cn(
+                  'text-[13px] font-medium',
+                  settings.appearance.theme === themeOption ? 'text-accent-blue' : 'text-body'
+                )}
+              >
                 {t(`advanced.theme${themeOption.charAt(0).toUpperCase() + themeOption.slice(1)}`)}
               </span>
             </button>
@@ -1033,7 +1049,7 @@ export function SettingsApp() {
     setUpdateError(null);
     setUpdateInfo(null);
     try {
-      const channel = (settings?.general.updateChannel ?? 'stable') as UpdateChannel;
+      const channel = settings?.general.updateChannel ?? 'stable';
       const update = await checkForUpdate(channel);
       setUpdateInfo(update);
       setUpdateChecked(true);
@@ -1117,9 +1133,21 @@ export function SettingsApp() {
         <div className="flex flex-col gap-1">
           {[
             { icon: Globe, label: t('about.officialWebsite'), url: 'https://voltlaunchr.com' },
-            { icon: Package, label: t('about.githubRepo'), url: 'https://github.com/VoltLaunchr/Volt' },
-            { icon: Bug, label: t('about.reportIssue'), url: 'https://github.com/VoltLaunchr/Volt/issues/new' },
-            { icon: FileText, label: t('about.releaseNotes'), url: 'https://github.com/VoltLaunchr/Volt/blob/main/CHANGELOG.md' },
+            {
+              icon: Package,
+              label: t('about.githubRepo'),
+              url: 'https://github.com/VoltLaunchr/Volt',
+            },
+            {
+              icon: Bug,
+              label: t('about.reportIssue'),
+              url: 'https://github.com/VoltLaunchr/Volt/issues/new',
+            },
+            {
+              icon: FileText,
+              label: t('about.releaseNotes'),
+              url: 'https://github.com/VoltLaunchr/Volt/blob/main/CHANGELOG.md',
+            },
           ].map(({ icon: Icon, label, url }) => (
             <button
               key={url}
@@ -1144,11 +1172,21 @@ export function SettingsApp() {
         <div className="h-px bg-hairline my-5" />
 
         <div className="flex flex-col gap-1">
-          <button onClick={() => { void handleOpenLogsFolder(); }} className="flex items-center gap-3 px-4 py-3 rounded-lg text-body bg-transparent border-none w-full text-left text-[length:inherit] font-[inherit] cursor-pointer transition-colors hover:bg-white/5 hover:text-on-dark">
+          <button
+            onClick={() => {
+              void handleOpenLogsFolder();
+            }}
+            className="flex items-center gap-3 px-4 py-3 rounded-lg text-body bg-transparent border-none w-full text-left text-[length:inherit] font-[inherit] cursor-pointer transition-colors hover:bg-white/5 hover:text-on-dark"
+          >
             <FolderOpen size={20} className="text-accent-blue shrink-0" />
             <span>{t('about.openLogs')}</span>
           </button>
-          <button onClick={() => { void handleCopyDiagnostics(); }} className="flex items-center gap-3 px-4 py-3 rounded-lg text-body bg-transparent border-none w-full text-left text-[length:inherit] font-[inherit] cursor-pointer transition-colors hover:bg-white/5 hover:text-on-dark">
+          <button
+            onClick={() => {
+              void handleCopyDiagnostics();
+            }}
+            className="flex items-center gap-3 px-4 py-3 rounded-lg text-body bg-transparent border-none w-full text-left text-[length:inherit] font-[inherit] cursor-pointer transition-colors hover:bg-white/5 hover:text-on-dark"
+          >
             {diagnosticsCopied ? (
               <Check size={20} className="text-accent-green shrink-0" />
             ) : (
@@ -1160,29 +1198,48 @@ export function SettingsApp() {
 
         <div className="h-px bg-hairline my-5" />
 
-        <div className="py-2">
-          <h4 className="text-[11px] font-medium text-ash uppercase tracking-widest mb-3">{t('about.updates')}</h4>
-
-          {/* Channel selector */}
-          <div className="flex items-center gap-3 mb-3">
-            <span className="text-xs text-mute">{t('about.channel')}</span>
-            {(['stable', 'beta'] as UpdateChannel[]).map((ch) => (
-              <label key={ch} className="flex items-center gap-1.5 cursor-pointer text-xs text-body">
-                <input
-                  type="radio"
-                  name="updateChannel"
-                  value={ch}
-                  checked={(settings?.general.updateChannel ?? 'stable') === ch}
-                  onChange={() => {
-                    if (!settings) return;
-                    const updated = { ...settings, general: { ...settings.general, updateChannel: ch } };
-                    void settingsService.updateGeneralSettings(updated.general).catch(() => {});
-                  }}
-                  className="accent-accent-blue"
-                />
-                {ch === 'stable' ? t('about.channelStable') : t('about.channelBeta')}
-              </label>
-            ))}
+        <div className="rounded-xl border border-hairline bg-surface/60 p-4 overflow-hidden">
+          <div className="flex items-center justify-between gap-3 mb-4">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="w-8 h-8 rounded-lg border border-accent-blue/20 bg-accent-blue/10 text-accent-blue flex items-center justify-center shrink-0">
+                <RefreshCw size={15} />
+              </span>
+              <div className="min-w-0">
+                <h4 className="text-sm font-semibold text-ink m-0">{t('about.updates')}</h4>
+                <p className="text-[11px] text-mute m-0 mt-0.5">Volt {appVersion || ''}</p>
+              </div>
+            </div>
+            <div
+              className="inline-flex rounded-lg border border-hairline bg-canvas p-0.5 shrink-0"
+              aria-label={t('about.channel')}
+            >
+              {(['stable', 'beta'] as UpdateChannel[]).map((ch) => {
+                const isActive = (settings?.general.updateChannel ?? 'stable') === ch;
+                return (
+                  <button
+                    key={ch}
+                    type="button"
+                    aria-pressed={isActive}
+                    onClick={() => {
+                      const updated = {
+                        ...settings,
+                        general: { ...settings.general, updateChannel: ch },
+                      };
+                      setSettings(updated);
+                      void settingsService.updateGeneralSettings(updated.general).catch(() => {});
+                    }}
+                    className={cn(
+                      'px-2.5 py-1 rounded-md border-none text-[11px] font-medium cursor-pointer transition-colors',
+                      isActive
+                        ? 'bg-accent-blue text-white shadow-sm'
+                        : 'bg-transparent text-mute hover:text-ink'
+                    )}
+                  >
+                    {ch === 'stable' ? t('about.channelStable') : t('about.channelBeta')}
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
           <div className="flex flex-col gap-2">
@@ -1203,22 +1260,33 @@ export function SettingsApp() {
             )}
 
             {!updateChecked && !isCheckingUpdate && !deferralReady && (
-              <Button onClick={() => { void handleCheckForUpdate(); }} disabled={isCheckingUpdate}>
+              <Button
+                onClick={() => {
+                  void handleCheckForUpdate();
+                }}
+                disabled={isCheckingUpdate}
+                className="w-full justify-center bg-accent-blue text-white hover:bg-accent-blue/90"
+              >
                 <RefreshCw size={16} />
                 {t('about.checkForUpdates')}
               </Button>
             )}
             {isCheckingUpdate && (
-              <div className="flex items-center gap-2 text-[13px] text-ink">
+              <div className="flex items-center gap-2 rounded-lg border border-hairline bg-canvas/70 px-3 py-2.5 text-[13px] text-ink">
                 <Spinner size="small" />
                 <span>{t('about.checking')}</span>
               </div>
             )}
             {updateChecked && !updateInfo && !isCheckingUpdate && (
-              <div className="flex items-center gap-2 text-[13px] text-ink">
+              <div className="flex items-center gap-2 rounded-lg border border-accent-green/20 bg-accent-green/10 px-3 py-2.5 text-[13px] text-ink">
                 <CheckCircle size={16} className="text-accent-green" />
                 <span>{t('about.upToDate')}</span>
-                <Button onClick={() => { void handleCheckForUpdate(); }} className="p-1 min-w-0 ml-auto">
+                <Button
+                  onClick={() => {
+                    void handleCheckForUpdate();
+                  }}
+                  className="p-1 min-w-0 ml-auto"
+                >
                   <RefreshCw size={14} />
                 </Button>
               </div>
@@ -1235,7 +1303,8 @@ export function SettingsApp() {
                 <div className="flex items-center gap-2 text-[13px] text-ink">
                   <span>{t('about.updateAvailable')}</span>
                   <span className="inline-flex items-center px-2 py-0.5 text-xs font-semibold rounded-full bg-accent-green text-on-dark">
-                    v{updateInfo.version}{updateInfo.isBeta ? ' beta' : ''}
+                    v{updateInfo.version}
+                    {updateInfo.isBeta ? ' beta' : ''}
                   </span>
                 </div>
                 {updateInfo.body && (
@@ -1247,22 +1316,33 @@ export function SettingsApp() {
                   </div>
                 )}
                 {updateInfo.isBeta ? (
-                  <Button onClick={() => {
-                    void import('@tauri-apps/plugin-opener').then(({ openUrl }) =>
-                      openUrl('https://github.com/VoltLaunchr/Volt/releases')
-                    );
-                  }}>
+                  <Button
+                    onClick={() => {
+                      void import('@tauri-apps/plugin-opener').then(({ openUrl }) =>
+                        openUrl('https://github.com/VoltLaunchr/Volt/releases')
+                      );
+                    }}
+                  >
                     <Download size={16} />
                     {t('about.downloadFromGitHub')}
                   </Button>
                 ) : (
                   <>
-                    <Button onClick={() => { void handleDownloadAndInstall(); }}>
+                    <Button
+                      onClick={() => {
+                        void handleDownloadAndInstall();
+                      }}
+                    >
                       <Download size={16} />
                       {t('about.downloadAndInstall')}
                     </Button>
                     {!updateInfo.critical && (
-                      <Button onClick={() => { void handleDeferredInstall(); }} className="bg-transparent border border-hairline hover:bg-white/5">
+                      <Button
+                        onClick={() => {
+                          void handleDeferredInstall();
+                        }}
+                        className="bg-transparent border border-hairline hover:bg-white/5"
+                      >
                         <Download size={16} />
                         {t('about.installOnNextRestart')}
                       </Button>
@@ -1404,11 +1484,21 @@ export function SettingsApp() {
 
   // Render File Search section
   const renderFileSearchSection = () => {
-    const addFolder = () => {
-      const folder = window.prompt('Enter folder path to index:');
-      if (folder && folder.trim()) {
-        const newFolders = [...settings.indexing.folders, folder.trim()];
-        updateSettings('indexing', 'folders', newFolders);
+    const selectDirectory = async (title: string): Promise<string | null> => {
+      try {
+        const { open } = await import('@tauri-apps/plugin-dialog');
+        const selected = await open({ directory: true, multiple: false, title });
+        return typeof selected === 'string' ? selected : null;
+      } catch (dialogError) {
+        logger.error('Failed to open directory picker:', dialogError);
+        return null;
+      }
+    };
+
+    const addFolder = async () => {
+      const folder = await selectDirectory(t('fileSearch.addFolder'));
+      if (folder && !settings.indexing.folders.includes(folder)) {
+        updateSettings('indexing', 'folders', [...settings.indexing.folders, folder]);
       }
     };
 
@@ -1417,11 +1507,10 @@ export function SettingsApp() {
       updateSettings('indexing', 'folders', newFolders);
     };
 
-    const addExcludedPath = () => {
-      const path = window.prompt('Enter path to exclude from indexing:');
-      if (path && path.trim()) {
-        const newPaths = [...settings.indexing.excludedPaths, path.trim()];
-        updateSettings('indexing', 'excludedPaths', newPaths);
+    const addExcludedPath = async () => {
+      const path = await selectDirectory(t('fileSearch.addPath'));
+      if (path && !settings.indexing.excludedPaths.includes(path)) {
+        updateSettings('indexing', 'excludedPaths', [...settings.indexing.excludedPaths, path]);
       }
     };
 
@@ -1463,39 +1552,53 @@ export function SettingsApp() {
 
           <div className="h-px bg-hairline my-5" />
 
-          <h3 className="text-sm font-semibold text-ink mb-1.5">{t('fileSearch.foldersToIndex')}</h3>
+          <h3 className="text-sm font-semibold text-ink mb-1.5">
+            {t('fileSearch.foldersToIndex')}
+          </h3>
           <p className="text-xs text-mute mb-4" id="folders-desc">
             {t('fileSearch.foldersToIndexDesc')}
           </p>
 
           <div className="flex flex-col gap-2" aria-describedby="folders-desc">
             {settings.indexing.folders.map((folder, index) => (
-              <div key={index} className="flex items-center gap-2.5 px-3.5 py-2.5 bg-surface-elevated/30 rounded-md border border-hairline transition-all hover:bg-surface-elevated/50">
+              <div
+                key={index}
+                className="flex items-center gap-2.5 px-3.5 py-2.5 bg-surface-elevated/30 rounded-md border border-hairline transition-all hover:bg-surface-elevated/50"
+              >
                 <Folder size={16} className="text-body shrink-0" />
-                <span className="flex-1 text-[13px] text-body font-mono whitespace-nowrap overflow-hidden text-ellipsis" title={folder}>
+                <span
+                  className="flex-1 text-[13px] text-body font-mono whitespace-nowrap overflow-hidden text-ellipsis"
+                  title={folder}
+                >
                   {folder}
                 </span>
                 <button
-                  className="w-6 h-6 rounded-sm bg-transparent border-none text-ash text-lg cursor-pointer flex items-center justify-center transition-all hover:bg-accent-red/15 hover:text-accent-red"
+                  className="w-7 h-7 rounded-md bg-transparent border-none text-ash cursor-pointer flex items-center justify-center transition-all hover:bg-accent-red/15 hover:text-accent-red"
                   onClick={() => removeFolder(index)}
                   title="Remove folder"
                 >
-                  ×
+                  <X size={14} />
                 </button>
               </div>
             ))}
             <button
               className="flex items-center justify-center gap-1.5 py-3 rounded-md bg-transparent border border-dashed border-accent-blue/30 text-accent-blue text-[13px] font-medium cursor-pointer transition-all hover:bg-accent-blue/10 hover:border-accent-blue"
-              onClick={addFolder}
+              onClick={() => {
+                void addFolder();
+              }}
             >
-              <span>+</span> {t('fileSearch.addFolder')}
+              <FolderPlus size={15} /> {t('fileSearch.addFolder')}
             </button>
           </div>
 
           <div className="h-px bg-hairline my-5" />
 
-          <h3 className="text-sm font-semibold text-ink mb-1.5">{t('fileSearch.fileExtensions')}</h3>
-          <p className="text-xs text-mute mb-4" id="extensions-desc">{t('fileSearch.fileExtensionsDesc')}</p>
+          <h3 className="text-sm font-semibold text-ink mb-1.5">
+            {t('fileSearch.fileExtensions')}
+          </h3>
+          <p className="text-xs text-mute mb-4" id="extensions-desc">
+            {t('fileSearch.fileExtensionsDesc')}
+          </p>
 
           <input
             type="text"
@@ -1519,44 +1622,74 @@ export function SettingsApp() {
 
           <div className="flex flex-col gap-2">
             {settings.indexing.excludedPaths.map((path, index) => (
-              <div key={index} className="flex items-center gap-2.5 px-3.5 py-2.5 bg-surface-elevated/30 rounded-md border border-hairline transition-all hover:bg-surface-elevated/50">
+              <div
+                key={index}
+                className="flex items-center gap-2.5 px-3.5 py-2.5 bg-surface-elevated/30 rounded-md border border-hairline transition-all hover:bg-surface-elevated/50"
+              >
                 <FolderX size={16} className="text-body shrink-0" />
-                <span className="flex-1 text-[13px] text-body font-mono whitespace-nowrap overflow-hidden text-ellipsis" title={path}>
+                <span
+                  className="flex-1 text-[13px] text-body font-mono whitespace-nowrap overflow-hidden text-ellipsis"
+                  title={path}
+                >
                   {path}
                 </span>
                 <button
-                  className="w-6 h-6 rounded-sm bg-transparent border-none text-ash text-lg cursor-pointer flex items-center justify-center transition-all hover:bg-accent-red/15 hover:text-accent-red"
+                  className="w-7 h-7 rounded-md bg-transparent border-none text-ash cursor-pointer flex items-center justify-center transition-all hover:bg-accent-red/15 hover:text-accent-red"
                   onClick={() => removeExcludedPath(index)}
                   title="Remove excluded path"
                 >
-                  ×
+                  <X size={14} />
                 </button>
               </div>
             ))}
             <button
               className="flex items-center justify-center gap-1.5 py-3 rounded-md bg-transparent border border-dashed border-accent-blue/30 text-accent-blue text-[13px] font-medium cursor-pointer transition-all hover:bg-accent-blue/10 hover:border-accent-blue"
-              onClick={addExcludedPath}
+              onClick={() => {
+                void addExcludedPath();
+              }}
             >
-              <span>+</span> {t('fileSearch.addPath')}
+              <Plus size={15} /> {t('fileSearch.addPath')}
             </button>
           </div>
 
           <div className="h-px bg-hairline my-5" />
 
           <h3 className="text-sm font-semibold text-ink mb-1.5">{t('fileSearch.indexStatus')}</h3>
-          <p className="text-xs text-mute mb-4">
-            {t('fileSearch.indexStatusDesc')}
-          </p>
+          <p className="text-xs text-mute mb-4">{t('fileSearch.indexStatusDesc')}</p>
 
           {indexStats ? (
             <div className="grid grid-cols-2 gap-2 mt-2">
               {[
-                { label: t('fileSearch.stats.indexedFiles'), value: indexStats.indexedCount.toLocaleString() },
-                { label: t('fileSearch.stats.dbSize'), value: indexStats.dbSizeBytes > 0 ? `${(indexStats.dbSizeBytes / 1024).toFixed(1)} KB` : '—' },
-                { label: t('fileSearch.stats.lastScan'), value: indexStats.lastFullScan > 0 ? new Date(indexStats.lastFullScan * 1000).toLocaleString() : t('fileSearch.stats.never') },
-                { label: t('fileSearch.stats.watcher'), value: indexStats.isWatching ? t('fileSearch.stats.active') : t('fileSearch.stats.inactive'), accent: indexStats.isWatching ? 'text-accent-green' : undefined },
+                {
+                  label: t('fileSearch.stats.indexedFiles'),
+                  value: indexStats.indexedCount.toLocaleString(),
+                },
+                {
+                  label: t('fileSearch.stats.dbSize'),
+                  value:
+                    indexStats.dbSizeBytes > 0
+                      ? `${(indexStats.dbSizeBytes / 1024).toFixed(1)} KB`
+                      : '—',
+                },
+                {
+                  label: t('fileSearch.stats.lastScan'),
+                  value:
+                    indexStats.lastFullScan > 0
+                      ? new Date(indexStats.lastFullScan * 1000).toLocaleString()
+                      : t('fileSearch.stats.never'),
+                },
+                {
+                  label: t('fileSearch.stats.watcher'),
+                  value: indexStats.isWatching
+                    ? t('fileSearch.stats.active')
+                    : t('fileSearch.stats.inactive'),
+                  accent: indexStats.isWatching ? 'text-accent-green' : undefined,
+                },
               ].map(({ label, value, accent }) => (
-                <div key={label} className="flex flex-col gap-0.5 px-3 py-2.5 rounded-md bg-surface-elevated/20 border border-hairline">
+                <div
+                  key={label}
+                  className="flex flex-col gap-0.5 px-3 py-2.5 rounded-md bg-surface-elevated/20 border border-hairline"
+                >
                   <span className="text-[11px] text-body uppercase tracking-[0.04em]">{label}</span>
                   <span className={cn('text-[13px] font-medium text-ink', accent)}>{value}</span>
                 </div>
@@ -1569,9 +1702,7 @@ export function SettingsApp() {
           <div className="flex items-center justify-between py-3 border-b border-hairline last:border-0 mt-3">
             <div className="flex flex-col gap-0.5">
               <span className="text-sm text-body">{t('fileSearch.stats.rebuild')}</span>
-              <span className="text-xs text-mute mt-0.5">
-                {t('fileSearch.stats.rebuildDesc')}
-              </span>
+              <span className="text-xs text-mute mt-0.5">{t('fileSearch.stats.rebuildDesc')}</span>
             </div>
             <Button
               variant="secondary"
@@ -1589,6 +1720,7 @@ export function SettingsApp() {
                           if (status.isIndexing) {
                             setTimeout(pollStats, 800);
                           } else {
+                            await invoke<void>('start_file_watcher');
                             await fetchIndexStats();
                             setIsRebuilding(false);
                           }
@@ -1616,7 +1748,14 @@ export function SettingsApp() {
 
   // Render Emoji & Symbols section
   const renderEmojiSection = () => {
-    const skinTones: SkinTone[] = ['none', 'light', 'medium-light', 'medium', 'medium-dark', 'dark'];
+    const skinTones: SkinTone[] = [
+      'none',
+      'light',
+      'medium-light',
+      'medium',
+      'medium-dark',
+      'dark',
+    ];
     const skinToneEmoji: Record<SkinTone, string> = {
       none: '✋',
       light: '✋🏻',
@@ -1636,7 +1775,9 @@ export function SettingsApp() {
           <div className="flex items-center justify-between py-3 border-b border-hairline">
             <div className="flex flex-col gap-0.5">
               <span className="text-sm text-body">Primary Action</span>
-              <span className="text-xs text-mute mt-0.5">What happens when you select an emoji</span>
+              <span className="text-xs text-mute mt-0.5">
+                What happens when you select an emoji
+              </span>
             </div>
             <select
               className="bg-surface-elevated border border-hairline rounded-md px-3 py-1.5 text-sm text-on-dark outline-none focus:border-hairline-strong cursor-pointer"
@@ -1655,7 +1796,9 @@ export function SettingsApp() {
           <div className="flex items-center justify-between py-3 border-b border-hairline">
             <div className="flex flex-col gap-0.5">
               <span className="text-sm text-body">Grid Columns</span>
-              <span className="text-xs text-mute mt-0.5">Number of columns in the emoji grid ({emojiColumns})</span>
+              <span className="text-xs text-mute mt-0.5">
+                Number of columns in the emoji grid ({emojiColumns})
+              </span>
             </div>
             <div className="flex items-center gap-2">
               <input
@@ -1678,7 +1821,9 @@ export function SettingsApp() {
           <div className="py-3 border-b border-hairline">
             <div className="flex flex-col gap-0.5 mb-4">
               <span className="text-sm text-body">Skin Tone</span>
-              <span className="text-xs text-mute mt-0.5">Default skin tone for emojis that support it</span>
+              <span className="text-xs text-mute mt-0.5">
+                Default skin tone for emojis that support it
+              </span>
             </div>
             <div className="flex items-center gap-2 flex-wrap">
               {skinTones.map((tone) => (
@@ -1724,9 +1869,7 @@ export function SettingsApp() {
         <div className="flex items-center justify-between py-3 border-b border-hairline last:border-0">
           <div className="flex flex-col gap-0.5">
             <span className="text-sm text-body">{t('applications.scanApps')}</span>
-            <span className="text-xs text-mute mt-0.5">
-              {t('applications.scanAppsDesc')}
-            </span>
+            <span className="text-xs text-mute mt-0.5">{t('applications.scanAppsDesc')}</span>
           </div>
           <Button
             variant="secondary"
@@ -1753,9 +1896,13 @@ export function SettingsApp() {
         {scanResult && (
           <div className="flex items-start gap-3 px-3.5 py-3.5 bg-accent-blue/8 border border-accent-blue/20 rounded-lg mt-2">
             {scanResult.error ? (
-              <p className="m-0 text-[13px] text-accent-red">{t('applications.scanError', { error: scanResult.error })}</p>
+              <p className="m-0 text-[13px] text-accent-red">
+                {t('applications.scanError', { error: scanResult.error })}
+              </p>
             ) : (
-              <p className="m-0 text-[13px] text-body">{t('applications.scanResult', { count: scanResult.count })}</p>
+              <p className="m-0 text-[13px] text-body">
+                {t('applications.scanResult', { count: scanResult.count })}
+              </p>
             )}
           </div>
         )}
@@ -1768,11 +1915,26 @@ export function SettingsApp() {
     const plugins = [
       { id: 'calculator', nameKey: 'plugins.names.calculator', icon: Calculator, builtin: true },
       { id: 'web-search', nameKey: 'plugins.names.webSearch', icon: Globe, builtin: true },
-      { id: 'system-commands', nameKey: 'plugins.names.systemCommands', icon: Terminal, builtin: true },
+      {
+        id: 'system-commands',
+        nameKey: 'plugins.names.systemCommands',
+        icon: Terminal,
+        builtin: true,
+      },
       { id: 'timer', nameKey: 'plugins.names.timer', icon: Clock, builtin: true },
-      { id: 'system-monitor', nameKey: 'plugins.names.systemMonitor', icon: Activity, builtin: true },
+      {
+        id: 'system-monitor',
+        nameKey: 'plugins.names.systemMonitor',
+        icon: Activity,
+        builtin: true,
+      },
       { id: 'steam-games', nameKey: 'plugins.names.games', icon: Gamepad2, builtin: true },
-      { id: 'clipboard-manager', nameKey: 'plugins.names.clipboardHistory', icon: ClipboardIcon, builtin: true },
+      {
+        id: 'clipboard-manager',
+        nameKey: 'plugins.names.clipboardHistory',
+        icon: ClipboardIcon,
+        builtin: true,
+      },
     ];
 
     return (
@@ -1786,8 +1948,14 @@ export function SettingsApp() {
             {plugins.map((plugin) => {
               const isEnabled = settings.plugins.enabledPlugins.includes(plugin.id);
               return (
-                <div key={plugin.id} className="flex items-center gap-3 px-4 py-3 bg-surface-elevated/30 rounded-lg transition-colors hover:bg-surface-elevated/50">
-                  {React.createElement(plugin.icon, { size: 20, className: 'text-accent-blue shrink-0' })}
+                <div
+                  key={plugin.id}
+                  className="flex items-center gap-3 px-4 py-3 bg-surface-elevated/30 rounded-lg transition-colors hover:bg-surface-elevated/50"
+                >
+                  {React.createElement(plugin.icon, {
+                    size: 20,
+                    className: 'text-accent-blue shrink-0',
+                  })}
                   <div className="flex-1 flex items-center gap-2">
                     <span className="text-sm font-medium text-ink">{t(plugin.nameKey)}</span>
                     {plugin.builtin && (
@@ -1878,11 +2046,16 @@ export function SettingsApp() {
               onClick={() => {
                 const name = window.prompt('Enter executable name to exclude (e.g. 1password):');
                 if (name?.trim()) {
-                  const newList = [...settings.plugins.clipboardDisabledApps, name.trim().toLowerCase()];
+                  const newList = [
+                    ...settings.plugins.clipboardDisabledApps,
+                    name.trim().toLowerCase(),
+                  ];
                   updateSettings('plugins', 'clipboardDisabledApps', newList);
-                  void invoke<void>('set_clipboard_disabled_apps', { apps: newList }).catch((err) => {
-                    logger.error('Failed to update clipboard disabled apps:', err);
-                  });
+                  void invoke<void>('set_clipboard_disabled_apps', { apps: newList }).catch(
+                    (err) => {
+                      logger.error('Failed to update clipboard disabled apps:', err);
+                    }
+                  );
                 }
               }}
             >
@@ -1902,11 +2075,15 @@ export function SettingsApp() {
                   <button
                     className="w-6 h-6 rounded-sm bg-transparent border-none text-ash text-lg cursor-pointer flex items-center justify-center transition-all hover:bg-accent-red/15 hover:text-accent-red"
                     onClick={() => {
-                      const newList = settings.plugins.clipboardDisabledApps.filter((_, i) => i !== index);
+                      const newList = settings.plugins.clipboardDisabledApps.filter(
+                        (_, i) => i !== index
+                      );
                       updateSettings('plugins', 'clipboardDisabledApps', newList);
-                      void invoke<void>('set_clipboard_disabled_apps', { apps: newList }).catch((err) => {
-                        logger.error('Failed to update clipboard disabled apps:', err);
-                      });
+                      void invoke<void>('set_clipboard_disabled_apps', { apps: newList }).catch(
+                        (err) => {
+                          logger.error('Failed to update clipboard disabled apps:', err);
+                        }
+                      );
                     }}
                   >
                     ×
@@ -1980,9 +2157,7 @@ export function SettingsApp() {
             className="bg-surface-elevated border border-hairline rounded-md px-3 py-1.5 text-sm text-on-dark outline-none focus:border-hairline-strong placeholder:text-ash"
             placeholder={t('shell.defaultShellPlaceholder')}
             value={settings.shell?.defaultShell ?? ''}
-            onChange={(e) =>
-              updateSettings('shell', 'defaultShell', e.target.value || null)
-            }
+            onChange={(e) => updateSettings('shell', 'defaultShell', e.target.value || null)}
           />
         </div>
 
@@ -1996,9 +2171,7 @@ export function SettingsApp() {
             className="bg-surface-elevated border border-hairline rounded-md px-3 py-1.5 text-sm text-on-dark outline-none focus:border-hairline-strong placeholder:text-ash"
             placeholder={t('shell.workingDirPlaceholder')}
             value={settings.shell?.workingDir ?? ''}
-            onChange={(e) =>
-              updateSettings('shell', 'workingDir', e.target.value || null)
-            }
+            onChange={(e) => updateSettings('shell', 'workingDir', e.target.value || null)}
           />
         </div>
 
@@ -2131,13 +2304,17 @@ export function SettingsApp() {
         <div className="no-drag flex gap-2">
           <button
             className="w-7 h-7 rounded-sm bg-transparent border-none text-ash text-lg cursor-pointer flex items-center justify-center transition-colors hover:bg-white/10 hover:text-on-dark"
-            onClick={() => { void handleMinimize(); }}
+            onClick={() => {
+              void handleMinimize();
+            }}
           >
             <span>−</span>
           </button>
           <button
             className="w-7 h-7 rounded-sm bg-transparent border-none text-ash text-lg cursor-pointer flex items-center justify-center transition-colors hover:bg-accent-red/20 hover:text-accent-red"
-            onClick={() => { void handleClose(); }}
+            onClick={() => {
+              void handleClose();
+            }}
           >
             <span>×</span>
           </button>
@@ -2166,10 +2343,21 @@ export function SettingsApp() {
             <div className="absolute bottom-0 left-0 right-0 flex items-center justify-between px-6 py-3 bg-black/30 border-t border-hairline">
               <span className="text-[13px] text-body">{t('saveBar.unsavedChanges')}</span>
               <div className="flex gap-2">
-                <Button variant="secondary" onClick={() => { void loadSettings(); }}>
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    void loadSettings();
+                  }}
+                >
                   {t('saveBar.discard')}
                 </Button>
-                <Button variant="default" onClick={() => { void handleSave(); }} disabled={isSaving}>
+                <Button
+                  variant="default"
+                  onClick={() => {
+                    void handleSave();
+                  }}
+                  disabled={isSaving}
+                >
                   {isSaving ? t('actions.saving') : t('saveBar.saveChanges')}
                 </Button>
               </div>

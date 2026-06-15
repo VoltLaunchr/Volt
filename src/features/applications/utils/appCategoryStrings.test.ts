@@ -15,7 +15,7 @@ import { AppCategory } from '../../../shared/types/common.types';
 describe('AppCategory Rust↔TS contract', () => {
   const appsRsPath = join(
     __dirname,
-    '../../../../src-tauri/src/commands/apps.rs',
+    '../../../../src-tauri/src/commands/launcher/apps.rs',
   );
   // Normalize CRLF→LF: on Windows CI the file is checked out with CRLF and
   // the `\n\}\n` regex anchor below would never match the closing brace.

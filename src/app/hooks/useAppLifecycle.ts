@@ -8,6 +8,7 @@ import {
   AiChatPlugin,
   CalculatorPlugin,
   DeveloperCommandsPlugin,
+  DeveloperToolsPlugin,
   EmojiPickerPlugin,
   GamesPlugin,
   NotesPlugin,
@@ -35,6 +36,7 @@ import { useToastStore } from '../../shared/components/ui/toast-store';
 import { useAppStore } from '../../stores/appStore';
 import { useUiStore } from '../../stores/uiStore';
 import type { ExtensionPermission } from '../../features/extensions/types/extension.types';
+import { FileWatcherLifecycle } from './fileWatcherLifecycle';
 
 export interface UseAppLifecycleResult {
   allApps: AppInfo[];
@@ -69,15 +71,15 @@ export function useAppLifecycle(): UseAppLifecycleResult {
 
   const indexingStarted = useRef(false); // Prevent double indexing (StrictMode)
   const updateCheckDone = useRef(false); // Prevent double update check
+  const indexingRunIdRef = useRef(0);
+  const fileWatcherRef = useRef<FileWatcherLifecycle | null>(null);
+  if (fileWatcherRef.current === null) {
+    fileWatcherRef.current = new FileWatcherLifecycle();
+  }
   // Tracks the active `indexing-progress` Tauri listener so both effects below
   // (settings-changed restart + start-indexing-on-mount) can tear it down.
   // Declared at the top so both effects see the same ref instance.
   const indexingUnlistenRef = useRef<(() => void) | null>(null);
-  // Set to true right before the main window itself writes indexing settings
-  // (auto-seed of default folders on first launch). The `settings-changed`
-  // listener checks this ref to avoid restarting an indexing run that the
-  // startup effect is about to kick off — fixes "Indexing already in progress".
-  const selfTriggeredSettingsSaveRef = useRef(false);
 
   // Sync app data into store (single effect to avoid cascading re-renders)
   useEffect(() => {
@@ -95,9 +97,7 @@ export function useAppLifecycle(): UseAppLifecycleResult {
         applyTheme(loadedSettings.appearance.theme);
         applyTransparency(loadedSettings.appearance.transparency);
 
-        // Register built-in plugins (only once - prevents StrictMode double-registration).
-        // markInitialized() runs synchronously right after register() and BEFORE any await,
-        // so the second StrictMode mount sees the guard before its sibling reaches an await.
+        // Register built-in plugins (only once - prevents StrictMode double-registration)
         if (!pluginRegistry.isInitialized()) {
           pluginRegistry.register(new ClipboardPlugin());
           pluginRegistry.register(new AiChatPlugin());
@@ -114,10 +114,12 @@ export function useAppLifecycle(): UseAppLifecycleResult {
           pluginRegistry.register(new NotesPlugin());
           pluginRegistry.register(new WindowManagementPlugin());
           pluginRegistry.register(new ShellCommandPlugin());
-          pluginRegistry.markInitialized();
+          pluginRegistry.register(new DeveloperToolsPlugin());
 
           // Start clipboard monitoring
           await ClipboardPlugin.startMonitoring();
+
+          pluginRegistry.markInitialized();
 
           logger.info(
             '✓ Built-in plugins initialized:',
@@ -292,14 +294,6 @@ export function useAppLifecycle(): UseAppLifecycleResult {
       applyTheme(newSettings.appearance.theme);
       applyTransparency(newSettings.appearance.transparency);
 
-      // Self-write echo: the main window just persisted these settings itself
-      // (e.g. auto-seeding default folders on first launch). The startup effect
-      // owns the start_indexing call in that path — don't race it from here.
-      if (selfTriggeredSettingsSaveRef.current) {
-        selfTriggeredSettingsSaveRef.current = false;
-        return;
-      }
-
       const foldersChanged =
         currentSettings == null ||
         JSON.stringify(newSettings.indexing.folders) !==
@@ -309,14 +303,20 @@ export function useAppLifecycle(): UseAppLifecycleResult {
         JSON.stringify(newSettings.indexing.fileExtensions) !==
           JSON.stringify(currentSettings.indexing.fileExtensions);
 
-      if ((foldersChanged || extensionsChanged) && newSettings.indexing.folders.length > 0) {
-        const restart = async () => {
-          // Tear down any active progress listener from a previous indexing run
-          // before registering a new one, so we don't double-fire setIsIndexing.
-          indexingUnlistenRef.current?.();
-          indexingUnlistenRef.current = null;
+      if (foldersChanged || extensionsChanged) {
+        const indexingRunId = ++indexingRunIdRef.current;
+        indexingUnlistenRef.current?.();
+        indexingUnlistenRef.current = null;
 
+        const restart = async () => {
           try {
+            await fileWatcherRef.current?.stop();
+            if (cancelled || indexingRunId !== indexingRunIdRef.current) return;
+            if (newSettings.indexing.folders.length === 0) {
+              setIsIndexing(false);
+              return;
+            }
+
             setIsIndexing(true);
             const { addToast } = useToastStore.getState();
             addToast(`Indexing ${newSettings.indexing.folders.length} folder(s)...`, 'info');
@@ -325,12 +325,15 @@ export function useAppLifecycle(): UseAppLifecycleResult {
               phase: string;
               indexedFiles: number;
             }>('indexing-progress', (evt) => {
+              if (indexingRunId !== indexingRunIdRef.current) return;
+
               const { phase, indexedFiles } = evt.payload;
               if (phase === 'complete') {
                 setIsIndexing(false);
                 addToast(`Indexing complete — ${indexedFiles} files indexed`, 'success');
                 unlisten();
                 indexingUnlistenRef.current = null;
+                void fileWatcherRef.current?.start();
               } else if (phase === 'error') {
                 setIsIndexing(false);
                 addToast('Indexing failed', 'error', 0);
@@ -338,6 +341,10 @@ export function useAppLifecycle(): UseAppLifecycleResult {
                 indexingUnlistenRef.current = null;
               }
             });
+            if (cancelled || indexingRunId !== indexingRunIdRef.current) {
+              unlisten();
+              return;
+            }
             indexingUnlistenRef.current = unlisten;
 
             await invoke<void>('start_indexing', {
@@ -348,6 +355,7 @@ export function useAppLifecycle(): UseAppLifecycleResult {
               deepSearch: newSettings.indexing.deepSearch,
             });
           } catch (err) {
+            if (cancelled || indexingRunId !== indexingRunIdRef.current) return;
             logger.error('Failed to restart indexing after settings change:', err);
             setIsIndexing(false);
             indexingUnlistenRef.current?.();
@@ -364,24 +372,14 @@ export function useAppLifecycle(): UseAppLifecycleResult {
     return () => {
       cancelled = true;
       unlistenFn?.();
-      // Tear down any indexing-progress listener installed by an in-flight
-      // restart. Without this, an unmount mid-restart leaks the listener and
-      // fires setIsIndexing/addToast on a torn-down store subscriber.
-      indexingUnlistenRef.current?.();
-      indexingUnlistenRef.current = null;
     };
   }, [setSettings, setIsIndexing]);
 
   // Start file indexing if enabled in settings.
-  // ONE-SHOT BY DESIGN: `indexingStarted.current` is set on first run and
-  // never reset, so this effect can fire at most once per component lifetime.
-  // Restart logic on settings changes is owned by the `settings-changed`
-  // Tauri listener above, which manages its own progress-listener lifecycle.
-  // We therefore depend only on whether settings have arrived
-  // (`indexOnStartup !== undefined` doubles as a "settings loaded" gate);
-  // the indexing.folders / excludedPaths / fileExtensions arrays are read
-  // fresh from the store inside the effect body via `useAppStore.getState()`,
-  // not captured from the closure, so they don't belong in the deps array.
+  // We deliberately depend only on the narrow indexing knobs and read the
+  // indexing config from the store inside the effect to avoid re-running on
+  // every unrelated settings change (which would tear down the active
+  // indexing-progress listener mid-scan).
   const indexOnStartup = settings?.indexing.indexOnStartup;
   useEffect(() => {
     const startFileIndexing = async () => {
@@ -394,6 +392,7 @@ export function useAppLifecycle(): UseAppLifecycleResult {
       }
 
       indexingStarted.current = true;
+      const indexingRunId = ++indexingRunIdRef.current;
 
       // If no folders configured, auto-configure with default folders
       let foldersToIndex = currentSettings.indexing.folders;
@@ -401,9 +400,7 @@ export function useAppLifecycle(): UseAppLifecycleResult {
         try {
           const defaultFolders = await invoke<string[]>('get_default_index_folders');
           if (defaultFolders.length > 0) {
-            // Mark this save as self-triggered so the `settings-changed` listener
-            // (which echoes back into the same window) doesn't race-start indexing.
-            selfTriggeredSettingsSaveRef.current = true;
+            // Update settings with default folders
             await settingsService.updateIndexingSettings({
               ...currentSettings.indexing,
               folders: defaultFolders,
@@ -412,7 +409,6 @@ export function useAppLifecycle(): UseAppLifecycleResult {
             logger.info('✓ Auto-configured indexing with default folders:', defaultFolders);
           }
         } catch (err) {
-          selfTriggeredSettingsSaveRef.current = false;
           logger.error('Failed to get default folders:', err);
           return;
         }
@@ -421,6 +417,8 @@ export function useAppLifecycle(): UseAppLifecycleResult {
       if (foldersToIndex.length === 0) {
         return;
       }
+
+      if (indexingRunId !== indexingRunIdRef.current) return;
 
       // Detect if the indexing config changed since the last app session.
       // When it changes (e.g. folders added, or file_extensions migrated from ["exe","lnk"]→[]),
@@ -448,6 +446,8 @@ export function useAppLifecycle(): UseAppLifecycleResult {
           totalFiles: number;
           isComplete: boolean;
         }>('indexing-progress', (event) => {
+          if (indexingRunId !== indexingRunIdRef.current) return;
+
           const { phase, indexedFiles } = event.payload;
 
           if (phase === 'complete') {
@@ -455,13 +455,7 @@ export function useAppLifecycle(): UseAppLifecycleResult {
             addToast(`Indexing complete — ${indexedFiles} files indexed`, 'success');
             unlisten();
             indexingUnlistenRef.current = null;
-            // Initial scan is done — start the incremental file watcher so the
-            // SQLite index stays in sync with FS changes (create/delete/rename).
-            // Without this the "File Watcher" status stays Inactive and changes
-            // only land at the next start_indexing run.
-            invoke('start_file_watcher').catch((err) => {
-              logger.warn('Failed to start file watcher:', err);
-            });
+            void fileWatcherRef.current?.start();
           } else if (phase === 'error') {
             setIsIndexing(false);
             addToast('Indexing failed', 'error', 0); // duration 0 = persistent
@@ -469,6 +463,11 @@ export function useAppLifecycle(): UseAppLifecycleResult {
             indexingUnlistenRef.current = null;
           }
         });
+
+        if (indexingRunId !== indexingRunIdRef.current) {
+          unlisten();
+          return;
+        }
 
         // Store unlisten for cleanup on unmount
         indexingUnlistenRef.current = unlisten;
@@ -483,24 +482,29 @@ export function useAppLifecycle(): UseAppLifecycleResult {
           deepSearch: currentSettings.indexing.deepSearch,
         });
       } catch (err) {
+        if (indexingRunId !== indexingRunIdRef.current) return;
         logger.error('Failed to start file indexing:', err);
         useToastStore.getState().addToast('Indexing failed', 'error', 0);
         setIsIndexing(false);
+        indexingUnlistenRef.current?.();
+        indexingUnlistenRef.current = null;
       }
     };
 
     if (indexOnStartup !== undefined) {
       void startFileIndexing();
     }
-
-    return () => {
-      // Clean up indexing listener on unmount
-      if (indexingUnlistenRef.current) {
-        indexingUnlistenRef.current();
-        indexingUnlistenRef.current = null;
-      }
-    };
   }, [indexOnStartup, setIsIndexing]);
+
+  useEffect(() => {
+    return () => {
+      indexingRunIdRef.current += 1;
+      indexingStarted.current = false;
+      indexingUnlistenRef.current?.();
+      indexingUnlistenRef.current = null;
+      void fileWatcherRef.current?.stop();
+    };
+  }, []);
 
   return {
     allApps,

@@ -25,7 +25,7 @@ plugins/     Backend plugin system
   registry.rs      Thread-safe PluginRegistry (Arc<RwLock<HashMap>>)
   loader.rs        Dynamic plugin loading
   builtin/         clipboard_manager · game_scanner · system_monitor
-indexer/     SQLite-backed file index: database · scanner · watcher · search · windows_search
+indexer/     File index: SQLite source of truth · optional Tantivy · scanner · watcher · search
 launcher/    Cross-platform app launching: history · process · types
 search/      Top-level search aggregation
 embeddings/  fastembed wrapper (multilingual-e5-small, 384-dim, lazy ONNX init)
@@ -176,11 +176,14 @@ Backend plugins (Rust, `plugins/builtin/`): `system_monitor`, `game_scanner`, `c
 
 ### File indexer
 
-- **SQLite-backed** (`indexer/database.rs`, file at `<app_data_dir>/file_index.db`).
+- **SQLite-backed source of truth** (`indexer/database.rs`, file at `<app_data_dir>/file_index.db`). A completed scan replaces the snapshot transactionally, so a failed or interrupted scan does not erase the last coherent index.
 - `start_indexing()` walks configured folders with `max_depth=10`, `max_file_size=100 MB`. RAII `IndexingGuard` prevents `is_indexing` from sticking on abort.
-- `notify` v6 watcher (`indexer/watcher.rs`) keeps the index live.
+- The default query engine is nucleo. The `tantivy-search` feature adds a persistent derived index with exact/BM25/prefix/fuzzy ranking, hidden-file filtering and a path lookup that avoids rebuilding a map on every keystroke.
+- Tantivy startup reuse requires a clean SQLite `tantivy_dirty` marker and matching document counts; otherwise the derived index is rebuilt from SQLite.
+- `notify` v6 watcher (`indexer/watcher.rs`) keeps SQLite, the in-memory snapshot/lookup and Tantivy synchronized. Shutdown joins the worker before a rebuild starts.
+- `useAppLifecycle` starts the watcher only after indexing succeeds, stops it before configuration changes/rebuilds and tears it down on unmount.
 - On Windows, `windows_search.rs` queries the Windows Search index as a supplementary source (query length-capped).
-- Same scoring algorithm as apps, plus highlighting via `search_files_with_highlighting`.
+- Hidden files are excluded by default in both nucleo and Tantivy paths.
 
 ### Local embeddings (semantic search)
 

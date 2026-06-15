@@ -3,6 +3,13 @@ import { PluginResultType, type Plugin, PluginContext, PluginResult } from '../p
 import { logger } from '../../shared/utils';
 import { isClipboardItem } from '../../shared/utils/typeGuards';
 import type { ClipboardItem } from '../../shared/types/clipboard';
+import { VOLT_EVENTS, emitVoltEvent } from '../../shared/events';
+
+const CLIPBOARD_ICONS = {
+  image: '/icons/image-03-stroke-rounded.svg',
+  text: '/icons/text-creation-stroke-rounded.svg',
+  files: '/icons/text-creation-stroke-rounded.svg',
+} as const;
 
 /**
  * Clipboard History Plugin
@@ -108,20 +115,12 @@ export class ClipboardPlugin implements Plugin {
       await invoke<void>('hide_window');
 
       // Emit success event
-      window.dispatchEvent(
-        new CustomEvent('volt:clipboard:copied', {
-          detail: { id: item.id, preview: item.preview },
-        })
-      );
+      emitVoltEvent(VOLT_EVENTS.CLIPBOARD_COPIED, { id: item.id, preview: item.preview });
     } catch (error) {
       logger.error('Failed to copy to clipboard:', error);
 
       // Emit error event
-      window.dispatchEvent(
-        new CustomEvent('volt:clipboard:error', {
-          detail: { error: String(error) },
-        })
-      );
+      emitVoltEvent(VOLT_EVENTS.CLIPBOARD_ERROR, { error: String(error) });
     }
   }
 
@@ -149,16 +148,6 @@ export class ClipboardPlugin implements Plugin {
       timeAgo = date.toLocaleDateString();
     }
 
-    // Determine icon based on type
-    let icon = '📋';
-    if (item.contentType === 'image') {
-      icon = '🖼️';
-    } else if (item.contentType === 'files') {
-      icon = '📁';
-    } else if (item.pinned) {
-      icon = '📌';
-    }
-
     // Create subtitle with metadata
     const subtitle = `${timeAgo}${item.pinned ? ' • Pinned' : ''} • ${item.content.length} chars`;
 
@@ -167,7 +156,7 @@ export class ClipboardPlugin implements Plugin {
       type: PluginResultType.Clipboard,
       title: item.preview,
       subtitle,
-      icon,
+      icon: CLIPBOARD_ICONS[item.contentType],
       score,
       data: item as unknown as Record<string, unknown>,
       pluginId: this.id,
@@ -216,7 +205,7 @@ export class ClipboardPlugin implements Plugin {
   static async clearHistory(includePinned: boolean = false): Promise<void> {
     try {
       await invoke<void>('clear_clipboard_history', { includePinned });
-      window.dispatchEvent(new CustomEvent('volt:clipboard:cleared'));
+      emitVoltEvent(VOLT_EVENTS.CLIPBOARD_CLEARED);
     } catch (error) {
       logger.error('Failed to clear clipboard history:', error);
       throw error;

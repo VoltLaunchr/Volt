@@ -1,6 +1,7 @@
 export { AiChatPlugin, AiChatView, QuickAiView } from './ai-chat';
 export { CalculatorPlugin, CalculatorView } from './calculator';
 export { DeveloperCommandsPlugin } from './developer';
+export { DeveloperToolsPlugin } from './developer-tools';
 export { WebSearchPlugin } from './websearch';
 export { SystemCommandsPlugin } from './systemcommands';
 export { TimerPlugin, TimerDisplay, TimerView, useTimers, timerStore, tasksStore } from './timer';

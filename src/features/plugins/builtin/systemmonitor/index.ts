@@ -4,16 +4,7 @@ import i18n from 'i18next';
 import { logger } from '../../../../shared/utils/logger';
 import { openSystemMonitorWindow } from '../../../../app/windows';
 import { Plugin, PluginContext, PluginResult, PluginResultType } from '../../types';
-
-interface SystemMetrics {
-  cpuUsage: number;
-  memoryUsage: number;
-  diskUsage: number;
-  memoryTotalGb: number;
-  memoryUsedGb: number;
-  diskTotalGb: number;
-  diskUsedGb: number;
-}
+import type { SystemMetrics } from './types';
 
 const SYSTEMMONITOR_NS = 'systemmonitor';
 

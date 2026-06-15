@@ -5,6 +5,8 @@
 > Document vivant. Les milestones sont groupes en 4 phases. Chaque milestone liste un **but**, des **taches concretes** (avec fichiers), des **criteres d'acceptation** et une **estimation**.
 >
 > L'ancien plan (`IMPLEMENTATION_PLAN.md`) reste le journal historique (M0 → M5 completes). Cette roadmap couvre ce qui reste pour atteindre 1.0 et au-dela.
+>
+> **Important pre-marketing :** cette roadmap suit l'implementation. Elle ne remplace pas les preuves release/marketing. Pour une decision Go/No-Go, utiliser [`../marketing/PRODUCT_READINESS_REVIEW.md`](../marketing/PRODUCT_READINESS_REVIEW.md), [`../release/QA_MATRIX.md`](../release/QA_MATRIX.md) et [`../marketing/CLAIMS_EVIDENCE.md`](../marketing/CLAIMS_EVIDENCE.md).
 
 ---
 
@@ -14,7 +16,7 @@
 
 **Phase 1 (fondation):**
 - ✅ Core flow : scan apps → recherche fuzzy → launch, multi-plateforme (Windows/macOS/Linux)
-- ✅ Indexation fichiers : **SQLite persistent + file watcher incremental** (database.rs, watcher.rs)
+- ✅ Indexation fichiers : **SQLite transactionnel + Tantivy persistant feature-gaté + watcher incremental synchronisé**
 - ✅ Plugins builtin (13 frontend + 3 backend) : calculator, emoji-picker, timer, websearch, systemcommands, systemmonitor, games, steam, clipboard, snippets, preview, quicklinks, shell, window-management
 - ✅ Settings : 8 categories + panneau Integrations, hotkey configurable, autostart, 9 positions fenetre
 - ✅ Auto-updater : signature minisign, GitHub Releases, end-to-end
@@ -22,7 +24,7 @@
 - ✅ Logging : tracing + rolling daily logs, 91+ sites `println!` → `tracing`, logger.ts frontend
 
 **Phase 2 (qualite):**
-- ✅ Tests : 166 frontend (vitest), 143 backend (cargo test)
+- ✅ Tests : 345 frontend, 303 backend par défaut, 321 avec Tantivy, 15 SQLCipher ciblés
 - ✅ App.tsx refactor : 1090 → 197 lignes, hooks extraits
 - ✅ VoltError type : discriminated union, error handling
 - ✅ CI gates : `cargo fmt --check`, `cargo clippy -D warnings`
@@ -34,7 +36,7 @@
   - Web Worker 500ms timeout + Sucrase transpilation
   - Keywords + prefix matching (canHandle declaratif)
   - Permission enforcement (clipboard, network, notifications)
-- ✅ **Index persistant** : SQLite database.rs + watcher.rs incremental
+- ✅ **Index persistant** : SQLite source de vérité + Tantivy dérivé/réutilisable + watcher incremental
 - ✅ **Registry marketplace UI** : fetch_extension_registry wired, UI fonctionnelle
 
 **Phase 4 (power features) — ✅ FAIT:**
@@ -47,7 +49,7 @@
 - ✅ Games & Steam : 10 platforms (Steam, Epic, GOG, Xbox, EA, Ubisoft, Riot, Amazon, Battle.net, Rockstar)
 - ✅ **Integrations tierces** : OAuth GitHub/Notion, credentials chiffres, panneau Settings
 - ✅ **i18n** : 2 langues (en/fr), 9 namespaces, plugins localises, detection locale OS
-- ✅ **Performance** : batch IPC (search_all), scoring nucleo unifie, O(1) file clone, sync watcher cache
+- ✅ **Performance** : batch IPC, snapshot O(1), lookup de chemins persistant, Tantivy exact/BM25/prefix/fuzzy, sync watcher
 - ✅ **Qualite code** : type guards, safe invoke, constantes scoring centralisees, 3 TODOs resolus
 - ✅ **Query-result binding** : record_search_selection pour apprentissage
 
@@ -63,13 +65,13 @@
 |------|--------|--------|
 | **Code signing** | ❌ BLOQUANT | Windows Authenticode + macOS notarization necessaires (~340 €/an) |
 | **CSP en prod** | ⚠️ A tester | Policy stricte ajoutee, a verifier `bun tauri build` + DevTools |
-| **1 test Rust en echec** | ⚠️ A fixer | `test_calculate_match_score_nucleo_word_boundary_bonus` — assertion de scoring |
+| **Matrices de validation** | ✅ Valide | Frontend, Rust default, Tantivy et SQLCipher passent avec Clippy strict |
 
 **Problemes RESOLUS depuis l'audit precedent :**
-- ✅ Tests : 166 frontend, 143 backend (vs 130+/113+ avant)
+- ✅ Tests : 345 frontend, 303 backend par défaut, 321 avec Tantivy, 15 SQLCipher ciblés
 - ✅ CSP : policy stricte dans tauri.conf.json
 - ✅ Version sync : script `bun run sync-version` + `bun run check-version`
-- ✅ Index fichiers : SQLite persistent + watcher incremental
+- ✅ Index fichiers : remplacement SQLite transactionnel + Tantivy persistant + watcher lifecycle fiable
 - ✅ Extension loader : completement implemente avec worker sandbox
 - ✅ CI gates : `cargo fmt --check` + `cargo clippy -D warnings`
 - ✅ App.tsx : refactorise 1090 → 197 lignes
@@ -81,7 +83,7 @@
 
 ---
 
-## Phase 1 — Path to 1.0 (ship-ready) — ~3 semaines
+## Phase 1 — Path to 1.0 (release readiness) — ~3 semaines
 
 **Objectif :** rendre Volt installable et utilisable par des non-developpeurs sans avertissements systeme ni crashes non diagnostiques.
 
@@ -110,8 +112,8 @@
 **But :** Poser le minimum viable de tests pour securiser les refactors a venir.
 
 **Resultats :**
-- **166 tests frontend** (cible : ≥ 20) ✓
-- **143 tests Rust** (cible : ≥ 60) ✓
+- **345 tests frontend** (cible : ≥ 20) ✓
+- **303 tests Rust par défaut / 321 avec Tantivy** (cible : ≥ 60) ✓
 - CI execute `bun run test` + `cargo test` sur chaque PR ✓
 - Coverage : plugin registry 100%, calculator > 80%, indexer search couvert
 
@@ -148,7 +150,7 @@
 
 ---
 
-### Release 1.0.0 — READY (bloque par certs)
+### Release 1.0.0 — implementation mostly ready, release proof pending
 
 **Checklist :**
 - [x] M1.1 cleanup ✓
@@ -186,7 +188,7 @@
 
 - [x] `VoltError` discriminated union + tous commands migres
 - [x] CI gates : `cargo fmt --check` + `cargo clippy -D warnings`
-- [x] 166 tests frontend, 143 tests Rust
+- [x] 345 tests frontend, 303 tests Rust par défaut, 321 avec Tantivy
 - [x] Game scanners : 10 platforms fonctionnels (Steam, Epic, GOG, Xbox, EA, Ubisoft, Riot, Amazon, Battle.net, Rockstar)
 
 ### ✅ Milestone 2.3 — Accessibilite (TERMINE)
@@ -202,10 +204,14 @@
 
 ## Phase 3 — Platform & Extensibility ✅ COMPLETE (2026-04-14)
 
-### ✅ Milestone 3.1 — Index persistant + incremental (TERMINE)
+### ✅ Milestone 3.1 — Index persistant + incremental (TERMINE, durci 2026-06-12)
 
-- [x] SQLite (`indexer/database.rs`) avec table files
-- [x] File watcher incremental (`indexer/watcher.rs`) via notify, 100ms debounce
+- [x] SQLite (`indexer/database.rs`) comme source de vérité, remplacement transactionnel après scan réussi
+- [x] Tantivy persistant sous `tantivy-search`, cohérence contrôlée par marqueur dirty + nombre de documents
+- [x] Recherche exacte/BM25/préfixe/fuzzy avec transpositions; fichiers cachés exclus par défaut
+- [x] File watcher (`indexer/watcher.rs`) via notify, debounce 100ms, sync SQLite/cache/Tantivy
+- [x] `stop()` rejoint le worker; frontend stoppe/reprend le watcher autour des rebuilds et changements de config
+- [x] Lookup path→position maintenu avec le snapshot, sans reconstruction par requête
 - [x] Commandes : `start_file_watcher`, `stop_file_watcher`, `invalidate_index`, `get_db_index_stats`
 - [x] Frontend Settings > Indexing : stats DB + bouton "Rebuild"
 

@@ -1,29 +1,68 @@
-<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-<path d="M0 8C0 3.58172 3.58172 0 8 0H24C28.4183 0 32 3.58172 32 8V24C32 28.4183 28.4183 32 24 32H8C3.58172 32 0 28.4183 0 24V8Z" fill="url(#paint0_linear_102_140)"/>
-<path d="M16.0156 10.5C16.0156 13.2614 13.7771 15.5 11.0156 15.5C8.25421 15.5 6.01564 13.2614 6.01564 10.5C6.01564 7.73858 8.25421 5.5 11.0156 5.5C13.7771 5.5 16.0156 7.73858 16.0156 10.5Z" fill="#F6F6F6"/>
-<path d="M26.9999 21C26.9999 23.7614 24.7613 26 21.9999 26C19.2385 26 16.9999 23.7614 16.9999 21C16.9999 18.2386 19.2385 16 21.9999 16C24.7613 16 26.9999 18.2386 26.9999 21Z" fill="url(#paint1_linear_102_140)"/>
-<path d="M26.5 10.6C26.5 13.3614 24.2614 15.6 21.5 15.6C18.7386 15.6 16.5 13.3614 16.5 10.6C16.5 7.83859 18.7386 5.60002 21.5 5.60002C24.2614 5.60002 26.5 7.83859 26.5 10.6Z" fill="#F6F6F6"/>
-<path d="M16.0157 10.5C16.0157 13.2614 13.7772 15.5 11.0157 15.5C8.25432 15.5 6.01575 13.2614 6.01575 10.5C6.01575 7.73858 8.25432 5.5 11.0157 5.5C13.7772 5.5 16.0157 7.73858 16.0157 10.5Z" fill="#F6F6F6"/>
-<path d="M16.0157 21.5C16.0157 24.2614 13.7772 26.5 11.0157 26.5C8.25432 26.5 6.01575 24.2614 6.01575 21.5C6.01575 18.7386 8.25432 16.5 11.0157 16.5C13.7772 16.5 16.0157 18.7386 16.0157 21.5Z" fill="#F6F6F6"/>
-<path d="M16.0157 10.5C16.0157 13.2614 13.7772 15.5 11.0157 15.5C8.25433 15.5 6.01575 13.2614 6.01575 10.5C6.01575 7.73858 8.25433 5.5 11.0157 5.5C13.7772 5.5 16.0157 7.73858 16.0157 10.5Z" fill="#F6F6F6"/>
-<path d="M26.5 10.6C26.5 13.3614 24.2614 15.6 21.5 15.6C18.7386 15.6 16.5 13.3614 16.5 10.6C16.5 7.83859 18.7386 5.60002 21.5 5.60002C24.2614 5.60002 26.5 7.83859 26.5 10.6Z" fill="#F6F6F6"/>
-<path d="M16.0157 10.5C16.0157 13.2614 13.7772 15.5 11.0157 15.5C8.25433 15.5 6.01575 13.2614 6.01575 10.5C6.01575 7.73858 8.25433 5.5 11.0157 5.5C13.7772 5.5 16.0157 7.73858 16.0157 10.5Z" fill="#F6F6F6"/>
-<path d="M11 8V14" stroke="#453B33" stroke-width="1.5" stroke-linecap="round"/>
-<path d="M8 11L14 11.0082" stroke="#453B33" stroke-width="1.5" stroke-linecap="round"/>
-<path d="M24.1251 18.8833L19.874 23.1174" stroke="#453B33" stroke-width="1.5" stroke-linecap="round"/>
-<path d="M19.8824 18.8745L24.1107 23.1315" stroke="#453B33" stroke-width="1.5" stroke-linecap="round"/>
-<path d="M18 11L25 11.0082" stroke="#453B33" stroke-width="1.5" stroke-linecap="round"/>
-<path d="M8 21H14" stroke="#453B33" stroke-linecap="round"/>
-<circle cx="11" cy="19" r="1" fill="#453B33"/>
-<circle cx="11" cy="23" r="1" fill="#453B33"/>
-<defs>
-<linearGradient id="paint0_linear_102_140" x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse">
-<stop stop-color="#776D59"/>
-<stop offset="1" stop-color="#786D59"/>
-</linearGradient>
-<linearGradient id="paint1_linear_102_140" x1="22" y1="16" x2="23.5" y2="27" gradientUnits="userSpaceOnUse">
-<stop stop-color="#FDB83E"/>
-<stop offset="1" stop-color="#976E25"/>
-</linearGradient>
-</defs>
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48" fill="none">
+  <defs>
+    <linearGradient id="surface" x1="7" y1="4" x2="41" y2="45" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#202330" />
+      <stop offset="0.52" stop-color="#151821" />
+      <stop offset="1" stop-color="#0D0F16" />
+    </linearGradient>
+    <radialGradient id="glow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(13 8) rotate(43) scale(44)">
+      <stop stop-color="#a78b5b" stop-opacity="0.72" />
+      <stop offset="0.42" stop-color="#57534e" stop-opacity="0.28" />
+      <stop offset="1" stop-color="#57534e" stop-opacity="0" />
+    </radialGradient>
+    <linearGradient id="edge" x1="7" y1="4" x2="42" y2="43" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#a78b5b" stop-opacity="0.92" />
+      <stop offset="0.36" stop-color="#FFFFFF" stop-opacity="0.15" />
+      <stop offset="0.72" stop-color="#FFFFFF" stop-opacity="0.05" />
+      <stop offset="1" stop-color="#57534e" stop-opacity="0.55" />
+    </linearGradient>
+    <linearGradient id="top-line" x1="11" y1="5" x2="34" y2="5" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#a78b5b" stop-opacity="0" />
+      <stop offset="0.5" stop-color="#FFFFFF" stop-opacity="0.48" />
+      <stop offset="1" stop-color="#a78b5b" stop-opacity="0" />
+    </linearGradient>
+    <filter id="shadow" x="-30%" y="-30%" width="160%" height="170%">
+      <feDropShadow dx="0" dy="3" stdDeviation="3" flood-color="#02030A" flood-opacity="0.52" />
+    </filter>
+    <filter id="glyph-glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="1.7" />
+    </filter>
+    <clipPath id="clip">
+      <rect x="2" y="2" width="44" height="44" rx="13" />
+    </clipPath>
+  </defs>
+  <g filter="url(#shadow)">
+    <rect x="2" y="2" width="44" height="44" rx="13" fill="url(#surface)" />
+    <g clip-path="url(#clip)">
+      <rect x="2" y="2" width="44" height="44" fill="url(#glow)" />
+      <circle cx="39" cy="40" r="13" fill="#57534e" fill-opacity="0.1" />
+    </g>
+    <rect x="2.5" y="2.5" width="43" height="43" rx="12.5" stroke="url(#edge)" />
+    <path d="M12 4.5H34" stroke="url(#top-line)" stroke-linecap="round" />
+  </g>
+  <g transform="translate(12 12)" stroke="#a78b5b" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" opacity="0.28" filter="url(#glyph-glow)">
+    <rect width="16" height="20" x="4" y="2" rx="2" />
+    <line x1="8" x2="16" y1="6" y2="6" />
+    <line x1="16" x2="16" y1="14" y2="18" />
+    <path d="M16 10h.01" />
+    <path d="M12 10h.01" />
+    <path d="M8 10h.01" />
+    <path d="M12 14h.01" />
+    <path d="M8 14h.01" />
+    <path d="M12 18h.01" />
+    <path d="M8 18h.01" />
+  </g>
+  <g transform="translate(12 12)" stroke="#F8FAFF" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round">
+    <rect width="16" height="20" x="4" y="2" rx="2" />
+    <line x1="8" x2="16" y1="6" y2="6" />
+    <line x1="16" x2="16" y1="14" y2="18" />
+    <path d="M16 10h.01" />
+    <path d="M12 10h.01" />
+    <path d="M8 10h.01" />
+    <path d="M12 14h.01" />
+    <path d="M8 14h.01" />
+    <path d="M12 18h.01" />
+    <path d="M8 18h.01" />
+  </g>
 </svg>

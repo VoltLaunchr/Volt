@@ -61,10 +61,23 @@ jobs:
         run: cd src-tauri && cargo fmt --check
 
       - name: Rust Clippy
-        run: cd src-tauri && cargo clippy --all-features --all-targets -- -D warnings
+        run: cd src-tauri && cargo clippy --all-targets --features tantivy-search -- -D warnings
 
       - name: Check Rust Backend (Fast)
-        run: cd src-tauri && cargo check --all-features
+        run: cd src-tauri && cargo check --features tantivy-search
 
       - name: Rust Tests
-        run: cd src-tauri && cargo test --workspace --lib
+        run: cd src-tauri && cargo test --workspace --lib --features tantivy-search
+
+      - name: SQLCipher Clippy
+        run: cd src-tauri && cargo clippy --all-targets --no-default-features --features sqlcipher -- -D warnings
+
+      - name: SQLCipher Tests
+        run: cd src-tauri && cargo test --workspace --lib --no-default-features --features sqlcipher
+
+      - name: Verify generated TS bindings are up to date
+        # The Rust test step regenerates the ts-rs IPC bindings; fail if they
+        # drift from what's committed (fix: run `cargo test` and commit the
+        # result). Linux only — single source of truth, avoids CRLF/LF noise.
+        if: matrix.platform == 'ubuntu-latest'
+        run: git diff --exit-code -- src/shared/types/generated

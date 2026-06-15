@@ -1,6 +1,8 @@
 # Volt — Roadmap Produit
 
 > Document vivant. Les estimations sont des fourchettes, pas des engagements. Pour les details techniques (fichiers modifies, criteres d'acceptation), voir la [roadmap technique](../build-release/ROADMAP.md).
+>
+> **Important pre-marketing :** cette roadmap decrit l'etat produit et les plans d'implementation. Elle ne doit pas etre utilisee comme preuve de claim public. Les preuves marketing vivent dans [`../marketing/CLAIMS_EVIDENCE.md`](../marketing/CLAIMS_EVIDENCE.md), et la decision Go/No-Go dans [`../marketing/PRODUCT_READINESS_REVIEW.md`](../marketing/PRODUCT_READINESS_REVIEW.md).
 
 ---
 
@@ -9,7 +11,7 @@
 ### Ce qui est livre et fonctionnel
 
 **Core**
-- Recherche fuzzy multi-source (apps, fichiers, plugins) avec scoring intelligent (nucleo-matcher unifie)
+- Recherche fuzzy multi-source: nucleo pour apps/plugins et fallback fichiers; backend Tantivy persistant feature-gaté pour les fichiers
 - Lancement d'applications cross-platform (Windows, macOS, Linux)
 - Debounce 150ms + protection contre les reponses perimees
 - Navigation 100% clavier (fleches, Enter, Esc, Tab, raccourcis Alt+1-9)
@@ -71,9 +73,11 @@
 - Detection automatique de la locale OS + fallback anglais
 
 **Indexation de fichiers**
-- SQLite persistant (WAL mode, transactions, indices) avec watcher incremental
+- SQLite persistant (WAL, remplacement transactionnel du snapshot) avec watcher incremental synchronisé
 - Scan en arriere-plan avec filtres (extensions, exclusions, profondeur max)
-- Recherche fuzzy sur les fichiers indexes
+- Recherche fichiers exacte/BM25/prefix/fuzzy via Tantivy sous feature flag, fallback nucleo
+- Réutilisation de l'index Tantivy au démarrage quand le marqueur de cohérence et le nombre de documents concordent
+- Fichiers cachés exclus par défaut
 - Configuration des dossiers a indexer depuis les parametres
 - Evenements Tauri temps reel pour la progression d'indexation
 
@@ -118,7 +122,7 @@
 **Infrastructure**
 - Auto-updater fonctionnel (signature minisign, endpoint GitHub Releases)
 - CI/CD multi-plateforme : Windows (MSI/NSIS), macOS Intel+ARM (DMG), Linux (deb/AppImage/rpm)
-- 166 tests frontend + 143 tests Rust
+- 345 tests frontend + 303 tests Rust par défaut + 321 avec Tantivy + 15 tests SQLCipher ciblés
 - Logging structure (tracing) avec rotation quotidienne, accessible depuis Settings
 - CSP securise
 
@@ -139,7 +143,7 @@
 |---------|--------|
 | Nettoyage dead code et stubs | ✅ M1.1 |
 | Script de synchronisation de version | ✅ M1.1 |
-| Suite de tests (166 frontend + 143 Rust) | ✅ M1.2 |
+| Suite de tests (345 frontend + 303 Rust, 321 avec Tantivy) | ✅ M1.2 |
 | CSP securise dans tauri.conf.json | ✅ M1.3 |
 | Capabilities auditees | ✅ M1.3 |
 | Scaffolding CI pour code signing | ✅ M1.3 |
@@ -189,7 +193,7 @@
 - ✅ App.tsx : 0 useState
 - ✅ ViewRouter : 2 props (vs 13 avant) — zero prop drilling
 - ✅ Hooks (`useSearchPipeline`, `useResultActions`, `useGlobalHotkey`) lisent les stores directement
-- ✅ 166 tests frontend passent sans regression
+- ✅ 345 tests frontend passent sans regression
 
 ### WS3 — Indicateur d'indexation ✅
 
@@ -216,13 +220,18 @@
 
 ## Phase 3 — v1.5 "Platform & Extensibility" ✅ Complete (2026-04-14)
 
-**Valeur utilisateur :** Demarrage instantane meme avec des dossiers enormes. Possibilite d'installer des plugins communautaires sans recompiler Volt.
+**Valeur utilisateur :** Demarrage et recherche fluides meme avec de gros dossiers, a confirmer par baseline avant claim public. Possibilite d'installer des plugins communautaires sans recompiler Volt.
 
-### Index persistant SQLite + watcher incremental ✅
+### Index persistant SQLite/Tantivy + watcher incremental ✅
 
-- ✅ Base SQLite pour l'index fichiers (WAL mode, transactions, indices)
-- ✅ File watcher incremental via `notify` : creation/modification/suppression avec debounce 100ms
-- ✅ Fast path : chargement depuis DB au demarrage (< 500ms pour 50k fichiers)
+- ✅ Base SQLite source de vérité (WAL, transactions, remplacement atomique du snapshot après scan réussi)
+- ✅ Index Tantivy dérivé et persistant sous `tantivy-search`, réutilisé quand son marqueur de synchronisation est propre
+- ✅ Scoring Tantivy exact + BM25 + préfixe + fuzzy Levenshtein avec transpositions
+- ✅ File watcher via `notify`: création/modification/suppression, debounce 100ms, synchronisation SQLite/cache/Tantivy
+- ✅ Arrêt du watcher avec jointure du worker avant rebuild; lifecycle frontend sérialisé
+- ✅ Lookup path→position maintenu avec le snapshot pour résoudre les hits sans reconstruire une map à chaque recherche
+- ✅ Fichiers cachés exclus par défaut dans les deux moteurs
+- ✅ Fast path : chargement depuis DB au demarrage; mesure publique a confirmer pour 50k fichiers
 - ✅ Settings > Indexing : taille DB, derniere mise a jour, statut watcher, bouton "Rebuild"
 - ✅ Commands : `invalidate_index`, `get_db_index_stats`, `start_file_watcher`, `stop_file_watcher`
 
@@ -282,7 +291,7 @@
 - ✅ Commandes Tauri : `search_all` (batch), `search_applications_frecency`, `get_frecency_suggestions`
 - ✅ Scoring unifie via nucleo-matcher (fast paths exact/starts-with + fuzzy normalise log)
 - ✅ Constantes centralisees dans `searchScoring.ts`
-- ✅ 166 tests frontend + 143 tests Rust
+- ✅ 345 tests frontend + 303 tests Rust par défaut + 321 avec Tantivy
 
 ### Snippets & text expansion ✅ (2026-04-14)
 
@@ -502,7 +511,7 @@ Idees non priorisees, a evaluer selon les retours utilisateurs :
 | Phase 4 | v2.0 | ~6-8 semaines | ✅ Complete (2026-04-18) |
 | Phase 5 | v2.x | Continu | Backlog |
 
-> Estimations basees sur un developpeur solo a temps partiel (~3h/jour). Les phases 1-4 sont completes. La Phase 1 reste bloquee uniquement par l'achat des certificats de code signing. La phase 5 marque le passage a l'ecosystem.
+> Estimations basees sur un developpeur solo a temps partiel (~3h/jour). Les phases 1-4 sont majoritairement implementees cote code. La Phase 1 reste bloquee par les preuves release, notamment code signing, QA d'artefacts et validation update. La phase 5 marque le passage a l'ecosystem.
 
 ---
 

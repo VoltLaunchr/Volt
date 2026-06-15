@@ -1,5 +1,5 @@
 use crate::commands::apps::AppInfo;
-use crate::launcher::{LaunchRecord, QueryBindingStore};
+use crate::launcher::QueryBindingStore;
 use crate::utils::matching::calculate_match_score_with_matcher_buf;
 use nucleo_matcher::{Config, Matcher};
 
@@ -69,14 +69,10 @@ fn map_to_secondary_tier(raw: f32) -> Option<f32> {
     Some(TIER_SECONDARY_MIN + t * (TIER_SECONDARY_MAX - TIER_SECONDARY_MIN))
 }
 
-/// Calculate frecency score for a launch record.
-/// Combines frequency (launch_count) with recency (time decay).
-/// Half-life of 1 week (168 hours): recent items score higher.
-pub fn calculate_frecency(record: &LaunchRecord) -> f64 {
-    let now_ms = chrono::Utc::now().timestamp_millis();
-    let age_hours = ((now_ms - record.last_launched) as f64 / 3_600_000.0).max(0.0);
-    let recency_weight = (-age_hours / 168.0).exp().max(0.2);
-    record.launch_count as f64 * recency_weight
+/// Convert a stored future-dated frecency credit into a bounded tie-breaker.
+fn frecency_bonus(frecency_date: i64, now_ms: i64) -> f32 {
+    let credit_days = ((frecency_date - now_ms) as f64 / 86_400_000.0).max(0.0);
+    (((credit_days + 1.0).ln() * 12.0) as f32).min(MAX_FRECENCY_BOOST)
 }
 
 /// Search applications with cascade-tier scoring + per-(query, item) frecency tie-breaker.
@@ -89,7 +85,7 @@ pub fn calculate_frecency(record: &LaunchRecord) -> f64 {
 pub fn search_applications_with_frecency(
     query: &str,
     apps: Vec<AppInfo>,
-    history: &[LaunchRecord],
+    frecency: &std::collections::HashMap<String, i64>,
     query_bindings: Option<&QueryBindingStore>,
     aliases: &std::collections::HashMap<String, String>,
 ) -> Vec<(AppInfo, f32)> {
@@ -98,11 +94,7 @@ pub fn search_applications_with_frecency(
     }
     let query_trim = query.trim();
 
-    // Build path→frecency lookup
-    let frecency_map: std::collections::HashMap<&str, f64> = history
-        .iter()
-        .map(|r| (r.path.as_str(), calculate_frecency(r)))
-        .collect();
+    let now_ms = chrono::Utc::now().timestamp_millis();
 
     let mut matcher = Matcher::new(Config::DEFAULT);
     // Shared scratch buffer for non-ASCII haystacks. Reusing this across every
@@ -188,8 +180,10 @@ pub fn search_applications_with_frecency(
             let base = alias_tier.or(name_tier).or(secondary_tier)?;
 
             // ----- Tie-breakers (cannot cross tier boundary; max +35) -----
-            let frecency = frecency_map.get(app.path.as_str()).copied().unwrap_or(0.0);
-            let frecency_bonus = ((frecency * 2.0) as f32).min(MAX_FRECENCY_BOOST);
+            let frecency_bonus = frecency
+                .get(app.path.as_str())
+                .map(|date| frecency_bonus(*date, now_ms))
+                .unwrap_or(0.0);
 
             let binding_bonus = query_bindings
                 .map(|b| b.get_boost(query_trim, &app.path).min(MAX_BINDING_BOOST))

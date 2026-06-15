@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased] - 2026-04-14
 
+### Changed — File indexing hardening (2026-06-12)
+- Added a persistent, feature-gated Tantivy file-search backend with exact boosts, BM25, as-you-type prefix matching and fuzzy Levenshtein matching with transpositions.
+- Reuse the Tantivy index across restarts only when its SQLite dirty marker is clean and its document count matches the source-of-truth snapshot.
+- Full scans now replace SQLite transactionally after success instead of clearing the previous coherent index before scanning.
+- File watcher updates SQLite, the in-memory snapshot/lookup and Tantivy together; stopping the watcher joins its worker before rebuilds.
+- Hidden files are excluded by default in both nucleo and Tantivy search paths.
+- File-hit lookup is maintained with the snapshot instead of rebuilding a path map on every query.
+
+### Fixed — Encrypted database recovery (2026-06-12)
+- Recover interrupted SQLCipher migrations without overwriting a valid encrypted primary database.
+- Quarantine invalid migration candidates and restore a verified backup when required.
+
+### Quality — Validation (2026-06-12)
+- ESLint passes with no warnings after removing the 31 pre-existing warnings.
+- Validation baseline: 345 frontend tests, 294 default Rust tests, 312 Rust tests with Tantivy, and 15 targeted SQLCipher recovery/integration tests.
+- Both Tantivy and SQLCipher feature matrices pass strict Clippy with `-D warnings`.
+
 ### Added — Phase 3: Platform & Extensibility
 - Web Worker sandbox for extensions (keywords/prefix in manifest, 500ms timeout, crash recovery)
 - Permission enforcement with consent dialog (clipboard, network, notifications)

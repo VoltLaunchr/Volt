@@ -11,6 +11,9 @@ export { Spinner } from './spinner';
 export { Icon } from './Icon';
 export * from './Icon';
 export type { SpinnerProps } from './spinner';
+export { AiActionIcon } from './AiActionIcon';
+export { AiProviderLogo } from './AiProviderLogo';
+export type { AiProviderId } from './AiProviderLogo';
 
 export { ErrorMessage } from './ErrorMessage';
 export type { ErrorMessageProps } from './ErrorMessage';

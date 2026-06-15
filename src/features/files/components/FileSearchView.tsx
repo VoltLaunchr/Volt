@@ -129,6 +129,28 @@ export function FileSearchView({ onClose }: FileSearchViewProps): React.JSX.Elem
     }
   }, [typeFilter, searchQuery, performSearch]);
 
+  // Handle file opening — routes through `applicationService` so the launch
+  // is recorded in history (frecency stays accurate) and error handling
+  // matches the rest of the app.
+  const handleOpenFile = useCallback(
+    async (file: FileInfo) => {
+      try {
+        const result = await applicationService.launchApplication(file.path);
+        if (!result.success) {
+          throw new Error(result.error || 'Launch failed');
+        }
+        // Track file access for recent files
+        await invoke<void>('track_file_access', { path: file.path, name: file.name });
+        // Reload recent files for next time
+        void loadRecentFiles();
+        onClose();
+      } catch (error) {
+        logger.error('Failed to open file:', error);
+      }
+    },
+    [loadRecentFiles, onClose]
+  );
+
   // Handle keyboard navigation
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -169,28 +191,8 @@ export function FileSearchView({ onClose }: FileSearchViewProps): React.JSX.Elem
           break;
       }
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [selectedIndex, files, recentFiles, selectedFile, searchQuery, onClose]
+    [selectedIndex, files, recentFiles, selectedFile, searchQuery, onClose, handleOpenFile]
   );
-
-  // Handle file opening — routes through `applicationService` so the launch
-  // is recorded in history (frecency stays accurate) and error handling
-  // matches the rest of the app.
-  const handleOpenFile = async (file: FileInfo) => {
-    try {
-      const result = await applicationService.launchApplication(file.path);
-      if (!result.success) {
-        throw new Error(result.error || 'Launch failed');
-      }
-      // Track file access for recent files
-      await invoke<void>('track_file_access', { path: file.path, name: file.name });
-      // Reload recent files for next time
-      void loadRecentFiles();
-      onClose();
-    } catch (error) {
-      logger.error('Failed to open file:', error);
-    }
-  };
 
   // Format file size
   const formatFileSize = (bytes: number): string => {

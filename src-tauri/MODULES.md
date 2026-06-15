@@ -373,18 +373,23 @@ indexer/
 ├── mod.rs             # Module exports
 ├── scanner.rs         # Background file system scanning
 ├── search.rs          # File search with scoring
-├── search_engine.rs   # Advanced search engine
-├── database.rs        # Indexed file database
-├── watcher.rs         # File system watcher (notify v6)
+├── search_engine.rs   # Default nucleo search engine and fallback
+├── fulltext.rs        # Persistent Tantivy backend (feature-gated)
+├── database.rs        # SQLite source of truth and transactional replacement
+├── watcher.rs         # notify watcher; syncs SQLite/cache/Tantivy
 ├── types.rs           # Indexer-specific types
 ├── file_history.rs    # File access history tracking
 └── windows_search.rs  # (Windows) Windows Search Index OLE DB query as supplementary file source
 ```
 
-- In-memory state: `FileIndexState` (Arc<Mutex<Vec<FileInfo>>>)
+- In-memory state: immutable `Arc<Vec<FileInfo>>` snapshot plus a coherent path-to-position lookup
 - Background scan via `start_indexing()` with `max_depth=10`, `max_file_size=100MB`
 - Extensions filter: empty = all files; specified = only those extensions
-- File watcher using `notify` v6 for real-time updates
+- Full scans replace SQLite transactionally only after success; failed scans preserve the previous snapshot
+- Default nucleo search, with persistent exact/BM25/prefix/fuzzy Tantivy search under `tantivy-search`
+- Tantivy reuse is guarded by a SQLite dirty marker and document-count check
+- Hidden files are excluded by default
+- `notify` v6 watcher synchronizes SQLite, cache/lookup and Tantivy; stop joins the worker
 
 ---
 
@@ -533,6 +538,7 @@ cargo test --lib plugins::registry
 - `notify` (v6) - File system watcher
 - `reqwest` - HTTP client
 - `nucleo-matcher` - High-performance fuzzy matching
+- `tantivy` (optional) - Persistent inverted index for file search
 - `image` - Image processing
 - `base64` - Base64 encoding/decoding
 - `arboard` - Clipboard access

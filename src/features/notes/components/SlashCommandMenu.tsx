@@ -1,7 +1,35 @@
 import { forwardRef, useEffect, useImperativeHandle, useState } from 'react';
 import type { Editor, Range } from '@tiptap/core';
+import {
+  CalendarDays,
+  Clock3,
+  Code2,
+  Heading1,
+  Heading2,
+  Heading3,
+  List,
+  ListChecks,
+  ListOrdered,
+  Minus,
+  Quote,
+  type LucideIcon,
+} from 'lucide-react';
 import './SlashCommandMenu.css';
 import type { SlashCommandItem } from '../extensions/slashCommand';
+
+const COMMAND_ICONS: Record<string, LucideIcon> = {
+  h1: Heading1,
+  h2: Heading2,
+  h3: Heading3,
+  bullet: List,
+  ordered: ListOrdered,
+  task: ListChecks,
+  code: Code2,
+  quote: Quote,
+  divider: Minus,
+  date: CalendarDays,
+  time: Clock3,
+};
 
 /**
  * SlashCommandMenu — React component for the "/" popover. Driven by TipTap's
@@ -70,7 +98,7 @@ export const SlashCommandMenu = forwardRef<SlashCommandMenuHandle, SlashCommandM
           return false;
         },
       }),
-      [items, selected, command],
+      [items, selected, command]
     );
 
     if (items.length === 0) {
@@ -79,33 +107,36 @@ export const SlashCommandMenu = forwardRef<SlashCommandMenuHandle, SlashCommandM
 
     return (
       <div className="slash-menu" role="listbox" aria-label="Slash commands">
-        {items.map((item, idx) => (
-          <button
-            key={item.id}
-            type="button"
-            role="option"
-            aria-selected={idx === selected}
-            className="slash-menu__item"
-            data-selected={idx === selected ? 'true' : 'false'}
-            onMouseEnter={() => {
-              setSelected(idx);
-            }}
-            onMouseDown={(e) => {
-              // Prevent the editor from losing focus before the command runs.
-              e.preventDefault();
-              command(item);
-            }}
-          >
-            <span className="slash-menu__icon" aria-hidden="true">
-              {item.icon}
-            </span>
-            <span className="slash-menu__text">
-              <span className="slash-menu__title">{item.title}</span>
-              <span className="slash-menu__desc">{item.description}</span>
-            </span>
-          </button>
-        ))}
+        {items.map((item, idx) => {
+          const CommandIcon = COMMAND_ICONS[item.id] ?? Code2;
+          return (
+            <button
+              key={item.id}
+              type="button"
+              role="option"
+              aria-selected={idx === selected}
+              className="slash-menu__item"
+              data-selected={idx === selected ? 'true' : 'false'}
+              onMouseEnter={() => {
+                setSelected(idx);
+              }}
+              onMouseDown={(e) => {
+                // Prevent the editor from losing focus before the command runs.
+                e.preventDefault();
+                command(item);
+              }}
+            >
+              <span className="slash-menu__icon" aria-hidden="true">
+                <CommandIcon size={16} />
+              </span>
+              <span className="slash-menu__text">
+                <span className="slash-menu__title">{item.title}</span>
+                <span className="slash-menu__desc">{item.description}</span>
+              </span>
+            </button>
+          );
+        })}
       </div>
     );
-  },
+  }
 );

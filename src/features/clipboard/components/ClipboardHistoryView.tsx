@@ -2,6 +2,7 @@ import { invoke } from '@tauri-apps/api/core';
 import React, { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/utils';
+import { Clipboard, Pin } from 'lucide-react';
 import { ClipboardItem, ClipboardType } from '../../../shared/types/clipboard';
 import { logger } from '../../../shared/utils';
 
@@ -72,6 +73,19 @@ export function ClipboardHistoryView({ onClose }: ClipboardHistoryViewProps): Re
     }
   }, [items, filterQuery, typeFilter]);
 
+  // Handle paste action
+  const handlePaste = useCallback(
+    async (item: ClipboardItem) => {
+      try {
+        await invoke<void>('copy_to_clipboard', { content: item.content });
+        onClose();
+      } catch (error) {
+        logger.error('Failed to paste:', error);
+      }
+    },
+    [onClose]
+  );
+
   // Handle keyboard navigation
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -110,19 +124,8 @@ export function ClipboardHistoryView({ onClose }: ClipboardHistoryViewProps): Re
           break;
       }
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [selectedIndex, filteredItems, selectedItem, onClose]
+    [selectedIndex, filteredItems, selectedItem, onClose, handlePaste]
   );
-
-  // Handle paste action
-  const handlePaste = async (item: ClipboardItem) => {
-    try {
-      await invoke<void>('copy_to_clipboard', { content: item.content });
-      onClose();
-    } catch (error) {
-      logger.error('Failed to paste:', error);
-    }
-  };
 
   // Paste all visible text items in sequence
   const handlePasteSequentially = async () => {
@@ -301,7 +304,9 @@ export function ClipboardHistoryView({ onClose }: ClipboardHistoryViewProps): Re
             <span>
               {typeFilter === 'all'
                 ? t('filters.all')
-                : t(`filters.${typeFilter}`, { defaultValue: typeFilter.charAt(0).toUpperCase() + typeFilter.slice(1) })}
+                : t(`filters.${typeFilter}`, {
+                    defaultValue: typeFilter.charAt(0).toUpperCase() + typeFilter.slice(1),
+                  })}
             </span>
             <svg
               width="12"
@@ -321,7 +326,9 @@ export function ClipboardHistoryView({ onClose }: ClipboardHistoryViewProps): Re
               <button
                 className={cn(
                   'flex items-center gap-2 w-full px-3.5 py-2.5 text-left text-sm cursor-pointer transition-colors border-none',
-                  typeFilter === 'all' ? 'bg-accent-blue/20 text-on-dark' : 'bg-transparent text-ink hover:bg-surface-elevated'
+                  typeFilter === 'all'
+                    ? 'bg-accent-blue/20 text-on-dark'
+                    : 'bg-transparent text-ink hover:bg-surface-elevated'
                 )}
                 onClick={() => {
                   setTypeFilter('all');
@@ -333,7 +340,9 @@ export function ClipboardHistoryView({ onClose }: ClipboardHistoryViewProps): Re
               <button
                 className={cn(
                   'flex items-center gap-2 w-full px-3.5 py-2.5 text-left text-sm cursor-pointer transition-colors border-none',
-                  typeFilter === 'text' ? 'bg-accent-blue/20 text-on-dark' : 'bg-transparent text-ink hover:bg-surface-elevated'
+                  typeFilter === 'text'
+                    ? 'bg-accent-blue/20 text-on-dark'
+                    : 'bg-transparent text-ink hover:bg-surface-elevated'
                 )}
                 onClick={() => {
                   setTypeFilter('text');
@@ -345,14 +354,20 @@ export function ClipboardHistoryView({ onClose }: ClipboardHistoryViewProps): Re
                   alt={t('filters.text')}
                   width="16"
                   height="16"
-                  className={typeFilter === 'text' ? 'brightness-0 saturate-100 invert' : 'brightness-0 saturate-100 invert-[60%]'}
+                  className={
+                    typeFilter === 'text'
+                      ? 'brightness-0 saturate-100 invert'
+                      : 'brightness-0 saturate-100 invert-[60%]'
+                  }
                 />
                 {t('filters.text')}
               </button>
               <button
                 className={cn(
                   'flex items-center gap-2 w-full px-3.5 py-2.5 text-left text-sm cursor-pointer transition-colors border-none',
-                  typeFilter === 'image' ? 'bg-accent-blue/20 text-on-dark' : 'bg-transparent text-ink hover:bg-surface-elevated'
+                  typeFilter === 'image'
+                    ? 'bg-accent-blue/20 text-on-dark'
+                    : 'bg-transparent text-ink hover:bg-surface-elevated'
                 )}
                 onClick={() => {
                   setTypeFilter('image');
@@ -364,14 +379,20 @@ export function ClipboardHistoryView({ onClose }: ClipboardHistoryViewProps): Re
                   alt={t('filters.image')}
                   width="16"
                   height="16"
-                  className={typeFilter === 'image' ? 'brightness-0 saturate-100 invert' : 'brightness-0 saturate-100 invert-[60%]'}
+                  className={
+                    typeFilter === 'image'
+                      ? 'brightness-0 saturate-100 invert'
+                      : 'brightness-0 saturate-100 invert-[60%]'
+                  }
                 />
                 {t('filters.image')}
               </button>
               <button
                 className={cn(
                   'flex items-center gap-2 w-full px-3.5 py-2.5 text-left text-sm cursor-pointer transition-colors border-none',
-                  typeFilter === 'files' ? 'bg-accent-blue/20 text-on-dark' : 'bg-transparent text-ink hover:bg-surface-elevated'
+                  typeFilter === 'files'
+                    ? 'bg-accent-blue/20 text-on-dark'
+                    : 'bg-transparent text-ink hover:bg-surface-elevated'
                 )}
                 onClick={() => {
                   setTypeFilter('files');
@@ -383,7 +404,11 @@ export function ClipboardHistoryView({ onClose }: ClipboardHistoryViewProps): Re
                   alt={t('filters.files')}
                   width="16"
                   height="16"
-                  className={typeFilter === 'files' ? 'brightness-0 saturate-100 invert' : 'brightness-0 saturate-100 invert-[60%]'}
+                  className={
+                    typeFilter === 'files'
+                      ? 'brightness-0 saturate-100 invert'
+                      : 'brightness-0 saturate-100 invert-[60%]'
+                  }
                 />
                 {t('filters.files')}
               </button>
@@ -397,9 +422,13 @@ export function ClipboardHistoryView({ onClose }: ClipboardHistoryViewProps): Re
         {/* Items list */}
         <div className="w-[45%] border-r border-hairline overflow-y-auto bg-canvas">
           {isLoading ? (
-            <div className="flex items-center justify-center p-5 text-mute text-sm">{t('states.loading')}</div>
+            <div className="flex items-center justify-center p-5 text-mute text-sm">
+              {t('states.loading')}
+            </div>
           ) : filteredItems.length === 0 ? (
-            <div className="flex items-center justify-center p-5 text-mute text-sm">{t('states.empty')}</div>
+            <div className="flex items-center justify-center p-5 text-mute text-sm">
+              {t('states.empty')}
+            </div>
           ) : (
             Object.entries(groupedItems).map(([groupName, groupItems]) => (
               <div key={groupName} className="mb-3">
@@ -426,7 +455,13 @@ export function ClipboardHistoryView({ onClose }: ClipboardHistoryViewProps): Re
                       }}
                     >
                       <div className="text-xl shrink-0 w-6 text-center flex items-center justify-center">
-                        <span className={cn(isSelected ? '[&_img]:brightness-0 [&_img]:saturate-100 [&_img]:invert' : '[&_img]:brightness-0 [&_img]:saturate-100 [&_img]:invert-[60%] [&_img]:opacity-80')}>
+                        <span
+                          className={cn(
+                            isSelected
+                              ? '[&_img]:brightness-0 [&_img]:saturate-100 [&_img]:invert'
+                              : '[&_img]:brightness-0 [&_img]:saturate-100 [&_img]:invert-[60%] [&_img]:opacity-80'
+                          )}
+                        >
                           {getTypeIcon(item.contentType)}
                         </span>
                       </div>
@@ -434,11 +469,16 @@ export function ClipboardHistoryView({ onClose }: ClipboardHistoryViewProps): Re
                         <div className="font-mono text-xs text-body truncate mb-[2px]">
                           {item.preview}
                         </div>
-                        <div className={cn('text-[11px] shrink-0', isSelected ? 'text-white/80' : 'text-ash')}>
+                        <div
+                          className={cn(
+                            'text-[11px] shrink-0',
+                            isSelected ? 'text-white/80' : 'text-ash'
+                          )}
+                        >
                           {formatTimestamp(item.timestamp)}
                         </div>
                       </div>
-                      {item.pinned && <div className="shrink-0 text-sm">📌</div>}
+                      {item.pinned && <Pin size={13} className="shrink-0 text-accent-blue" />}
                     </div>
                   );
                 })}
@@ -589,17 +629,25 @@ export function ClipboardHistoryView({ onClose }: ClipboardHistoryViewProps): Re
       {/* Footer */}
       <div className="flex items-center justify-between px-4 py-2 border-t border-hairline bg-surface text-xs shrink-0">
         <div className="flex items-center gap-2 text-body font-medium">
-          <div className="text-base">📋</div>
+          <Clipboard size={15} className="text-accent-blue" />
           <span>{t('footer.title')}</span>
         </div>
         <div className="text-mute">
           <span className="flex items-center gap-2">
-            <kbd className="px-1.5 py-0.5 text-xs font-mono bg-canvas border border-hairline rounded-sm text-body">↑</kbd>
-            <kbd className="px-1.5 py-0.5 text-xs font-mono bg-canvas border border-hairline rounded-sm text-body">↓</kbd>
+            <kbd className="px-1.5 py-0.5 text-xs font-mono bg-canvas border border-hairline rounded-sm text-body">
+              ↑
+            </kbd>
+            <kbd className="px-1.5 py-0.5 text-xs font-mono bg-canvas border border-hairline rounded-sm text-body">
+              ↓
+            </kbd>
             {t('footer.hint')} •{' '}
-            <kbd className="px-1.5 py-0.5 text-xs font-mono bg-canvas border border-hairline rounded-sm text-body">↵</kbd>
+            <kbd className="px-1.5 py-0.5 text-xs font-mono bg-canvas border border-hairline rounded-sm text-body">
+              ↵
+            </kbd>
             {t('footer.hintPaste')} •{' '}
-            <kbd className="px-1.5 py-0.5 text-xs font-mono bg-canvas border border-hairline rounded-sm text-body">Esc</kbd>
+            <kbd className="px-1.5 py-0.5 text-xs font-mono bg-canvas border border-hairline rounded-sm text-body">
+              Esc
+            </kbd>
             {t('footer.hintClose')}
           </span>
         </div>

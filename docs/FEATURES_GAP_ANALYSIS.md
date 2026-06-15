@@ -1,4 +1,7 @@
 # Volt Features Gap Analysis Report
+
+> **Historical audit.** This April 2026 gap analysis is preserved for context, but it is not the current source of truth for launch, performance, privacy, or marketing claims. Use [`marketing/PRODUCT_READINESS_REVIEW.md`](./marketing/PRODUCT_READINESS_REVIEW.md), [`marketing/CLAIMS_EVIDENCE.md`](./marketing/CLAIMS_EVIDENCE.md), and [`release/QA_MATRIX.md`](./release/QA_MATRIX.md) for pre-marketing decisions.
+
 **Date**: 2026-04-14 | **Status**: Comprehensive audit from 4 research agents + codebase analysis
 
 ---
@@ -92,7 +95,7 @@ M  src/features/results/components/ResultItem.tsx  (minor)
 | Extensions marketplace | 1500+ | volt-extensions repo (growing) | 🟡 Smaller ecosystem |
 | AI integration | ✅ Native (paid) | ❌ None | 🚫 Missing |
 | Cloud sync | ✅ Pro | ❌ None | 🚫 Missing |
-| Performance | <50ms | <100ms (estimated) | 🟡 Slightly slower |
+| Performance | Competitor claims vary by source | Not baselined | ⚠️ Measure before comparison |
 | Window management | ✅ | ❌ | 🚫 Missing |
 | Workflows/Actions | ✅ Extensions | ⚠️ Limited | 🟡 Partial |
 
@@ -135,7 +138,7 @@ M  src/features/results/components/ResultItem.tsx  (minor)
 | **Workflow/action chaining** | ❌ None | 4-7 days | High — power-user feature (Alfred/Ueli have) |
 | **Popular integrations** | ⚠️ Minimal | 3-5 days each | Medium — GitHub, Jira, Notion plugins missing |
 | **Chord hotkeys** | ❌ None | 1-2 days | Medium — power-user customization |
-| **Fuzzy scorer benchmark** | ⚠️ Need test | 1 day | Medium — verify <50ms vs Raycast |
+| **Fuzzy scorer benchmark** | ⚠️ Need test | 1 day | Medium — measure before comparing with Raycast |
 
 ### **Nice-to-Have Trends**
 
@@ -254,7 +257,7 @@ M  src/features/results/components/ResultItem.tsx  (minor)
    - Impact: HIGH — UX completion
 
 2. **Performance: Fuzzy scorer benchmark** (1 day)
-   - Measure real-world latency vs Raycast (<50ms)
+   - Measure real-world latency before making a Raycast comparison
    - Profile bottlenecks
    - Optimize SQLite queries if needed
    - Impact: MEDIUM — verify speed claim
@@ -304,7 +307,7 @@ M  src/features/results/components/ResultItem.tsx  (minor)
 - ✅ **Open extensibility** (separate volt-extensions repo, manageable)
 - ✅ **Keyboard-first** (similar to Alfred, Raycast)
 - ✅ **Power operators** (like Alfred workflows but in query)
-- ✅ **Lightweight** (Tauri-based, 96% smaller than Electron)
+- ⚠️ **Lightweight potential** (Tauri-based, but size/RAM claims need baselines)
 - ✅ **Type-safe** (full TypeScript frontend, Rust backend)
 
 **Volt's Weaknesses:**
@@ -320,7 +323,7 @@ M  src/features/results/components/ResultItem.tsx  (minor)
 
 ## 📈 Success Metrics to Track
 
-1. **Performance**: Maintain <100ms for search results (vs Raycast <50ms)
+1. **Performance**: Establish and maintain measured search latency targets
 2. **Extension ecosystem**: Target 50+ community extensions in 6 months
 3. **Code quality**: Zero panics + >95% type coverage (current: achieved)
 4. **Release velocity**: Monthly updates (Phase 4 backlog items)
