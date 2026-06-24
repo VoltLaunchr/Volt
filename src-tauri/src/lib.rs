@@ -822,6 +822,7 @@ pub fn run() {
             get_db_index_stats,
             start_file_watcher,
             stop_file_watcher,
+            refresh_index_if_stale,
             // Settings commands
             load_settings,
             save_settings,

@@ -1335,6 +1335,141 @@ pub async fn stop_file_watcher(watcher_state: State<'_, WatcherState>) -> VoltRe
     Ok(())
 }
 
+/// Background catch-up reconcile for filesystem changes made while Volt — and
+/// therefore its live `notify` watcher — were not running.
+///
+/// The watcher only observes changes that happen *while Volt runs*; on launch
+/// the fast path in [`start_indexing`] serves the persisted SQLite snapshot
+/// instantly without re-walking. A file created, deleted, or moved while Volt
+/// was closed therefore stays stale in the index until the indexing config
+/// changes. This command closes that gap cheaply: if the last full scan is
+/// older than `stale_secs`, it re-walks the configured folders on the blocking
+/// pool and atomically swaps the index (SQLite + in-memory + Tantivy).
+///
+/// This is the deliberate no-admin alternative to a USN-journal catch-up — see
+/// the D3 NO-GO decision record in `REFONTE-PILIER-D-SEARCH.md`.
+///
+/// Returns immediately. The reconcile runs detached and **silently** — it does
+/// not emit the `indexing-progress` spinner phases, so the UI stays calm. It is
+/// a cheap no-op when the index is fresh, when a scan is already in flight, when
+/// there is no DB, or when no folders are configured.
+#[tauri::command]
+pub async fn refresh_index_if_stale(
+    state: State<'_, FileIndexState>,
+    stale_secs: i64,
+) -> VoltResult<()> {
+    // The index age lives in the DB; without persistence there is nothing to
+    // reconcile against (the in-memory cache is already authoritative).
+    let last_full_scan = match state.db.as_ref() {
+        Some(db) => db
+            .get_meta("last_full_scan")
+            .ok()
+            .flatten()
+            .and_then(|s| s.parse::<i64>().ok())
+            .unwrap_or(0),
+        None => return Ok(()),
+    };
+
+    // `last_full_scan == 0` means no full scan has ever completed; in that case
+    // `start_indexing` is responsible for the first scan, not the catch-up.
+    if last_full_scan == 0 {
+        return Ok(());
+    }
+    let now = chrono::Utc::now().timestamp();
+    if now.saturating_sub(last_full_scan) < stale_secs.max(0) {
+        return Ok(()); // fresh enough
+    }
+
+    let config = {
+        let cfg = state
+            .config
+            .lock()
+            .map_err(|e| VoltError::Unknown(e.to_string()))?;
+        cfg.clone()
+    };
+    if config.folders.is_empty() {
+        return Ok(());
+    }
+
+    // Atomically claim the indexing flag so we never double-scan against a
+    // concurrent `start_indexing` or a prior catch-up still in flight.
+    {
+        let mut status = state
+            .status
+            .lock()
+            .map_err(|e| VoltError::Unknown(e.to_string()))?;
+        if status.is_indexing {
+            return Ok(());
+        }
+        status.is_indexing = true;
+    }
+
+    let files_arc = state.files.clone();
+    let file_lookup_arc = state.file_lookup.clone();
+    let status_arc = state.status.clone();
+    let db_arc = state.db.clone();
+    #[cfg(feature = "tantivy-search")]
+    let fulltext_arc = state.fulltext.clone();
+
+    // Detached reconcile so the command returns immediately. The guard clears
+    // `is_indexing` whatever happens (success, scan error, or task panic).
+    tokio::spawn(async move {
+        let _guard = IndexingGuard::new(status_arc.clone());
+
+        let scan_result = tokio::task::spawn_blocking(move || scan_files(&config)).await;
+        match scan_result {
+            Ok(Ok(scanned)) => {
+                let count = scanned.len();
+
+                // A live watcher may apply an upsert in the tiny window between
+                // this scan and the swap below; that is acceptable — the scan
+                // reflects current disk truth and is authoritative, and any
+                // racing watcher event is re-applied on its next flush.
+                #[cfg(feature = "tantivy-search")]
+                mark_fulltext_dirty(db_arc.as_ref().as_ref());
+                let _persisted = if let Some(db) = db_arc.as_ref() {
+                    match db.replace_files(&scanned) {
+                        Ok(()) => {
+                            if let Err(e) = db.mark_full_scan() {
+                                warn!("Catch-up reconcile: mark_full_scan failed: {}", e);
+                            }
+                            true
+                        }
+                        Err(e) => {
+                            warn!("Catch-up reconcile: persist failed: {}", e);
+                            false
+                        }
+                    }
+                } else {
+                    false
+                };
+
+                #[cfg(feature = "tantivy-search")]
+                rebuild_fulltext_index(
+                    fulltext_arc.as_ref(),
+                    _persisted.then(|| db_arc.as_ref().as_ref()).flatten(),
+                    &scanned,
+                    "stale catch-up",
+                );
+
+                replace_file_cache(&files_arc, &file_lookup_arc, scanned);
+
+                if let Ok(mut status) = status_arc.lock() {
+                    status.total_files = count;
+                    status.indexed_files = count;
+                    status.last_updated = chrono::Utc::now().timestamp();
+                }
+                info!("Stale-index catch-up complete: {} files reconciled", count);
+            }
+            Ok(Err(e)) => warn!("Stale-index catch-up scan failed: {}", e),
+            Err(e) => warn!("Stale-index catch-up task join error: {}", e),
+        }
+        // `_guard` drops here → `is_indexing` cleared.
+    });
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

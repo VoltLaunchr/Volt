@@ -14,8 +14,11 @@ describe('FileWatcherLifecycle', () => {
 
     await Promise.all([lifecycle.start(), lifecycle.start()]);
 
-    expect(mockInvoke).toHaveBeenCalledTimes(1);
-    expect(mockInvoke).toHaveBeenCalledWith('start_file_watcher');
+    // The second start() is coalesced: the watcher is started exactly once.
+    const startCalls = mockInvoke.mock.calls.filter(([command]) => command === 'start_file_watcher');
+    expect(startCalls).toHaveLength(1);
+    // A successful start triggers a single stale-index catch-up.
+    expect(mockInvoke).toHaveBeenCalledWith('refresh_index_if_stale', { staleSecs: 3600 });
   });
 
   it('stops a watcher whose start resolves after cleanup', async () => {
