@@ -140,7 +140,12 @@
   - USN drain : 327 873 records en **148 ms** (2.2 M rec/s) MAIS **0 nom** (strippés) → résolution **462 µs/fichier** (`OpenFileById`), 78% de succès ; ~117 s projetés pour résoudre tout le delta
   - **Verdict : walk vs USN drain = apples-to-oranges.** L'USN non-privilégié ne fait **que** des deltas ; le baseline reste forcément un walk (le raw-MFT « instant » est admin-only = D2 abandonné).
 - [ ] ❌ **D3 lifecycle wiring = NO-GO confirmé sur données** (cf. decision record `REFONTE-PILIER-D-SEARCH.md` 2026-06-24). Bloqué sur 2 gates non remplis : (2) fréquence de re-scan justifiant l'USN = **non mesurée** (pas de télémétrie) ; (3) preuve que le chemin USN-delta (resolve 462 µs/fichier inclus) bat un re-walk ciblé sur les volumes de changement réels = **non prouvé**. Primitive gardée OFF, **non jetée**.
-- [ ] **Suite prioritaire (Vague 3.2, AVANT de reconsidérer l'USN)** : (a) scan background/incrémental hors hot-path hotkey, (b) watcher `notify` debounced → re-scan **ciblé** des dirs changés (pas full walk), (c) politique index-age + lazy refresh scopée aux dossiers utilisateur. Probablement dissout le coût cold-start sans aucun syscall de résolution par record.
+- [~] **Suite prioritaire (Vague 3.2, AVANT de reconsidérer l'USN)** — découverte : déjà ~80% en place.
+  - [x] (a) scan background hors hot-path → déjà `tokio::spawn` + `spawn_blocking`, depth borné à 3 (`start_indexing`)
+  - [x] (b) watcher `notify` debounced ciblé → déjà `indexer/watcher.rs` (100ms, upsert/remove par-path, sync SQLite+mémoire+tantivy)
+  - [x] (c) lazy refresh / réutilisation cache SQLite → déjà fast-path dans `start_indexing`
+  - [x] **Catch-up offline (le vrai trou)** : `refresh_index_if_stale(stale_secs)` (commit `75de6b81`) — réconcilie les changements faits app fermée (le watcher ne voit que le live). Re-walk background gated sur `last_full_scan`, swap atomique, silencieux. C'est l'alternative no-admin au drain USN. Frontend : déclenché par `FileWatcherLifecycle` après le watcher (fire-and-forget, seuil 1h).
+  - [ ] Reste optionnel : seuil de staleness configurable en Settings ; métriques re-scan (alimente la reconsidération USN)
 - [ ] Baseline sans admin = Windows Search Index (déjà là) + `scan_files` fallback ; l'USN = deltas only
 - ⚠️ `StartUsn` doit être `0` / `FirstUsn` / un USN déjà retourné — offset arbitraire → `ERROR_INVALID_PARAMETER` (87)
 
