@@ -104,7 +104,10 @@ tantivy = { version = "0.26", optional = true }
 tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
 
 [target.'cfg(windows)'.dependencies]
-winapi = { version = "0.3", features = ["shellapi", "winuser", "wingdi", "winnt", "winreg", "fileapi", "psapi", "processthreadsapi", "handleapi"] }
+# `ioapiset` (DeviceIoControl) + `errhandlingapi` (GetLastError) are required by
+# the unprivileged USN change-journal reader (indexer::usn, feature
+# `usn-incremental`). They are cheap and harmless when that feature is off.
+winapi = { version = "0.3", features = ["shellapi", "winuser", "wingdi", "winnt", "winreg", "fileapi", "psapi", "processthreadsapi", "handleapi", "ioapiset", "errhandlingapi"] }
 winreg = "0.55"
 lnk = "0.6"
 
@@ -133,6 +136,12 @@ devtools = ["tauri/devtools"]
 # (`indexer::fulltext`). OFF by default; the default build keeps the existing
 # nucleo search path unchanged. See REFONTE-PILIER-D-SEARCH.md.
 tantivy-search = ["dep:tantivy"]
+# Pilier D Track 2 (no-admin): unprivileged USN change-journal delta reader
+# (`indexer::usn`). Windows-only at runtime via FSCTL_READ_UNPRIVILEGED_USN_JOURNAL
+# on a FILE_TRAVERSE handle — NO administrator privileges required. The record
+# parser is pure and portable (unit-tested on any OS). OFF by default; not wired
+# into the lifecycle yet (gated on the D1 benchmark GO). See REFONTE-PILIER-D-SEARCH.md §3.
+usn-incremental = []
 # Enables the heavy end-to-end embedding test that downloads the multilingual-e5-small
 # model (~120 MB on first run, then cached). Run with:
 #   cargo test --features test-embeddings -- --test-threads=1

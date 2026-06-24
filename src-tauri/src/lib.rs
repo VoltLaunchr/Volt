@@ -18,6 +18,23 @@ pub mod benchmark_api {
     pub use crate::indexer::{FileCategory, FileInfo, SearchEngine, SearchOptions};
 }
 
+/// Public surface for the no-admin USN change-journal reader (Pilier D, Track 2).
+/// Re-exported so the reviewed primitive is reachable as crate API ahead of its
+/// lifecycle wiring (the documented D3 follow-up) — mirroring `benchmark_api`,
+/// and keeping the internal `indexer` module otherwise crate-private.
+#[cfg(feature = "usn-incremental")]
+#[doc(hidden)]
+pub mod usn_api {
+    pub use crate::indexer::usn::{
+        PathResolver, RecordChange, UsnCursor, UsnDelta, UsnError, UsnIndexer, UsnJournal,
+        UsnRecord, is_indexable, parse_usn_buffer, strip_extended_prefix,
+    };
+    // The directory-walk baseline enumeration — re-exported so the cold
+    // enumeration benchmark (`examples/enum_bench.rs`) can compare the walk
+    // against the USN delta feed apples-to-apples.
+    pub use crate::indexer::{IndexConfig, scan_files};
+}
+
 use commands::clipboard::ClipboardManagerState;
 use commands::files::{FileHistoryState, FileIndexState, WatcherState};
 use commands::launcher::LaunchHistoryState;

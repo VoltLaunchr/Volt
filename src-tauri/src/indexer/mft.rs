@@ -1,71 +1,74 @@
-//! NTFS Master File Table (MFT) / USN journal fast-enumeration accelerator.
+//! NTFS fast-enumeration accelerators — privilege map & design notes.
 //!
-//! **Track 2 of Pilier D — PHASE 2, DOCUMENTATION ONLY.**
+//! **Track 2 of Pilier D — DOCUMENTATION ONLY.**
 //! See `REFONTE-PILIER-D-SEARCH.md` §3 for the full design.
 //!
 //! This module is intentionally a doc-only placeholder. It contains **no
 //! `unsafe` code**, **no Windows API calls**, and **no third-party NTFS
-//! dependency** yet. It exists so the design and the integration contract are
-//! captured in-tree; the real implementation lands in a later, separately
-//! reviewed change behind its own `mft-search` Cargo feature.
+//! dependency**. It captures the design and the privilege boundary in-tree.
+//! The *no-admin* incremental path actually lands in the sibling
+//! [`crate::indexer::usn`] module (behind the `usn-incremental` feature); the
+//! *admin-only* raw-MFT bulk path remains unimplemented and optional.
 //!
-//! # What this will do (phase 2)
+//! # The key correction: two mechanisms, two privilege levels
 //!
-//! Reading the on-disk NTFS Master File Table in a single sequential pass
-//! enumerates every file and directory on a volume far faster than a recursive
-//! `readdir` walk (which issues one syscall per directory entry). The USN change
-//! journal then provides a low-overhead delta feed to keep the index current.
-//! This is the industry-standard best-practice approach for "instant" local file
-//! enumeration.
+//! The original plan conflated "read the MFT" with "needs Administrator". They
+//! are **not** the same thing. There are two distinct NTFS fast-paths:
 //!
-//! - **Cold enumeration:** read `$MFT` once → stream [`crate::indexer::types::FileInfo`]
-//!   into the *same* SQLite + Tantivy + in-memory pipeline the recursive scanner
-//!   already feeds. The MFT path is a drop-in *source*, not a rewrite.
-//! - **Incremental:** subscribe to the USN journal → emit the same upsert/remove
-//!   batches the `notify` watcher emits today.
+//! | Mechanism | Win32 surface | Privilege | Role in Volt |
+//! |---|---|---|---|
+//! | **Raw `$MFT` bulk read** | `CreateFile(\\.\C:, GENERIC_READ)` | **Administrator** (raw block-device access) | Optional accelerator, *only if already elevated*. Never default, never prompts UAC. |
+//! | **USN change journal read** | `FSCTL_READ_UNPRIVILEGED_USN_JOURNAL` on a handle opened with `FILE_TRAVERSE` | **None** (standard user) | The default no-admin live-delta feed → [`crate::indexer::usn`]. |
 //!
-//! # Crates (verified June 2026, not yet added to `Cargo.toml`)
+//! Spotlight-/Everything-style "instant" search does **not** require every user
+//! to run as admin: the OS maintains an index, and apps query it. Volt mirrors
+//! that model on Windows — **a launcher must never demand UAC just to search.**
 //!
-//! - `ntfs-reader` (≈0.4.2) — in-memory `$MFT` scan + USN journal reader; the
-//!   highest-level option and the recommended first cut.
-//! - `usn-journal-rs` — alternative safe abstraction over USN + MFT.
-//! - `ntfs` (ColinFinck) — lower-level no-std NTFS implementation.
+//! # The no-admin architecture (what we actually ship)
+//!
+//! ```text
+//! Baseline enumeration (no admin):
+//!   Windows Search Index  → crate::indexer::windows_search (already wired)
+//!   + scan_files walk      → crate::indexer::scanner (folders outside the index scope)
+//!
+//! Live deltas (no admin):
+//!   USN journal, unprivileged → crate::indexer::usn (FSCTL_READ_UNPRIVILEGED_USN_JOURNAL)
+//!   emits the SAME upsert/remove batches the `notify` watcher emits today.
+//!
+//! Optional bulk accelerator (admin ONLY, opportunistic):
+//!   Raw $MFT one-pass read → this module, future, gated on is_elevated() && NTFS.
+//!   Skipped silently when unelevated; baseline path covers that case identically.
+//! ```
+//!
+//! The USN journal only reports **changes** since the journal was created — it is
+//! a delta feed, never a substitute for the baseline enumeration above. That is
+//! why the no-admin design pairs it with the Windows Search Index (and the
+//! recursive walk as a universal fallback).
+//!
+//! # Crates (verified June 2026)
+//!
+//! - `ntfs-reader` (≈0.4.2) and `usn-journal-rs` both open the volume in **read**
+//!   mode (`Volume::new("\\\\.\\C:")`) — i.e. the **admin** path — and neither
+//!   clearly exposes `FSCTL_READ_UNPRIVILEGED_USN_JOURNAL`. The no-admin USN
+//!   reader therefore uses a thin in-tree FFI layer (see [`crate::indexer::usn`])
+//!   rather than these crates as-is.
+//! - `ntfs` (ColinFinck) — lower-level no-std NTFS implementation, for the future
+//!   admin-only raw-MFT bulk path only.
 //!
 //! # Privilege & fallback contract (non-negotiable)
 //!
-//! Reading the raw MFT requires opening a **volume handle** (`\\.\C:`), which on
-//! Windows needs **Administrator / elevated** privileges. Volt runs unelevated by
-//! design — a launcher must never demand UAC just to search. Therefore the MFT
-//! path is attempted **only** when ALL of the following hold:
-//!
-//! 1. the `mft-search` feature is enabled,
-//! 2. the process is already elevated (no UAC prompt is ever requested),
-//! 3. the target volume's filesystem is NTFS.
-//!
-//! In every other case (not elevated, non-NTFS, network/removable volume, macOS,
-//! Linux) the code **transparently falls back** to the existing recursive
-//! [`crate::indexer::scanner::scan_files`] walk. The user gets faster indexing
-//! *iff* they already run elevated, and byte-for-byte identical behaviour
-//! otherwise.
+//! 1. **Never request elevation for search.** No code path here prompts UAC.
+//! 2. **No-admin first.** The default fast path (Windows Search + unprivileged
+//!    USN) requires no special privileges and is the only path wired into the
+//!    lifecycle.
+//! 3. **Raw MFT is opportunistic.** It is attempted *only* when the process is
+//!    already elevated AND the volume is NTFS AND its feature flag is on; in every
+//!    other case (unelevated, non-NTFS, network/removable, macOS, Linux) the code
+//!    transparently falls back to the baseline path with identical behaviour.
 //!
 //! # Cross-platform
 //!
-//! MFT/USN is Windows + NTFS only. macOS and Linux always use the recursive walk.
-//! The future implementation and its dependency will be `#[cfg(windows)]` and
-//! feature-gated so non-Windows builds never compile it.
-//!
-//! # Planned surface (illustrative — intentionally not implemented here)
-//!
-//! ```ignore
-//! /// Whether the MFT fast path can be used for `drive` right now.
-//! /// Returns false (→ caller uses scan_files) unless elevated + NTFS.
-//! #[cfg(all(windows, feature = "mft-search"))]
-//! pub fn mft_available(drive: &str) -> bool { /* is_elevated() && is_ntfs(drive) */ }
-//!
-//! /// One-pass MFT enumeration → FileInfo stream (phase 2).
-//! #[cfg(all(windows, feature = "mft-search"))]
-//! pub fn enumerate_volume(drive: &str) -> Result<Vec<FileInfo>, String> { /* ntfs-reader */ }
-//! ```
-//!
-//! Keeping this as documentation (rather than dead stubs) avoids shipping unused
-//! `unsafe`/FFI surface before it is needed and keeps the default build clean.
+//! MFT/USN is Windows + NTFS only. macOS and Linux always use the recursive walk
+//! (and could later adopt FSEvents / fanotify as their own no-privilege delta
+//! feeds). Both the future raw-MFT code and the USN reader are `#[cfg(windows)]`
+//! and feature-gated so non-Windows builds never compile them.

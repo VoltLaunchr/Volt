@@ -105,21 +105,44 @@
 - [x] Réutiliser l'index persistant si le compteur et le marqueur de synchronisation SQLite concordent
 - [x] Démarrer/arrêter le watcher avec le lifecycle UI et le redémarrer après un rebuild manuel
 - [x] `read_dir` conservé comme scanner cross-platform et couvert par un test de contrat
-- [~] Bench Criterion nucleo/Tantivy ajouté : latence 1k/10k, assertions de pertinence, taille disque; workflow CI dédié ajouté, premier run GitHub encore requis
-- [x] **Décision D2/D3 : NO-GO pour cette itération.** D1 est fonctionnel; ne pas engager MFT/USN avant baseline Criterion release sur corpus réel et preuve que l'énumération est le bottleneck utilisateur
+- [x] Bench Criterion nucleo/Tantivy ajouté : latence 1k/10k, assertions de pertinence, taille disque; workflow CI dédié ajouté. **Premier run LOCAL fait (2026-06-16)** : nucleo plus rapide que Tantivy sur **toutes** les requêtes ≤10k docs (Tantivy ~2-8 ms d'overhead fixe) → Tantivy ne gagne qu'au-delà de 10k docs. Cf. decision record dans `REFONTE-PILIER-D-SEARCH.md`. Run GitHub CI encore requis.
+- [x] **Décision : Tantivy reste OFF par défaut** (nucleo gagne aux tailles de corpus réelles) ; **D2/D3 wiring lifecycle = toujours NO-GO** tant qu'un bench d'**énumération** (`scan_files` walk vs USN drain) sur volume NTFS réel n'a pas prouvé que l'énumération à froid est le bottleneck. ⚠️ Le bench actuel mesure la *latence de requête*, pas le *temps d'énumération à froid* — c'est la mesure manquante pour trancher D2/D3.
 
-### D2. Scan MFT NTFS `[XL]` — seulement si D1 validé
-- [ ] Crate `ntfs` + lecture `\\.\C:` (privilèges admin requis)
-- [ ] Thread/process dédié émettant des batches vers l'indexeur (pipe nommé)
-- [ ] Stratégie privilèges : service Windows ou élévation ponctuelle
-- [ ] Gérer edge-cases : volumes amovibles, réseau, non-NTFS → fallback walk
-- [ ] Feature-flag `ntfs-scan`
+> **⚠️ Correction de cap (juin 2026) — l'admin était le mauvais chemin.**
+> Raycast/Spotlight n'exigent jamais d'élévation pour chercher : ils interrogent
+> l'index de l'OS. Sur Windows l'équivalent existe et est **déjà câblé**
+> (`indexer/windows_search.rs`, OLE DB `Search.CollatorDSO`). Et surtout, le
+> journal USN a un mode **sans admin** : `FSCTL_READ_UNPRIVILEGED_USN_JOURNAL`
+> sur un handle ouvert en `FILE_TRAVERSE` (vérifié sur Microsoft Learn).
+> Conclusion : **D2 (MFT brute = admin obligatoire) est rétrogradé en
+> accélérateur optionnel « si déjà élevé », jamais requis ; la valeur réelle est
+> D3 (USN incrémental) en mode unprivileged, par-dessus le baseline Windows
+> Search.** On ne demande **jamais** d'UAC pour chercher.
 
-### D3. Incrémental USN Journal `[L]`
-- [ ] `FSCTL_QUERY_USN_JOURNAL` / `FSCTL_READ_USN_JOURNAL`
-- [ ] Reprise au dernier USN ID (pas de re-crawl complet)
-- [ ] Queue persistée sur disque (survit aux redémarrages)
-- [ ] Mises à jour live de l'index Tantivy
+### D2. Scan MFT NTFS brute `[XL]` — DÉPRIORISÉ (admin only, opportuniste)
+- [ ] ~~Stratégie privilèges : service Windows ou élévation ponctuelle~~ → **abandonné** (un launcher ne demande pas l'UAC pour chercher)
+- [ ] Optionnel : lecture `$MFT` en un passage **uniquement si le process est déjà élevé** (`is_elevated() && NTFS`), sinon skip silencieux → baseline identique
+- [ ] Feature-flag `mft-search` (OFF par défaut), `#[cfg(windows)]`, fallback `scan_files` garanti
+- [ ] Edge-cases : volumes amovibles, réseau, non-NTFS → fallback walk
+- [x] Décision : **NE PAS** bâtir le service Windows / l'élévation ponctuelle. Doc-only dans `indexer/mft.rs`.
+
+### D3. Incrémental USN Journal — **SANS ADMIN** `[L]` ⛔ **NO-GO confirmé (2026-06-24)** — primitive validée & gardée OFF, wiring bloqué sur télémétrie
+- [x] Module `indexer/usn.rs` (feature `usn-incremental`, OFF par défaut ; FFI `#[cfg(windows)]`, parseur portable)
+- [x] FFI fine maison : volume en `FILE_TRAVERSE` (pas `GENERIC_READ`), `FSCTL_QUERY_USN_JOURNAL`, boucle `FSCTL_READ_UNPRIVILEGED_USN_JOURNAL` (= `0x000903AB`)
+- [x] Parseur `USN_RECORD_V2/V3` **pur, 15 tests verts** (buffer synthétique, sans volume ; inclut deletes via map, renames, coalescing)
+- [x] Mapping `reason` → `RecordChange::{Upsert,Remove,Ignore}` (create+delete coalescé = Ignore), reprise `(UsnJournalID, NextUsn)`, erreurs typées (JournalNotActive→fallback, JournalEntryDeleted→rebuild)
+- [x] **Validé au runtime non-élevé** (`examples/usn_probe.rs`) : 300k+ records drainés à ~1 M/s, **zéro admin**
+- [x] **Finding : la lecture unprivileged STRIPPE les noms inline** (records 64 o, `FileNameLength=0`, même pour nos propres fichiers). C'est une propriété de sécurité, pas un bug.
+- [x] **`resolve_path` (`OpenFileById` + `GetFinalPathNameByHandleW`) implémenté + validé** : résout ~73-78% des FRN changés en **chemin complet**, sans admin (le reste = système inaccessible/déjà supprimé → skip). Donne le chemin complet, pas juste le nom.
+- [x] **Map `FRN→path` + résolution des deletes FAIT** (`UsnIndexer` : delete-after-upsert résolu via la map, rename = removal, untracked-FRN skip) — couvert par les 6 nouveaux tests.
+- [x] **Bench d'énumération RÉEL exécuté (2026-06-24, `examples/enum_bench.rs`)** — la mesure manquante du NO-GO. Profil complet `C:\Users\Noluc`, non-élevé :
+  - Walk `scan_files` à froid : **2 128 042 fichiers en ~83 min (426 files/s)** — mais c'est un upper-bound (inclut AppData/.cargo/node_modules/placeholders OneDrive ; pas la cible réelle d'un launcher)
+  - USN drain : 327 873 records en **148 ms** (2.2 M rec/s) MAIS **0 nom** (strippés) → résolution **462 µs/fichier** (`OpenFileById`), 78% de succès ; ~117 s projetés pour résoudre tout le delta
+  - **Verdict : walk vs USN drain = apples-to-oranges.** L'USN non-privilégié ne fait **que** des deltas ; le baseline reste forcément un walk (le raw-MFT « instant » est admin-only = D2 abandonné).
+- [ ] ❌ **D3 lifecycle wiring = NO-GO confirmé sur données** (cf. decision record `REFONTE-PILIER-D-SEARCH.md` 2026-06-24). Bloqué sur 2 gates non remplis : (2) fréquence de re-scan justifiant l'USN = **non mesurée** (pas de télémétrie) ; (3) preuve que le chemin USN-delta (resolve 462 µs/fichier inclus) bat un re-walk ciblé sur les volumes de changement réels = **non prouvé**. Primitive gardée OFF, **non jetée**.
+- [ ] **Suite prioritaire (Vague 3.2, AVANT de reconsidérer l'USN)** : (a) scan background/incrémental hors hot-path hotkey, (b) watcher `notify` debounced → re-scan **ciblé** des dirs changés (pas full walk), (c) politique index-age + lazy refresh scopée aux dossiers utilisateur. Probablement dissout le coût cold-start sans aucun syscall de résolution par record.
+- [ ] Baseline sans admin = Windows Search Index (déjà là) + `scan_files` fallback ; l'USN = deltas only
+- ⚠️ `StartUsn` doit être `0` / `FirstUsn` / un USN déjà retourné — offset arbitraire → `ERROR_INVALID_PARAMETER` (87)
 
 ### D4. Architecture en acteurs `[M]`
 - [ ] Découpler : sources / watch / indexing / queue
@@ -162,7 +185,7 @@
 
 ## 📌 Séquencement historique et état actuel
 
-L'ordre ci-dessous était celui du plan initial. A, B, C, F1, F3 et D1 sont implémentés. C attend le premier run de sa matrice CI macOS/Linux; D1 attend le premier run du benchmark CI dédié et D2/D3 restent en NO-GO pour cette itération.
+L'ordre ci-dessous était celui du plan initial. A, B, C, F1, F3 et D1 sont implémentés. C attend le premier run de sa matrice CI macOS/Linux; D1 attend le premier run du benchmark CI dédié. **D2/D3 sont désormais en NO-GO confirmé sur données** (bench d'énumération réel exécuté le 2026-06-24, cf. decision record dans `REFONTE-PILIER-D-SEARCH.md`) : le baseline reste un walk, l'USN non-privilégié ne peut pas l'accélérer (deltas only + 462 µs/fichier de résolution). **Prochain travail = Vague 3.2** (scan background + watcher debounced ciblé + lazy refresh) avant toute reconsidération de l'USN.
 
 **Ordre initial :**
 1. **A** (frecency) → débloque aussi l'audit `rust-history-clone-01`
