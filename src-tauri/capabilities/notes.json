@@ -15,6 +15,7 @@
     "core:window:allow-toggle-maximize",
     "opener:default",
     "dialog:default",
+    "os:default",
 
     "allow-get-notes",
     "allow-get-note",

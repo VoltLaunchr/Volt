@@ -98,6 +98,7 @@ fn main() {
         // Persistent index commands
         "invalidate_index",
         "get_db_index_stats",
+        "refresh_index_if_stale",
         "start_file_watcher",
         "stop_file_watcher",
         // Settings commands
@@ -304,6 +305,8 @@ fn main() {
         "ai_verify_key",
         // Built-in AI Chat
         "ai_ask_builtin_stream",
+        // Built-in AI Chat — transparent IPC proxy for the Vercel AI SDK (A3)
+        "ai_proxy_stream",
         // AI Profile
         "ai_profile_get",
         "ai_profile_set",

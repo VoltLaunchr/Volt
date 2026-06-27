@@ -182,7 +182,7 @@
       }
     },
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDgxRkQ2ODUyRjQwNTEyMUMKUldRY0VnWDBVbWo5Z1NDRGZqRmJwdE5IQ0RtT2hrY2oyam5qb0xPSTBONnZvNmNxWEhMck9uTW0K",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEU4QkIxMkQ3QTEyMTM0MEIKUldRTE5DR2gxeEs3NkZFTlJiRFpKOWtyRDV0WHlmUTJsdUl3a3BaR3pEUW9OTTlMa2UzNEhydTQK",
       "endpoints": ["https://github.com/VoltLaunchr/Volt/releases/latest/download/latest.json"]
     }
   }

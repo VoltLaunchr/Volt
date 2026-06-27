@@ -76,13 +76,13 @@
 - [ ] **Step 1: Install i18next and react-i18next**
 
 ```bash
-cd D:\dev\Volt-public && bun add i18next react-i18next
+cd D:\dev\Volt-public && pnpm add i18next react-i18next
 ```
 
 - [ ] **Step 2: Verify installation**
 
 ```bash
-cd D:\dev\Volt-public && bun run build
+cd D:\dev\Volt-public && pnpm run build
 ```
 
 Expected: Build succeeds with no errors.
@@ -90,7 +90,7 @@ Expected: Build succeeds with no errors.
 - [ ] **Step 3: Commit**
 
 ```bash
-cd D:\dev\Volt-public && git add package.json bun.lockb && git commit -m "chore: add i18next and react-i18next dependencies"
+cd D:\dev\Volt-public && git add package.json pnpm-lock.yaml && git commit -m "chore: add i18next and react-i18next dependencies"
 ```
 
 ---

@@ -8,7 +8,8 @@
       "mcp__plugin_figma_figma__whoami",
       "mcp__plugin_figma_figma__get_screenshot",
       "mcp__plugin_figma_figma__use_figma",
-      "Bash(Select-Object -First 10)"
+      "Bash(Select-Object -First 10)",
+      "Bash(gh run *)"
     ]
   },
   "enabledPlugins": {

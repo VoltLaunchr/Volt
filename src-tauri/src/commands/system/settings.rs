@@ -574,15 +574,11 @@ pub async fn load_settings(app_handle: AppHandle) -> VoltResult<Settings> {
 
     // Migration: add `windowEffect` while preserving legacy `transparency` values.
     if let Some(appearance) = json_value.get_mut("appearance").and_then(|v| v.as_object_mut()) {
-        if !appearance.contains_key("windowEffect") {
-            appearance.insert(
-                "windowEffect".into(),
-                serde_json::Value::String("volt-glass".into()),
-            );
-            needs_save = true;
-        } else if appearance.get("windowEffect") == Some(&serde_json::Value::String("mica".into()))
-            && appearance.contains_key("transparency")
-        {
+        let should_default_window_effect = !appearance.contains_key("windowEffect")
+            || (appearance.get("windowEffect") == Some(&serde_json::Value::String("mica".into()))
+                && appearance.contains_key("transparency"));
+
+        if should_default_window_effect {
             appearance.insert(
                 "windowEffect".into(),
                 serde_json::Value::String("volt-glass".into()),
