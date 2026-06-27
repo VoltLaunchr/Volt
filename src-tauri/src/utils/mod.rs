@@ -9,6 +9,7 @@ pub mod process;
 #[cfg(target_os = "windows")]
 pub mod shell_apps;
 pub mod timing;
+pub mod win32;
 
 pub use hash::hash_id;
 pub use icon::*;

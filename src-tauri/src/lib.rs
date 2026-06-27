@@ -1,6 +1,7 @@
 pub mod commands;
 mod core;
 pub mod embeddings;
+mod expansion;
 mod hotkey;
 mod indexer;
 pub mod launcher;
@@ -190,6 +191,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
@@ -365,8 +367,14 @@ pub fn run() {
                         } else {
                             "volt://onboarding-complete"
                         };
+                        // Dev mode serves the frontend unbundled via Vite (per-module HTTP
+                        // transforms + cold esbuild dep pre-bundling on first request), which
+                        // routinely exceeds 5s — that's not present in production, where the
+                        // bundle is prebuilt and loads from disk almost instantly. Give dev
+                        // builds a much longer leash so the fallback only fires on a genuine
+                        // frontend hang, not on Vite's cold-start latency.
                         let fallback_secs = if settings.general.has_seen_onboarding {
-                            5u64
+                            if cfg!(debug_assertions) { 20u64 } else { 5u64 }
                         } else {
                             30
                         };
@@ -396,7 +404,7 @@ pub fn run() {
 
                             // For first-time users, give App.tsx's double-rAF a head start
                             // so the OS doesn't reveal an empty webview.
-                            if fallback_secs > 5 {
+                            if event_name == "volt://onboarding-complete" {
                                 tokio::time::sleep(std::time::Duration::from_millis(300)).await;
                             }
 
@@ -409,6 +417,14 @@ pub fn run() {
                                         Ok(Ok(_)) => info!(
                                             "Main window revealed on frontend ready signal ({})",
                                             event_name
+                                        ),
+                                        // In debug builds this is expected Vite cold-start
+                                        // latency, not a sign of a broken frontend — keep it
+                                        // at info. In release, the bundle is prebuilt and
+                                        // should always signal in time, so a warn is warranted.
+                                        _ if cfg!(debug_assertions) => info!(
+                                            "Main window revealed via {}s fallback (frontend never signaled via {}) — expected in dev mode",
+                                            fallback_secs, event_name
                                         ),
                                         _ => warn!(
                                             "Main window revealed via {}s fallback (frontend never signaled via {})",
@@ -500,6 +516,49 @@ pub fn run() {
 
             // Initialize snippet state
             app.manage(SnippetState::new(data_dir.clone()));
+
+            // Initialize global snippet expansion state (Pilier E1). The
+            // hook itself is only actually started below, once settings are
+            // loaded and `settings.snippet_expansion.enabled` is checked —
+            // this just registers the (initially idle) Tauri-managed handle.
+            app.manage(expansion::SnippetExpansionState::new());
+
+            // Start the global snippet-expansion hook if the user has opted
+            // in. Spawned independently from the earlier settings-apply
+            // block (which runs concurrently with `setup()` and races
+            // against `SnippetState`/`SnippetExpansionState` being managed
+            // below it) so this can safely rely on both already being
+            // present via `try_state`.
+            let expansion_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                match commands::settings::load_settings(expansion_handle.clone()).await {
+                    Ok(settings) if settings.snippet_expansion.enabled => {
+                        let snippet_state = expansion_handle.try_state::<SnippetState>();
+                        let expansion_state =
+                            expansion_handle.try_state::<expansion::SnippetExpansionState>();
+                        if let (Some(snippet_state), Some(expansion_state)) =
+                            (snippet_state, expansion_state)
+                        {
+                            let excluded_apps = Arc::new(Mutex::new(
+                                settings.snippet_expansion.excluded_apps.clone(),
+                            ));
+                            match expansion_state.start(
+                                snippet_state.shared_map(),
+                                excluded_apps,
+                                settings.snippet_expansion.max_trigger_len,
+                            ) {
+                                Ok(()) => info!("Global snippet expansion enabled"),
+                                Err(e) => warn!("Could not start global snippet expansion: {}", e),
+                            }
+                        }
+                    }
+                    Ok(_) => {}
+                    Err(e) => warn!(
+                        "Could not load settings for global snippet expansion: {}",
+                        e
+                    ),
+                }
+            });
 
             // Initialize shell history state
             app.manage(ShellHistoryState::new(data_dir.clone()));
@@ -939,6 +998,8 @@ pub fn run() {
             ai_verify_key,
             // Built-in AI Chat
             ai_ask_builtin_stream,
+            // Built-in AI Chat — transparent IPC proxy for the Vercel AI SDK (A3)
+            commands::ai::proxy::ai_proxy_stream,
             // AI Profile (personalization prefix for AI Chat)
             commands::ai_profile::ai_profile_get,
             commands::ai_profile::ai_profile_set,
@@ -1013,6 +1074,7 @@ pub fn run() {
             expand_snippet,
             import_snippets,
             export_snippets,
+            set_snippet_expansion_enabled,
             // Notes commands
             notes::get_notes,
             notes::get_note,
