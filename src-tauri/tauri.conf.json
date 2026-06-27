@@ -4,9 +4,9 @@
   "version": "0.3.0",
   "identifier": "volt.launch",
   "build": {
-    "beforeDevCommand": "bun run dev",
+    "beforeDevCommand": "pnpm run dev",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "bun run build",
+    "beforeBuildCommand": "pnpm run build",
     "frontendDist": "../dist"
   },
   "app": {
@@ -104,11 +104,7 @@
       "devCsp": "default-src 'self'; script-src 'self'; worker-src 'self' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: asset: http://asset.localhost https://asset.localhost; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' ipc: http://ipc.localhost http://localhost:* https://github.com https://raw.githubusercontent.com/VoltLaunchr/volt-extensions/ https://objects.githubusercontent.com https://crmykhdztiyvfnjxrelx.supabase.co; frame-src 'none'; object-src 'none'; base-uri 'self'; form-action 'self'",
       "assetProtocol": {
         "enable": true,
-        "scope": [
-          "$APPDATA/**",
-          "$APPLOCALDATA/**",
-          "$HOME/**"
-        ]
+        "scope": ["$APPDATA/**", "$APPLOCALDATA/**", "$HOME/**"]
       }
     }
   },
@@ -136,20 +132,14 @@
         "silent": true
       },
       "wix": {
-        "language": [
-          "en-US",
-          "fr-FR"
-        ],
+        "language": ["en-US", "fr-FR"],
         "bannerPath": "icons/wix-banner.bmp",
         "dialogImagePath": "icons/wix-dialog.bmp"
       },
       "nsis": {
         "installerIcon": "icons/icon.ico",
         "installMode": "currentUser",
-        "languages": [
-          "English",
-          "French"
-        ],
+        "languages": ["English", "French"],
         "displayLanguageSelector": true,
         "compression": "lzma",
         "startMenuFolder": "Volt",
@@ -188,16 +178,12 @@
   "plugins": {
     "deep-link": {
       "desktop": {
-        "schemes": [
-          "volt"
-        ]
+        "schemes": ["volt"]
       }
     },
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDgxRkQ2ODUyRjQwNTEyMUMKUldRY0VnWDBVbWo5Z1NDRGZqRmJwdE5IQ0RtT2hrY2oyam5qb0xPSTBONnZvNmNxWEhMck9uTW0K",
-      "endpoints": [
-        "https://github.com/VoltLaunchr/Volt/releases/latest/download/latest.json"
-      ]
+      "endpoints": ["https://github.com/VoltLaunchr/Volt/releases/latest/download/latest.json"]
     }
   }
 }

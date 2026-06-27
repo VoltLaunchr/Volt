@@ -25,7 +25,6 @@ src/shared/types/generated/
 src-tauri/icons/
 
 # Package manager files
-bun.lockb
 pnpm-lock.yaml
 package-lock.json
 

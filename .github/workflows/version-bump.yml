@@ -47,10 +47,15 @@ jobs:
             exit 1
           fi
 
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
+      - name: Setup Node
+        uses: actions/setup-node@v4
         with:
-          bun-version: latest
+          node-version: "20"
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 8
 
       - name: Install Rust (for Cargo.lock update)
         uses: dtolnay/rust-toolchain@stable
@@ -75,14 +80,14 @@ jobs:
             fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
           "
 
-      - name: Refresh bun.lock
-        run: bun install --frozen-lockfile=false
+      - name: Refresh lockfile
+        run: pnpm install --no-frozen-lockfile
 
       - name: Propagate version to all manifests
-        run: bun run sync-version
+        run: pnpm run sync-version
 
       - name: Generate changelog entry from commits
-        run: bun run generate-changelog --version "${{ env.VERSION }}"
+        run: pnpm run generate-changelog --version "${{ env.VERSION }}"
 
       - name: Update Cargo.lock
         run: cd src-tauri && cargo check --quiet 2>/dev/null || true
@@ -109,7 +114,7 @@ jobs:
 
           ### Reviewer checklist
           - [ ] Review auto-generated `public/changelog.json` entry (tweak wording if needed).
-          - [ ] No unintended diffs in Cargo.lock / bun.lock.
+          - [ ] No unintended diffs in Cargo.lock / pnpm-lock.yaml.
 
           After merge, the **Auto Tag Release** workflow pushes `${{ env.TAG }}`
           which triggers the release build. No manual tagging required.

@@ -119,7 +119,7 @@ See the [user documentation](https://voltlaunchr.com/en/docs) and [keyboard shor
 
 ### Prerequisites
 
-- [Bun](https://bun.sh/) for frontend dependencies, scripts, and tests.
+- [pnpm](https://pnpm.io) for frontend dependencies, scripts, and tests.
 - [Rust stable](https://rustup.rs/) for the Tauri backend.
 - The [Tauri 2 system prerequisites](https://tauri.app/start/prerequisites/) for your operating system.
 - [Git](https://git-scm.com/) for cloning and contribution workflows.
@@ -129,20 +129,20 @@ See the [user documentation](https://voltlaunchr.com/en/docs) and [keyboard shor
 ```bash
 git clone https://github.com/VoltLaunchr/Volt.git
 cd Volt
-bun install
-bun tauri dev
+pnpm install
+pnpm run tauri -- dev
 ```
 
 For frontend-only work:
 
 ```bash
-bun run dev
+pnpm run dev
 ```
 
 Create a production bundle for the current platform:
 
 ```bash
-bun tauri build
+pnpm run tauri -- build
 ```
 
 Build artifacts are written under `src-tauri/target/release/bundle/`.
@@ -153,9 +153,9 @@ The pull request workflow validates frontend code, Rust formatting, strict Clipp
 
 ```bash
 # Frontend
-bun run lint
-bun run build
-bun run test
+pnpm run lint
+pnpm run build
+pnpm run test
 
 # Rust: primary CI path
 cd src-tauri

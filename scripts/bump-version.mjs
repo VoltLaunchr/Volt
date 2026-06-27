@@ -10,10 +10,10 @@
  * zero code changes.
  *
  * Usage:
- *   bun run bump-version 0.2.0     explicit version
- *   bun run bump-version patch     0.1.2 -> 0.1.3
- *   bun run bump-version minor     0.1.2 -> 0.2.0
- *   bun run bump-version major     0.1.2 -> 1.0.0
+ *   pnpm run bump-version 0.2.0     explicit version
+ *   pnpm run bump-version patch     0.1.2 -> 0.1.3
+ *   pnpm run bump-version minor     0.1.2 -> 0.2.0
+ *   pnpm run bump-version major     0.1.2 -> 1.0.0
  *
  * Does NOT touch git — review the diff and commit yourself when ready.
  */
@@ -28,7 +28,7 @@ const ROOT = resolve(__dirname, '..');
 const arg = process.argv[2];
 if (!arg) {
   console.error('Missing version argument.');
-  console.error('Usage: bun run bump-version <X.Y.Z | patch | minor | major>');
+  console.error('Usage: pnpm run bump-version <X.Y.Z | patch | minor | major>');
   process.exit(1);
 }
 
@@ -82,5 +82,5 @@ execFileSync(process.execPath, [resolve(__dirname, 'sync-version.mjs')], {
 });
 
 console.log('\nNext steps:');
-console.log('  1. Run `bun run generate-changelog` to refresh public/changelog.json');
+console.log('  1. Run `pnpm run generate-changelog` to refresh public/changelog.json');
 console.log('  2. Review the diff and commit when ready');
