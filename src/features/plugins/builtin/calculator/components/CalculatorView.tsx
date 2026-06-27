@@ -6,7 +6,16 @@ import { addToHistory, clearHistory, getHistory, CalculationHistoryItem } from '
 import { logger } from '../../../../../shared/utils/logger';
 import { cn } from '@/lib/utils';
 import { HighlightedExpression } from '../utils/highlight';
-import { AlertTriangle, Clipboard, Globe2 } from 'lucide-react';
+import {
+  AlertTriangle,
+  ArrowLeft,
+  ArrowRightLeft,
+  Calculator,
+  Clipboard,
+  Globe2,
+  History,
+  type LucideIcon,
+} from 'lucide-react';
 
 interface CalculatorViewProps {
   onClose: () => void;
@@ -134,116 +143,179 @@ export function CalculatorView({
     setHistory([]);
   };
 
+  const quickActions: Array<{
+    key: string;
+    label: string;
+    hint: string;
+    glyph?: string;
+    icon?: LucideIcon;
+    action: () => void;
+  }> = [
+    {
+      key: 'sqrt',
+      label: t('view.quickActions.squareRoot'),
+      hint: 'sqrt(',
+      glyph: '√',
+      action: () => setExpression('sqrt('),
+    },
+    {
+      key: 'square',
+      label: t('view.quickActions.square'),
+      hint: '^2',
+      glyph: 'x²',
+      action: () => setExpression(expression + '^2'),
+    },
+    {
+      key: 'convert',
+      label: t('view.quickActions.convert'),
+      hint: 'to',
+      icon: ArrowRightLeft,
+      action: () => setExpression(expression + ' to '),
+    },
+    {
+      key: 'timezone',
+      label: t('view.quickActions.timezone'),
+      hint: 'time in',
+      icon: Globe2,
+      action: () => setExpression('time in '),
+    },
+  ];
+
   return (
     <div className="flex flex-col w-full h-full bg-canvas text-ink">
       {/* Header */}
-      <div className="flex items-center gap-3 px-4 py-3 border-b border-hairline bg-surface">
+      <div className="flex items-center gap-3 px-4 py-3 border-b border-hairline bg-surface shrink-0">
         <button
-          className="flex items-center justify-center w-8 h-8 rounded-md text-mute hover:bg-surface-elevated hover:text-ink transition-colors shrink-0"
+          type="button"
+          className="inline-flex items-center justify-center w-[30px] h-[30px] rounded-md border border-hairline bg-surface-elevated text-mute hover:bg-surface hover:text-ink transition-colors shrink-0"
           onClick={onClose}
-          aria-label="Back"
+          aria-label="Back to search"
         >
-          ←
+          <ArrowLeft size={16} strokeWidth={2} />
         </button>
-        <span className="flex-1 text-base font-semibold text-ink">{t('view.title')}</span>
+        <div className="flex-1 flex items-center gap-2 min-w-0">
+          <span className="inline-flex items-center justify-center w-7 h-7 rounded-md bg-accent-blue-soft text-accent-blue border border-hairline">
+            <Calculator size={15} strokeWidth={2} aria-hidden="true" />
+          </span>
+          <span className="text-sm font-semibold tracking-[-0.2px] text-ink">
+            {t('view.title')}
+          </span>
+        </div>
+        {history.length > 0 && (
+          <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-hairline bg-surface-elevated text-[11px] font-medium text-mute">
+            <History size={12} strokeWidth={2} aria-hidden="true" />
+            <span className="tabular-nums">{history.length}</span>
+          </div>
+        )}
       </div>
 
       {/* Content */}
-      <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Input Section */}
-        <div className="px-4 py-4 bg-surface">
-          <div className="relative">
-            <input
-              ref={inputRef}
-              type="text"
-              className="w-full h-12 px-4 text-xl font-mono font-medium bg-canvas border border-hairline rounded-md text-ink outline-none transition-colors focus:border-hairline-strong focus:bg-surface placeholder:text-stone placeholder:font-sans placeholder:text-base placeholder:font-normal"
-              value={expression}
-              onChange={(e) => {
-                setExpression(e.target.value);
+      <div className="flex-1 grid min-h-0" style={{ gridTemplateRows: 'auto minmax(0, 1fr)' }}>
+        {/* Calculator panel */}
+        <section className="px-4 py-4 bg-surface border-b border-hairline">
+          <div className="rounded-lg border border-hairline bg-canvas overflow-hidden shadow-[0_10px_30px_rgba(0,0,0,0.12)]">
+            <div className="relative flex items-center min-h-[72px] px-4">
+              <input
+                ref={inputRef}
+                type="text"
+                className="w-full h-12 pr-3 text-[26px] leading-none font-mono font-medium tabular-nums bg-transparent border-0 text-ink outline-none transition-colors placeholder:text-stone placeholder:font-sans placeholder:text-base placeholder:font-normal"
+                value={expression}
+                onChange={(e) => {
+                  setExpression(e.target.value);
                 setSelectedHistoryIndex(-1);
               }}
               onKeyDown={handleKeyDown}
               placeholder={t('view.placeholder')}
-              spellCheck={false}
-              autoFocus
-            />
-          </div>
+                spellCheck={false}
+                autoFocus
+              />
+            </div>
 
-          {/* Result Display */}
-          <div className="mt-3 min-h-14">
-            {error && (
-              <div className="flex items-center gap-2 px-4 py-3 bg-[rgba(239,68,68,0.1)] border border-[rgba(239,68,68,0.3)] rounded-md text-accent-red text-sm">
-                <AlertTriangle size={16} />
-                {error}
-              </div>
-            )}
-            {result && !error && (
-              <div className="flex items-center justify-between px-4 py-3 bg-surface-elevated border border-hairline-strong rounded-md">
-                <div className="flex-1 min-w-0">
-                  <div className="text-xs font-semibold text-stone uppercase tracking-wide mb-1">
-                    {t('view.result')}
-                  </div>
-                  <div className="text-xl font-mono font-bold text-accent-blue break-all">
-                    {result}
-                  </div>
+            <div className="border-t border-hairline bg-surface/80 min-h-[70px]">
+              {error && (
+                <div className="flex items-center gap-2 px-4 py-4 text-accent-red text-sm">
+                  <AlertTriangle size={16} className="shrink-0" />
+                  <span className="truncate">{error}</span>
                 </div>
-                <button
-                  className="flex items-center gap-2 px-3 py-2 bg-accent-blue-soft border border-[rgba(87,193,255,0.3)] rounded-md text-accent-blue text-sm font-semibold shrink-0 hover:bg-[rgba(87,193,255,0.25)] transition-colors"
-                  onClick={() => {
-                    void handleCopyResult();
-                  }}
-                  title={t('view.copyResult')}
-                >
-                  <Clipboard size={15} />
-                  {t('view.copy')}
-                </button>
-              </div>
-            )}
+              )}
+              {result && !error && (
+                <div className="flex items-center justify-between gap-4 px-4 py-3">
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[11px] font-semibold text-stone uppercase tracking-[1.2px] mb-1">
+                      {t('view.result')}
+                    </div>
+                    <div className="text-[28px] leading-tight font-mono font-semibold tabular-nums text-accent-blue break-all">
+                      {result}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    className="inline-flex items-center justify-center w-9 h-9 bg-accent-blue text-white border-0 rounded-md shrink-0 hover:opacity-90 active:scale-95 transition-all disabled:opacity-50"
+                    onClick={() => {
+                      void handleCopyResult();
+                    }}
+                    title={t('view.copyResult')}
+                    aria-label={t('view.copyResult')}
+                  >
+                    <Clipboard size={16} strokeWidth={2} />
+                  </button>
+                </div>
+              )}
+              {!result && !error && (
+                <div className="flex items-center justify-between gap-3 px-4 py-3 text-sm text-stone">
+                  <span className="truncate">{t('view.historyHint')}</span>
+                  <span className="hidden sm:inline text-[11px] px-2 py-1 rounded-md border border-hairline bg-canvas text-mute">
+                    Enter
+                  </span>
+                </div>
+              )}
+            </div>
           </div>
-        </div>
 
-        {/* Quick Actions */}
-        <div className="grid grid-cols-4 gap-2 px-4 py-3 border-b border-hairline bg-canvas">
-          <button
-            className="flex flex-col items-center gap-1 py-3 px-2 border border-hairline rounded-md text-mute text-xs hover:bg-surface-elevated hover:border-hairline-strong hover:text-ink transition-colors"
-            onClick={() => setExpression('sqrt(')}
-          >
-            <span className="text-base">√</span>
-            <span className="font-medium">{t('view.quickActions.squareRoot')}</span>
-          </button>
-          <button
-            className="flex flex-col items-center gap-1 py-3 px-2 border border-hairline rounded-md text-mute text-xs hover:bg-surface-elevated hover:border-hairline-strong hover:text-ink transition-colors"
-            onClick={() => setExpression(expression + '^2')}
-          >
-            <span className="text-base">x²</span>
-            <span className="font-medium">{t('view.quickActions.square')}</span>
-          </button>
-          <button
-            className="flex flex-col items-center gap-1 py-3 px-2 border border-hairline rounded-md text-mute text-xs hover:bg-surface-elevated hover:border-hairline-strong hover:text-ink transition-colors"
-            onClick={() => setExpression(expression + ' to ')}
-          >
-            <span className="text-base">⟷</span>
-            <span className="font-medium">{t('view.quickActions.convert')}</span>
-          </button>
-          <button
-            className="flex flex-col items-center gap-1 py-3 px-2 border border-hairline rounded-md text-mute text-xs hover:bg-surface-elevated hover:border-hairline-strong hover:text-ink transition-colors"
-            onClick={() => setExpression('time in ')}
-          >
-            <Globe2 size={16} />
-            <span className="font-medium">{t('view.quickActions.timezone')}</span>
-          </button>
-        </div>
+          {/* Quick Actions */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-3">
+            {quickActions.map((action) => {
+              const Icon = action.icon;
+              return (
+                <button
+                  key={action.key}
+                  type="button"
+                  className="group flex items-center gap-2 min-w-0 h-11 px-3 border border-hairline rounded-md bg-canvas text-mute text-left hover:bg-surface-elevated hover:border-hairline-strong hover:text-ink transition-colors"
+                  onClick={action.action}
+                  title={action.label}
+                  aria-label={action.label}
+                >
+                  <span className="inline-flex items-center justify-center w-6 h-6 rounded-md bg-surface border border-hairline text-ink shrink-0 group-hover:text-accent-blue">
+                    {Icon ? (
+                      <Icon size={14} strokeWidth={2} aria-hidden="true" />
+                    ) : (
+                      <span className="text-[15px] font-mono font-semibold leading-none">
+                        {action.glyph}
+                      </span>
+                    )}
+                  </span>
+                  <span className="min-w-0 flex flex-col leading-tight">
+                    <span className="text-[12px] font-semibold truncate">{action.label}</span>
+                    <span className="text-[10px] text-stone font-mono truncate">{action.hint}</span>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </section>
 
         {/* History Section */}
-        <div className="flex-1 flex flex-col overflow-hidden">
+        <section className="min-h-0 flex flex-col overflow-hidden">
           {history.length > 0 ? (
             <>
-              <div className="flex items-center justify-between px-4 py-2 bg-surface border-b border-hairline">
-                <span className="text-xs font-semibold text-stone uppercase tracking-wide">
+              <div className="flex items-center justify-between px-4 py-2.5 bg-canvas border-b border-hairline">
+                <span className="inline-flex items-center gap-2 text-xs font-semibold text-stone uppercase tracking-wide">
+                  <History size={14} strokeWidth={2} aria-hidden="true" />
                   {t('view.history')}
                 </span>
                 <button
-                  className="px-2 py-1 rounded-sm text-stone text-xs font-medium hover:bg-surface-elevated hover:text-accent-red transition-colors"
+                  type="button"
+                  className="px-2.5 py-1 rounded-md text-stone text-xs font-medium hover:bg-surface-elevated hover:text-accent-red transition-colors"
                   onClick={handleClearHistory}
                 >
                   {t('view.clear')}
@@ -251,46 +323,51 @@ export function CalculatorView({
               </div>
               <div className="flex-1 overflow-y-auto p-2">
                 {history.map((item, index) => (
-                  <div
+                  <button
                     key={item.id}
+                    type="button"
                     className={cn(
-                      'flex items-center gap-3 px-3 py-3 rounded-md cursor-pointer transition-colors',
+                      'w-full flex items-center gap-3 px-3 py-2.5 rounded-md cursor-pointer transition-colors text-left border border-transparent',
                       selectedHistoryIndex === index
-                        ? 'bg-accent-blue-soft'
+                        ? 'bg-accent-blue-soft border-hairline-strong'
                         : 'hover:bg-surface-elevated'
                     )}
                     onClick={() => handleSelectHistory(item)}
                   >
-                    <div className="flex-1 min-w-0 flex items-center gap-3">
+                    <div className="flex-1 min-w-0">
                       <HighlightedExpression
                         expression={item.query}
-                        className="flex-1 text-sm font-mono truncate"
+                        className="block text-sm font-mono truncate"
                       />
-                      <span className="text-sm font-mono font-semibold text-accent-blue shrink-0">
-                        = {item.result}
+                      <span className="block text-[11px] font-medium text-stone uppercase mt-0.5">
+                        {item.type}
                       </span>
                     </div>
-                    <span className="text-xs font-medium text-stone uppercase px-2 py-1 bg-surface rounded-sm shrink-0">
-                      {item.type}
+                    <span className="text-base font-mono font-semibold text-accent-blue shrink-0 max-w-[45%] truncate">
+                      = {item.result}
                     </span>
-                  </div>
+                  </button>
                 ))}
               </div>
             </>
           ) : (
-            <div className="flex-1 flex flex-col items-center justify-center px-8 py-8 text-stone">
-              <div className="mb-3 opacity-50">
-                <img src="/icons/history-stroke-rounded.svg" alt="History" width="48" height="48" />
+            <div className="flex-1 flex items-center justify-center px-6 py-8">
+              <div className="w-full max-w-[360px] flex items-center gap-3 px-4 py-3 rounded-lg border border-dashed border-hairline bg-surface/60 text-left">
+                <span className="inline-flex items-center justify-center w-9 h-9 rounded-md bg-canvas border border-hairline text-stone shrink-0">
+                  <History size={18} strokeWidth={1.8} aria-hidden="true" />
+                </span>
+                <div className="min-w-0">
+                  <div className="text-sm font-semibold text-mute">{t('view.noHistory')}</div>
+                  <div className="text-xs text-stone mt-1 truncate">{t('view.historyHint')}</div>
+                </div>
               </div>
-              <div className="text-sm font-medium text-center text-mute">{t('view.noHistory')}</div>
-              <div className="text-xs text-stone mt-2">{t('view.historyHint')}</div>
             </div>
           )}
-        </div>
+        </section>
       </div>
 
       {/* Footer */}
-      <div className="flex items-center justify-center gap-6 px-4 py-3 border-t border-hairline bg-surface">
+      <div className="flex items-center justify-center gap-6 px-4 py-2.5 border-t border-hairline bg-surface shrink-0">
         <div className="flex items-center gap-2 text-xs text-stone">
           <kbd className="px-1.5 py-0.5 bg-canvas border border-hairline rounded-xs font-mono text-xs font-medium">
             Enter
