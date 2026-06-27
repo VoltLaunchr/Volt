@@ -1,6 +1,35 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { PluginResultAccessory } from '../../../shared/types/common.types';
-import { AppWindow, Copy, Equal, FolderOpen, Globe, Loader2 } from 'lucide-react';
+import {
+  AppWindow,
+  Copy,
+  Equal,
+  FolderOpen,
+  Globe,
+  Loader2,
+  MessageCircle,
+  PlayCircle,
+  Shield,
+  Sparkles,
+  type LucideIcon,
+} from 'lucide-react';
+
+// Maps `result.icon` values that are plain identifiers (not image paths/URLs)
+// to a recognizable Lucide glyph. Used by fallback commands and other
+// plugin results that set a named icon instead of a bundled asset path.
+// lucide-react dropped brand-specific icons (no `Youtube`/`Google` glyph), so
+// these are semantic stand-ins rather than literal logos.
+const NAMED_ICON_MAP: Record<string, LucideIcon> = {
+  globe: Globe,
+  youtube: PlayCircle,
+  shield: Shield,
+  'message-circle': MessageCircle,
+  sparkles: Sparkles,
+};
+
+/** True when `icon` is a renderable image source (bundled asset, data URI, or remote URL). */
+const isImageIcon = (icon: string): boolean =>
+  icon.startsWith('/') || icon.startsWith('data:') || icon.startsWith('http');
 
 const APP_ICON = {
   calculator: '/icons/app/calculator_icon.svg',
@@ -146,6 +175,16 @@ export function ResultItem({ result, isSelected, globalIndex }: ResultItemProps)
     () => highlightMatch(result.title, searchQuery),
     [result.title, searchQuery],
   );
+
+  // Render a named icon (e.g. 'globe', 'youtube') as a Lucide glyph
+  const renderNamedIcon = (name: string) => {
+    const NamedIcon = NAMED_ICON_MAP[name];
+    return (
+      <div className="flex items-center justify-center w-8 h-8 shrink-0 text-mute">
+        <NamedIcon size={20} strokeWidth={2} />
+      </div>
+    );
+  };
 
   // Render custom system monitor item with progress bar
   const renderSystemMonitorIcon = () => (
@@ -386,8 +425,14 @@ export function ResultItem({ result, isSelected, globalIndex }: ResultItemProps)
         <img src={APP_ICON.shell} alt="" className="w-8 h-8 object-contain shrink-0 rounded-md" />
       ) : result.type === SearchResultType.SystemMonitor ? (
         renderSystemMonitorIcon()
-      ) : result.icon ? (
+      ) : result.icon && isImageIcon(result.icon) ? (
         <img src={result.icon} alt="" className="w-8 h-8 object-contain shrink-0" />
+      ) : result.icon && NAMED_ICON_MAP[result.icon] ? (
+        renderNamedIcon(result.icon)
+      ) : result.icon ? (
+        <div className="flex items-center justify-center w-8 h-8 shrink-0 text-lg leading-none">
+          {result.icon}
+        </div>
       ) : result.type === SearchResultType.File ? (
         <img src={APP_ICON.fileSearch} alt="" className="w-8 h-8 object-contain shrink-0 rounded-md" />
       ) : result.type === SearchResultType.Game ? (
