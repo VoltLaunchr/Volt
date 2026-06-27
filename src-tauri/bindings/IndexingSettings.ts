@@ -3,4 +3,4 @@
 /**
  * Indexing settings
  */
-export type IndexingSettings = { folders: Array<string>, excludedPaths: Array<string>, fileExtensions: Array<string>, indexOnStartup: boolean, deepSearch: boolean, };
+export type IndexingSettings = { folders: Array<string>, excludedPaths: Array<string>, fileExtensions: Array<string>, indexOnStartup: boolean, deepSearch: boolean, staleThresholdSecs: number, };
