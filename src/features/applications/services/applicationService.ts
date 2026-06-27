@@ -25,7 +25,7 @@ export const applicationService = {
     } catch (error) {
       logger.error('Failed to scan applications:', error);
       const msg = extractErrorMessage(error);
-      throw new Error(`Failed to scan applications: ${msg}`);
+      throw new Error(`Failed to scan applications: ${msg}`, { cause: error });
     }
   },
 
@@ -62,7 +62,7 @@ export const applicationService = {
     } catch (error) {
       logger.error('Failed to search applications:', error);
       const msg = extractErrorMessage(error);
-      throw new Error(`Failed to search applications: ${msg}`);
+      throw new Error(`Failed to search applications: ${msg}`, { cause: error });
     }
   },
 
@@ -112,7 +112,7 @@ export const applicationService = {
     direction: 'asc' | 'desc' = 'desc'
   ): AppInfo[] {
     const sorted = [...apps].sort((a, b) => {
-      let comparison = 0;
+      let comparison: number;
 
       switch (field) {
         case 'name':

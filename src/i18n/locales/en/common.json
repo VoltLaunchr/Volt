@@ -6,7 +6,8 @@
     "resultCount_one": "{{count}} result found",
     "resultCount_other": "{{count}} results found",
     "clearSearch": "Clear search",
-    "label": "Search"
+    "label": "Search",
+    "searching": "Searching…"
   },
   "footer": {
     "openCommand": "Open Command",

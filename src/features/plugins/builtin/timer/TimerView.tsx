@@ -382,13 +382,10 @@ export function TimerView({ onClose }: TimerViewProps): React.JSX.Element {
       </header>
 
       {/* Body: two-column layout */}
-      <div
-        className="flex-1 grid min-h-0"
-        style={{ gridTemplateColumns: 'minmax(0,1.1fr) minmax(260px,0.9fr)' }}
-      >
+      <div className="flex-1 grid min-h-0 grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1.1fr)_minmax(260px,0.9fr)]">
         {/* LEFT — timer column */}
         <section
-          className="flex flex-col items-center gap-4 px-6 py-[18px] border-r border-hairline overflow-visible"
+          className="flex flex-col items-center gap-6 px-6 py-[18px] lg:border-r lg:border-hairline overflow-visible"
           aria-label="Pomodoro timer"
         >
           {/* Mode tabs */}
@@ -417,7 +414,7 @@ export function TimerView({ onClose }: TimerViewProps): React.JSX.Element {
 
           {/* Custom duration input */}
           {session.mode === 'custom' && !activeTimer && (
-            <div className="flex gap-1.5 w-[min(320px,100%)] animate-[tv-fade-in_180ms_ease-out]">
+            <div className="flex gap-1.5 w-full max-w-[320px] animate-[tv-fade-in_180ms_ease-out]">
               <input
                 ref={customInputRef}
                 type="text"

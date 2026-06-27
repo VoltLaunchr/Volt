@@ -6,7 +6,8 @@
     "resultCount_one": "{{count}} résultat trouvé",
     "resultCount_other": "{{count}} résultats trouvés",
     "clearSearch": "Effacer la recherche",
-    "label": "Rechercher"
+    "label": "Rechercher",
+    "searching": "Recherche en cours…"
   },
   "footer": {
     "openCommand": "Ouvrir",

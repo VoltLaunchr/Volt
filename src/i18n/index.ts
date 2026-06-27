@@ -54,7 +54,13 @@ function isSupportedLanguage(lang: string): lang is SupportedLanguage {
   return SUPPORTED_LANGUAGES.includes(lang as SupportedLanguage);
 }
 
-async function resolveLanguage(savedLanguage?: string): Promise<SupportedLanguage> {
+function localeTagToLanguage(tag: string): SupportedLanguage | null {
+  const base = tag.split('-')[0].toLowerCase();
+  return isSupportedLanguage(base) ? base : null;
+}
+
+/** Resolve `auto` / explicit preference to a supported UI language. */
+export async function resolveAppLanguage(savedLanguage?: string): Promise<SupportedLanguage> {
   if (savedLanguage && savedLanguage !== 'auto' && isSupportedLanguage(savedLanguage)) {
     return savedLanguage;
   }
@@ -63,11 +69,16 @@ async function resolveLanguage(savedLanguage?: string): Promise<SupportedLanguag
     const { locale } = await import('@tauri-apps/plugin-os');
     const osLocale = await locale();
     if (osLocale) {
-      const base = osLocale.split('-')[0].toLowerCase();
-      if (isSupportedLanguage(base)) return base;
+      const resolved = localeTagToLanguage(osLocale);
+      if (resolved) return resolved;
     }
   } catch {
-    // Running outside Tauri (dev mode / tests)
+    // Plugin unavailable (tests) — fall through to navigator
+  }
+
+  if (typeof navigator !== 'undefined' && navigator.language) {
+    const resolved = localeTagToLanguage(navigator.language);
+    if (resolved) return resolved;
   }
 
   return 'en';
@@ -92,7 +103,7 @@ type VoltI18nBridge = (
 ) => void;
 
 export async function initI18n(savedLanguage?: string): Promise<void> {
-  const lng = await resolveLanguage(savedLanguage);
+  const lng = await resolveAppLanguage(savedLanguage);
 
   await i18n.use(initReactI18next).init({
     lng,

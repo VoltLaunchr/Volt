@@ -117,11 +117,20 @@ export function useResultActions({
             shouldHideWindow = false;
           }
 
-          const plugin = pluginRegistry.getPlugin(pluginId);
-          if (plugin) {
-            await plugin.execute(pluginResult);
+          if (pluginId === 'emoji-picker' && pluginResult.data?.action === 'open-picker') {
+            shouldHideWindow = false;
+            const initialQuery =
+              typeof pluginResult.data.initialQuery === 'string'
+                ? pluginResult.data.initialQuery
+                : '';
+            setActiveView({ type: 'emoji', initialQuery });
           } else {
-            logger.error('Plugin not found! ID:', pluginId);
+            const plugin = pluginRegistry.getPlugin(pluginId);
+            if (plugin) {
+              await plugin.execute(pluginResult);
+            } else {
+              logger.error('Plugin not found! ID:', pluginId);
+            }
           }
         }
 
