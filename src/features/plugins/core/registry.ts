@@ -1,6 +1,7 @@
 import { SEARCH_LIMITS } from '../../../shared/constants/searchScoring';
 import { logger } from '../../../shared/utils/logger';
 import { Plugin, PluginRegistry as IPluginRegistry, PluginContext, PluginResult } from '../types';
+import { matchActivation } from './activation';
 
 export class PluginRegistry implements IPluginRegistry {
   plugins: Map<string, Plugin>;
@@ -60,6 +61,25 @@ export class PluginRegistry implements IPluginRegistry {
   }
 
   /**
+   * Apply the persisted `enabledPlugins` setting to the registered plugins.
+   *
+   * Only plugins whose id is in `managedIds` are gate-able: such a plugin is
+   * enabled iff its id appears in `enabledIds`. Plugins not in `managedIds`
+   * (e.g. ai-chat, developer) are always-on and left untouched. This is what
+   * actually wires the Settings toggles to the runtime query path — previously
+   * `enabledPlugins` was stored but never honoured.
+   */
+  applyEnabledSet(enabledIds: string[], managedIds: string[]): void {
+    const enabled = new Set(enabledIds);
+    const managed = new Set(managedIds);
+    for (const plugin of this.plugins.values()) {
+      if (managed.has(plugin.id)) {
+        plugin.enabled = enabled.has(plugin.id);
+      }
+    }
+  }
+
+  /**
    * Query all enabled plugins for results
    * Handles errors gracefully to prevent one plugin from breaking the whole system
    */
@@ -70,14 +90,22 @@ export class PluginRegistry implements IPluginRegistry {
     // Query plugins in parallel
     const promises = enabledPlugins.map(async (plugin) => {
       try {
+        // Pre-compute the activation match once and inject it into the context
+        // so both canHandle and match share a single parse. Plugins without an
+        // activation manifest fall back to their own canHandle (custom logic).
+        const activation = plugin.activation
+          ? matchActivation(context.query, plugin.activation, plugin.name)
+          : undefined;
+        const pluginContext: PluginContext = activation ? { ...context, activation } : context;
+
         // Check if plugin can handle the query
-        if (!plugin.canHandle(context)) {
+        if (!plugin.canHandle(pluginContext)) {
           return null;
         }
 
         // Get results with timeout protection
         const timeoutMs = SEARCH_LIMITS.PLUGIN_TIMEOUT_MS;
-        const matchPromise = Promise.resolve(plugin.match(context));
+        const matchPromise = Promise.resolve(plugin.match(pluginContext));
         let timeoutId: ReturnType<typeof setTimeout> | undefined;
         const timeoutPromise = new Promise<null>((resolve) => {
           timeoutId = setTimeout(() => resolve(null), timeoutMs);
@@ -87,10 +115,12 @@ export class PluginRegistry implements IPluginRegistry {
         if (timeoutId !== undefined) clearTimeout(timeoutId);
 
         if (pluginResults && Array.isArray(pluginResults)) {
-          // Add plugin ID to each result for execution later
+          // Annotate each result with its plugin ID (for execution) and the
+          // activation match kind (for deterministic scoring in the pipeline).
           return pluginResults.map((result) => ({
             ...result,
             pluginId: plugin.id,
+            matchKind: result.matchKind ?? activation?.kind ?? 'none',
           }));
         }
         return null;

@@ -1,13 +1,28 @@
 
-import { Plugin, PluginContext, PluginResult, PluginResultType } from '../../types';
+import { Plugin, PluginActivation, PluginContext, PluginResult, PluginResultType } from '../../types';
+import { resolveActivation } from '../../core/activation';
 import { openUrl } from '../../utils/helpers';
 import { logger } from '../../../../shared/utils/logger';
+
+/** Maps an activation token (matched prefix/keyword) to a search engine id. */
+const ENGINE_BY_TOKEN: Record<string, 'google' | 'bing' | 'duckduckgo'> = {
+  bing: 'bing',
+  ddg: 'duckduckgo',
+  google: 'google',
+};
 
 export class WebSearchPlugin implements Plugin {
   id = 'websearch';
   name = 'Web Search';
   description = 'Search the web using your default browser';
   enabled = true;
+
+  // `?` prefix or an engine keyword. The matched token selects the engine
+  // (see ENGINE_BY_TOKEN); everything else defaults to Google.
+  activation: PluginActivation = {
+    prefixes: ['?'],
+    keywords: ['web', 'search', 'google', 'bing', 'ddg', 'chercher'],
+  };
 
   private searchEngines = {
     google: 'https://www.google.com/search?q=',
@@ -16,50 +31,24 @@ export class WebSearchPlugin implements Plugin {
   };
 
   /**
-   * Check if query starts with web search prefix
+   * Check if query starts with web search prefix or an engine keyword.
    */
   canHandle(context: PluginContext): boolean {
-    const query = context.query.trim().toLowerCase();
-
-    // Trigger patterns
-    const triggers = ['?', 'web ', 'search ', 'google ', 'bing ', 'ddg '];
-
-    return triggers.some((trigger) => query.startsWith(trigger));
+    return resolveActivation(this, context).matched;
   }
 
   /**
    * Generate web search result
    */
   match(context: PluginContext): PluginResult[] | null {
-    const query = context.query.trim();
-    const lowerQuery = query.toLowerCase();
-
-    let searchEngine = 'google';
-    let searchQuery = query;
-
-    // Detect search engine
-    if (lowerQuery.startsWith('?')) {
-      searchQuery = query.substring(1).trim();
-    } else if (lowerQuery.startsWith('web ')) {
-      searchQuery = query.substring(4).trim();
-    } else if (lowerQuery.startsWith('search ')) {
-      searchQuery = query.substring(7).trim();
-    } else if (lowerQuery.startsWith('google ')) {
-      searchQuery = query.substring(7).trim();
-      searchEngine = 'google';
-    } else if (lowerQuery.startsWith('bing ')) {
-      searchQuery = query.substring(5).trim();
-      searchEngine = 'bing';
-    } else if (lowerQuery.startsWith('ddg ')) {
-      searchQuery = query.substring(4).trim();
-      searchEngine = 'duckduckgo';
-    }
+    const { stripped: searchQuery, token } = resolveActivation(this, context);
 
     // If no actual search term, don't show result
     if (!searchQuery) {
       return null;
     }
 
+    const searchEngine = (token && ENGINE_BY_TOKEN[token]) || 'google';
     const engineName = searchEngine.charAt(0).toUpperCase() + searchEngine.slice(1);
 
     return [

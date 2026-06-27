@@ -18,8 +18,9 @@
  */
 
 import { invoke, Channel } from '@tauri-apps/api/core';
-import type { Plugin, PluginContext, PluginResult } from '../../types';
+import type { Plugin, PluginActivation, PluginContext, PluginResult } from '../../types';
 import { PluginResultType } from '../../types';
+import { resolveActivation } from '../../core/activation';
 import { logger } from '../../../../shared/utils/logger';
 import type { Settings } from '../../../settings/types/settings.types';
 import { VOLT_EVENTS, emitVoltEvent } from '../../../../shared/events';
@@ -143,6 +144,14 @@ export class ShellCommandPlugin implements Plugin {
   description = 'Run shell commands inline with > prefix';
   enabled = true;
 
+  // `>` prefix enters command entry; the bare `shell` keyword is discovery-only
+  // (shows the hint + recent history). The plugin name "Shell Command" also
+  // auto-registers as a keyword.
+  activation: PluginActivation = {
+    prefixes: ['>'],
+    keywords: ['shell'],
+  };
+
   /**
    * Output cache keyed by `executionId`. The previous implementation keyed
    * by the raw command string, which let two concurrent runs of the same
@@ -176,7 +185,7 @@ export class ShellCommandPlugin implements Plugin {
   }
 
   canHandle(context: PluginContext): boolean {
-    return context.query.startsWith('>');
+    return resolveActivation(this, context).matched;
   }
 
   /** Find the most recent cached entry for a command (reverse insertion order). */
@@ -190,7 +199,8 @@ export class ShellCommandPlugin implements Plugin {
   }
 
   async match(context: PluginContext): Promise<PluginResult[]> {
-    const raw = context.query.substring(1).trim();
+    // `stripped` is the command text after `>` (or '' for the bare `shell` keyword).
+    const raw = resolveActivation(this, context).stripped;
 
     this.evictCache();
 

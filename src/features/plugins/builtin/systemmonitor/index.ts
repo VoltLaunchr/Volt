@@ -3,7 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 import i18n from 'i18next';
 import { logger } from '../../../../shared/utils/logger';
 import { openSystemMonitorWindow } from '../../../../app/windows';
-import { Plugin, PluginContext, PluginResult, PluginResultType } from '../../types';
+import { Plugin, PluginActivation, PluginContext, PluginResult, PluginResultType } from '../../types';
 import type { SystemMetrics } from './types';
 
 const SYSTEMMONITOR_NS = 'systemmonitor';
@@ -39,6 +39,14 @@ export class SystemMonitorPlugin implements Plugin {
   name = 'System Monitor';
   description = 'Monitor system resources (CPU, memory, disk)';
   enabled = true;
+
+  // `mode: 'custom'` — canHandle keeps word-anywhere matching (so "show cpu"
+  // works); the keywords here drive only the scoring boost (applied when the
+  // query *starts* with one), matching the previous PLUGIN_KEYWORDS behaviour.
+  activation: PluginActivation = {
+    mode: 'custom',
+    keywords: ALL_KEYWORDS,
+  };
 
   canHandle(context: PluginContext): boolean {
     return hasKeyword(context.query.trim(), ALL_KEYWORDS);

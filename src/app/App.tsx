@@ -44,6 +44,7 @@ function App() {
   // Search store
   const searchQuery = useSearchStore((s) => s.searchQuery);
   const results = useSearchStore((s) => s.results);
+  const isSearching = useSearchStore((s) => s.isSearching);
   const showSnowEffect = useSearchStore((s) => s.showSnowEffect);
   const { setQuery, clearSearch } = useSearchStore.getState();
 
@@ -374,6 +375,7 @@ function App() {
             placeholder={t('search.placeholder')}
             resultCount={results.length}
             selectedIndex={selectedIndex}
+            isSearching={isSearching}
           />
         </>
       )}

@@ -1,5 +1,12 @@
 import { invoke } from '@tauri-apps/api/core';
-import { PluginResultType, type Plugin, PluginContext, PluginResult } from '../plugins/types';
+import {
+  PluginResultType,
+  type Plugin,
+  type PluginActivation,
+  PluginContext,
+  PluginResult,
+} from '../plugins/types';
+import { resolveActivation } from '../plugins/core/activation';
 import { logger } from '../../shared/utils';
 import { isClipboardItem } from '../../shared/utils/typeGuards';
 import type { ClipboardItem } from '../../shared/types/clipboard';
@@ -22,7 +29,10 @@ export class ClipboardPlugin implements Plugin {
   name = 'Clipboard History';
   description = 'Search and manage clipboard history';
   enabled = true;
-  triggers = ['clipboard', 'clip', 'cb', 'history'];
+  // `clipboard`/`clip`/`cb`/`history` keywords (name auto-adds 'clipboard history').
+  activation: PluginActivation = {
+    keywords: ['clipboard', 'clip', 'cb', 'history'],
+  };
   priority = 80;
 
   private cache: ClipboardItem[] | null = null;
@@ -30,27 +40,12 @@ export class ClipboardPlugin implements Plugin {
   private readonly CACHE_TTL = 2000; // 2 seconds
 
   canHandle(context: PluginContext): boolean {
-    const query = context.query.toLowerCase().trim();
-
-    // Always handle if starts with trigger word
-    if (this.triggers.some((trigger) => query.startsWith(trigger))) {
-      return true;
-    }
-
-    return false;
+    return resolveActivation(this, context).matched;
   }
 
   async match(context: PluginContext): Promise<PluginResult[]> {
-    const query = context.query.toLowerCase().trim();
-
-    // Remove trigger word if present
-    let searchQuery = query;
-    for (const trigger of this.triggers) {
-      if (query.startsWith(trigger)) {
-        searchQuery = query.slice(trigger.length).trim();
-        break;
-      }
-    }
+    // `stripped` is the residual search term after the matched keyword.
+    const searchQuery = resolveActivation(this, context).stripped.toLowerCase();
 
     try {
       let items: ClipboardItem[];

@@ -1,4 +1,4 @@
-import { Plugin, PluginContext, PluginResult, PluginResultType } from '../../types';
+import { Plugin, PluginActivation, PluginContext, PluginResult, PluginResultType } from '../../types';
 import { logger } from '../../../../shared/utils/logger';
 
 // Window position commands with their trigger keywords and aliases
@@ -109,6 +109,13 @@ export class WindowManagementPlugin implements Plugin {
   name = 'Window Management';
   description = 'Snap, resize, and move windows using keyboard commands';
   enabled = true;
+
+  // `mode: 'custom'` — canHandle keeps its bidirectional type-ahead matching
+  // (typing "win" matches "window"); these keywords drive only the scoring boost.
+  activation: PluginActivation = {
+    mode: 'custom',
+    keywords: PLUGIN_KEYWORDS,
+  };
 
   /**
    * Check if query can be handled by window management
