@@ -21,10 +21,12 @@ import {
   WebSearchPlugin,
 } from '../../features/plugins/builtin';
 import { SnippetsPlugin } from '../../features/plugins/builtin/snippets';
+import { MANAGED_PLUGIN_IDS } from '../../features/plugins/builtin/manifest';
 import { pluginRegistry } from '../../features/plugins/core';
 import {
   applyTheme,
-  applyTransparency,
+  applyWindowEffect,
+  applyWindowOpacity,
   settingsService,
   setupThemeListener,
 } from '../../features/settings';
@@ -95,7 +97,11 @@ export function useAppLifecycle(): UseAppLifecycleResult {
         const loadedSettings = await settingsService.loadSettings();
         setSettings(loadedSettings);
         applyTheme(loadedSettings.appearance.theme);
-        applyTransparency(loadedSettings.appearance.transparency);
+        void applyWindowEffect(
+          loadedSettings.appearance.windowEffect,
+          'main',
+          loadedSettings.appearance.transparency
+        );
 
         // Register built-in plugins (only once - prevents StrictMode double-registration)
         if (!pluginRegistry.isInitialized()) {
@@ -162,6 +168,12 @@ export function useAppLifecycle(): UseAppLifecycleResult {
               .join(', ')
           );
         }
+
+        // Honour the user's plugin toggles. Runs on every load (outside the
+        // one-time registration guard) so a settings change is reflected on the
+        // next app init. Managed plugins absent from the list are disabled;
+        // unmanaged plugins (ai-chat, developer) stay always-on.
+        pluginRegistry.applyEnabledSet(loadedSettings.plugins.enabledPlugins, MANAGED_PLUGIN_IDS);
       } catch (err) {
         logger.error('Failed to load settings:', err);
         applyTheme('dark');
@@ -224,6 +236,26 @@ export function useAppLifecycle(): UseAppLifecycleResult {
       updateService.stopPeriodicCheck();
     };
   }, [settings?.general.autoCheckForUpdates, settings?.general.updateChannel]);
+
+  // Sync appearance preview from the settings window (material + opacity)
+  useEffect(() => {
+    let unlistenFn: (() => void) | undefined;
+
+    void listen<Pick<Settings['appearance'], 'windowEffect' | 'transparency'>>(
+      'volt://appearance-preview',
+      (event) => {
+        const { windowEffect, transparency } = event.payload;
+        document.documentElement.setAttribute('data-window-effect', windowEffect);
+        applyWindowOpacity(transparency, windowEffect);
+      }
+    ).then((fn) => {
+      unlistenFn = fn;
+    });
+
+    return () => {
+      unlistenFn?.();
+    };
+  }, []);
 
   // Setup listener for system theme changes (for auto mode)
   useEffect(() => {
@@ -292,7 +324,11 @@ export function useAppLifecycle(): UseAppLifecycleResult {
 
       setSettings(newSettings);
       applyTheme(newSettings.appearance.theme);
-      applyTransparency(newSettings.appearance.transparency);
+      void applyWindowEffect(
+        newSettings.appearance.windowEffect,
+        'main',
+        newSettings.appearance.transparency
+      );
 
       const foldersChanged =
         currentSettings == null ||
@@ -333,7 +369,7 @@ export function useAppLifecycle(): UseAppLifecycleResult {
                 addToast(`Indexing complete — ${indexedFiles} files indexed`, 'success');
                 unlisten();
                 indexingUnlistenRef.current = null;
-                void fileWatcherRef.current?.start();
+                void fileWatcherRef.current?.start(newSettings.indexing.staleThresholdSecs);
               } else if (phase === 'error') {
                 setIsIndexing(false);
                 addToast('Indexing failed', 'error', 0);
@@ -455,7 +491,7 @@ export function useAppLifecycle(): UseAppLifecycleResult {
             addToast(`Indexing complete — ${indexedFiles} files indexed`, 'success');
             unlisten();
             indexingUnlistenRef.current = null;
-            void fileWatcherRef.current?.start();
+            void fileWatcherRef.current?.start(currentSettings.indexing.staleThresholdSecs);
           } else if (phase === 'error') {
             setIsIndexing(false);
             addToast('Indexing failed', 'error', 0); // duration 0 = persistent

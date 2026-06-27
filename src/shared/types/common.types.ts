@@ -197,6 +197,7 @@ export interface GeneralSettings {
 
 export interface AppearanceSettings {
   theme: 'light' | 'dark' | 'auto';
+  windowEffect: 'mica' | 'acrylic' | 'solid' | 'volt-glass';
   transparency: number;
   windowPosition: 'center' | 'top' | 'custom';
   customPosition?: { x: number; y: number };

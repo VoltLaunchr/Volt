@@ -191,6 +191,30 @@
   -webkit-backdrop-filter: blur(20px);
 }
 
+/* Shimmering placeholder text (e.g. the AI "Thinking…" indicator). A light
+   band sweeps across muted text to signal in-flight work. */
+@keyframes volt-shimmer-text {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+.volt-shimmer-text {
+  background: linear-gradient(
+    90deg,
+    var(--color-mute) 35%,
+    var(--color-ink) 50%,
+    var(--color-mute) 65%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  animation: volt-shimmer-text 1.4s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .volt-shimmer-text { animation: none; }
+}
+
 /* ─────────────────────────────────────────────────────────────
    Light theme overrides
    ───────────────────────────────────────────────────────────── */

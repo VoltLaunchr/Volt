@@ -87,7 +87,8 @@ vi.mock('../../features/plugins/core', () => ({
 
 vi.mock('../../features/settings', () => ({
   applyTheme: vi.fn(),
-  applyTransparency: vi.fn(),
+  applyWindowEffect: vi.fn(),
+  applyWindowOpacity: vi.fn(),
   setupThemeListener: vi.fn(() => vi.fn()),
   settingsService: {
     loadSettings: mocks.loadSettings,

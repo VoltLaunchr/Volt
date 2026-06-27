@@ -4,4 +4,4 @@ import type { CustomPosition } from "./CustomPosition";
 /**
  * Appearance settings
  */
-export type AppearanceSettings = { theme: string, transparency: number, windowPosition: string, customPosition?: CustomPosition, };
+export type AppearanceSettings = { theme: string, windowEffect: string, transparency: number, windowPosition: string, customPosition?: CustomPosition, };

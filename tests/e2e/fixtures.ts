@@ -16,6 +16,7 @@ export const MOCK_SETTINGS = {
   },
   appearance: {
     theme: 'dark',
+    windowEffect: 'volt-glass',
     transparency: 0.85,
     windowPosition: 'center',
   },
