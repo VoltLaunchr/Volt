@@ -898,7 +898,7 @@ export class MyPlugin implements Plugin {
 
 ### Q : Puis-je utiliser des bibliothèques externes ?
 
-**R :** Oui ! Installez-les via `bun add` et importez-les normalement.
+**R :** Oui ! Installez-les via `pnpm add` et importez-les normalement.
 
 ### Q : Comment partager mon plugin ?
 

@@ -168,7 +168,7 @@ cargo clippy --all-targets --no-default-features --features sqlcipher -- -D warn
 cargo test --workspace --lib --no-default-features --features sqlcipher
 ```
 
-End-to-end tests are available through `bun run test:e2e` when the Playwright environment is configured.
+End-to-end tests are available through `pnpm run test:e2e` when the Playwright environment is configured.
 
 ## Architecture
 

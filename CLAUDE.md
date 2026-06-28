@@ -347,7 +347,7 @@ import { readFile } from 'fs/promises';
 
 ```bash
 pnpm run lint 2>&1   # 0 errors, 0 warnings non-préexistants
-bun run build       # TS compile sans erreur
+pnpm run build      # TS compile sans erreur
 cargo check         # si fichiers Rust modifiés
 ```
 

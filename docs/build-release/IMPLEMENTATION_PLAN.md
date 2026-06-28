@@ -36,7 +36,7 @@ Rendre le projet “facile à itérer” (DX), réduire les points de friction, 
 
 ### Critères de validation
 
-- `bun run build` passe.
+- `pnpm run build` passe.
 - `bun tauri dev` démarre et l’app fonctionne comme aujourd’hui.
 
 ---

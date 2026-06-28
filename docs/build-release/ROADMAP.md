@@ -70,7 +70,7 @@
 **Problemes RESOLUS depuis l'audit precedent :**
 - ✅ Tests : 345 frontend, 303 backend par défaut, 321 avec Tantivy, 15 SQLCipher ciblés
 - ✅ CSP : policy stricte dans tauri.conf.json
-- ✅ Version sync : script `bun run sync-version` + `bun run check-version`
+- ✅ Version sync : script `pnpm run sync-version` + `pnpm run check-version`
 - ✅ Index fichiers : remplacement SQLite transactionnel + Tantivy persistant + watcher lifecycle fiable
 - ✅ Extension loader : completement implemente avec worker sandbox
 - ✅ CI gates : `cargo fmt --check` + `cargo clippy -D warnings`
@@ -96,14 +96,14 @@
 - [x] `src/features/onboarding/` (dossiers vides) supprime
 - [x] **Bonus :** `src/features/settings/components/SettingsWindow.tsx` (1200+ lignes) supprime — doublon mort de `SettingsApp.tsx`, decouvert pendant l'audit. `SettingsWindow.css` renomme en `SettingsApp.css` et deplace au bon endroit. Barrel exports nettoyes.
 - [x] Setting `showPreview` retire cote TypeScript et cote Rust
-- [x] Script `scripts/sync-version.mjs` + `bun run sync-version` / `bun run check-version`
+- [x] Script `scripts/sync-version.mjs` + `pnpm run sync-version` / `pnpm run check-version`
 - [x] Pre-commit hook opt-in : `scripts/hooks/pre-commit` + `scripts/setup-hooks.mjs`
 
 **Criteres valides :**
 - ✅ `bunx tsc --noEmit` vert
 - ✅ `cargo check` vert
 - ✅ Plus aucun fichier a 0 octet dans `src/`
-- ✅ `bun run sync-version` operationnel
+- ✅ `pnpm run sync-version` operationnel
 
 ---
 
@@ -114,7 +114,7 @@
 **Resultats :**
 - **345 tests frontend** (cible : ≥ 20) ✓
 - **303 tests Rust par défaut / 321 avec Tantivy** (cible : ≥ 60) ✓
-- CI execute `bun run test` + `cargo test` sur chaque PR ✓
+- CI execute `pnpm run test` + `cargo test` sur chaque PR ✓
 - Coverage : plugin registry 100%, calculator > 80%, indexer search couvert
 
 ---

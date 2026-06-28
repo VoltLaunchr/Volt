@@ -42,13 +42,13 @@ jobs:
           arguments: --all-features
 
   # ---------------------------------------------------------------------------
-  # npm dependency tree — bun audit.
+  # npm dependency tree — pnpm audit.
   # `--audit-level=high` fails the job only on high/critical advisories.
   # Moderate/low findings (typically dev-only transitive deps) are reported by
-  # `bun audit` but do not block; run `bun audit` locally to see the full list.
+  # `pnpm audit` but do not block; run `pnpm audit` locally to see the full list.
   # ---------------------------------------------------------------------------
-  bun-audit:
-    name: bun audit (npm advisories)
+  pnpm-audit:
+    name: pnpm audit (npm advisories)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -59,9 +59,9 @@ jobs:
           node-version: "20"
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v2
+        uses: pnpm/action-setup@v4
         with:
-          version: 8
+          version: 11.7.0
 
       - name: Install dependencies
         run: pnpm install --no-frozen-lockfile
