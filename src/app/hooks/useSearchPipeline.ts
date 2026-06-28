@@ -51,40 +51,6 @@ type SearchBatch =
   | { event: 'files'; data: { results: FileSearchResultCompact[] } }
   | { event: 'done' };
 
-// Plugin keywords map - when query starts with these, boost that plugin significantly
-const PLUGIN_KEYWORDS: Record<string, string[]> = {
-  calculator: ['calc', 'calculatrice', 'calculer', 'calcul', '=', 'math', 'time'],
-  timer: ['timer', 'minuteur', 'chrono', 'countdown', 'pomodoro'],
-  websearch: ['?', 'web', 'search', 'google', 'bing', 'ddg', 'chercher'],
-  systemcommands: ['reload', 'settings', 'quit', 'exit', 'preferences', 'config', 'paramètres'],
-  emoji: ['emoji', ':'],
-  system_monitor: ['system', 'cpu', 'ram', 'memory', 'disk', 'système', 'monitor'],
-  games: ['game', 'jeu', 'steam', 'epic', 'gog'],
-  clipboard: ['clipboard', 'presse-papier', 'copier', 'coller'],
-  shellcommand: ['>'],
-};
-
-// Check if query matches any plugin keywords
-const getPluginKeywordBoost = (query: string, pluginId: string): number => {
-  const lowerQuery = query.toLowerCase().trim();
-  const keywords = PLUGIN_KEYWORDS[pluginId];
-
-  if (!keywords) return 0;
-
-  // Exact match or query starts with keyword = maximum boost
-  for (const keyword of keywords) {
-    if (
-      lowerQuery === keyword ||
-      lowerQuery.startsWith(keyword + ' ') ||
-      lowerQuery.startsWith(keyword)
-    ) {
-      return SEARCH_SCORING.PLUGIN_KEYWORD_BOOST;
-    }
-  }
-
-  return 0;
-};
-
 interface UseSearchPipelineOptions {
   maxResults: number;
   /**
@@ -153,10 +119,7 @@ const convertFiles = (files: FileSearchResultCompact[]): SearchResult[] => {
     }));
 };
 
-const convertPlugins = (
-  pluginResults: PluginResultData[],
-  rawQuery: string,
-): SearchResult[] =>
+const convertPlugins = (pluginResults: PluginResultData[]): SearchResult[] =>
   pluginResults.map((result) => {
     let searchResultType: SearchResultType;
     // For most plugins we pass the full PluginResult through as `data` so
@@ -194,10 +157,14 @@ const convertPlugins = (
         searchResultType = SearchResultType.Plugin;
     }
 
-    const pluginId = result.pluginId || result.type;
-    const keywordBoost = getPluginKeywordBoost(rawQuery, pluginId);
+    // The registry annotates each result with how the query matched the
+    // plugin's activation manifest. An explicit prefix/keyword match (the user
+    // typed the feature's trigger or name) earns the keyword boost, pushing the
+    // plugin above incidental app/file matches — the single source of truth that
+    // replaces the old hand-maintained PLUGIN_KEYWORDS map.
     const baseScore = SEARCH_SCORING.PLUGIN_BASE + result.score;
-    const finalScore = keywordBoost > 0 ? keywordBoost + baseScore : baseScore;
+    const boosted = result.matchKind === 'prefix' || result.matchKind === 'keyword';
+    const finalScore = boosted ? SEARCH_SCORING.PLUGIN_KEYWORD_BOOST + baseScore : baseScore;
 
     return {
       id: result.id,
@@ -247,6 +214,12 @@ export function useSearchPipeline({
   const latestSearchId = useRef(0); // Prevent stale search responses
   const activeChannelRef = useRef<Channel<SearchBatch> | null>(null);
 
+  const finishSearch = (searchId: number) => {
+    if (searchId === latestSearchId.current) {
+      useSearchStore.getState().setIsSearching(false);
+    }
+  };
+
   const performSearch = useCallback(
     async (query: string) => {
       // Read isLoading from the store at call-time to avoid stale closures
@@ -266,7 +239,10 @@ export function useSearchPipeline({
             limit: maxResults,
           }).catch(() => [] as LaunchRecord[]);
 
-          if (searchId !== latestSearchId.current) return;
+          if (searchId !== latestSearchId.current) {
+            finishSearch(searchId);
+            return;
+          }
 
           if (suggestions.length > 0) {
             const predictiveResults: SearchResult[] = suggestions.map((record, i) => ({
@@ -290,6 +266,7 @@ export function useSearchPipeline({
           if (searchId === latestSearchId.current) setResults([]);
         }
         setShowSnowEffect(false);
+        finishSearch(searchId);
         return;
       }
 
@@ -335,6 +312,7 @@ export function useSearchPipeline({
           setResults(allAppResults);
           setShowSnowEffect(false);
         }
+        finishSearch(searchId);
         return;
       }
 
@@ -345,8 +323,9 @@ export function useSearchPipeline({
 
       setShowSnowEffect(isChristmasQuery);
 
+      let searchId = 0;
       try {
-        const searchId = ++latestSearchId.current;
+        searchId = ++latestSearchId.current;
 
         // Merge helper: sort by score, limit
         const mergeResults = (...sources: SearchResult[][]): SearchResult[] =>
@@ -417,11 +396,12 @@ export function useSearchPipeline({
 
         // Drop stale responses
         if (searchId !== latestSearchId.current) {
+          finishSearch(searchId);
           return;
         }
 
         // Merge plugin results into final set
-        streamedPlugins = convertPlugins(pluginResults, query);
+        streamedPlugins = convertPlugins(pluginResults);
 
         // Boost game results when query is game-related
         if (isGameBrowseQuery) {
@@ -538,6 +518,8 @@ export function useSearchPipeline({
         logger.error('Search failed:', errorMessage);
         setResults([]);
         setSearchError(`Search failed: ${errorMessage}`);
+      } finally {
+        finishSearch(searchId);
       }
     },
     [
@@ -556,6 +538,12 @@ export function useSearchPipeline({
   useEffect(() => {
     if (suspended) {
       return;
+    }
+
+    if (searchQuery.trim()) {
+      useSearchStore.getState().setIsSearching(true);
+    } else {
+      useSearchStore.getState().setIsSearching(false);
     }
 
     const debounceMs = searchQuery.trim().length > 2 ? 80 : 150;

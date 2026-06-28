@@ -2,6 +2,7 @@
 logs
 *.log
 npm-debug.log*
+\videos
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
@@ -35,6 +36,7 @@ volt-update.key*
 volt-update.key.pub
 *.key
 !*.key.pub
+
 
 # Certificates / private keys
 *.pem

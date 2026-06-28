@@ -6,10 +6,11 @@
  */
 
 import { invoke } from '@tauri-apps/api/core';
-import type { Plugin, PluginContext, PluginResult } from '../../types';
+import type { Plugin, PluginActivation, PluginContext, PluginResult } from '../../types';
 import { PluginResultType } from '../../types';
+import { resolveActivation } from '../../core/activation';
 
-interface Snippet {
+export interface Snippet {
   id: string;
   trigger: string;
   content: string;
@@ -24,29 +25,19 @@ export class SnippetsPlugin implements Plugin {
   description = 'Text expansion snippets';
   enabled = true;
 
+  // `;` prefix or the `snippet`/`snippets` keyword. (`Snippets` name auto-adds itself.)
+  activation: PluginActivation = {
+    prefixes: [';'],
+    keywords: ['snippet', 'snippets'],
+  };
+
   canHandle(context: PluginContext): boolean {
-    const q = context.query.toLowerCase().trim();
-    return (
-      q.startsWith(';') ||
-      q === 'snippet' ||
-      q === 'snippets' ||
-      q.startsWith('snippet ') ||
-      q.startsWith('snippets ')
-    );
+    return resolveActivation(this, context).matched;
   }
 
   async match(context: PluginContext): Promise<PluginResult[]> {
-    // Accept both the `;` prefix and the `snippet(s)` keyword for discoverability.
-    const raw = context.query.trim();
-    const lower = raw.toLowerCase();
-    let query = '';
-    if (lower.startsWith(';')) {
-      query = raw.slice(1).trim().toLowerCase();
-    } else if (lower.startsWith('snippets')) {
-      query = raw.slice('snippets'.length).trim().toLowerCase();
-    } else if (lower.startsWith('snippet')) {
-      query = raw.slice('snippet'.length).trim().toLowerCase();
-    }
+    // `stripped` is the residual search term after the `;` prefix or `snippet(s)` keyword.
+    const query = resolveActivation(this, context).stripped.toLowerCase();
 
     let snippets: Snippet[];
     try {

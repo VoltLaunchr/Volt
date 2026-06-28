@@ -144,8 +144,8 @@ pub fn scan_files(config: &IndexConfig) -> Result<Vec<FileInfo>, String> {
         })
         .collect();
 
-    for folder in &config.folders {
-        let path = PathBuf::from(folder);
+    for folder in dedup_nested_folders(&config.folders) {
+        let path = PathBuf::from(&folder);
         if !path.exists() {
             warn!("Folder does not exist: {}", folder);
             continue;
@@ -159,6 +159,41 @@ pub fn scan_files(config: &IndexConfig) -> Result<Vec<FileInfo>, String> {
     }
 
     Ok(files)
+}
+
+/// Drop folders that are already covered by another folder in the list (e.g.
+/// `Program Files\Epic Games` is a subdirectory of `Program Files`). Indexing
+/// folders commonly overlap — `get_default_index_folders` adds both a known
+/// game-launcher folder and its parent `Program Files` — and walking both
+/// roots independently visits the nested directory twice, producing duplicate
+/// `FileInfo` entries for the same path that then fail to persist.
+fn dedup_nested_folders(folders: &[String]) -> Vec<String> {
+    let canonical: Vec<(String, PathBuf)> = folders
+        .iter()
+        .map(|f| {
+            let p = Path::new(f);
+            (
+                f.clone(),
+                p.canonicalize().unwrap_or_else(|_| p.to_path_buf()),
+            )
+        })
+        .collect();
+
+    // Shortest canonical path first so parents are kept before their children
+    // are checked against them.
+    let mut sorted = canonical.clone();
+    sorted.sort_by_key(|(_, c)| c.as_os_str().len());
+
+    let mut kept: Vec<PathBuf> = Vec::new();
+    let mut result = Vec::new();
+    for (original, candidate) in sorted {
+        if kept.iter().any(|k| candidate.starts_with(k)) {
+            continue;
+        }
+        kept.push(candidate);
+        result.push(original);
+    }
+    result
 }
 
 /// Recursively scans a directory

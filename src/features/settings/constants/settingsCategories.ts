@@ -14,6 +14,7 @@ import {
   RefreshCw,
   Smile,
   StickyNote,
+  Scissors,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -33,7 +34,8 @@ export type SettingsCategory =
   | 'shell'
   | 'emoji'
   | 'ai'
-  | 'notes';
+  | 'notes'
+  | 'snippets';
 
 export interface CategoryItem {
   id: SettingsCategory;
@@ -66,4 +68,5 @@ export const SETTINGS_CATEGORIES: CategoryItem[] = [
   { id: 'emoji', label: 'Emoji & Symbols', icon: Smile, section: 'BUILT-IN', iconSrc: `${APP_ICON}/emojis_icon.svg` },
   { id: 'ai', label: 'AI', icon: Package, section: 'BUILT-IN', iconSrc: `${APP_ICON}/ai_icon.svg` },
   { id: 'notes', label: 'Notes', icon: StickyNote, section: 'BUILT-IN', iconSrc: `${APP_ICON}/volt_note_icons.svg` },
+  { id: 'snippets', label: 'Snippets', icon: Scissors, section: 'BUILT-IN' },
 ];

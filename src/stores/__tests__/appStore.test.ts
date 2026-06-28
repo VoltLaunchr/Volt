@@ -25,11 +25,12 @@ describe('appStore', () => {
       appearance: {
         ...DEFAULT_SETTINGS.appearance,
         theme: 'dark',
+        windowEffect: 'volt-glass',
         transparency: 0.85,
         windowPosition: 'center',
       },
       hotkeys: { toggleWindow: 'Ctrl+Space', openSettings: 'Ctrl+,' },
-      indexing: { folders: [], excludedPaths: [], fileExtensions: [], indexOnStartup: true, deepSearch: false },
+      indexing: { folders: [], excludedPaths: [], fileExtensions: [], indexOnStartup: true, deepSearch: false, staleThresholdSecs: 3600 },
       plugins: { enabledPlugins: [], clipboardMonitoring: true, clipboardRetentionDays: 30, clipboardDisabledApps: [] },
       shortcuts: { appShortcuts: [] },
     };

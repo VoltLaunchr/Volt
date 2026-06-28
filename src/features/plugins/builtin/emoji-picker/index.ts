@@ -1,7 +1,14 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import { logger } from '../../../../shared/utils/logger';
-import { Plugin, PluginContext, PluginResult, PluginResultType } from '../../types';
+import {
+  Plugin,
+  PluginActivation,
+  PluginContext,
+  PluginResult,
+  PluginResultType,
+} from '../../types';
+import { resolveActivation } from '../../core/activation';
 import { copyToClipboard } from '../../utils/helpers';
 import { loadEmojiData } from './utils/emojiData';
 import { searchEmojis, getDefaultEmojis } from './utils/search';
@@ -17,6 +24,12 @@ export class EmojiPickerPlugin implements Plugin {
   name = 'Emoji Picker';
   description = 'Search and insert emojis, symbols, and special characters';
   enabled = true;
+
+  // `:` prefix or the `emoji`/`emojis` keyword open the emoji search.
+  activation: PluginActivation = {
+    prefixes: [':'],
+    keywords: ['emoji', 'emojis'],
+  };
 
   private emojisLoaded = false;
   private emojis: SearchableEmoji[] = [];
@@ -41,21 +54,36 @@ export class EmojiPickerPlugin implements Plugin {
   }
 
   /**
-   * Check if query is an emoji search (starts with :)
+   * Check if query is an emoji search — `:` prefix or `emoji`/`emojis` keyword.
    */
   canHandle(context: PluginContext): boolean {
-    const query = context.query.trim();
-    return query.startsWith(':');
+    return resolveActivation(this, context).matched;
   }
 
   /**
    * Search and return emoji results
    */
   match(context: PluginContext): PluginResult[] | null {
-    const query = context.query.trim();
+    const activation = resolveActivation(this, context);
+    const searchQuery = activation.stripped;
 
-    // Remove the ':' prefix
-    const searchQuery = query.substring(1).trim();
+    if (!searchQuery && activation.kind === 'keyword') {
+      return [
+        {
+          id: 'emoji-open-picker',
+          type: PluginResultType.Info,
+          title: 'Open Emoji Picker',
+          subtitle: 'Browse emojis, symbols, and custom AI emojis',
+          score: 95,
+          icon: '/icons/app/emojis_icon.svg',
+          badge: 'Emoji',
+          data: {
+            action: 'open-picker',
+            initialQuery: '',
+          },
+        },
+      ];
+    }
 
     // If emojis aren't loaded yet, return loading message
     if (!this.emojisLoaded) {
@@ -102,10 +130,11 @@ export class EmojiPickerPlugin implements Plugin {
       return {
         id: `emoji-${emoji.hexcode}-${index}`,
         type: PluginResultType.Emoji,
-        title: `${displayEmoji}  ${emoji.label}`,
+        title: emoji.label,
         subtitle: emoji.tags.length > 0 ? emoji.tags.join(', ') : emoji.group,
         score: 90 - index, // Higher score for better matches
         icon: displayEmoji,
+        badge: 'Emoji',
         data: {
           emoji: displayEmoji,
           originalEmoji: emoji.emoji,

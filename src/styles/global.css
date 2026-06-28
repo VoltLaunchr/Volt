@@ -29,13 +29,28 @@ html,
   background: transparent;
 }
 
+:root {
+  --window-opacity: 0.85;
+}
+
 body {
-  background: rgba(20, 20, 30, 0.97);
+  background: rgba(20, 20, 30, min(0.97, calc(var(--window-opacity) + 0.12)));
   border-radius: 12px;
 }
 
 [data-theme='light'] body {
-  background: rgba(250, 250, 255, 0.97);
+  background: rgba(250, 250, 255, min(0.97, calc(var(--window-opacity) + 0.12)));
+}
+
+/* Native DWM materials need a transparent shell; Volt glass paints on .glass */
+[data-window-effect='mica'] body,
+[data-window-effect='acrylic'] body {
+  background: transparent;
+}
+
+[data-theme='light'][data-window-effect='mica'] body,
+[data-theme='light'][data-window-effect='acrylic'] body {
+  background: transparent;
 }
 
 /* ── Actions panel slide-in animation ── */
@@ -95,13 +110,9 @@ select {
   line-height: inherit;
 }
 
-/* ── Glassmorphism helper (used on the main app window) ── */
-:root {
-  --canvas-opacity: 0.85;
-}
-
+/* ── Volt glassmorphism (signature launcher shell) ── */
 .glass {
-  background: rgba(20, 20, 30, var(--canvas-opacity, 0.85));
+  background: rgba(20, 20, 30, var(--window-opacity, 0.85));
   backdrop-filter: blur(20px) saturate(180%);
   -webkit-backdrop-filter: blur(20px) saturate(180%);
   border-radius: 12px;
@@ -109,7 +120,25 @@ select {
 }
 
 [data-theme='light'] .glass {
-  background: rgba(250, 250, 255, var(--canvas-opacity, 0.85));
+  background: rgba(250, 250, 255, var(--window-opacity, 0.85));
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.12), 0 0 0 1px rgba(0, 0, 0, 0.08);
+}
+
+/* Mica / Acrylic: scale shell tint so DWM material stays visible */
+[data-window-effect='mica'] .glass,
+[data-window-effect='acrylic'] .glass {
+  background: rgba(20, 20, 30, calc(var(--window-opacity, 0.85) * 0.68));
+}
+
+[data-theme='light'][data-window-effect='mica'] .glass,
+[data-theme='light'][data-window-effect='acrylic'] .glass {
+  background: rgba(250, 250, 255, calc(var(--window-opacity, 0.85) * 0.68));
+}
+
+[data-window-effect='solid'] .glass {
+  background: var(--color-canvas);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 :root {

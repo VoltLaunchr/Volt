@@ -12,6 +12,7 @@
     "core:window:allow-minimize",
     "core:window:allow-set-focus",
     "core:window:allow-start-dragging",
+    "core:window:allow-set-effects",
     "core:window:allow-create",
     "core:webview:allow-create-webview-window",
     "opener:default",
@@ -20,6 +21,7 @@
     "dialog:default",
     "updater:default",
     "deep-link:default",
+    "os:default",
 
     "allow-show-window",
     "allow-hide-window",
@@ -70,6 +72,7 @@
 
     "allow-invalidate-index",
     "allow-get-db-index-stats",
+    "allow-refresh-index-if-stale",
     "allow-start-file-watcher",
     "allow-stop-file-watcher",
 
@@ -251,6 +254,7 @@
 
     "allow-ext-ai-ask-stream",
     "allow-ai-ask-builtin-stream",
+    "allow-ai-proxy-stream",
     "allow-ai-get-providers-status",
     "allow-ai-set-global-key",
     "allow-ai-delete-global-key",

@@ -25,7 +25,7 @@ export const launcherService = {
       await invoke<void>('launch_app', { path, asAdmin });
     } catch (error) {
       logger.error('Failed to launch app:', error);
-      throw new Error(`Failed to launch application: ${errorMessage(error)}`);
+      throw new Error(`Failed to launch application: ${errorMessage(error)}`, { cause: error });
     }
   },
 
@@ -76,7 +76,7 @@ export const launcherService = {
       await invoke<void>('pin_app', { path });
     } catch (error) {
       logger.error('Failed to pin app:', error);
-      throw new Error(`Failed to pin application: ${errorMessage(error)}`);
+      throw new Error(`Failed to pin application: ${errorMessage(error)}`, { cause: error });
     }
   },
 
@@ -89,7 +89,7 @@ export const launcherService = {
       await invoke<void>('unpin_app', { path });
     } catch (error) {
       logger.error('Failed to unpin app:', error);
-      throw new Error(`Failed to unpin application: ${errorMessage(error)}`);
+      throw new Error(`Failed to unpin application: ${errorMessage(error)}`, { cause: error });
     }
   },
 
@@ -103,7 +103,7 @@ export const launcherService = {
       await invoke<void>('add_app_tag', { path, tag });
     } catch (error) {
       logger.error('Failed to add tag:', error);
-      throw new Error(`Failed to add tag: ${errorMessage(error)}`);
+      throw new Error(`Failed to add tag: ${errorMessage(error)}`, { cause: error });
     }
   },
 
@@ -117,7 +117,7 @@ export const launcherService = {
       await invoke<void>('remove_app_tag', { path, tag });
     } catch (error) {
       logger.error('Failed to remove tag:', error);
-      throw new Error(`Failed to remove tag: ${errorMessage(error)}`);
+      throw new Error(`Failed to remove tag: ${errorMessage(error)}`, { cause: error });
     }
   },
 
@@ -167,7 +167,7 @@ export const launcherService = {
       await invoke<void>('clear_launch_history');
     } catch (error) {
       logger.error('Failed to clear history:', error);
-      throw new Error(`Failed to clear history: ${errorMessage(error)}`);
+      throw new Error(`Failed to clear history: ${errorMessage(error)}`, { cause: error });
     }
   },
 
@@ -180,7 +180,7 @@ export const launcherService = {
       await invoke<void>('remove_from_history', { path });
     } catch (error) {
       logger.error('Failed to remove from history:', error);
-      throw new Error(`Failed to remove from history: ${errorMessage(error)}`);
+      throw new Error(`Failed to remove from history: ${errorMessage(error)}`, { cause: error });
     }
   },
 

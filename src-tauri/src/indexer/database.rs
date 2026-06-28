@@ -38,6 +38,13 @@ pub struct IndexStats {
     pub last_full_scan: i64,
     /// Whether the file watcher is currently active.
     pub is_watching: bool,
+    /// Number of offline catch-up reconciles that have actually re-walked the
+    /// index (the no-admin stand-in for a USN-journal drain). This is the
+    /// re-scan telemetry feeding the D3/USN reconsideration — see
+    /// `REFONTE-PILIER-D-SEARCH.md`.
+    pub stale_catchup_count: i64,
+    /// Unix timestamp of the most recent offline catch-up reconcile (0 = never).
+    pub last_stale_catchup: i64,
 }
 
 // ---------------------------------------------------------------------------
@@ -232,10 +239,25 @@ impl FileIndexDb {
 
         let now = chrono::Utc::now().timestamp();
         {
+            // ON CONFLICT DO UPDATE (matching `upsert_files`) rather than a
+            // plain INSERT: `files` can contain the same path twice when the
+            // configured index folders overlap (e.g. both `Program Files` and
+            // `Program Files\Epic Games` are indexed, so a directory under the
+            // latter gets walked once per matching root in `scan_files`). A
+            // plain INSERT would hit the `files.path` UNIQUE constraint on the
+            // second occurrence and roll back the whole transaction, silently
+            // dropping every full-scan persist.
             let mut stmt = tx
                 .prepare(
                     "INSERT INTO files (path, name, extension, size, modified_at, indexed_at, category)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+                     ON CONFLICT(path) DO UPDATE SET
+                       name        = excluded.name,
+                       extension   = excluded.extension,
+                       size        = excluded.size,
+                       modified_at = excluded.modified_at,
+                       indexed_at  = excluded.indexed_at,
+                       category    = excluded.category",
                 )
                 .map_err(|e| format!("Failed to prepare replacement insert: {}", e))?;
             for file in files {
@@ -477,11 +499,23 @@ impl FileIndexDb {
             .and_then(|v| v.parse::<i64>().ok())
             .unwrap_or(0);
 
+        let stale_catchup_count = self
+            .get_meta(STALE_CATCHUP_COUNT_KEY)?
+            .and_then(|v| v.parse::<i64>().ok())
+            .unwrap_or(0);
+
+        let last_stale_catchup = self
+            .get_meta(LAST_STALE_CATCHUP_KEY)?
+            .and_then(|v| v.parse::<i64>().ok())
+            .unwrap_or(0);
+
         Ok(IndexStats {
             indexed_count,
             db_size_bytes,
             last_full_scan,
             is_watching,
+            stale_catchup_count,
+            last_stale_catchup,
         })
     }
 
@@ -490,7 +524,40 @@ impl FileIndexDb {
         let now = chrono::Utc::now().timestamp().to_string();
         self.set_meta("last_full_scan", &now)
     }
+
+    /// Record that an offline catch-up reconcile actually re-walked the index:
+    /// bumps the persisted counter and stamps the timestamp, atomically under a
+    /// single connection lock. This is the re-scan frequency telemetry that
+    /// gate (2) of the D3/USN NO-GO needs — see `REFONTE-PILIER-D-SEARCH.md`.
+    pub fn record_stale_catchup(&self) -> Result<(), String> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| format!("DB lock poisoned: {}", e))?;
+
+        conn.execute(
+            "INSERT INTO metadata(key, value) VALUES(?1, '1')
+             ON CONFLICT(key) DO UPDATE SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT)",
+            params![STALE_CATCHUP_COUNT_KEY],
+        )
+        .map_err(|e| format!("Failed to bump stale-catchup counter: {}", e))?;
+
+        let now = chrono::Utc::now().timestamp().to_string();
+        conn.execute(
+            "INSERT INTO metadata(key, value) VALUES(?1, ?2)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            params![LAST_STALE_CATCHUP_KEY, now],
+        )
+        .map_err(|e| format!("Failed to stamp stale-catchup timestamp: {}", e))?;
+
+        Ok(())
+    }
 }
+
+/// Metadata key: running count of offline catch-up reconciles.
+const STALE_CATCHUP_COUNT_KEY: &str = "stale_catchup_count";
+/// Metadata key: Unix timestamp of the last offline catch-up reconcile.
+const LAST_STALE_CATCHUP_KEY: &str = "last_stale_catchup";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -672,6 +739,22 @@ mod tests {
         assert_eq!(stats.indexed_count, 1);
         assert!(stats.last_full_scan > 0);
         assert!(!stats.is_watching);
+        // Never reconciled yet → telemetry starts at zero.
+        assert_eq!(stats.stale_catchup_count, 0);
+        assert_eq!(stats.last_stale_catchup, 0);
+    }
+
+    #[test]
+    fn record_stale_catchup_increments_and_stamps() {
+        let dir = tempdir().unwrap();
+        let db = FileIndexDb::open(dir.path().join("t.db")).unwrap();
+
+        db.record_stale_catchup().unwrap();
+        db.record_stale_catchup().unwrap();
+
+        let stats = db.get_stats(false).unwrap();
+        assert_eq!(stats.stale_catchup_count, 2);
+        assert!(stats.last_stale_catchup > 0);
     }
 
     #[test]

@@ -1,6 +1,6 @@
 
 import { logger } from '../../../../shared/utils/logger';
-import { Plugin, PluginContext, PluginResult, PluginResultType } from '../../types';
+import { Plugin, PluginActivation, PluginContext, PluginResult, PluginResultType } from '../../types';
 import { VOLT_EVENTS, emitVoltEvent } from '../../../../shared/events';
 
 export class SystemCommandsPlugin implements Plugin {
@@ -8,6 +8,17 @@ export class SystemCommandsPlugin implements Plugin {
   name = 'System Commands';
   description = 'Execute system commands like reload, settings, quit';
   enabled = true;
+
+  // `mode: 'custom'` — canHandle does type-ahead matching against command
+  // triggers/aliases (typing "set" matches "settings"); these keywords drive
+  // only the scoring boost.
+  activation: PluginActivation = {
+    mode: 'custom',
+    keywords: [
+      'about', 'account', 'reload', 'settings', 'quit', 'exit',
+      'preferences', 'config', 'options', 'restart', 'refresh',
+    ],
+  };
 
   private commands = [
     {

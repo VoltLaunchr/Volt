@@ -88,6 +88,9 @@ impl Default for GeneralSettings {
 #[ts(export, export_to = "AppearanceSettings.ts")]
 pub struct AppearanceSettings {
     pub theme: String,
+    #[serde(default = "default_window_effect")]
+    pub window_effect: String,
+    #[serde(default = "default_transparency")]
     pub transparency: f32,
     pub window_position: String,
     #[ts(optional)]
@@ -101,11 +104,20 @@ pub struct CustomPosition {
     pub y: i32,
 }
 
+fn default_window_effect() -> String {
+    "volt-glass".to_string()
+}
+
+fn default_transparency() -> f32 {
+    0.85
+}
+
 impl Default for AppearanceSettings {
     fn default() -> Self {
         Self {
             theme: "dark".to_string(),
-            transparency: 0.85,
+            window_effect: default_window_effect(),
+            transparency: default_transparency(),
             window_position: "center".to_string(),
             custom_position: None,
         }
@@ -142,6 +154,16 @@ pub struct IndexingSettings {
     pub index_on_startup: bool,
     #[serde(default)]
     pub deep_search: bool,
+    /// Re-walk the index on launch when the persisted snapshot is older than
+    /// this many seconds (the no-admin offline catch-up — see D3 in
+    /// `REFONTE-PILIER-D-SEARCH.md`). `0` disables the catch-up entirely.
+    #[serde(default = "default_stale_threshold_secs")]
+    pub stale_threshold_secs: u32,
+}
+
+/// Default offline-catch-up staleness threshold: one hour.
+pub fn default_stale_threshold_secs() -> u32 {
+    3600
 }
 
 /// Standard directory names that are always excluded from the file index.
@@ -200,6 +222,7 @@ impl Default for IndexingSettings {
             ],
             index_on_startup: true,
             deep_search: false,
+            stale_threshold_secs: default_stale_threshold_secs(),
         }
     }
 }
@@ -224,14 +247,24 @@ fn default_clipboard_retention_days() -> u32 {
 impl Default for PluginSettings {
     fn default() -> Self {
         Self {
+            // Canonical runtime plugin ids — must match `Plugin.id` and the
+            // frontend `MANAGED_PLUGINS` manifest. The frontend also normalises
+            // legacy ids on load, so stored installs migrate transparently.
             enabled_plugins: vec![
                 "calculator".to_string(),
-                "web-search".to_string(),
-                "system-commands".to_string(),
+                "websearch".to_string(),
+                "systemcommands".to_string(),
                 "timer".to_string(),
-                "system-monitor".to_string(),
-                "steam-games".to_string(),
-                "clipboard-manager".to_string(),
+                "system_monitor".to_string(),
+                "games".to_string(),
+                "clipboard".to_string(),
+                "emoji-picker".to_string(),
+                "notes".to_string(),
+                "snippets".to_string(),
+                "shellcommand".to_string(),
+                "quicklinks".to_string(),
+                "window-management".to_string(),
+                "developer-tools".to_string(),
             ],
             clipboard_monitoring: true,
             clipboard_retention_days: default_clipboard_retention_days(),
@@ -313,6 +346,58 @@ impl Default for ShellSettings {
     }
 }
 
+/// Global snippet expansion settings (Pilier E1).
+///
+/// Controls the system-wide `WH_KEYBOARD_LL` keyboard hook that expands
+/// `;trigger`-style snippets in any foreground application — a parallel
+/// mechanism to the in-app snippet plugin, which only operates on Volt's own
+/// search bar. Windows-only at runtime; on other platforms (or when the
+/// `snippet-global-expansion` Cargo feature is disabled) toggling `enabled`
+/// is a no-op.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "SnippetExpansionSettings.ts")]
+pub struct SnippetExpansionSettings {
+    /// Whether the global low-level keyboard hook is active. Defaults to
+    /// `false`: a system-wide keyboard hook is opt-in, never active by
+    /// default.
+    #[serde(default)]
+    pub enabled: bool,
+    /// Executable basenames (case-insensitive) in which expansion never
+    /// fires, e.g. password managers.
+    #[serde(default = "default_snippet_expansion_excluded_apps")]
+    pub excluded_apps: Vec<String>,
+    /// Maximum trigger length (in characters) the in-memory match buffer
+    /// retains. `u64`/`usize` over the wire are JSON numbers; override
+    /// ts-rs's default `bigint` mapping.
+    #[serde(default = "default_snippet_expansion_max_trigger_len")]
+    #[ts(type = "number")]
+    pub max_trigger_len: usize,
+}
+
+fn default_snippet_expansion_excluded_apps() -> Vec<String> {
+    vec![
+        "keepass".to_string(),
+        "1password".to_string(),
+        "bitwarden".to_string(),
+        "lastpass".to_string(),
+    ]
+}
+
+fn default_snippet_expansion_max_trigger_len() -> usize {
+    32
+}
+
+impl Default for SnippetExpansionSettings {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            excluded_apps: default_snippet_expansion_excluded_apps(),
+            max_trigger_len: default_snippet_expansion_max_trigger_len(),
+        }
+    }
+}
+
 /// Kind of action a fallback command performs when invoked.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, TS)]
 #[serde(rename_all = "camelCase")]
@@ -385,7 +470,7 @@ fn default_fallback_commands() -> Vec<FallbackCommand> {
         FallbackCommand {
             id: "fallback-duckduckgo".to_string(),
             label: "Search {rawQuery} on DuckDuckGo".to_string(),
-            icon: Some("globe".to_string()),
+            icon: Some("shield".to_string()),
             kind: FallbackKind::WebSearch,
             target: "https://duckduckgo.com/?q={query}".to_string(),
             enabled: true,
@@ -412,7 +497,7 @@ fn default_fallback_commands() -> Vec<FallbackCommand> {
         FallbackCommand {
             id: "fallback-perplexity".to_string(),
             label: "Ask Perplexity about {rawQuery}".to_string(),
-            icon: Some("message-circle".to_string()),
+            icon: Some("sparkles".to_string()),
             kind: FallbackKind::WebSearch,
             target: "https://www.perplexity.ai/search?q={query}".to_string(),
             enabled: false,
@@ -441,6 +526,12 @@ pub struct Settings {
     pub shell: ShellSettings,
     #[serde(default)]
     pub fallbacks: FallbacksSettings,
+    // `Settings` has no struct-level `rename_all`, and every other field
+    // here is a single word (camelCase-identical to snake_case), so this is
+    // the first field that actually needs an explicit rename to keep the
+    // wire format — and the generated `Settings.ts` — camelCase.
+    #[serde(default, rename = "snippetExpansion")]
+    pub snippet_expansion: SnippetExpansionSettings,
 }
 
 /// Get the settings file path
@@ -476,7 +567,38 @@ pub async fn load_settings(app_handle: AppHandle) -> VoltResult<Settings> {
     let content = fs::read_to_string(&settings_path)
         .map_err(|e| VoltError::FileSystem(format!("Failed to read settings file: {}", e)))?;
 
-    let mut settings: Settings = serde_json::from_str(&content)
+    let mut json_value: serde_json::Value = serde_json::from_str(&content)
+        .map_err(|e| VoltError::Serialization(format!("Failed to parse settings: {}", e)))?;
+
+    let mut needs_save = false;
+
+    // Migration: add `windowEffect` while preserving legacy `transparency` values.
+    if let Some(appearance) = json_value
+        .get_mut("appearance")
+        .and_then(|v| v.as_object_mut())
+    {
+        let should_default_window_effect = !appearance.contains_key("windowEffect")
+            || (appearance.get("windowEffect") == Some(&serde_json::Value::String("mica".into()))
+                && appearance.contains_key("transparency"));
+
+        if should_default_window_effect {
+            appearance.insert(
+                "windowEffect".into(),
+                serde_json::Value::String("volt-glass".into()),
+            );
+            needs_save = true;
+        }
+
+        if !appearance.contains_key("transparency") {
+            appearance.insert(
+                "transparency".into(),
+                serde_json::json!(default_transparency()),
+            );
+            needs_save = true;
+        }
+    }
+
+    let mut settings: Settings = serde_json::from_value(json_value)
         .map_err(|e| VoltError::Serialization(format!("Failed to parse settings: {}", e)))?;
 
     // Migration: the old Rust default was ["exe", "lnk"] which silently blocked all
@@ -488,7 +610,6 @@ pub async fn load_settings(app_handle: AppHandle) -> VoltResult<Settings> {
         && legacy_ext.iter().any(|e| e == "exe")
         && legacy_ext.iter().any(|e| e == "lnk");
 
-    let mut needs_save = false;
     if is_legacy_default {
         settings.indexing.file_extensions.clear();
         needs_save = true;
@@ -550,7 +671,10 @@ fn save_settings_to_file(path: &Path, settings: &Settings) -> VoltResult<()> {
 /// Generic helper to update a settings section
 /// Reduces code duplication across update_*_settings functions.
 /// Uses a mutex to serialize read-modify-write and prevent concurrent overwrites.
-async fn update_settings_section<F>(app_handle: AppHandle, update_fn: F) -> VoltResult<Settings>
+pub(crate) async fn update_settings_section<F>(
+    app_handle: AppHandle,
+    update_fn: F,
+) -> VoltResult<Settings>
 where
     F: FnOnce(&mut Settings),
 {

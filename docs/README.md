@@ -230,15 +230,15 @@ Volt/
 1. Read the [Plugin Development Guide](./plugins/DEVELOPMENT.md).
 2. Create `src/features/plugins/builtin/<your-plugin>/index.ts`.
 3. Register it in [`src/app/hooks/useAppLifecycle.ts`](../src/app/hooks/useAppLifecycle.ts).
-4. Test locally: `bun tauri dev`.
+4. Test locally: `pnpm run tauri -- dev`.
 5. Open a PR. Community extensions go in [`volt-extensions`](https://github.com/VoltLaunchr/volt-extensions) or through the **developer portal**.
 
 ### Validate before committing
 ```bash
-bun run lint               # 0 errors, 0 disabled rules
-bun run build              # tsc + Vite bundle
+pnpm run lint               # 0 errors, 0 disabled rules
+pnpm run build              # tsc + Vite bundle
 cd src-tauri && cargo check && cargo clippy -- -D warnings
-bun run test
+pnpm run test
 ```
 
 See the **Lint & Code Quality** section of [`CLAUDE.md`](../CLAUDE.md) — no `eslint-disable`, no `@ts-ignore`, no `as any`. Fix the code, not the rule.
@@ -246,7 +246,7 @@ See the **Lint & Code Quality** section of [`CLAUDE.md`](../CLAUDE.md) — no `e
 ### Editing docs
 1. Keep paths relative and verify links.
 2. Date updates with `_Last updated: YYYY-MM-DD_` when the file is feature-current.
-3. Run `bun prettier --write docs/` before submitting.
+3. Run `pnpm exec prettier --write docs/` before submitting.
 
 ---
 

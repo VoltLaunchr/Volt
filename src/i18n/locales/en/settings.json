@@ -18,7 +18,8 @@
     "shell": "Shell Commands",
     "emoji": "Emoji & Symbols",
     "ai": "AI",
-    "notes": "Notes"
+    "notes": "Notes",
+    "snippets": "Snippets"
   },
   "general": {
     "title": "General",
@@ -79,8 +80,15 @@
     "maxResults": "Max Results",
     "maxResultsDesc": "Maximum number of search results displayed",
     "results": "{{count}} results",
-    "windowTransparency": "Window Transparency",
-    "transparencyDesc": "Adjust the window background transparency",
+    "windowEffect": "Window material",
+    "windowEffectDesc": "Volt glass (default), native Windows backdrop, or solid",
+    "windowEffectVoltGlass": "Volt Glass",
+    "windowEffectMica": "Mica",
+    "windowEffectAcrylic": "Acrylic",
+    "windowEffectSolid": "Solid",
+    "windowTransparency": "Shell opacity",
+    "transparencyDesc": "Adjust glass tint and inner surfaces (50%–100%)",
+    "transparencySolidHint": "Disabled in solid mode — switch to Volt Glass, Mica or Acrylic",
     "theme": "Theme",
     "themeLight": "Light",
     "themeDark": "Dark",
@@ -129,6 +137,16 @@
     "title": "File Search",
     "indexOnStartup": "Index on Startup",
     "indexOnStartupDesc": "Automatically index files when Volt starts",
+    "staleThreshold": "Offline catch-up",
+    "staleThresholdDesc": "Re-scan on launch when the index is older than this (covers changes made while Volt was closed)",
+    "staleOptions": {
+      "15m": "After 15 minutes",
+      "30m": "After 30 minutes",
+      "1h": "After 1 hour",
+      "6h": "After 6 hours",
+      "24h": "After 24 hours",
+      "off": "Disabled"
+    },
     "foldersToIndex": "Folders to Index",
     "foldersToIndexDesc": "Directories to scan for files (e.g., Documents, Downloads)",
     "addFolder": "Add Folder",
@@ -149,6 +167,8 @@
       "active": "Active",
       "inactive": "Inactive",
       "never": "Never",
+      "catchupCount": "Offline catch-ups",
+      "lastCatchup": "Last catch-up",
       "rebuild": "Rebuild Index",
       "rebuildDesc": "Clears the database and re-scans all configured folders from scratch",
       "rebuilding": "Rebuilding…"
@@ -166,7 +186,12 @@
       "games": "Games",
       "clipboardHistory": "Clipboard History",
       "quicklinks": "Quicklinks",
-      "windowManagement": "Window Management"
+      "windowManagement": "Window Management",
+      "emoji": "Emoji Picker",
+      "notes": "Notes",
+      "snippets": "Snippets",
+      "shell": "Shell Commands",
+      "developerTools": "Developer Tools"
     }
   },
   "clipboard": {
@@ -209,6 +234,51 @@
     "clearHistoryDesc": "Remove all saved shell command history",
     "clear": "Clear",
     "clearFailed": "Failed to clear shell history"
+  },
+  "snippetExpansion": {
+    "title": "Snippets",
+    "infoText": "In-app snippets are triggered by typing the",
+    "infoTextSuffix": "prefix in Volt's search bar. The setting below is a separate, global mechanism that expands the same triggers system-wide, in any application.",
+    "globalSectionTitle": "Global Expansion",
+    "enabled": "Enable Global Expansion",
+    "enabledDesc": "Expand snippet triggers anywhere on Windows, not just in Volt",
+    "maxTriggerLen": "Max Trigger Length",
+    "maxTriggerLenDesc": "Longest trigger the system-wide watcher tracks, in characters",
+    "excludedApps": "Excluded Applications",
+    "excludedAppsDesc": "Global expansion never fires while one of these apps is focused",
+    "excludedAppsPrompt": "Enter executable name to exclude (e.g. keepass):",
+    "addApp": "Add",
+    "noExcludedApps": "No applications excluded"
+  },
+  "snippetsManager": {
+    "title": "Your Snippets",
+    "subtitle": "Manage the triggers and content used by in-app and global expansion",
+    "add": "New Snippet",
+    "edit": "Edit snippet",
+    "delete": "Delete snippet",
+    "loading": "Loading snippets…",
+    "empty": "No snippets yet. Create your first one.",
+    "loadError": "Failed to load snippets",
+    "createError": "Failed to create snippet",
+    "updateError": "Failed to update snippet",
+    "deleteError": "Failed to delete snippet",
+    "confirmDelete": "Delete the snippet \"{{trigger}}\"? This cannot be undone.",
+    "createTitle": "New Snippet",
+    "editTitle": "Edit Snippet",
+    "triggerLabel": "Trigger",
+    "triggerPlaceholder": ";sig",
+    "triggerHint": "Include the prefix you'll type to expand it, e.g. \";sig\"",
+    "contentLabel": "Content",
+    "contentPlaceholder": "Text to insert when the trigger is typed",
+    "contentHint": "Supports {date}, {time}, {datetime}, {clipboard}, and {random} variables",
+    "categoryLabel": "Category",
+    "categoryPlaceholder": "Optional",
+    "descriptionLabel": "Description",
+    "descriptionPlaceholder": "Optional",
+    "enabledLabel": "Enabled",
+    "cancel": "Cancel",
+    "save": "Save",
+    "saving": "Saving…"
   },
   "integrations": {
     "title": "Integrations",
@@ -324,6 +394,18 @@
       "cancel": "Cancel",
       "save": "Save",
       "saving": "Saving…"
+    },
+    "local": {
+      "title": "Local model",
+      "description": "Run models on your machine with Ollama or LM Studio — no API key. Volt connects to your OpenAI-compatible endpoint.",
+      "baseUrl": "Endpoint URL",
+      "model": "Model",
+      "modelPlaceholder": "e.g. llama3.1",
+      "hint": "Ollama: http://localhost:11434/v1 · LM Studio: http://localhost:1234/v1",
+      "save": "Save",
+      "saved": "Saved",
+      "remove": "Remove",
+      "configured": "Configured"
     },
     "profile": {
       "title": "Profile",

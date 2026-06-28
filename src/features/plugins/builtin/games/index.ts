@@ -1,7 +1,7 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import { logger } from '../../../../shared/utils/logger';
-import { Plugin, PluginContext, PluginResult, PluginResultType } from '../../types';
+import { Plugin, PluginActivation, PluginContext, PluginResult, PluginResultType } from '../../types';
 
 export interface GameInfo {
   id: string;
@@ -35,6 +35,13 @@ export class GamesPlugin implements Plugin {
   name = 'Games';
   description = 'Search and launch games from all platforms';
   enabled = true;
+
+  // `mode: 'custom'` — canHandle keeps its keyword/platform-prefix logic; these
+  // keywords drive the scoring boost (query starting with game/steam/epic/…).
+  activation: PluginActivation = {
+    mode: 'custom',
+    keywords: ['game', 'games', 'jeu', 'jeux', 'play', 'steam', 'epic', 'gog'],
+  };
 
   private gamesCache: GameInfo[] | null = null;
   private lastCacheTime = 0;

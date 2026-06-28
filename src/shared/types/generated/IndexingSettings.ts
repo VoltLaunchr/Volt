@@ -3,4 +3,10 @@
 /**
  * Indexing settings
  */
-export type IndexingSettings = { folders: Array<string>, excludedPaths: Array<string>, fileExtensions: Array<string>, indexOnStartup: boolean, deepSearch: boolean, };
+export type IndexingSettings = { folders: Array<string>, excludedPaths: Array<string>, fileExtensions: Array<string>, indexOnStartup: boolean, deepSearch: boolean, 
+/**
+ * Re-walk the index on launch when the persisted snapshot is older than
+ * this many seconds (the no-admin offline catch-up — see D3 in
+ * `REFONTE-PILIER-D-SEARCH.md`). `0` disables the catch-up entirely.
+ */
+staleThresholdSecs: number, };

@@ -87,7 +87,8 @@ vi.mock('../../features/plugins/core', () => ({
 
 vi.mock('../../features/settings', () => ({
   applyTheme: vi.fn(),
-  applyTransparency: vi.fn(),
+  applyWindowEffect: vi.fn(),
+  applyWindowOpacity: vi.fn(),
   setupThemeListener: vi.fn(() => vi.fn()),
   settingsService: {
     loadSettings: mocks.loadSettings,
@@ -218,9 +219,11 @@ describe('useAppLifecycle file watcher', () => {
     expect(mockInvoke.mock.calls.map(([command]) => command)).toEqual([
       'start_indexing',
       'start_file_watcher',
+      'refresh_index_if_stale',
       'stop_file_watcher',
       'start_indexing',
       'start_file_watcher',
+      'refresh_index_if_stale',
       'stop_file_watcher',
     ]);
     expect(initialProgress?.unlisten).toHaveBeenCalled();

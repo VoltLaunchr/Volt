@@ -1,5 +1,6 @@
 
-import { Plugin, PluginContext, PluginResult, PluginResultType } from '../../types';
+import { Plugin, PluginActivation, PluginContext, PluginResult, PluginResultType } from '../../types';
+import { resolveActivation } from '../../core/activation';
 import { timerStore } from './timerStore';
 import { VOLT_EVENTS, emitVoltEvent } from '../../../../shared/events';
 
@@ -69,15 +70,13 @@ export class TimerPlugin implements Plugin {
   readonly description = 'Quick timers and Pomodoro countdowns with notifications';
   readonly enabled = true;
 
+  // `timer`/`countdown`/`pomodoro` keywords (match() parses the duration itself).
+  readonly activation: PluginActivation = {
+    keywords: ['timer', 'countdown', 'pomodoro'],
+  };
+
   canHandle(context: PluginContext): boolean {
-    const lower = context.query.toLowerCase().trim();
-    return (
-      lower.startsWith('timer ') ||
-      lower.startsWith('countdown ') ||
-      lower.startsWith('pomodoro') ||
-      lower === 'timer' ||
-      lower === 'countdown'
-    );
+    return resolveActivation(this, context).matched;
   }
 
   match(context: PluginContext): PluginResult[] {

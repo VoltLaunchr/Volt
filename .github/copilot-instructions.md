@@ -5,14 +5,14 @@
 - Volt is a Tauri v2 desktop launcher: React/Vite frontend + Rust backend.
 - Entrypoints: frontend [src/main.tsx](../src/main.tsx) → [src/app/App.tsx](../src/app/App.tsx); backend [src-tauri/src/main.rs](../src-tauri/src/main.rs) → `volt_lib::run()` in [src-tauri/src/lib.rs](../src-tauri/src/lib.rs)
 
-## Dev workflows (use Bun)
+## Dev workflows (use pnpm)
 
-- Install: `bun install`
-- Full app dev (recommended): `bun tauri dev`
-- Frontend only (Vite on 1420): `bun run dev`
-- Build: `bun run build` (web) and `bun tauri build` (desktop bundle)
-- Lint: `bun run lint`
-- Format: `bun prettier --write .`
+- Install: `pnpm install`
+- Full app dev (recommended): `pnpm run tauri -- dev`
+- Frontend only (Vite on 1420): `pnpm run dev`
+- Build: `pnpm run build` (web) and `pnpm run tauri -- build` (desktop bundle)
+- Lint: `pnpm run lint`
+- Format: `pnpm exec prettier --write .`
 
 ## Where things live
 

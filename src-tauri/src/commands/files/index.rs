@@ -346,6 +346,148 @@ impl Drop for IndexingGuard {
     }
 }
 
+/// Parameters for [`reconcile`], the scan→persist→swap sequence shared by
+/// `start_indexing`, `invalidate_index`, and `refresh_index_if_stale`.
+struct ReconcileParams {
+    config: IndexConfig,
+    files_arc: Arc<Mutex<Arc<Vec<FileInfo>>>>,
+    file_lookup_arc: Arc<Mutex<Arc<HashMap<String, usize>>>>,
+    status_arc: Arc<Mutex<IndexStatus>>,
+    db_arc: Arc<Option<FileIndexDb>>,
+    #[cfg(feature = "tantivy-search")]
+    fulltext_arc: Option<Arc<FulltextIndex>>,
+    /// `Some` only for `start_indexing`, the sole caller that reports progress
+    /// over `indexing-progress`; the other two callers stay silent, as today.
+    app_handle: Option<AppHandle>,
+    /// Cosmetic label for logs and the Tantivy rebuild call ("full scan",
+    /// "rebuild", "stale catch-up").
+    label: &'static str,
+    /// `true` only for `refresh_index_if_stale`: bumps the offline catch-up
+    /// telemetry counter (Vague 3.2 — feeds the D3/USN reconsideration gate).
+    record_catchup_telemetry: bool,
+}
+
+/// Re-walk the filesystem, persist to SQLite, rebuild the Tantivy index, swap
+/// the in-memory cache, update `IndexStatus`, and emit progress if requested.
+///
+/// This is the sequence duplicated identically across `start_indexing`'s full
+/// scan, `invalidate_index`'s rebuild, and `refresh_index_if_stale`'s offline
+/// catch-up. Each caller keeps its own pre-scan decision logic (TOCTOU guard,
+/// SQLite fast-path, staleness checks, watcher stop) and only delegates this
+/// shared tail to `reconcile`.
+///
+/// `is_indexing` is reset to `false` explicitly on success (same lock
+/// acquisition as the other status fields, matching prior behaviour) but
+/// deliberately *not* in the error/panic arms: the caller's `IndexingGuard`
+/// already clears it on `Drop` regardless of how the spawned future ends —
+/// the only mechanism `refresh_index_if_stale` ever relied on.
+async fn reconcile(params: ReconcileParams) {
+    let ReconcileParams {
+        config,
+        files_arc,
+        file_lookup_arc,
+        status_arc,
+        db_arc,
+        #[cfg(feature = "tantivy-search")]
+        fulltext_arc,
+        app_handle,
+        label,
+        record_catchup_telemetry,
+    } = params;
+
+    // `scan_files` is a synchronous, deeply recursive filesystem walk that can
+    // take tens of seconds on large drives. Offload to the blocking pool so it
+    // never starves the async runtime (IPC / hotkey / UI events).
+    let scan_result = tokio::task::spawn_blocking(move || scan_files(&config)).await;
+
+    match scan_result {
+        Ok(Ok(scanned_files)) => {
+            let file_count = scanned_files.len();
+
+            #[cfg(feature = "tantivy-search")]
+            mark_fulltext_dirty(db_arc.as_ref().as_ref());
+            let _persisted = if let Some(db) = db_arc.as_ref() {
+                match db.replace_files(&scanned_files) {
+                    Ok(()) => {
+                        if let Err(e) = db.mark_full_scan() {
+                            warn!("{}: mark_full_scan failed: {}", label, e);
+                        }
+                        if record_catchup_telemetry && let Err(e) = db.record_stale_catchup() {
+                            warn!("{}: record_stale_catchup failed: {}", label, e);
+                        }
+                        true
+                    }
+                    Err(e) => {
+                        warn!("{}: persist failed: {}", label, e);
+                        false
+                    }
+                }
+            } else {
+                false
+            };
+
+            #[cfg(feature = "tantivy-search")]
+            rebuild_fulltext_index(
+                fulltext_arc.as_ref(),
+                _persisted.then(|| db_arc.as_ref().as_ref()).flatten(),
+                &scanned_files,
+                label,
+            );
+
+            // Update in-memory cache and its Tantivy hit lookup atomically.
+            replace_file_cache(&files_arc, &file_lookup_arc, scanned_files);
+
+            if let Ok(mut status) = status_arc.lock() {
+                status.is_indexing = false;
+                status.total_files = file_count;
+                status.indexed_files = file_count;
+                status.last_updated = chrono::Utc::now().timestamp();
+            }
+
+            info!("{}: complete, {} files indexed", label, file_count);
+            if let Some(app_handle) = app_handle.as_ref() {
+                let _ = app_handle.emit(
+                    "indexing-progress",
+                    IndexingProgress {
+                        phase: "complete".to_string(),
+                        indexed_files: file_count,
+                        total_files: file_count,
+                        is_complete: true,
+                    },
+                );
+            }
+        }
+        Ok(Err(e)) => {
+            error!("{}: scan failed: {}", label, e);
+            if let Some(app_handle) = app_handle.as_ref() {
+                let _ = app_handle.emit(
+                    "indexing-progress",
+                    IndexingProgress {
+                        phase: "error".to_string(),
+                        indexed_files: 0,
+                        total_files: 0,
+                        is_complete: true,
+                    },
+                );
+            }
+        }
+        Err(join_err) => {
+            error!("{}: task panicked or was cancelled: {}", label, join_err);
+            if let Some(app_handle) = app_handle.as_ref() {
+                let _ = app_handle.emit(
+                    "indexing-progress",
+                    IndexingProgress {
+                        phase: "error".to_string(),
+                        indexed_files: 0,
+                        total_files: 0,
+                        is_complete: true,
+                    },
+                );
+            }
+        }
+    }
+}
+
 /// Starts file indexing based on settings.
 ///
 /// On the first call the DB is empty so a full scan runs.  On subsequent
@@ -492,99 +634,19 @@ pub async fn start_indexing(
         }
 
         // --- Full scan ---
-        // `scan_files` is a synchronous, deeply recursive filesystem walk that
-        // can take tens of seconds on large drives. Running it directly inside
-        // the async task would block a Tokio worker thread and starve IPC /
-        // hotkey / UI events. Offload to the blocking thread pool.
-        let scan_result = tokio::task::spawn_blocking(move || scan_files(&config)).await;
-
-        match scan_result {
-            Ok(Ok(scanned_files)) => {
-                let file_count = scanned_files.len();
-
-                // Persist to SQLite.
-                #[cfg(feature = "tantivy-search")]
-                mark_fulltext_dirty(db_arc.as_ref().as_ref());
-                let _persistence_succeeded = if let Some(db) = db_arc.as_ref() {
-                    match db.replace_files(&scanned_files) {
-                        Ok(()) => {
-                            if let Err(e) = db.mark_full_scan() {
-                                warn!("Failed to mark full scan: {}", e);
-                            }
-                            true
-                        }
-                        Err(e) => {
-                            warn!("Failed to persist index to DB: {}", e);
-                            false
-                        }
-                    }
-                } else {
-                    false
-                };
-
-                #[cfg(feature = "tantivy-search")]
-                rebuild_fulltext_index(
-                    fulltext_arc.as_ref(),
-                    _persistence_succeeded
-                        .then(|| db_arc.as_ref().as_ref())
-                        .flatten(),
-                    &scanned_files,
-                    "full scan",
-                );
-
-                // Update in-memory cache and its Tantivy hit lookup atomically.
-                replace_file_cache(&files_arc, &file_lookup_arc, scanned_files);
-
-                // Update status
-                if let Ok(mut status) = status_arc.lock() {
-                    status.is_indexing = false;
-                    status.total_files = file_count;
-                    status.indexed_files = file_count;
-                    status.last_updated = chrono::Utc::now().timestamp();
-                }
-
-                info!("Full scan complete: {} files indexed", file_count);
-                let _ = app_handle.emit(
-                    "indexing-progress",
-                    IndexingProgress {
-                        phase: "complete".to_string(),
-                        indexed_files: file_count,
-                        total_files: file_count,
-                        is_complete: true,
-                    },
-                );
-            }
-            Ok(Err(e)) => {
-                error!("Indexing failed: {}", e);
-                let _ = app_handle.emit(
-                    "indexing-progress",
-                    IndexingProgress {
-                        phase: "error".to_string(),
-                        indexed_files: 0,
-                        total_files: 0,
-                        is_complete: true,
-                    },
-                );
-                if let Ok(mut status) = status_arc.lock() {
-                    status.is_indexing = false;
-                }
-            }
-            Err(join_err) => {
-                error!("Indexing task panicked or was cancelled: {}", join_err);
-                let _ = app_handle.emit(
-                    "indexing-progress",
-                    IndexingProgress {
-                        phase: "error".to_string(),
-                        indexed_files: 0,
-                        total_files: 0,
-                        is_complete: true,
-                    },
-                );
-                if let Ok(mut status) = status_arc.lock() {
-                    status.is_indexing = false;
-                }
-            }
-        }
+        reconcile(ReconcileParams {
+            config,
+            files_arc,
+            file_lookup_arc,
+            status_arc,
+            db_arc,
+            #[cfg(feature = "tantivy-search")]
+            fulltext_arc,
+            app_handle: Some(app_handle),
+            label: "full scan",
+            record_catchup_telemetry: false,
+        })
+        .await;
     });
 
     if let Ok(mut task) = state.scan_task.lock() {
@@ -1129,66 +1191,19 @@ pub async fn invalidate_index(
         // whether the future completes normally, panics, or is aborted.
         let _guard = IndexingGuard::new(guard_status);
 
-        // Offload the blocking filesystem walk to the dedicated thread pool.
-        let scan_result = tokio::task::spawn_blocking(move || scan_files(&config)).await;
-
-        match scan_result {
-            Ok(Ok(scanned_files)) => {
-                let file_count = scanned_files.len();
-
-                #[cfg(feature = "tantivy-search")]
-                mark_fulltext_dirty(db_arc.as_ref().as_ref());
-                let _persistence_succeeded = if let Some(db) = db_arc.as_ref() {
-                    match db.replace_files(&scanned_files) {
-                        Ok(()) => {
-                            if let Err(e) = db.mark_full_scan() {
-                                warn!("Failed to mark full scan: {}", e);
-                            }
-                            true
-                        }
-                        Err(e) => {
-                            warn!("Failed to persist rebuilt index: {}", e);
-                            false
-                        }
-                    }
-                } else {
-                    false
-                };
-
-                #[cfg(feature = "tantivy-search")]
-                rebuild_fulltext_index(
-                    fulltext_arc.as_ref(),
-                    _persistence_succeeded
-                        .then(|| db_arc.as_ref().as_ref())
-                        .flatten(),
-                    &scanned_files,
-                    "rebuild",
-                );
-
-                replace_file_cache(&files_arc, &file_lookup_arc, scanned_files);
-
-                if let Ok(mut status) = status_arc.lock() {
-                    status.is_indexing = false;
-                    status.total_files = file_count;
-                    status.indexed_files = file_count;
-                    status.last_updated = chrono::Utc::now().timestamp();
-                }
-
-                info!("Index rebuilt: {} files", file_count);
-            }
-            Ok(Err(e)) => {
-                error!("Index rebuild failed: {}", e);
-                if let Ok(mut status) = status_arc.lock() {
-                    status.is_indexing = false;
-                }
-            }
-            Err(join_err) => {
-                error!("Index rebuild task panicked or was cancelled: {}", join_err);
-                if let Ok(mut status) = status_arc.lock() {
-                    status.is_indexing = false;
-                }
-            }
-        }
+        reconcile(ReconcileParams {
+            config,
+            files_arc,
+            file_lookup_arc,
+            status_arc,
+            db_arc,
+            #[cfg(feature = "tantivy-search")]
+            fulltext_arc,
+            app_handle: None,
+            label: "rebuild",
+            record_catchup_telemetry: false,
+        })
+        .await;
     });
 
     if let Ok(mut task) = state.scan_task.lock() {
@@ -1227,6 +1242,8 @@ pub async fn get_db_index_stats(
                 db_size_bytes: 0,
                 last_full_scan: 0,
                 is_watching,
+                stale_catchup_count: 0,
+                last_stale_catchup: 0,
             })
         }
     })
@@ -1332,6 +1349,110 @@ pub async fn stop_file_watcher(watcher_state: State<'_, WatcherState>) -> VoltRe
         }
         *handle = None;
     }
+    Ok(())
+}
+
+/// Background catch-up reconcile for filesystem changes made while Volt — and
+/// therefore its live `notify` watcher — were not running.
+///
+/// The watcher only observes changes that happen *while Volt runs*; on launch
+/// the fast path in [`start_indexing`] serves the persisted SQLite snapshot
+/// instantly without re-walking. A file created, deleted, or moved while Volt
+/// was closed therefore stays stale in the index until the indexing config
+/// changes. This command closes that gap cheaply: if the last full scan is
+/// older than `stale_secs`, it re-walks the configured folders on the blocking
+/// pool and atomically swaps the index (SQLite + in-memory + Tantivy).
+///
+/// This is the deliberate no-admin alternative to a USN-journal catch-up — see
+/// the D3 NO-GO decision record in `REFONTE-PILIER-D-SEARCH.md`.
+///
+/// Returns immediately. The reconcile runs detached and **silently** — it does
+/// not emit the `indexing-progress` spinner phases, so the UI stays calm. It is
+/// a cheap no-op when the index is fresh, when a scan is already in flight, when
+/// there is no DB, or when no folders are configured.
+#[tauri::command]
+pub async fn refresh_index_if_stale(
+    state: State<'_, FileIndexState>,
+    stale_secs: i64,
+) -> VoltResult<()> {
+    // The index age lives in the DB; without persistence there is nothing to
+    // reconcile against (the in-memory cache is already authoritative).
+    let last_full_scan = match state.db.as_ref() {
+        Some(db) => db
+            .get_meta("last_full_scan")
+            .ok()
+            .flatten()
+            .and_then(|s| s.parse::<i64>().ok())
+            .unwrap_or(0),
+        None => return Ok(()),
+    };
+
+    // `last_full_scan == 0` means no full scan has ever completed; in that case
+    // `start_indexing` is responsible for the first scan, not the catch-up.
+    if last_full_scan == 0 {
+        return Ok(());
+    }
+    let now = chrono::Utc::now().timestamp();
+    if now.saturating_sub(last_full_scan) < stale_secs.max(0) {
+        return Ok(()); // fresh enough
+    }
+
+    let config = {
+        let cfg = state
+            .config
+            .lock()
+            .map_err(|e| VoltError::Unknown(e.to_string()))?;
+        cfg.clone()
+    };
+    if config.folders.is_empty() {
+        return Ok(());
+    }
+
+    // Atomically claim the indexing flag so we never double-scan against a
+    // concurrent `start_indexing` or a prior catch-up still in flight.
+    {
+        let mut status = state
+            .status
+            .lock()
+            .map_err(|e| VoltError::Unknown(e.to_string()))?;
+        if status.is_indexing {
+            return Ok(());
+        }
+        status.is_indexing = true;
+    }
+
+    let files_arc = state.files.clone();
+    let file_lookup_arc = state.file_lookup.clone();
+    let status_arc = state.status.clone();
+    let db_arc = state.db.clone();
+    #[cfg(feature = "tantivy-search")]
+    let fulltext_arc = state.fulltext.clone();
+
+    // Detached reconcile so the command returns immediately. The guard clears
+    // `is_indexing` whatever happens (success, scan error, or task panic).
+    //
+    // A live watcher may apply an upsert in the tiny window between this scan
+    // and the cache swap inside `reconcile`; that is acceptable — the scan
+    // reflects current disk truth and is authoritative, and any racing
+    // watcher event is re-applied on its next flush.
+    tokio::spawn(async move {
+        let _guard = IndexingGuard::new(status_arc.clone());
+
+        reconcile(ReconcileParams {
+            config,
+            files_arc,
+            file_lookup_arc,
+            status_arc,
+            db_arc,
+            #[cfg(feature = "tantivy-search")]
+            fulltext_arc,
+            app_handle: None,
+            label: "stale catch-up",
+            record_catchup_telemetry: true,
+        })
+        .await;
+    });
+
     Ok(())
 }
 

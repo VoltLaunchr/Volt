@@ -1,4 +1,4 @@
-import { Plugin, PluginContext, PluginResult, PluginResultType } from '../../types';
+import { Plugin, PluginActivation, PluginContext, PluginResult, PluginResultType } from '../../types';
 import { VOLT_EVENTS, emitVoltEvent } from '../../../../shared/events';
 
 export class DeveloperCommandsPlugin implements Plugin {
@@ -6,6 +6,13 @@ export class DeveloperCommandsPlugin implements Plugin {
   name = 'Developer';
   description = 'Developer tools: create and manage extensions';
   enabled = true;
+
+  // `mode: 'custom'` — canHandle does type-ahead matching against command
+  // triggers/aliases; these keywords drive only the scoring boost.
+  activation: PluginActivation = {
+    mode: 'custom',
+    keywords: ['developer', 'dev', 'extension', 'extensions', 'create', 'manage', 'scaffold'],
+  };
 
   private commands = [
     {

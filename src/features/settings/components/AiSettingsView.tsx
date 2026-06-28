@@ -1,9 +1,15 @@
 import { invoke } from '@tauri-apps/api/core';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Eye, EyeOff, ExternalLink, Plus, Trash2, CheckCircle, XCircle, Loader } from 'lucide-react';
+import { Eye, EyeOff, ExternalLink, Plus, Trash2, CheckCircle, XCircle, Loader, Cpu } from 'lucide-react';
 import { AiProfileSection } from '../../ai-profile';
 import { QuickActionsSection } from '../../ai-quick-actions';
+import {
+  DEFAULT_LOCAL_BASE_URL,
+  clearLocalConfig,
+  loadLocalConfig,
+  saveLocalConfig,
+} from '../../plugins/builtin/ai-chat/lib/localProvider';
 
 interface ProviderStatus {
   provider: string;
@@ -356,6 +362,178 @@ function AddKeyModal({ onClose, onSaved, initialProvider }: AddKeyModalProps) {
   );
 }
 
+/**
+ * Local model provider (Ollama / LM Studio). No API key — the endpoint + model id
+ * persist renderer-side via `localProvider` and are forwarded per-request through
+ * the AI proxy (Pari B). Saving fires a cross-window `storage` event so an open
+ * chat window picks up the change immediately.
+ */
+function LocalModelSection() {
+  const { t } = useTranslation('settings');
+  const [baseUrl, setBaseUrl] = useState(DEFAULT_LOCAL_BASE_URL);
+  const [model, setModel] = useState('');
+  const [configured, setConfigured] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    const cfg = loadLocalConfig();
+    if (cfg) {
+      setBaseUrl(cfg.baseUrl);
+      setModel(cfg.model);
+      setConfigured(true);
+    }
+  }, []);
+
+  const canSave = baseUrl.trim().length > 0 && model.trim().length > 0;
+
+  const handleSave = useCallback(() => {
+    if (!canSave) return;
+    saveLocalConfig({ baseUrl: baseUrl.trim(), model: model.trim() });
+    setConfigured(true);
+    setSaved(true);
+    globalThis.setTimeout(() => setSaved(false), 1500);
+  }, [baseUrl, model, canSave]);
+
+  const handleRemove = useCallback(() => {
+    clearLocalConfig();
+    setConfigured(false);
+    setModel('');
+    setBaseUrl(DEFAULT_LOCAL_BASE_URL);
+  }, []);
+
+  const inputStyle: React.CSSProperties = {
+    width: '100%',
+    boxSizing: 'border-box',
+    padding: '9px 12px',
+    borderRadius: 8,
+    border: '1.5px solid var(--color-hairline)',
+    background: 'var(--color-canvas)',
+    color: 'var(--color-ink)',
+    fontSize: 13,
+    fontFamily: 'monospace',
+    outline: 'none',
+  };
+  const labelStyle: React.CSSProperties = {
+    display: 'block',
+    marginBottom: 4,
+    fontSize: 12,
+    color: 'var(--color-mute)',
+    fontWeight: 500,
+  };
+
+  return (
+    <div
+      style={{
+        marginTop: 16,
+        background: 'var(--color-surface)',
+        borderRadius: 12,
+        border: '1px solid var(--color-hairline)',
+        overflow: 'hidden',
+      }}
+    >
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
+          padding: '12px 16px',
+          borderBottom: '1px solid var(--color-hairline)',
+        }}
+      >
+        <Cpu size={16} style={{ color: 'var(--color-accent)' }} />
+        <span style={{ flex: 1, fontSize: 13, fontWeight: 600, color: 'var(--color-ink)' }}>
+          {t('ai.local.title')}
+        </span>
+        {configured && (
+          <span
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 4,
+              fontSize: 12,
+              color: '#22c55e',
+              background: 'rgba(34,197,94,0.1)',
+              padding: '3px 8px',
+              borderRadius: 20,
+            }}
+          >
+            <CheckCircle size={11} />
+            {t('ai.local.configured')}
+          </span>
+        )}
+      </div>
+
+      <div style={{ padding: '16px' }}>
+        <p style={{ margin: '0 0 16px', fontSize: 12, color: 'var(--color-mute)', lineHeight: 1.6 }}>
+          {t('ai.local.description')}
+        </p>
+
+        <label style={labelStyle}>{t('ai.local.baseUrl')}</label>
+        <input
+          value={baseUrl}
+          onChange={(e) => setBaseUrl(e.target.value)}
+          placeholder={DEFAULT_LOCAL_BASE_URL}
+          spellCheck={false}
+          style={{ ...inputStyle, marginBottom: 12 }}
+        />
+
+        <label style={labelStyle}>{t('ai.local.model')}</label>
+        <input
+          value={model}
+          onChange={(e) => setModel(e.target.value)}
+          placeholder={t('ai.local.modelPlaceholder')}
+          spellCheck={false}
+          style={inputStyle}
+        />
+
+        <p style={{ margin: '8px 0 0', fontSize: 11, color: 'var(--color-mute)', lineHeight: 1.5 }}>
+          {t('ai.local.hint')}
+        </p>
+
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
+          {configured && (
+            <button
+              onClick={handleRemove}
+              style={{
+                padding: '8px 14px',
+                borderRadius: 8,
+                border: '1.5px solid var(--color-hairline)',
+                background: 'none',
+                color: 'var(--color-accent-red)',
+                fontSize: 13,
+                cursor: 'pointer',
+              }}
+            >
+              {t('ai.local.remove')}
+            </button>
+          )}
+          <button
+            onClick={handleSave}
+            disabled={!canSave}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              padding: '8px 14px',
+              borderRadius: 8,
+              border: 'none',
+              background: 'var(--color-accent)',
+              color: '#fff',
+              fontSize: 13,
+              fontWeight: 500,
+              cursor: canSave ? 'pointer' : 'not-allowed',
+              opacity: canSave ? 1 : 0.5,
+            }}
+          >
+            {saved ? <CheckCircle size={13} /> : null}
+            {saved ? t('ai.local.saved') : t('ai.local.save')}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function AiSettingsView() {
   const { t } = useTranslation('settings');
   const [statuses, setStatuses] = useState<ProviderStatus[]>([]);
@@ -620,6 +798,9 @@ export function AiSettingsView() {
             </div>
           )}
         </div>
+
+        {/* Local model provider (Ollama / LM Studio) — no API key */}
+        <LocalModelSection />
 
         {/* AI Profile (personalization prefix for AI Chat) */}
         <AiProfileSection />

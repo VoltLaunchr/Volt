@@ -18,7 +18,8 @@
     "shell": "Commandes Shell",
     "emoji": "Emoji & Symboles",
     "ai": "IA",
-    "notes": "Notes"
+    "notes": "Notes",
+    "snippets": "Snippets"
   },
   "general": {
     "title": "Général",
@@ -79,8 +80,15 @@
     "maxResults": "Nombre de résultats max",
     "maxResultsDesc": "Nombre maximum de résultats de recherche affichés",
     "results": "{{count}} résultats",
-    "windowTransparency": "Transparence de la fenêtre",
-    "transparencyDesc": "Ajuster la transparence de l'arrière-plan de la fenêtre",
+    "windowEffect": "Matériau de fenêtre",
+    "windowEffectDesc": "Volt glass (défaut), fond Windows natif ou opaque",
+    "windowEffectVoltGlass": "Volt Glass",
+    "windowEffectMica": "Mica",
+    "windowEffectAcrylic": "Acrylique",
+    "windowEffectSolid": "Opaque",
+    "windowTransparency": "Opacité du shell",
+    "transparencyDesc": "Ajuster la teinte glass et les surfaces internes (50 %–100 %)",
+    "transparencySolidHint": "Désactivé en mode opaque — choisir Volt Glass, Mica ou Acrylique",
     "theme": "Thème",
     "themeLight": "Clair",
     "themeDark": "Sombre",
@@ -129,6 +137,16 @@
     "title": "Recherche de fichiers",
     "indexOnStartup": "Indexer au démarrage",
     "indexOnStartupDesc": "Indexer automatiquement les fichiers au démarrage de Volt",
+    "staleThreshold": "Rattrapage hors-ligne",
+    "staleThresholdDesc": "Réanalyser au lancement quand l'index est plus ancien que ce délai (couvre les changements faits app fermée)",
+    "staleOptions": {
+      "15m": "Après 15 minutes",
+      "30m": "Après 30 minutes",
+      "1h": "Après 1 heure",
+      "6h": "Après 6 heures",
+      "24h": "Après 24 heures",
+      "off": "Désactivé"
+    },
     "foldersToIndex": "Dossiers à indexer",
     "foldersToIndexDesc": "Répertoires à analyser pour les fichiers (ex. : Documents, Téléchargements)",
     "addFolder": "Ajouter un dossier",
@@ -149,6 +167,8 @@
       "active": "Actif",
       "inactive": "Inactif",
       "never": "Jamais",
+      "catchupCount": "Rattrapages hors-ligne",
+      "lastCatchup": "Dernier rattrapage",
       "rebuild": "Reconstruire l'index",
       "rebuildDesc": "Efface la base de données et réanalyse tous les dossiers configurés",
       "rebuilding": "Reconstruction…"
@@ -166,7 +186,12 @@
       "games": "Jeux",
       "clipboardHistory": "Historique du presse-papiers",
       "quicklinks": "Quicklinks",
-      "windowManagement": "Gestion des fenêtres"
+      "windowManagement": "Gestion des fenêtres",
+      "emoji": "Sélecteur d'emoji",
+      "notes": "Notes",
+      "snippets": "Snippets",
+      "shell": "Commandes shell",
+      "developerTools": "Outils développeur"
     }
   },
   "clipboard": {
@@ -209,6 +234,51 @@
     "clearHistoryDesc": "Supprimer tout l'historique des commandes shell",
     "clear": "Effacer",
     "clearFailed": "Impossible d'effacer l'historique shell"
+  },
+  "snippetExpansion": {
+    "title": "Snippets",
+    "infoText": "Les snippets in-app se déclenchent en tapant le préfixe",
+    "infoTextSuffix": "dans la barre de recherche de Volt. Le paramètre ci-dessous est un mécanisme global distinct qui développe les mêmes déclencheurs partout sur le système, dans n'importe quelle application.",
+    "globalSectionTitle": "Expansion globale",
+    "enabled": "Activer l'expansion globale",
+    "enabledDesc": "Développer les déclencheurs de snippets partout sous Windows, pas seulement dans Volt",
+    "maxTriggerLen": "Longueur max. du déclencheur",
+    "maxTriggerLenDesc": "Longueur, en caractères, du plus long déclencheur surveillé globalement",
+    "excludedApps": "Applications exclues",
+    "excludedAppsDesc": "L'expansion globale ne se déclenche jamais quand une de ces applications a le focus",
+    "excludedAppsPrompt": "Entrez le nom de l'exécutable à exclure (ex. keepass) :",
+    "addApp": "Ajouter",
+    "noExcludedApps": "Aucune application exclue"
+  },
+  "snippetsManager": {
+    "title": "Vos snippets",
+    "subtitle": "Gère les déclencheurs et le contenu utilisés par l'expansion in-app et globale",
+    "add": "Nouveau snippet",
+    "edit": "Modifier le snippet",
+    "delete": "Supprimer le snippet",
+    "loading": "Chargement des snippets…",
+    "empty": "Aucun snippet pour l'instant. Crée le premier.",
+    "loadError": "Impossible de charger les snippets",
+    "createError": "Impossible de créer le snippet",
+    "updateError": "Impossible de mettre à jour le snippet",
+    "deleteError": "Impossible de supprimer le snippet",
+    "confirmDelete": "Supprimer le snippet « {{trigger}} » ? Cette action est irréversible.",
+    "createTitle": "Nouveau snippet",
+    "editTitle": "Modifier le snippet",
+    "triggerLabel": "Déclencheur",
+    "triggerPlaceholder": ";sig",
+    "triggerHint": "Inclus le préfixe que tu taperas pour le déclencher, ex. « ;sig »",
+    "contentLabel": "Contenu",
+    "contentPlaceholder": "Texte inséré quand le déclencheur est tapé",
+    "contentHint": "Supporte les variables {date}, {time}, {datetime}, {clipboard} et {random}",
+    "categoryLabel": "Catégorie",
+    "categoryPlaceholder": "Optionnel",
+    "descriptionLabel": "Description",
+    "descriptionPlaceholder": "Optionnel",
+    "enabledLabel": "Activé",
+    "cancel": "Annuler",
+    "save": "Enregistrer",
+    "saving": "Enregistrement…"
   },
   "integrations": {
     "title": "Intégrations",
@@ -324,6 +394,18 @@
       "cancel": "Annuler",
       "save": "Enregistrer",
       "saving": "Enregistrement…"
+    },
+    "local": {
+      "title": "Modèle local",
+      "description": "Exécutez des modèles sur votre machine avec Ollama ou LM Studio — sans clé API. Volt se connecte à votre endpoint compatible OpenAI.",
+      "baseUrl": "URL de l'endpoint",
+      "model": "Modèle",
+      "modelPlaceholder": "ex. llama3.1",
+      "hint": "Ollama : http://localhost:11434/v1 · LM Studio : http://localhost:1234/v1",
+      "save": "Enregistrer",
+      "saved": "Enregistré",
+      "remove": "Retirer",
+      "configured": "Configuré"
     },
     "profile": {
       "title": "Profil",

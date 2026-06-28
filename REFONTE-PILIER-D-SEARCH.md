@@ -226,54 +226,75 @@ pub trait FileQueryBackend {
 > **Phase 2. Documented only — no code in this deliverable beyond a doc stub.**
 > This is the standard best-practice technique for "instant" local file enumeration.
 
-### 3.1 The idea
+### 3.1 The idea — and the privilege correction (June 2026)
 
-Instead of a recursive `readdir` walk (one syscall per entry), read the NTFS volume's
-**Master File Table (MFT)** — the on-disk catalog of every file/dir on the volume —
-in a single sequential pass, then subscribe to the **USN change journal** for deltas.
-This is how instant-search utilities enumerate millions of files in seconds: the MFT
-already *is* the directory of the whole volume.
+The original framing assumed "fast NTFS enumeration ⇒ read the raw MFT ⇒ requires
+Administrator". The second implication is **false in general** and led the plan astray.
+Spotlight-/Everything-style "instant" search does **not** make every user run elevated:
+the OS maintains an index and apps query it. There are in fact **two** NTFS fast-paths
+with **different** privilege levels, and they must be kept separate:
 
-- **MFT read** = full enumeration (replaces the cold `scan_files` walk on NTFS).
-- **USN journal** = change feed (a faster, lower-overhead alternative/companion to
-  the `notify` watcher for keeping the index current).
+| Mechanism | Win32 surface | Privilege | Role |
+|---|---|---|---|
+| **Raw `$MFT` bulk read** | `CreateFile(\\.\C:, GENERIC_READ)` | **Administrator** (raw block-device access) | Optional accelerator, *only if already elevated*. Never required. |
+| **USN change journal read** | `FSCTL_READ_UNPRIVILEGED_USN_JOURNAL` on a handle opened with `FILE_TRAVERSE` | **None** (standard user) | The no-admin live-delta feed we actually ship. |
+
+So the corrected design is:
+
+- **Baseline enumeration, no admin** = the **Windows Search Index** (already wired in
+  `indexer/windows_search.rs` via OLE DB `Search.CollatorDSO`) + the existing recursive
+  `scan_files` walk for folders outside the index scope.
+- **Live deltas, no admin** = the **unprivileged USN journal** reader (`indexer/usn.rs`).
+- **Raw `$MFT` bulk read** = downgraded to an *opportunistic, admin-only* accelerator —
+  attempted only when the process is already elevated, never prompting UAC, with a
+  byte-for-byte identical fallback otherwise.
+
+The USN journal only reports **changes** since the journal was created — it is a delta
+feed, never a substitute for the baseline enumeration. That is why the no-admin design
+pairs it with Windows Search (+ recursive walk fallback).
 
 ### 3.2 Crate status (verified June 2026)
 
-- **`ntfs-reader` (latest `0.4.2`)** — fast in-memory scan of all `$MFT` records +
-  a USN journal reader. API: open `Volume::new("\\\\.\\C:")`, build an `Mft`, iterate
-  `FileInfo { name, path, is_directory, size, created/accessed/modified }`. Journal
-  API via `JournalOptions` exposes `usn, timestamp, file_id, parent_id, reason, path`.
-- **`usn-journal-rs`** — alternative; safe abstractions for the USN change journal +
-  MFT enumeration on NTFS/ReFS.
-- **`ntfs` (ColinFinck)** — lower-level no-std NTFS implementation (firmware → user
-  mode); more work to wire up but maximally flexible.
+- **`ntfs-reader` (latest `0.4.2`)** and **`usn-journal-rs`** — both open the volume in
+  **read** mode (`Volume::new("\\\\.\\C:")`), i.e. the **admin** path, and neither
+  clearly exposes `FSCTL_READ_UNPRIVILEGED_USN_JOURNAL`. They are therefore only useful
+  for the *optional admin-only* raw-MFT accelerator, **not** for the no-admin USN feed.
+- **`ntfs` (ColinFinck)** — lower-level no-std NTFS implementation; for the future
+  admin-only raw-MFT path only.
 
-Recommendation: **`ntfs-reader`** for the first cut — highest-level, gives both MFT
-scan and USN reader in one crate.
+Recommendation: the **no-admin USN reader uses a thin in-tree FFI layer**
+(`indexer/usn.rs`) — open the volume with `FILE_TRAVERSE`, `DeviceIoControl` with
+`FSCTL_QUERY_USN_JOURNAL` then `FSCTL_READ_UNPRIVILEGED_USN_JOURNAL`, walk
+`USN_RECORD_V2/V3`. No third-party NTFS crate is required for this path. The raw-MFT
+accelerator, if ever built, would use `ntfs-reader` behind `is_elevated()`.
 
 Sources: [ntfs-reader on crates.io](https://crates.io/crates/ntfs-reader),
 [ntfs-reader on lib.rs](https://lib.rs/crates/ntfs-reader),
 [usn-journal-rs](https://github.com/wangfu91/usn-journal-rs),
 [ColinFinck/ntfs](https://github.com/ColinFinck/ntfs).
 
-### 3.3 Privilege requirement — documented honestly
+### 3.3 Privilege requirement — corrected
 
-Reading the raw MFT requires opening a **volume handle** (`\\.\C:`), which on Windows
-requires **Administrator / elevated** privileges (it is effectively raw block-device
-access). The USN journal generally also requires elevation. Volt today runs
-**unelevated** (a launcher should not demand admin), so:
+Two different operations, two different privilege levels — do not conflate them:
 
-- **We never request elevation just for search.** Demanding UAC on every launch is
-  hostile and a security smell.
-- **Graceful fallback is mandatory.** The MFT path is attempted only when (a) the
-  feature is on, (b) the target volume is **NTFS**, and (c) the process **is already
-  elevated**. Otherwise we transparently fall back to the existing recursive
-  `scan_files` walk. The runtime check (`is_elevated()` + NTFS filesystem probe)
-  decides at scan time; the user sees faster indexing *if* they happen to run
-  elevated, and identical behaviour otherwise.
-- **Non-NTFS volumes** (FAT32/exFAT/network/ReFS-without-support) always use the
-  fallback.
+- **Raw `$MFT` bulk read** opens `CreateFile(\\.\C:, GENERIC_READ)`, which *is*
+  effectively raw block-device access and **does require Administrator**. This is the
+  part that is now **optional and opportunistic only**.
+- **USN journal read** can be done **without any elevation** via
+  `FSCTL_READ_UNPRIVILEGED_USN_JOURNAL` issued on a volume handle opened with the
+  minimal `FILE_TRAVERSE` access right (not `GENERIC_READ`). This is documented on
+  Microsoft Learn and is exactly how non-admin change-journal consumers work.
+
+Volt runs **unelevated** by design, so:
+
+- **We never request elevation just for search.** No code path prompts UAC.
+- **No-admin is the default.** The shipped fast path = Windows Search Index (baseline)
+  + unprivileged USN (deltas). Requires no special privileges; it is the only path
+  wired into the lifecycle.
+- **Raw MFT is opportunistic.** Attempted only when the process **is already elevated**
+  AND the volume is **NTFS** AND `mft-search` is on; otherwise a silent fallback to the
+  baseline path with identical behaviour.
+- **Non-NTFS volumes** (FAT32/exFAT/network) have no USN journal → baseline path only.
 
 ### 3.4 Cross-platform
 
@@ -283,23 +304,56 @@ a Windows accelerator; it never becomes a cross-platform dependency. All `ntfs-r
 usage is `#[cfg(windows)]` and behind its own feature so non-Windows builds never
 compile it.
 
-### 3.5 Integration sketch (phase 2)
+### 3.5 Integration sketch
 
 ```
-scan (cold)
-  └─ if cfg!(windows) && feature(mft-search) && is_elevated() && volume_is_ntfs(drive)
-        → ntfs-reader MFT one-pass enumeration → FileInfo stream → SQLite + Tantivy
-     else
-        → existing scan_files recursive walk   (unchanged fallback)
-incremental
-  └─ if MFT path active → USN journal reader thread emits deltas → same upsert/remove sink
-     else                → existing notify watcher (unchanged)
+scan (cold)  — no admin
+  └─ Windows Search Index query (indexer/windows_search.rs)   [baseline, instant]
+     + scan_files recursive walk for folders outside the index scope
+     (optional, admin-only) if cfg!(windows) && feature(mft-search) && is_elevated() && NTFS
+        → raw $MFT one-pass enumeration → FileInfo stream      [accelerator, never required]
+
+incremental  — no admin
+  └─ if cfg!(windows) && feature(usn-incremental) && volume has a USN journal
+        → indexer/usn.rs: FSCTL_READ_UNPRIVILEGED_USN_JOURNAL loop
+          → reason flags mapped to upsert/remove → SAME sink as the watcher
+     else → existing notify watcher (unchanged)
 ```
 
-The output type is the **same `FileInfo` stream** the rest of the pipeline already
-consumes, so SQLite + Tantivy + in-memory cache are all fed identically regardless of
-which enumerator produced the data. This keeps Track 2 a drop-in *source*, not a
-rewrite.
+The output type is the **same `FileInfo` stream / upsert-remove batches** the rest of
+the pipeline already consumes (`db.upsert_file` / `db.remove_file` + `fulltext.apply_batch`
++ in-memory cache), so every enumerator feeds the index identically. Track 2 is a
+drop-in *source*, not a rewrite. The USN reader persists its resume cursor
+`(UsnJournalID, NextUsn)`; a changed journal id (wrap/recreate) triggers a baseline
+rebuild rather than a silent gap.
+
+### 3.6 Empirical validation (run unelevated on a real NTFS volume, 2026-06-16)
+
+A diagnostic probe (`src-tauri/examples/usn_probe.rs`) exercised the path end-to-end
+as a **standard user (no UAC)**:
+
+- **Opening + draining works with zero privilege.** `CreateFile(\\.\C:, FILE_TRAVERSE)`
+  + `FSCTL_READ_UNPRIVILEGED_USN_JOURNAL` drained **300k+ records at ~1M rec/s**.
+- **The unprivileged read STRIPS inline filenames.** Every record returns as a
+  64-byte header (`RecordLength=64`, `FileNameLength=0`) with FRN/parent-FRN/USN/
+  reason/attributes/timestamp but **no name** — not even for a marker file we
+  created ourselves. (Confirmed at the raw-byte level; it is a security property of
+  the unprivileged variant, not a parser bug.) The USN gap between records (~128 B)
+  vs the 64-byte buffer entry is the tell: the on-disk record *has* a name; the
+  unprivileged read does not hand it over.
+- **`OpenFileById(FRN)` resolves the full path with no elevation.**
+  `OpenFileById` + `GetFinalPathNameByHandleW` resolved **~73% of changed FRNs**
+  (e.g. `C:\Users\…\AppData\Local\Google\Chrome\…\History`); the remaining ~27% are
+  inaccessible system files or already-deleted ids → correctly skipped. This also
+  yields the **full path** (not just a name), so it solves parent-FRN reconstruction
+  outright.
+
+**Consequence for the design:** the inline-name path is a dead end without admin.
+The no-admin pipeline is: USN journal = *which FRNs changed + how*; `resolve_path`
+= *FRN → full path* for upserts; an `FRN → path` map (seeded from the baseline) =
+resolution for deletes (whose FRN no longer opens). All three steps are unprivileged.
+`StartUsn` must be `0`, `FirstUsn`, or a previously-returned USN — an arbitrary offset
+yields `ERROR_INVALID_PARAMETER` (87), so resume always uses a journal-issued cursor.
 
 ---
 
@@ -310,8 +364,9 @@ rewrite.
 | 1 | Tantivy schema + persistent builder + exact/BM25/prefix/fuzzy query | `tantivy-search` | DONE, OFF |
 | 2 | Wire scan, SQLite recovery, watcher sink and `search_files` routing | `tantivy-search` | DONE, OFF → measure |
 | 3 | Promote Tantivy to default after validation on real hardware | — | ON (all OS) |
-| 4 | MFT/USN enumerator (Windows, elevation-gated, fallback) | `mft-search` (new, phase 2) | OFF |
-| 5 | Promote MFT to default on Windows after validation | — | ON (Windows/NTFS/elevated only) |
+| 4 | **Unprivileged USN delta reader** (Windows, no admin, fallback to notify) | `usn-incremental` (new) | OFF |
+| 5 | Promote unprivileged USN to default on Windows/NTFS after validation | — | ON (Windows/NTFS) |
+| 6 | *Optional* raw-MFT bulk accelerator, admin-only & opportunistic | `mft-search` (deferred) | OFF |
 
 Each promotion is gated on: cold-build time, query p50/p99, index size, and a
 correctness diff against the nucleo baseline on a fixed corpus.
@@ -325,13 +380,110 @@ correctness diff against the nucleo baseline on a fixed corpus.
   relevance corpus and reports on-disk bytes/document. The dedicated
   `.github/workflows/search-benchmark.yml` workflow is added, but its first GitHub
   run is still required.
-- The first local release build exceeded 20 minutes while linking the complete
-  Tauri/ONNX crate, so no fabricated latency numbers are recorded here. Run the
-  harness on a dedicated CI/performance runner before promotion.
-- **D2/D3 decision: NO-GO for the current iteration.** Keep the tested recursive
-  `read_dir` source on every OS. Re-open MFT/USN only if production telemetry or
-  the release benchmark proves cold enumeration, rather than query latency, is
-  the user-visible bottleneck.
+### Decision record — 2026-06-16 (first local bench run)
+
+The Criterion harness was run locally (`cargo bench --features tantivy-search`).
+Median query latency, `filename_only`, top-20:
+
+| corpus | query | nucleo | Tantivy |
+|---|---|---|---|
+| 1 000 | visual code | **0.29 ms** | 8.15 ms |
+| 1 000 | firefx (fuzzy) | **0.27 ms** | 7.31 ms |
+| 1 000 | quarter report | **0.19 ms** | 6.87 ms |
+| 10 000 | visual code | **2.63 ms** | 7.77 ms |
+| 10 000 | firefx (fuzzy) | **1.23 ms** | 2.01 ms |
+| 10 000 | resume reunion | **1.49 ms** | 3.53 ms |
+| 10 000 | quarter report | **1.29 ms** | 1.95 ms |
+
+Tantivy on-disk: **65 B/doc** at 1k, **53 B/doc** at 10k (≈0.5 MB for 10k).
+
+**Reading the numbers:**
+
+- **nucleo (linear scan) is faster than Tantivy across *every* query up to 10k docs.**
+  Tantivy carries a fixed per-query overhead (~2–8 ms) that dominates at these sizes;
+  nucleo grows ~linearly with N (visual code: 0.29 ms→2.63 ms, ~10×) while Tantivy
+  stays flatter. The crossover where Tantivy wins is **beyond 10k docs** — i.e. only
+  for *large* corpora.
+- **A large corpus is exactly what D2/D3 (fast enumeration) produces.** So D1 (Tantivy)
+  and D2/D3 (enumeration) are a *package*: Tantivy only earns its keep once enumeration
+  has indexed tens of thousands of files; below that, nucleo is the better default.
+- **Caveat — the harness measures the wrong axis for the D2/D3 gate.** It times *query
+  latency*, not *cold enumeration wall-time*, which is the thing MFT/USN actually
+  improves. A proper D2/D3 gate needs an **enumeration benchmark** (`scan_files` walk vs
+  unprivileged USN drain) on a real NTFS volume. That is the missing measurement.
+
+**Decisions:**
+
+- **Tantivy stays OFF by default.** These numbers do not justify promoting it; nucleo
+  wins at the corpus sizes most users actually have.
+- **D2/D3 lifecycle wiring: still NO-GO** until an *enumeration* benchmark proves cold
+  enumeration is the user-visible bottleneck.
+- **But the hard no-admin primitive is now in-tree and reviewed:** the unprivileged USN
+  reader landed behind `usn-incremental` (`indexer/usn.rs`, pure parser unit-tested,
+  FFI isolated). Wiring it to the index sink + an `FRN→path` map is the next step, to be
+  taken only after the enumeration benchmark GO.
+
+### Decision record — 2026-06-24 (enumeration benchmark — the missing measurement)
+
+The enumeration benchmark called for above was built (`examples/enum_bench.rs`, behind
+`usn-incremental`) and run locally on a real NTFS volume, **unprivileged**, against the
+full user profile `C:\Users\Noluc`.
+
+| Strategy | Items | Wall time | Throughput |
+|---|---:|---:|---:|
+| Directory walk (`scan_files`, cold) | 2 128 042 | 5 000.9 s (~83 min) | 426 files/s |
+| USN drain (records 0→tip) | 327 873 | 148 ms | 2.21 M rec/s |
+| USN resolve sample (FRN→path) | 31 342 / 40 000 | 18.5 s | **462 µs/file** |
+
+- USN reads are **nameless** (0 / 327 873): the unprivileged journal strips inline
+  filenames, so each record needs an `OpenFileById` + `GetFinalPathNameByHandleW`
+  resolution (78.4 % succeed; the rest are system/deleted → skipped).
+- Projected resolve-only cost for the full delta set: 327 873 × 462 µs ≈ **117 s**.
+
+**Reading the numbers (with the methodology note, see below):**
+
+- **The naive "walk vs USN drain" is apples-to-oranges and must not drive the decision.**
+  The walk produces a *full point-in-time enumeration* (2.1 M files); the USN drain returns
+  only *recent deltas* (328 k changes). USN "wins" 5000 s → 148 ms only because it does far
+  less work. The valid comparison is **(baseline walk once + USN deltas forever)** vs
+  **(re-walk on every refresh)** — USN amortizes *re-scanning*, it never removes the baseline.
+- **No unprivileged "instant baseline enumeration" exists for us.** The Everything-style
+  instant full enumeration reads the raw **MFT**, which needs admin — and we abandoned that
+  (D2). Unprivileged USN gives only the *live-delta* half of that design, never the
+  *fast-baseline* half. **The baseline therefore must remain a directory walk.**
+- **Per-file resolution is the load-bearing cost.** 462 µs/file means turning a USN change
+  into an indexed path costs an `OpenFileById` syscall each — raw drain throughput
+  (2.2 M rec/s) is misleading. At a realistic change volume this can approach the cost of a
+  *targeted re-walk* of the changed subtrees.
+- **The 83-min full-profile walk is an upper-bound artifact, not the user-facing number.**
+  It includes `AppData`, dev caches (`.cargo`, `.rustup`, `node_modules`), and cloud
+  placeholders — none of which a launcher should index. The real target is the user's
+  configured work folders (~50–200 k files), which is the number still to be measured.
+
+**Decisions:**
+
+- **D3 lifecycle wiring: NO-GO for this iteration** — confirmed, now on data not assumption.
+  The decision rests on three gates; only the first is met:
+  1. ✅ Cold baseline *is* a user-visible cost.
+  2. ❌ Re-scan frequency that would justify USN's complexity is **unmeasured** (no telemetry).
+  3. ❌ USN-delta path (incl. 462 µs/file resolve) proven cheaper than a targeted re-walk on
+     *observed* change volumes — **unproven**.
+- **Cheaper wins come first** (Vague 3.2): background/incremental scan (walk off the hotkey
+  path), debounced `notify` watcher doing *targeted* re-scans of changed dirs, and an
+  index-age + lazy-refresh policy scoped to user folders (not the full profile). These likely
+  dissolve the perceived cold-start cost without any per-record resolution syscalls.
+- **The USN primitive stays in-tree, reviewed, OFF.** `indexer/usn.rs` (15 tests, FRN→path +
+  delete-resolution map done) is sound and kept behind `usn-incremental`. Wiring is
+  **blocked pending metrics**, not discarded. Revisit after telemetry on re-scan frequency
+  and change volume, and after a target-folder (not full-profile) walk measurement.
+
+> **Methodology note (research, 2026-06-24).** A separate fairness analysis grounds the above:
+> USN journal is a bounded rotating delta log, not an enumeration; Everything uses MFT-first
+> then USN-live; unprivileged USN cannot read the MFT; cold-cache cannot be forced without
+> admin (report warm+cold pairs; beware OneDrive reparse hydration); and records/s is the
+> wrong axis — measure records→resolved-paths/s. Sources: MS Learn (USN record `FileName` is a
+> base name not a path; journal is bounded), voidtools forum (MFT-baseline + USN-live model),
+> libUSNJournal (`FILE_TRAVERSE` + `FSCTL_READ_UNPRIVILEGED_USN_JOURNAL` = no admin).
 
 ---
 
@@ -360,10 +512,12 @@ correctness diff against the nucleo baseline on a fixed corpus.
 | **Disk usage** | Measure bytes/document in the Criterion harness before promotion; no baseline is claimed before the first dedicated CI run. |
 | **Write/commit latency** | Debounce commits on the existing 100 ms watcher window / N-doc batches; never commit per event. |
 | **Build complexity / first compile cost** | tantivy is a heavy first build but pure-Rust, no C toolchain; gated behind a feature so default CI builds are unaffected. |
-| **MFT requires admin** | Runtime elevation + NTFS probe; transparent fallback to `scan_files`. Never request UAC for search. |
-| **MFT Windows-only** | `#[cfg(windows)]` + own feature; macOS/Linux/non-NTFS always use the recursive walk. |
-| **Behaviour drift while flag off** | Default path is the *unchanged* nucleo code; the feature only adds a `#[cfg]` branch, verified by `cargo check`/`clippy`/`test` with no features. |
-| **`unsafe` Windows API in Track 2** | Deferred to phase 2; isolated in a single module via `ntfs-reader` (the crate encapsulates the unsafe), reviewed separately. |
+| **Conflating MFT with admin** | Keep raw-MFT (admin) and USN (no-admin) strictly separate. The shipped path is unprivileged USN; raw MFT is opportunistic only. Never request UAC for search. |
+| **USN journal absent/disabled on a volume** | `FSCTL_QUERY_USN_JOURNAL` returns `ERROR_JOURNAL_NOT_ACTIVE`/`ERROR_INVALID_FUNCTION` → fall back to the `notify` watcher. Do not auto-create the journal (would need admin). |
+| **USN journal wrap / recreate** | Persist `(UsnJournalID, NextUsn)`; on id mismatch or `ERROR_JOURNAL_ENTRY_DELETED`, trigger a baseline rebuild instead of silently missing changes. |
+| **MFT/USN Windows-only** | `#[cfg(windows)]` + own feature; macOS/Linux/non-NTFS always use the recursive walk + notify. |
+| **Behaviour drift while flag off** | Default path is the *unchanged* nucleo + notify code; the features only add `#[cfg]` branches, verified by `cargo check`/`clippy`/`test` with no features. |
+| **`unsafe` Windows FFI in the USN reader** | Isolated in `indexer/usn.rs`; the record-walking parser is pure & unit-tested on synthetic buffers, so only the thin `DeviceIoControl` shell is `unsafe`. Reviewed separately. |
 
 ---
 
@@ -374,10 +528,12 @@ correctness diff against the nucleo baseline on a fixed corpus.
 - `src-tauri/src/indexer/fulltext.rs` — **`#[cfg(feature = "tantivy-search")]`**
   production Tantivy schema, persistent build/query/upsert/remove implementation,
   with cfg-gated unit tests.
-- `src-tauri/src/indexer/mft.rs` — **doc-only phase-2 stub** (no `unsafe`, no
-  `ntfs-reader` dep yet) describing the MFT/USN accelerator and the elevation
-  fallback contract.
-- `src-tauri/src/indexer/mod.rs` — module wiring (both new modules cfg/doc-gated).
+- `src-tauri/src/indexer/mft.rs` — **doc-only** privilege map; documents the
+  admin-only raw-MFT accelerator and points at the no-admin USN path.
+- `src-tauri/src/indexer/usn.rs` — **`#[cfg(all(windows, feature = "usn-incremental"))]`**
+  unprivileged USN change-journal reader (thin `DeviceIoControl` FFI + pure,
+  unit-tested `USN_RECORD` parser). The no-admin live-delta source.
+- `src-tauri/src/indexer/mod.rs` — module wiring (all new modules cfg/feature-gated).
 - This blueprint.
 
 ---
@@ -391,3 +547,5 @@ correctness diff against the nucleo baseline on a fixed corpus.
 - [ntfs-reader — lib.rs](https://lib.rs/crates/ntfs-reader)
 - [usn-journal-rs — GitHub](https://github.com/wangfu91/usn-journal-rs)
 - [ColinFinck/ntfs — GitHub](https://github.com/ColinFinck/ntfs)
+- [FSCTL_READ_USN_JOURNAL — Microsoft Learn](https://learn.microsoft.com/en-us/windows/win32/api/winioctl/ni-winioctl-fsctl_read_usn_journal) (and the `FSCTL_READ_UNPRIVILEGED_USN_JOURNAL` variant: non-admin USN reads via a `FILE_TRAVERSE` handle)
+- [Change Journal operations — Microsoft Learn](https://learn.microsoft.com/en-us/windows/win32/fileio/change-journal-operations)

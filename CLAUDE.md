@@ -8,8 +8,8 @@ Volt is a keyboard-driven application launcher (Tauri v2 + React + TypeScript). 
 
 ## Key Commands
 
-**Frontend**: `bun run dev` | **Full stack**: `bun tauri dev` | **Build**: `bun tauri build`
-**Format**: `bun prettier --write .` | **Lint**: `bun run lint` | **Test**: `bun run test`
+**Frontend**: `pnpm run dev` | **Full stack**: `pnpm run tauri -- dev` | **Build**: `pnpm run tauri -- build`
+**Format**: `pnpm exec prettier --write .` | **Lint**: `pnpm run lint` | **Test**: `pnpm run test`
 **Rust check**: `cd src-tauri && cargo check` | **Rust lint**: `cd src-tauri && cargo clippy`
 
 ## Architecture Quick Reference
@@ -59,6 +59,8 @@ commands/      # Tauri command handlers
   logging.rs   # Log management
   window_management.rs # Window snap commands
 hotkey/        # Global hotkey management
+expansion/     # Global snippet expansion (Pilier E1): WH_KEYBOARD_LL hook, no uiAccess.
+               #   Windows + `snippet-global-expansion` feature only (OFF by default); no-op elsewhere.
 indexer/       # File indexing system (scanner, watcher, search_engine, SQLite, windows_search.rs)
 launcher/      # Cross-platform app launching (history, process, launch_validation)
 ```
@@ -130,6 +132,34 @@ src/
 - Events: Use `volt:*` DOM events for plugin→UI communication
 - Builtin plugins registered in `App.tsx` on mount
 - Backend plugins: trait-based in `src-tauri/src/plugins/` (async_trait, Send+Sync)
+
+**Plugin activation (single source of truth)** — how a built-in decides to surface
+results. Declare a `activation: PluginActivation` on the plugin (`{ prefixes?, keywords?, mode? }`):
+- `prefixes`: symbolic triggers (`:`, `>`, `;`, `ql:`). `keywords`: natural-language
+  names — the plugin's `name` is auto-added so **every built-in is discoverable by
+  typing its name**.
+- The registry pre-computes `matchActivation()` (`core/activation.ts`), injects the
+  result into `PluginContext.activation`, and annotates each `PluginResult.matchKind`.
+  `canHandle`/`match` read it via `resolveActivation(this, ctx)` (recomputes on the
+  direct unit-test path where no context is injected).
+- `mode: 'declarative'` (default) → `canHandle` is fully driven by the manifest, and
+  `match` uses `ctx.activation.stripped` as its search term. `mode: 'custom'` → keep a
+  hand-written `canHandle` (e.g. type-ahead, math detection); the keywords drive only
+  the scoring boost. `mode: 'always'` → activates for any query ≥ `minLength`.
+- Scoring: a `prefix`/`keyword` matchKind earns `PLUGIN_KEYWORD_BOOST` in
+  `useSearchPipeline.ts`. **Do not** reintroduce a parallel keyword map there — the
+  manifest is the only source.
+
+**Managed plugins & Settings** — `src/features/plugins/builtin/manifest.ts` is the
+canonical list (`MANAGED_PLUGINS`) of user-toggleable built-ins. The `id` is the
+runtime `Plugin.id` and is shared by the registry, `DEFAULT_SETTINGS.enabledPlugins`
+(+ the Rust default in `settings.rs`), and the Settings UI. `settingsService.loadSettings`
+runs `normalizeEnabledPlugins()` to migrate legacy display ids (`web-search` →
+`websearch`, …) and surface newly-managed plugins on upgrade. `useAppLifecycle` calls
+`pluginRegistry.applyEnabledSet(enabledPlugins, MANAGED_PLUGIN_IDS)` on every load so
+the toggles actually gate the query path; unmanaged plugins (ai-chat, developer) are
+always-on. Adding a toggleable built-in = register it + add one `MANAGED_PLUGINS` entry
++ a `settings:plugins.names.*` i18n key.
 
 **Extensions** (dual-source registry):
 - **Source 1 — GitHub legacy** (`VoltLaunchr/volt-extensions/registry.json`): extensions historiques (github, notion, password-generator). Toujours servis, pas de migration prévue.
@@ -226,7 +256,7 @@ Always-on-top, transparent, 800x550px, no decorations, skips taskbar (see `tauri
 - Document all public APIs
 - Follow existing patterns for new features
 - Builtin plugins go in-repo; community extensions go in volt-extensions repo
-- Always verify compilation after changes: `cargo check` (Rust) + `bun run build` (TS)
+- Always verify compilation after changes: `cargo check` (Rust) + `pnpm run build` (TS)
 
 ---
 
@@ -316,12 +346,12 @@ import { readFile } from 'fs/promises';
 ### Validation obligatoire avant tout commit
 
 ```bash
-bun run lint 2>&1   # 0 errors, 0 warnings non-préexistants
-bun run build       # TS compile sans erreur
+pnpm run lint 2>&1   # 0 errors, 0 warnings non-préexistants
+pnpm run build      # TS compile sans erreur
 cargo check         # si fichiers Rust modifiés
 ```
 
-Le critère de succès est `bun run lint` propre **sans aucune règle désactivée** qui n'était pas déjà présente avant ta tâche.
+Le critère de succès est `pnpm run lint` propre **sans aucune règle désactivée** qui n'était pas déjà présente avant ta tâche.
 
 ### Convention `no-unused-vars` — configuration légitime
 
@@ -371,24 +401,24 @@ L'entrée doit contenir : `version`, `date` (ISO YYYY-MM-DD), `title`, `descript
 Aucun commit avant que **toutes** ces commandes passent :
 
 ```bash
-bun run lint 2>&1                # 0 error
-bun run build 2>&1               # TS compile + Vite bundle OK
+pnpm run lint 2>&1                # 0 error
+pnpm run build 2>&1               # TS compile + Vite bundle OK
 cd src-tauri && cargo check      # Rust compile OK
 cd src-tauri && cargo clippy -- -D warnings  # 0 warning Rust
-bun run test 2>&1                # Vitest vert
+pnpm run test 2>&1                # Vitest vert
 node scripts/sync-version.mjs --check        # versions alignées
 ```
 
 ### Étape 3 — Smoke test du bundle de production (BLOQUANT, sinon on revit v0.1.8)
 
-Le frontend peut compiler sans erreur ET être complètement cassé au runtime (cycle de chunks Rollup, top-level throw qui rejette le module entry, etc.). `bun run build` n'attrape **pas** ces bugs. Le seul moyen fiable : **charger le bundle dans un vrai webview**.
+Le frontend peut compiler sans erreur ET être complètement cassé au runtime (cycle de chunks Rollup, top-level throw qui rejette le module entry, etc.). `pnpm run build` n'attrape **pas** ces bugs. Le seul moyen fiable : **charger le bundle dans un vrai webview**.
 
 Au choix, dans l'ordre de coût croissant :
 
 **A. Cycle scan (rapide, 5 s)** — détecte les imports circulaires entre chunks, cause #1 des bundles morts :
 
 ```bash
-bun run build && node -e "
+pnpm run build && node -e "
 const fs=require('fs'),dir='dist/assets';
 const files=fs.readdirSync(dir).filter(f=>f.endsWith('.js'));
 const g={}; for(const f of files){const c=fs.readFileSync(dir+'/'+f,'utf8'); g[f]=(c.match(/^import[^;]+from\"\\.\\/([^\"]+)\"/gm)||[]).map(s=>s.match(/\\.\\/([^\"]+)/)[1]);}
@@ -412,7 +442,7 @@ Onglet Console — si rouge, ne pas releaser. Sinon, vérifier que l'UI atteint 
 **C. Build complet local + install (15-30 min)** — le test ultime, mais lourd :
 
 ```bash
-bun tauri build
+pnpm run tauri -- build
 # Lance le .msi/.exe généré dans src-tauri/target/release/bundle/
 ```
 
@@ -464,10 +494,10 @@ Body de PR doit contenir : résumé, test plan checklist, lien vers la release n
 [ ] node scripts/bump-version.mjs X.Y.Z
 [ ] Entrée changelog.json ajoutée manuellement (JSON valide)
 [ ] node scripts/sync-version.mjs --check ✅
-[ ] bun run lint ✅
-[ ] bun run build ✅
+[ ] pnpm run lint ✅
+[ ] pnpm run build ✅
 [ ] cd src-tauri && cargo check && cargo clippy -- -D warnings ✅
-[ ] bun run test ✅
+[ ] pnpm run test ✅
 [ ] Cycle scan chunks ✅ (Étape 3A)
 [ ] Au moins UN smoke test webview (3B ou 3C)
 [ ] git commit + push

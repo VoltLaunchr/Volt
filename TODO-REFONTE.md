@@ -2,7 +2,7 @@
 
 > Suivi opérationnel actuel. `REFONTE-2026.md` conserve le plan initial à titre historique.
 > Convention : `[ ]` à faire · `[~]` en cours · `[x]` fait. Chaque tâche note l'effort `[S/M/L/XL]` et le finding d'audit résolu le cas échéant.
-> **Avant tout commit** : `bun run lint` + `bun run build` + `cargo check` + `cargo clippy -- -D warnings` + `bun run test` (cf. CLAUDE.md).
+> **Avant tout commit** : `pnpm run lint` + `pnpm run build` + `cargo check` + `cargo clippy -- -D warnings` + `pnpm run test` (cf. CLAUDE.md).
 
 ---
 
@@ -58,7 +58,7 @@
 
 ## 🌊 Vague 2 — Robustesse données
 
-### C. SQLCipher + Credential Manager + repositories `[M]` 🟡 durcissement sécurité validé Windows, validations externes ouvertes
+### C. SQLCipher + Credential Manager + repositories `[M]` ✅ durcissement sécurité validé Windows + matrice CI macOS/Linux verte
 - [x] Blueprint détaillé : `REFONTE-PILIER-C-SQLCIPHER.md`
 - [x] Ajouter la feature Cargo `sqlcipher` (`rusqlite/bundled-sqlcipher-vendored-openssl`) sans changer le build par défaut
 - [x] `core::encrypted_db::open_db` + `PRAGMA key` + migration plaintext→SQLCipher atomique
@@ -76,7 +76,7 @@
 - [x] Décision frecency SQL : **conserver `launch_history.json` + modèle timestamp** — faible volume, aucun bottleneck mesuré; migration SQLite différée
 - [x] Migration données clair → chiffré (one-shot au 1er lancement post-update)
 - [x] Validation Windows : Clippy strict + 317 tests sous `--no-default-features --features sqlcipher`
-- [~] Validation macOS/Linux : matrice CI ajoutée pour Clippy + tests SQLCipher sur les 3 OS; premier run GitHub encore requis
+- [x] Validation macOS/Linux : matrice CI confirmée verte sur les 3 OS (run GitHub 27540669396, push main v0.3.0 du 2026-06-15 — "SQLCipher Clippy"/"SQLCipher Tests" en `success` sur macos-latest/ubuntu-latest/windows-latest). En cours de route : bug réel découvert et fixé (hang 6h sur macOS — `keyring_store` touchait le vrai Keychain dans les tests ; routé vers un map en mémoire sous `cfg(test)`).
 - [x] Tests d'intégration clipboard/notes/extension KV + clé perdue + DB existe + migration legacy DPAPI + récupération interrompue
 - [x] **Durcissement SQLCipher suite à l'audit sécurité (validé Windows)** :
   - [x] Découpler les clés DB du HMAC partagé : lecture/écriture directe dans le keyring, validation par ouverture SQLCipher, aucune suppression/régénération destructive sur perte ou rotation HMAC
@@ -90,7 +90,7 @@
 
 ## 🌊 Vague 3 — Recherche fichiers (différenciateur, phasé)
 
-### D1. Index inversé Tantivy (SANS MFT d'abord) `[L]` 🟡 feature-complete, premier benchmark CI pending
+### D1. Index inversé Tantivy (SANS MFT d'abord) `[L]` ✅ feature-complete, bench CI dédié vert
 - [x] Blueprint détaillé : `REFONTE-PILIER-D-SEARCH.md`
 - [x] Ajouter `tantivy` à `Cargo.toml` derrière feature-flag `tantivy-search`
 - [x] Scaffold `indexer::fulltext` : index persistant, build/query/upsert/remove + tests
@@ -105,37 +105,68 @@
 - [x] Réutiliser l'index persistant si le compteur et le marqueur de synchronisation SQLite concordent
 - [x] Démarrer/arrêter le watcher avec le lifecycle UI et le redémarrer après un rebuild manuel
 - [x] `read_dir` conservé comme scanner cross-platform et couvert par un test de contrat
-- [~] Bench Criterion nucleo/Tantivy ajouté : latence 1k/10k, assertions de pertinence, taille disque; workflow CI dédié ajouté, premier run GitHub encore requis
-- [x] **Décision D2/D3 : NO-GO pour cette itération.** D1 est fonctionnel; ne pas engager MFT/USN avant baseline Criterion release sur corpus réel et preuve que l'énumération est le bottleneck utilisateur
+- [x] Bench Criterion nucleo/Tantivy ajouté : latence 1k/10k, assertions de pertinence, taille disque; workflow CI dédié ajouté. **Premier run LOCAL fait (2026-06-16)** : nucleo plus rapide que Tantivy sur **toutes** les requêtes ≤10k docs (Tantivy ~2-8 ms d'overhead fixe) → Tantivy ne gagne qu'au-delà de 10k docs. Cf. decision record dans `REFONTE-PILIER-D-SEARCH.md`. **Run GitHub CI confirmé vert** (`search-benchmark.yml`, job "Criterion D1 Tantivy", run 27540669407 sur le push main v0.3.0 du 2026-06-15).
+- [x] **Décision : Tantivy reste OFF par défaut** (nucleo gagne aux tailles de corpus réelles) ; **D2/D3 wiring lifecycle = toujours NO-GO** tant qu'un bench d'**énumération** (`scan_files` walk vs USN drain) sur volume NTFS réel n'a pas prouvé que l'énumération à froid est le bottleneck. ⚠️ Le bench actuel mesure la *latence de requête*, pas le *temps d'énumération à froid* — c'est la mesure manquante pour trancher D2/D3.
 
-### D2. Scan MFT NTFS `[XL]` — seulement si D1 validé
-- [ ] Crate `ntfs` + lecture `\\.\C:` (privilèges admin requis)
-- [ ] Thread/process dédié émettant des batches vers l'indexeur (pipe nommé)
-- [ ] Stratégie privilèges : service Windows ou élévation ponctuelle
-- [ ] Gérer edge-cases : volumes amovibles, réseau, non-NTFS → fallback walk
-- [ ] Feature-flag `ntfs-scan`
+> **⚠️ Correction de cap (juin 2026) — l'admin était le mauvais chemin.**
+> Raycast/Spotlight n'exigent jamais d'élévation pour chercher : ils interrogent
+> l'index de l'OS. Sur Windows l'équivalent existe et est **déjà câblé**
+> (`indexer/windows_search.rs`, OLE DB `Search.CollatorDSO`). Et surtout, le
+> journal USN a un mode **sans admin** : `FSCTL_READ_UNPRIVILEGED_USN_JOURNAL`
+> sur un handle ouvert en `FILE_TRAVERSE` (vérifié sur Microsoft Learn).
+> Conclusion : **D2 (MFT brute = admin obligatoire) est rétrogradé en
+> accélérateur optionnel « si déjà élevé », jamais requis ; la valeur réelle est
+> D3 (USN incrémental) en mode unprivileged, par-dessus le baseline Windows
+> Search.** On ne demande **jamais** d'UAC pour chercher.
 
-### D3. Incrémental USN Journal `[L]`
-- [ ] `FSCTL_QUERY_USN_JOURNAL` / `FSCTL_READ_USN_JOURNAL`
-- [ ] Reprise au dernier USN ID (pas de re-crawl complet)
-- [ ] Queue persistée sur disque (survit aux redémarrages)
-- [ ] Mises à jour live de l'index Tantivy
+### D2. Scan MFT NTFS brute `[XL]` — ✅ ABANDONNÉ (décision finale, 2026-06-25)
+- [x] ~~Stratégie privilèges : service Windows ou élévation ponctuelle~~ → **abandonné** (un launcher ne demande jamais l'UAC pour chercher)
+- [x] Accélérateur opportuniste (lecture `$MFT` en un passage si déjà élevé, feature-flag `mft-search`, edge-cases volumes amovibles/réseau/non-NTFS) → **non planifié** : aucun besoin réel (le cas « déjà élevé + NTFS » est marginal), le baseline sans admin (Windows Search Index + `scan_files` walk, D1) couvre 100% des cas. Conservé **doc-only** dans `indexer/mft.rs` (zéro `unsafe`, zéro appel Win32, zéro dépendance NTFS tierce) au cas où le calcul changerait un jour ; n'est plus dans le backlog actif.
+- [x] Décision : **NE PAS** bâtir le service Windows / l'élévation ponctuelle ni l'accélérateur opportuniste. Doc-only dans `indexer/mft.rs`.
 
-### D4. Architecture en acteurs `[M]`
-- [ ] Découpler : sources / watch / indexing / queue
-- [ ] Consolidation post D1-D3
+### D3. Incrémental USN Journal — **SANS ADMIN** `[L]` ⛔ **NO-GO confirmé (2026-06-24)** — primitive validée & gardée OFF, wiring bloqué sur télémétrie
+- [x] Module `indexer/usn.rs` (feature `usn-incremental`, OFF par défaut ; FFI `#[cfg(windows)]`, parseur portable)
+- [x] FFI fine maison : volume en `FILE_TRAVERSE` (pas `GENERIC_READ`), `FSCTL_QUERY_USN_JOURNAL`, boucle `FSCTL_READ_UNPRIVILEGED_USN_JOURNAL` (= `0x000903AB`)
+- [x] Parseur `USN_RECORD_V2/V3` **pur, 15 tests verts** (buffer synthétique, sans volume ; inclut deletes via map, renames, coalescing)
+- [x] Mapping `reason` → `RecordChange::{Upsert,Remove,Ignore}` (create+delete coalescé = Ignore), reprise `(UsnJournalID, NextUsn)`, erreurs typées (JournalNotActive→fallback, JournalEntryDeleted→rebuild)
+- [x] **Validé au runtime non-élevé** (`examples/usn_probe.rs`) : 300k+ records drainés à ~1 M/s, **zéro admin**
+- [x] **Finding : la lecture unprivileged STRIPPE les noms inline** (records 64 o, `FileNameLength=0`, même pour nos propres fichiers). C'est une propriété de sécurité, pas un bug.
+- [x] **`resolve_path` (`OpenFileById` + `GetFinalPathNameByHandleW`) implémenté + validé** : résout ~73-78% des FRN changés en **chemin complet**, sans admin (le reste = système inaccessible/déjà supprimé → skip). Donne le chemin complet, pas juste le nom.
+- [x] **Map `FRN→path` + résolution des deletes FAIT** (`UsnIndexer` : delete-after-upsert résolu via la map, rename = removal, untracked-FRN skip) — couvert par les 6 nouveaux tests.
+- [x] **Bench d'énumération RÉEL exécuté (2026-06-24, `examples/enum_bench.rs`)** — la mesure manquante du NO-GO. Profil complet `C:\Users\Noluc`, non-élevé :
+  - Walk `scan_files` à froid : **2 128 042 fichiers en ~83 min (426 files/s)** — mais c'est un upper-bound (inclut AppData/.cargo/node_modules/placeholders OneDrive ; pas la cible réelle d'un launcher)
+  - USN drain : 327 873 records en **148 ms** (2.2 M rec/s) MAIS **0 nom** (strippés) → résolution **462 µs/fichier** (`OpenFileById`), 78% de succès ; ~117 s projetés pour résoudre tout le delta
+  - **Verdict : walk vs USN drain = apples-to-oranges.** L'USN non-privilégié ne fait **que** des deltas ; le baseline reste forcément un walk (le raw-MFT « instant » est admin-only = D2 abandonné).
+- [ ] ❌ **D3 lifecycle wiring = NO-GO confirmé sur données** (cf. decision record `REFONTE-PILIER-D-SEARCH.md` 2026-06-24). Bloqué sur 2 gates non remplis : (2) fréquence de re-scan justifiant l'USN = **non mesurée** (pas de télémétrie) ; (3) preuve que le chemin USN-delta (resolve 462 µs/fichier inclus) bat un re-walk ciblé sur les volumes de changement réels = **non prouvé**. Primitive gardée OFF, **non jetée**.
+- [x] **Suite prioritaire (Vague 3.2, AVANT de reconsidérer l'USN)** — découverte : déjà ~80% en place ; seuil configurable + télémétrie re-scan finalisés (2026-06-25).
+  - [x] (a) scan background hors hot-path → déjà `tokio::spawn` + `spawn_blocking`, depth borné à 3 (`start_indexing`)
+  - [x] (b) watcher `notify` debounced ciblé → déjà `indexer/watcher.rs` (100ms, upsert/remove par-path, sync SQLite+mémoire+tantivy)
+  - [x] (c) lazy refresh / réutilisation cache SQLite → déjà fast-path dans `start_indexing`
+  - [x] **Catch-up offline (le vrai trou)** : `refresh_index_if_stale(stale_secs)` (commit `75de6b81`) — réconcilie les changements faits app fermée (le watcher ne voit que le live). Re-walk background gated sur `last_full_scan`, swap atomique, silencieux. C'est l'alternative no-admin au drain USN. Frontend : déclenché par `FileWatcherLifecycle` après le watcher (fire-and-forget, seuil 1h).
+  - [x] **Seuil de staleness configurable en Settings** : `indexing.staleThresholdSecs` (défaut 3600, `0` = désactivé) exposé via un `<select>` dans le panneau File Search (15min/30min/1h/6h/24h/off). `FileWatcherLifecycle.start(staleSecs)` lit la valeur ; backend `#[serde(default)]` pour compat ascendante.
+  - [x] **Métriques re-scan persistées** (la mesure manquante du gate (2) du NO-GO D3) : `record_stale_catchup()` bumpe `stale_catchup_count` + stamp `last_stale_catchup` en meta DB **uniquement** sur le chemin catch-up offline (pas `start_indexing`/rebuild), donc mesure la dérive app-fermée. Exposé via `get_db_index_stats` → 2 tuiles Settings (compteur + dernier rattrapage). C'est la télémétrie qui débloque la reconsidération USN un jour.
+- [ ] Baseline sans admin = Windows Search Index (déjà là) + `scan_files` fallback ; l'USN = deltas only
+- ⚠️ `StartUsn` doit être `0` / `FirstUsn` / un USN déjà retourné — offset arbitraire → `ERROR_INVALID_PARAMETER` (87)
+
+### D4. Architecture en acteurs `[M]` — ✅ consolidation contenue (2026-06-25)
+- [x] Découpler : sources / watch / indexing / queue → **sources** (`indexer/scanner.rs`) et **watch** (`indexer/watcher.rs`) étaient déjà proprement découplés par fichier, rien à faire. **queue** : le design *reject-if-busy* (check-and-set atomique du flag `is_indexing`) est déjà correct et le frontend s'appuie dessus (désactivation de bouton, polling) — pas converti en vraie queue mpsc, ça changerait un comportement observable pour zéro bénéfice.
+- [x] Consolidation post D1-D3 : `start_indexing`, `invalidate_index` et `refresh_index_if_stale` dupliquaient à l'identique la séquence *scan → persist SQLite → rebuild Tantivy → swap cache mémoire → update status → emit progress* (c'est ce qui avait failli faire oublier la télémétrie catch-up sur un seul des trois copier-collés). Extrait en une fonction privée unique `reconcile()` + `ReconcileParams`, réutilisée par les 3 commandes ; chacune garde sa logique propre (TOCTOU guard, fast-path SQLite, garde-fous de staleness, abort/stop watcher) et délègue la partie dupliquée. Vérifié que `scan_task: Mutex<Option<AbortHandle>>` + `IndexingGuard` (RAII) sont déjà corrects — non modifiés. Zéro changement de comportement observable, zéro nouveau state Tauri/IPC. -21 lignes nettes malgré l'ajout de `reconcile()` (~250 lignes de copier-collé supprimées). `cargo check`/`clippy -D warnings` (défaut + `tantivy-search`) + `cargo test --lib` (304 et 328 tests) verts.
 
 ---
 
 ## 🌊 Vague 4 — Input global (optionnel, le plus lourd)
 
-### E1. Auto-expansion snippet via hook in-process `[L]`
-- [ ] Hook `WH_KEYBOARD_LL` dans le process principal (hors fenêtres élevées)
-- [ ] Résoudre scancode→char via `ToUnicodeEx` + `GetKeyboardLayout` (multi-layout)
-- [ ] Surveiller les keywords enregistrés, détecter match
-- [ ] Au match : supprimer le keyword tapé + injecter le texte via `SendInput`
-- [ ] Config : enabled, response time, expansion mode, apps désactivées
-- [ ] **80% de la valeur snippet global, sans uiAccess**
+### E1. Auto-expansion snippet via hook in-process `[L]` — ✅ implémenté, ⚠️ smoke test manuel requis avant merge
+- [x] Hook `WH_KEYBOARD_LL` dans le process principal (hors fenêtres élevées) — `src-tauri/src/expansion/hook.rs`, thread dédié + boucle `GetMessageW`, feature flag `snippet-global-expansion` (OFF par défaut)
+- [x] Résoudre scancode→char via `ToUnicodeEx` + `GetKeyboardLayout` (multi-layout) — `src-tauri/src/expansion/keyboard_layout.rs` ; modificateurs lus via `GetAsyncKeyState` (pas `GetKeyState`, qui dépend de la queue du thread appelant — le thread processor n'en pompe aucune) et toggle CapsLock au bit 0 du tableau `lpKeyState` (pas le bit 7, qui encode l'état "enfoncée")
+- [x] Surveiller les triggers enregistrés, détecter match — `src-tauri/src/expansion/trigger_buffer.rs` (buffer borné + règle de frontière de mot + plus-long-trigger-gagne), 19 tests unitaires purs (CI tous OS)
+- [x] Au match : supprimer le trigger tapé + injecter le texte via `SendInput` — `src-tauri/src/expansion/injector.rs` (backspaces en unités UTF-16, injection `KEYEVENTF_UNICODE`)
+- [x] Anti-boucle sur nos propres injections : filtre `LLKHF_INJECTED` dans le callback hook
+- [x] Config : enabled (OFF par défaut), liste d'apps exclues (+ Volt lui-même toujours exclu via `current_exe()`), longueur max de trigger surveillée — `SnippetExpansionSettings` dans `commands/system/settings.rs`, toggle dans Settings → nouvelle section "Snippets"
+- [x] Commande Tauri `set_snippet_expansion_enabled` (persiste + démarre/arrête le hook immédiatement)
+- [x] **80% de la valeur snippet global, sans uiAccess**
+- [x] Validé : `cargo check`/`cargo clippy -- -D warnings` (défaut + `--features snippet-global-expansion`), 19 tests purs verts, `pnpm run lint`/`pnpm run build`/`tsc --noEmit` verts
+- [ ] ⚠️ **SMOKE TEST MANUEL requis avant merge** (comme le clipboard event-driven, Pilier B) : le hook lui-même, l'injection `SendInput`, et la résolution multi-layout (FR/US, touches mortes) ne sont délibérément PAS exercés par les tests automatisés — installer un hook clavier global réel ou injecter des frappes depuis un agent aurait manipulé la vraie session Windows de la machine de dev. À tester manuellement : frappe dans Notepad/Chrome/VS Code sans lag ni perte de caractère, expansion correcte avec Shift/AltGr/CapsLock, comportement silencieux (pas de crash) sur une fenêtre élevée en admin.
 
 ### E2. Helper `uiAccess=true` signé `[XL]` — BLOQUÉ sans signature de code
 - [ ] ⚠️ Prérequis : chaîne de signature de code valide + install Program Files
@@ -162,7 +193,7 @@
 
 ## 📌 Séquencement historique et état actuel
 
-L'ordre ci-dessous était celui du plan initial. A, B, C, F1, F3 et D1 sont implémentés. C attend le premier run de sa matrice CI macOS/Linux; D1 attend le premier run du benchmark CI dédié et D2/D3 restent en NO-GO pour cette itération.
+L'ordre ci-dessous était celui du plan initial. A, B, C, F1, F3 et D1 sont implémentés et leurs CI dédiées (matrice SQLCipher macOS/Linux/Windows, bench Tantivy) confirmées vertes sur GitHub (run 27540669396 / 27540669407, push main v0.3.0 du 2026-06-15). **D2/D3 sont désormais en NO-GO confirmé sur données** (bench d'énumération réel exécuté le 2026-06-24, cf. decision record dans `REFONTE-PILIER-D-SEARCH.md`) : le baseline reste un walk, l'USN non-privilégié ne peut pas l'accélérer (deltas only + 462 µs/fichier de résolution). **Prochain travail = Vague 3.2** (scan background + watcher debounced ciblé + lazy refresh) avant toute reconsidération de l'USN.
 
 **Ordre initial :**
 1. **A** (frecency) → débloque aussi l'audit `rust-history-clone-01`

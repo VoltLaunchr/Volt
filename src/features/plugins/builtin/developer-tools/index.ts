@@ -12,7 +12,7 @@
  * Selecting a result copies its value to the clipboard.
  */
 
-import type { Plugin, PluginContext, PluginResult } from '../../types';
+import type { Plugin, PluginActivation, PluginContext, PluginResult } from '../../types';
 import { PluginResultType } from '../../types';
 import { logger } from '../../../../shared/utils/logger';
 import {
@@ -110,6 +110,16 @@ export class DeveloperToolsPlugin implements Plugin {
   name = 'Developer Tools';
   description = 'UUID, base64, hashing, color conversion, and lorem ipsum';
   enabled = true;
+
+  // `mode: 'custom'` — canHandle delegates to the dedicated query parser; these
+  // keywords drive only the scoring boost (query starting with a tool name).
+  activation: PluginActivation = {
+    mode: 'custom',
+    keywords: [
+      'uuid', 'guid', 'base64', 'b64', 'md5', 'sha1', 'sha256', 'sha512',
+      'hash', 'color', 'lorem', 'lipsum',
+    ],
+  };
 
   canHandle(context: PluginContext): boolean {
     return parse(context.query) !== null;

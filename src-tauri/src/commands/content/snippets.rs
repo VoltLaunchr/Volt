@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use tauri::State;
 use uuid::Uuid;
 
@@ -27,7 +27,7 @@ pub struct Snippet {
 
 /// State wrapper for snippet storage
 pub struct SnippetState {
-    snippets: Mutex<HashMap<String, Snippet>>,
+    snippets: Arc<Mutex<HashMap<String, Snippet>>>,
     file_path: PathBuf,
 }
 
@@ -36,7 +36,7 @@ impl SnippetState {
         let file_path = data_dir.join("snippets.json");
         let snippets = Self::load_from_file(&file_path).unwrap_or_default();
         Self {
-            snippets: Mutex::new(snippets),
+            snippets: Arc::new(Mutex::new(snippets)),
             file_path,
         }
     }
@@ -71,13 +71,21 @@ impl SnippetState {
         }
         self.save()
     }
+
+    /// Clone of the shared snippet map `Arc`, for the global expansion hook
+    /// (`crate::expansion`) to read concurrently without going through Tauri
+    /// IPC. The map is updated in place by the existing CRUD commands, so the
+    /// hook always observes the latest snippets without needing to be told.
+    pub fn shared_map(&self) -> Arc<Mutex<HashMap<String, Snippet>>> {
+        self.snippets.clone()
+    }
 }
 
 fn now_millis() -> i64 {
     chrono::Utc::now().timestamp_millis()
 }
 
-fn resolve_variables(content: &str, clipboard: Option<&str>) -> String {
+pub(crate) fn resolve_variables(content: &str, clipboard: Option<&str>) -> String {
     let now = chrono::Local::now();
     let mut result = content.to_string();
 

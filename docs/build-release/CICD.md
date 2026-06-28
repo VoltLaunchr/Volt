@@ -23,14 +23,14 @@ Triggered on `push` / `pull_request` against **`main`** and **`dev`**.
 **Matrix**: `ubuntu-latest`, `macos-latest`, `windows-latest` (`fail-fast: false`).
 
 **Steps**:
-1. Setup Bun (latest) and Rust stable with `rustfmt` + `clippy`.
+1. Setup pnpm and Rust stable with `rustfmt` + `clippy`.
 2. Cache Rust dependencies via `Swatinem/rust-cache@v2` (scoped to `src-tauri`).
 3. On Ubuntu, install Tauri's GTK/WebKit dependencies (`libwebkit2gtk-4.1-dev`, `libgtk-3-dev`, `librsvg2-dev`, …).
-4. `bun install`.
-5. **Version manifest check** (Ubuntu only): `bun run check-version` — ensures `package.json`, `Cargo.toml`, and `tauri.conf.json` are aligned.
-6. Lint: `bun run lint` (ESLint 9, flat config — see [`CLAUDE.md`](../../CLAUDE.md) Lint section for non-negotiable rules).
-7. Format check: `bun prettier --check .`
-8. Type-check + bundle: `bun run build` (= `tsc && vite build`).
+4. `pnpm install`.
+5. **Version manifest check** (Ubuntu only): `pnpm run check-version` — ensures `package.json`, `Cargo.toml`, and `tauri.conf.json` are aligned.
+6. Lint: `pnpm run lint` (ESLint 10, flat config — see [`CLAUDE.md`](../../CLAUDE.md) Lint section for non-negotiable rules).
+7. Format check: `pnpm exec prettier --check .`
+8. Type-check + bundle: `pnpm run build` (= `tsc && vite build`).
 9. Rust check + clippy: `cargo check` + `cargo clippy -- -D warnings`.
 
 Required env: `TAURI_SIGNING_PRIVATE_KEY` (for `tauri build` step — see [`SIGNING_SETUP.md`](./SIGNING_SETUP.md)).
@@ -66,7 +66,7 @@ Fires **only** when a branch named `release/v*` is merged into `main` (`startsWi
 ## 4. Other workflows
 
 - **`changelog.yml`** — regenerates `docs/changelog/` content. Note: `scripts/generate-changelog.mjs` is known to drop entries after squash-merge, so the manual `public/changelog.json` entry remains the source of truth for in-app release notes.
-- **`e2e.yml`** — runs `bun run test:e2e` (Playwright) headless. Part of the required check set for merges.
+- **`e2e.yml`** — runs `pnpm run test:e2e` (Playwright) headless. Part of the required check set for merges.
 - **`pr-title.yml`** — enforces Conventional Commits via `commitlint`.
 - **`version-bump.yml`** — manual `workflow_dispatch` to bump versions in all manifests at once.
 
@@ -80,7 +80,7 @@ The full, bloc-by-bloc checklist (branch naming, version bump, changelog entry, 
 git fetch origin main && git checkout -b release/v0.2.1 origin/main
 node scripts/bump-version.mjs 0.2.1
 # Add public/changelog.json entry manually
-bun run lint && bun run build && bun run test
+pnpm run lint && pnpm run build && pnpm run test
 cd src-tauri && cargo check && cargo clippy -- -D warnings && cd ..
 node scripts/sync-version.mjs --check
 # Cycle scan + WebView2 smoke test (see CLAUDE.md §3A/§3B)

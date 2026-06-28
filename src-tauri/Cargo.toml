@@ -41,6 +41,7 @@ chrono = "0.4"
 async-trait = "0.1"
 tauri-plugin-updater = "2.9.0"
 tauri-plugin-process = "2.3.1"
+tauri-plugin-os = "2"
 regex = "1.11"
 dirs = "5.0"
 tokio = { version = "1", features = ["full"] }
@@ -104,7 +105,10 @@ tantivy = { version = "0.26", optional = true }
 tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
 
 [target.'cfg(windows)'.dependencies]
-winapi = { version = "0.3", features = ["shellapi", "winuser", "wingdi", "winnt", "winreg", "fileapi", "psapi", "processthreadsapi", "handleapi"] }
+# `ioapiset` (DeviceIoControl) + `errhandlingapi` (GetLastError) are required by
+# the unprivileged USN change-journal reader (indexer::usn, feature
+# `usn-incremental`). They are cheap and harmless when that feature is off.
+winapi = { version = "0.3", features = ["shellapi", "winuser", "wingdi", "winnt", "winreg", "fileapi", "psapi", "processthreadsapi", "handleapi", "ioapiset", "errhandlingapi"] }
 winreg = "0.55"
 lnk = "0.6"
 
@@ -133,11 +137,24 @@ devtools = ["tauri/devtools"]
 # (`indexer::fulltext`). OFF by default; the default build keeps the existing
 # nucleo search path unchanged. See REFONTE-PILIER-D-SEARCH.md.
 tantivy-search = ["dep:tantivy"]
+# Pilier D Track 2 (no-admin): unprivileged USN change-journal delta reader
+# (`indexer::usn`). Windows-only at runtime via FSCTL_READ_UNPRIVILEGED_USN_JOURNAL
+# on a FILE_TRAVERSE handle — NO administrator privileges required. The record
+# parser is pure and portable (unit-tested on any OS). OFF by default; not wired
+# into the lifecycle yet (gated on the D1 benchmark GO). See REFONTE-PILIER-D-SEARCH.md §3.
+usn-incremental = []
 # Enables the heavy end-to-end embedding test that downloads the multilingual-e5-small
 # model (~120 MB on first run, then cached). Run with:
 #   cargo test --features test-embeddings -- --test-threads=1
 # Kept off by default so CI and routine `cargo test` do not pull the model.
 test-embeddings = []
+# Pilier E1: global snippet expansion via a WH_KEYBOARD_LL low-level keyboard
+# hook (no uiAccess, no administrator privileges). OFF by default — this is
+# an opt-in feature that installs a system-wide keyboard hook and can inject
+# synthetic keystrokes (SendInput) into any foreground window. Windows-only
+# at runtime; the pure trigger-matching logic (`expansion::trigger_buffer`)
+# still compiles and is unit-tested on every OS regardless of this flag.
+snippet-global-expansion = []
 
 [dev-dependencies]
 tempfile = "3"

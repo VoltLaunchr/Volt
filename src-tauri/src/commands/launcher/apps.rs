@@ -9,6 +9,7 @@ use tokio::time::timeout;
 use tracing::info;
 #[cfg(target_os = "windows")]
 use tracing::warn;
+use ts_rs::TS;
 
 use crate::commands::launcher::{LaunchHistoryState, execute_launch};
 use crate::core::error::{VoltError, VoltResult};
@@ -59,17 +60,34 @@ fn should_skip_directory(dir_name: &str) -> bool {
         .any(|&skip| dir_name.eq_ignore_ascii_case(skip))
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "AppInfo.ts")]
 pub struct AppInfo {
     pub id: String,
     pub name: String,
     pub path: String,
+    #[ts(optional)]
     pub icon: Option<String>,
+    #[ts(optional)]
     pub description: Option<String>,
+    #[ts(optional)]
     pub keywords: Option<Vec<String>>,
+    // `#[ts(type = "number")]`: serde_json serialises i64 as a JSON number and
+    // Tauri's invoke yields a JS `number` (ms timestamps stay within
+    // Number.MAX_SAFE_INTEGER); ts-rs would otherwise default i64 to `bigint`.
+    #[ts(optional, type = "number")]
     pub last_used: Option<i64>,
+    // u32 maps to `number` by default — no override needed.
     pub usage_count: u32,
+    // DECISION: `category` is `Option<String>` on the wire, so ts-rs generates
+    // `category?: string`. We intentionally do NOT make ts-rs import a
+    // hand-written `AppCategory` union here — wiring a non-ts-rs type into a
+    // generated file is fragile. The frontend keeps its semantic `AppCategory`
+    // enum (src/shared/types/common.types.ts) as the type used at call sites;
+    // the generated binding stays a plain `string`, which is the literal wire
+    // shape produced by `detect_app_category`.
+    #[ts(optional)]
     pub category: Option<String>,
 }
 
@@ -1141,6 +1159,7 @@ fn parse_desktop_file(path: &std::path::Path) -> Option<AppInfo> {
 /// Searches applications based on query
 #[tauri::command]
 pub async fn search_applications(query: String, apps: Vec<AppInfo>) -> VoltResult<Vec<AppInfo>> {
+    crate::time_command!("search_applications");
     Ok(crate::search::search_applications(&query, apps))
 }
 
@@ -1152,6 +1171,9 @@ pub async fn search_applications_frecency(
     history_state: tauri::State<'_, crate::commands::launcher::LaunchHistoryState>,
     binding_state: tauri::State<'_, crate::commands::launcher::QueryBindingState>,
 ) -> VoltResult<Vec<AppInfoWithScore>> {
+    crate::time_command!("search_applications_frecency");
+    // Project the history into a path→frecency map under the lock instead of
+    // cloning every LaunchRecord just to read its score.
     let frecency = history_state.history.with_records(|records| {
         records
             .iter()

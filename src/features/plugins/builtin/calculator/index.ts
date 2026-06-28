@@ -1,4 +1,4 @@
-import { Plugin, PluginContext, PluginResult, PluginResultType } from '../../types';
+import { Plugin, PluginActivation, PluginContext, PluginResult, PluginResultType } from '../../types';
 import { copyToClipboard } from '../../utils/helpers';
 import { logger } from '../../../../shared/utils/logger';
 import { VOLT_EVENTS, emitVoltEvent } from '../../../../shared/events';
@@ -26,6 +26,15 @@ export class CalculatorPlugin implements Plugin {
   name = 'Calculator';
   description = 'Math, unit conversions, date calculations, and timezone conversions';
   enabled = true;
+
+  // `mode: 'custom'` — canHandle still relies on math/unit/date detection; the
+  // keywords/prefix here only drive the scoring boost when the query starts
+  // with them (e.g. `calc …`, `=5+5`).
+  activation: PluginActivation = {
+    mode: 'custom',
+    prefixes: ['='],
+    keywords: [...CALCULATOR_KEYWORDS, 'calcul', 'time'],
+  };
 
   /**
    * Check if query can be handled by calculator

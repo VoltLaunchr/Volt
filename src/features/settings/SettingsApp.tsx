@@ -4,7 +4,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { emit } from '@tauri-apps/api/event';
 import React, { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import i18n from '../../i18n';
+import i18n, { resolveAppLanguage } from '../../i18n';
 import {
   Package,
   Bug,
@@ -16,6 +16,12 @@ import {
   Activity,
   Gamepad2,
   Clipboard as ClipboardIcon,
+  Smile,
+  StickyNote,
+  Scissors,
+  Link as LinkIcon,
+  LayoutGrid,
+  Wrench,
   Folder,
   FolderPlus,
   FolderOpen,
@@ -50,6 +56,14 @@ import {
 import type { SkinTone } from '../plugins/builtin/emoji-picker/types';
 import { applyTheme, settingsService } from './services/settingsService';
 import {
+  applyWindowOpacity,
+  clampTransparency,
+  TRANSPARENCY_MAX,
+  TRANSPARENCY_MIN,
+  TRANSPARENCY_STEP,
+} from './services/appearanceService';
+import { previewAppearanceOnMain } from '../window/services/windowEffectService';
+import {
   checkForUpdate,
   downloadAndInstall,
   deferredInstall,
@@ -64,19 +78,42 @@ import {
   DEFAULT_SETTINGS,
   Settings,
   Theme,
+  WindowEffect,
   WindowPosition,
   ShowOnScreen,
   AppShortcut,
 } from './types/settings.types';
 import { SETTINGS_CATEGORIES, type SettingsCategory } from './constants/settingsCategories';
+import { MANAGED_PLUGINS } from '../plugins/builtin/manifest';
 import { ExtensionsStore } from '../extensions';
 import { AiSettingsView } from './components/AiSettingsView';
 import { IntegrationsPanel } from './components/IntegrationsPanel';
 import { NotesSettingsPanel } from './components/NotesSettingsPanel';
+import { SnippetsManagerPanel } from './components/SnippetsManagerPanel';
 import { SyncPanel } from './components/SyncPanel';
 import { AccountSection } from '../auth';
 import logo from '../../assets/icons/logo.svg';
 import { cn } from '@/lib/utils';
+
+// Lucide icon per managed plugin id. Keyed by the canonical runtime id from the
+// MANAGED_PLUGINS manifest so the Settings list, the registry, and the default
+// settings all agree on one id set.
+const PLUGIN_ICONS: Record<string, React.ComponentType<{ size?: number; className?: string }>> = {
+  calculator: Calculator,
+  websearch: Globe,
+  systemcommands: Terminal,
+  timer: Clock,
+  system_monitor: Activity,
+  games: Gamepad2,
+  clipboard: ClipboardIcon,
+  'emoji-picker': Smile,
+  notes: StickyNote,
+  snippets: Scissors,
+  shellcommand: Terminal,
+  quicklinks: LinkIcon,
+  'window-management': LayoutGrid,
+  'developer-tools': Wrench,
+};
 
 export function SettingsApp() {
   const { t } = useTranslation('settings');
@@ -98,6 +135,7 @@ export function SettingsApp() {
   const [hasChanges, setHasChanges] = useState(false);
   const [isRestartingOnboarding, setIsRestartingOnboarding] = useState(false);
   const [hotkeyError, setHotkeyError] = useState<string | null>(null);
+  const [snippetExpansionError, setSnippetExpansionError] = useState<string | null>(null);
   const [appShortcuts, setAppShortcuts] = useState<AppShortcut[]>([]);
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(
     new Set(['Applications'])
@@ -149,6 +187,8 @@ export function SettingsApp() {
     dbSizeBytes: number;
     lastFullScan: number;
     isWatching: boolean;
+    staleCatchupCount: number;
+    lastStaleCatchup: number;
   } | null>(null);
   const [isRebuilding, setIsRebuilding] = useState(false);
 
@@ -160,6 +200,8 @@ export function SettingsApp() {
         dbSizeBytes: number;
         lastFullScan: number;
         isWatching: boolean;
+        staleCatchupCount: number;
+        lastStaleCatchup: number;
       }>('get_db_index_stats');
       setIndexStats(stats);
     } catch (err) {
@@ -333,26 +375,38 @@ export function SettingsApp() {
     [updateSettings]
   );
 
+  const handleWindowEffectChange = useCallback(
+    (windowEffect: WindowEffect) => {
+      const nextAppearance = {
+        ...settings.appearance,
+        windowEffect,
+      };
+      updateSettings('appearance', 'windowEffect', windowEffect);
+      applyWindowOpacity(nextAppearance.transparency, windowEffect);
+      void previewAppearanceOnMain(nextAppearance);
+    },
+    [settings.appearance, updateSettings]
+  );
+
+  const handleTransparencyChange = useCallback(
+    (transparency: number) => {
+      const clamped = clampTransparency(transparency);
+      const nextAppearance = {
+        ...settings.appearance,
+        transparency: clamped,
+      };
+      updateSettings('appearance', 'transparency', clamped);
+      applyWindowOpacity(clamped, nextAppearance.windowEffect);
+      void previewAppearanceOnMain(nextAppearance);
+    },
+    [settings.appearance, updateSettings]
+  );
+
   const handleLanguageChange = useCallback(
     async (language: 'auto' | 'en' | 'fr') => {
       updateSettings('general', 'language', language);
 
-      let resolvedLng: string = language;
-      if (language === 'auto') {
-        try {
-          const { locale } = await import('@tauri-apps/plugin-os');
-          const osLocale = await locale();
-          if (osLocale) {
-            const base = osLocale.split('-')[0].toLowerCase();
-            if (base === 'fr' || base === 'en') resolvedLng = base;
-            else resolvedLng = 'en';
-          } else {
-            resolvedLng = 'en';
-          }
-        } catch {
-          resolvedLng = 'en';
-        }
-      }
+      const resolvedLng = await resolveAppLanguage(language);
 
       await i18n.changeLanguage(resolvedLng);
       await emit('volt://language-changed', { language: resolvedLng });
@@ -921,23 +975,84 @@ export function SettingsApp() {
 
         <div className="flex items-center justify-between py-3 border-b border-hairline last:border-0">
           <div className="flex flex-col gap-0.5">
+            <span className="text-sm text-body">{t('advanced.windowEffect')}</span>
+            <span className="text-xs text-mute mt-0.5">{t('advanced.windowEffectDesc')}</span>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
+          {(['volt-glass', 'mica', 'acrylic', 'solid'] as const).map((effectOption) => (
+            <button
+              key={effectOption}
+              type="button"
+              className={cn(
+                'p-4 rounded-xl bg-surface-elevated/30 border-2 cursor-pointer transition-all flex flex-col items-center gap-3',
+                settings.appearance.windowEffect === effectOption
+                  ? 'border-accent-blue bg-accent-blue/10'
+                  : 'border-transparent hover:bg-surface-elevated/50'
+              )}
+              onClick={() => handleWindowEffectChange(effectOption)}
+            >
+              <div
+                className={cn(
+                  'w-full h-[60px] rounded-md overflow-hidden border border-hairline-soft',
+                  effectOption === 'volt-glass' &&
+                    'bg-[rgba(20,20,30,0.85)] backdrop-blur-md border-white/10',
+                  effectOption === 'mica' &&
+                    'bg-gradient-to-br from-indigo-500/25 via-[rgba(20,20,30,0.45)] to-purple-500/15',
+                  effectOption === 'acrylic' &&
+                    'bg-gradient-to-br from-white/15 via-[rgba(30,30,45,0.5)] to-white/10 backdrop-blur-sm',
+                  effectOption === 'solid' && 'bg-surface'
+                )}
+              />
+              <span
+                className={cn(
+                  'text-[13px] font-medium text-center',
+                  settings.appearance.windowEffect === effectOption
+                    ? 'text-accent-blue'
+                    : 'text-body'
+                )}
+              >
+                {t(
+                  `advanced.windowEffect${effectOption
+                    .split('-')
+                    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+                    .join('')}`
+                )}
+              </span>
+            </button>
+          ))}
+        </div>
+
+        <div className="flex items-center justify-between py-3 border-b border-hairline last:border-0">
+          <div className="flex flex-col gap-0.5">
             <span className="text-sm text-body">{t('advanced.windowTransparency')}</span>
-            <span className="text-xs text-mute mt-0.5">{t('advanced.transparencyDesc')}</span>
+            <span className="text-xs text-mute mt-0.5">
+              {settings.appearance.windowEffect === 'solid'
+                ? t('advanced.transparencySolidHint')
+                : t('advanced.transparencyDesc')}
+            </span>
           </div>
           <div className="flex items-center gap-3">
             <input
               type="range"
-              min="0.5"
-              max="1"
-              step="0.05"
+              min={TRANSPARENCY_MIN}
+              max={TRANSPARENCY_MAX}
+              step={TRANSPARENCY_STEP}
               value={settings.appearance.transparency}
-              onChange={(e) =>
-                updateSettings('appearance', 'transparency', parseFloat(e.target.value))
-              }
-              className="w-36 h-1 rounded-full bg-white/10 outline-none cursor-pointer appearance-none"
+              disabled={settings.appearance.windowEffect === 'solid'}
+              onChange={(e) => handleTransparencyChange(parseFloat(e.target.value))}
+              className={cn(
+                'w-40 h-1 rounded-full bg-white/10 outline-none appearance-none',
+                settings.appearance.windowEffect === 'solid'
+                  ? 'opacity-40 cursor-not-allowed'
+                  : 'cursor-pointer'
+              )}
             />
-            <span className="text-[13px] text-body min-w-[44px] text-right">
-              {Math.round(settings.appearance.transparency * 100)}%
+            <span className="text-[13px] text-body min-w-[44px] text-right tabular-nums">
+              {settings.appearance.windowEffect === 'solid'
+                ? '100%'
+                : `${Math.round(settings.appearance.transparency * 100)}%`}
             </span>
           </div>
         </div>
@@ -1550,6 +1665,27 @@ export function SettingsApp() {
             />
           </div>
 
+          <div className="flex items-center justify-between py-3 border-b border-hairline last:border-0">
+            <div className="flex flex-col gap-0.5">
+              <span className="text-sm text-body">{t('fileSearch.staleThreshold')}</span>
+              <span className="text-xs text-mute mt-0.5">{t('fileSearch.staleThresholdDesc')}</span>
+            </div>
+            <select
+              className="bg-surface-elevated border border-hairline rounded-md px-3 py-1.5 text-sm text-on-dark outline-none focus:border-hairline-strong cursor-pointer"
+              value={settings.indexing.staleThresholdSecs}
+              onChange={(e) =>
+                updateSettings('indexing', 'staleThresholdSecs', parseInt(e.target.value, 10))
+              }
+            >
+              <option value={900}>{t('fileSearch.staleOptions.15m')}</option>
+              <option value={1800}>{t('fileSearch.staleOptions.30m')}</option>
+              <option value={3600}>{t('fileSearch.staleOptions.1h')}</option>
+              <option value={21600}>{t('fileSearch.staleOptions.6h')}</option>
+              <option value={86400}>{t('fileSearch.staleOptions.24h')}</option>
+              <option value={0}>{t('fileSearch.staleOptions.off')}</option>
+            </select>
+          </div>
+
           <div className="h-px bg-hairline my-5" />
 
           <h3 className="text-sm font-semibold text-ink mb-1.5">
@@ -1684,6 +1820,17 @@ export function SettingsApp() {
                     ? t('fileSearch.stats.active')
                     : t('fileSearch.stats.inactive'),
                   accent: indexStats.isWatching ? 'text-accent-green' : undefined,
+                },
+                {
+                  label: t('fileSearch.stats.catchupCount'),
+                  value: indexStats.staleCatchupCount.toLocaleString(),
+                },
+                {
+                  label: t('fileSearch.stats.lastCatchup'),
+                  value:
+                    indexStats.lastStaleCatchup > 0
+                      ? new Date(indexStats.lastStaleCatchup * 1000).toLocaleString()
+                      : t('fileSearch.stats.never'),
                 },
               ].map(({ label, value, accent }) => (
                 <div
@@ -1910,33 +2057,9 @@ export function SettingsApp() {
     </div>
   );
 
-  // Render Plugins section
+  // Render Plugins section. The list is driven by the canonical MANAGED_PLUGINS
+  // manifest so it stays in lockstep with the registry and default settings.
   const renderPluginsSection = () => {
-    const plugins = [
-      { id: 'calculator', nameKey: 'plugins.names.calculator', icon: Calculator, builtin: true },
-      { id: 'web-search', nameKey: 'plugins.names.webSearch', icon: Globe, builtin: true },
-      {
-        id: 'system-commands',
-        nameKey: 'plugins.names.systemCommands',
-        icon: Terminal,
-        builtin: true,
-      },
-      { id: 'timer', nameKey: 'plugins.names.timer', icon: Clock, builtin: true },
-      {
-        id: 'system-monitor',
-        nameKey: 'plugins.names.systemMonitor',
-        icon: Activity,
-        builtin: true,
-      },
-      { id: 'steam-games', nameKey: 'plugins.names.games', icon: Gamepad2, builtin: true },
-      {
-        id: 'clipboard-manager',
-        nameKey: 'plugins.names.clipboardHistory',
-        icon: ClipboardIcon,
-        builtin: true,
-      },
-    ];
-
     return (
       <div className="flex-1 flex flex-col overflow-hidden">
         <div className="flex items-center justify-between h-14 px-6 border-b border-hairline shrink-0">
@@ -1945,24 +2068,20 @@ export function SettingsApp() {
 
         <div className="flex-1 overflow-y-auto p-6">
           <div className="flex flex-col gap-2">
-            {plugins.map((plugin) => {
+            {MANAGED_PLUGINS.map((plugin) => {
               const isEnabled = settings.plugins.enabledPlugins.includes(plugin.id);
+              const Icon = PLUGIN_ICONS[plugin.id] ?? Package;
               return (
                 <div
                   key={plugin.id}
                   className="flex items-center gap-3 px-4 py-3 bg-surface-elevated/30 rounded-lg transition-colors hover:bg-surface-elevated/50"
                 >
-                  {React.createElement(plugin.icon, {
-                    size: 20,
-                    className: 'text-accent-blue shrink-0',
-                  })}
+                  <Icon size={20} className="text-accent-blue shrink-0" />
                   <div className="flex-1 flex items-center gap-2">
                     <span className="text-sm font-medium text-ink">{t(plugin.nameKey)}</span>
-                    {plugin.builtin && (
-                      <span className="px-2 py-0.5 rounded-xs bg-accent-blue/15 text-accent-blue text-[10px] font-semibold uppercase">
-                        {t('plugins.builtin')}
-                      </span>
-                    )}
+                    <kbd className="px-1.5 py-0.5 rounded-xs bg-black/30 font-mono text-[10px] text-mute">
+                      {plugin.hint}
+                    </kbd>
                   </div>
                   <Toggle
                     checked={isEnabled}
@@ -2236,6 +2355,144 @@ export function SettingsApp() {
     </div>
   );
 
+  // Render Snippets section (in-app `;` snippets are managed from the search
+  // bar itself; this panel only covers the global, system-wide expansion hook).
+  const renderSnippetsSection = () => {
+    const handleSnippetExpansionToggle = async (enabled: boolean) => {
+      setSnippetExpansionError(null);
+      try {
+        await invoke<void>('set_snippet_expansion_enabled', { enabled });
+        updateSettings('snippetExpansion', 'enabled', enabled);
+      } catch (err) {
+        logger.error('Failed to toggle global snippet expansion:', err);
+        setSnippetExpansionError(extractErrorMessage(err));
+      }
+    };
+
+    const addSnippetExpansionExcludedApp = () => {
+      const name = window.prompt(t('snippetExpansion.excludedAppsPrompt'));
+      const trimmed = name?.trim().toLowerCase();
+      if (trimmed && !settings.snippetExpansion.excludedApps.includes(trimmed)) {
+        updateSettings('snippetExpansion', 'excludedApps', [
+          ...settings.snippetExpansion.excludedApps,
+          trimmed,
+        ]);
+      }
+    };
+
+    const removeSnippetExpansionExcludedApp = (index: number) => {
+      const newList = settings.snippetExpansion.excludedApps.filter((_, i) => i !== index);
+      updateSettings('snippetExpansion', 'excludedApps', newList);
+    };
+
+    return (
+      <div className="flex-1 flex flex-col overflow-hidden">
+        <div className="flex items-center justify-between h-14 px-6 border-b border-hairline shrink-0">
+          <h2 className="text-sm font-medium text-ink m-0">{t('snippetExpansion.title')}</h2>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-6">
+          <div className="flex items-start gap-3 px-3.5 py-3.5 bg-accent-blue/8 border border-accent-blue/20 rounded-lg mb-5">
+            <Scissors size={20} className="text-accent-blue shrink-0 mt-0.5" />
+            <p className="m-0 text-[13px] text-body leading-relaxed">
+              {t('snippetExpansion.infoText')}{' '}
+              <kbd className="px-1.5 py-0.5 rounded-xs bg-black/30 font-mono text-xs">;</kbd>{' '}
+              {t('snippetExpansion.infoTextSuffix')}
+            </p>
+          </div>
+
+          <SnippetsManagerPanel />
+
+          <div className="h-px bg-hairline my-5" />
+
+          <h3 className="text-sm font-semibold text-ink mb-3">
+            {t('snippetExpansion.globalSectionTitle')}
+          </h3>
+
+          {snippetExpansionError && (
+            <div className="flex items-start gap-2 px-3.5 py-2.5 bg-accent-red/10 border border-accent-red/30 rounded-lg mb-5">
+              <AlertCircle size={16} className="text-accent-red shrink-0 mt-0.5" />
+              <p className="m-0 text-[13px] text-accent-red leading-relaxed">
+                {snippetExpansionError}
+              </p>
+            </div>
+          )}
+
+          <div className="flex items-center justify-between py-3 border-b border-hairline last:border-0">
+            <div className="flex flex-col gap-0.5">
+              <span className="text-sm text-body">{t('snippetExpansion.enabled')}</span>
+              <span className="text-xs text-mute mt-0.5">{t('snippetExpansion.enabledDesc')}</span>
+            </div>
+            <Toggle
+              checked={settings.snippetExpansion.enabled}
+              onChange={(enabled) => {
+                void handleSnippetExpansionToggle(enabled);
+              }}
+            />
+          </div>
+
+          <div className="flex items-center justify-between py-3 border-b border-hairline last:border-0">
+            <div className="flex flex-col gap-0.5">
+              <span className="text-sm text-body">{t('snippetExpansion.maxTriggerLen')}</span>
+              <span className="text-xs text-mute mt-0.5">
+                {t('snippetExpansion.maxTriggerLenDesc')}
+              </span>
+            </div>
+            <input
+              type="number"
+              className="bg-surface-elevated border border-hairline rounded-md px-3 py-1.5 text-sm text-on-dark outline-none focus:border-hairline-strong"
+              min={4}
+              max={256}
+              step={1}
+              value={settings.snippetExpansion.maxTriggerLen}
+              onChange={(e) =>
+                updateSettings(
+                  'snippetExpansion',
+                  'maxTriggerLen',
+                  Math.max(4, Number(e.target.value))
+                )
+              }
+            />
+          </div>
+
+          <div className="py-3 border-b border-hairline last:border-0">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex flex-col gap-0.5">
+                <span className="text-sm text-body">{t('snippetExpansion.excludedApps')}</span>
+                <span className="text-xs text-mute mt-0.5">
+                  {t('snippetExpansion.excludedAppsDesc')}
+                </span>
+              </div>
+              <Button variant="secondary" onClick={addSnippetExpansionExcludedApp}>
+                <Plus size={15} /> {t('snippetExpansion.addApp')}
+              </Button>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              {settings.snippetExpansion.excludedApps.length === 0 ? (
+                <p className="text-xs text-stone italic">{t('snippetExpansion.noExcludedApps')}</p>
+              ) : (
+                settings.snippetExpansion.excludedApps.map((app, index) => (
+                  <div
+                    key={index}
+                    className="flex items-center gap-2.5 px-3 py-2 bg-surface-elevated/30 rounded-md border border-hairline"
+                  >
+                    <span className="flex-1 text-[13px] text-body font-mono">{app}</span>
+                    <button
+                      className="w-6 h-6 rounded-sm bg-transparent border-none text-ash text-lg cursor-pointer flex items-center justify-center transition-all hover:bg-accent-red/15 hover:text-accent-red"
+                      onClick={() => removeSnippetExpansionExcludedApp(index)}
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   // Render main content
   const renderContent = () => {
     if (isLoading) {
@@ -2282,6 +2539,8 @@ export function SettingsApp() {
         return renderClipboardSection();
       case 'shell':
         return renderShellSection();
+      case 'snippets':
+        return renderSnippetsSection();
       case 'emoji':
         return renderEmojiSection();
       case 'ai':

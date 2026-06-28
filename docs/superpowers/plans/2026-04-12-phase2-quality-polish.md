@@ -17,17 +17,17 @@
 
 - [ ] **Step 1: Install zustand**
 
-Run: `bun add zustand`
+Run: `pnpm add zustand`
 
 - [ ] **Step 2: Verify installation**
 
-Run: `bun run build`
+Run: `pnpm run build`
 Expected: BUILD SUCCESS, no type errors
 
 - [ ] **Step 3: Commit**
 
 ```bash
-git add package.json bun.lockb
+git add package.json pnpm-lock.yaml
 git commit -m "chore: add zustand dependency"
 ```
 
@@ -95,7 +95,7 @@ describe('searchStore', () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `bun run test -- src/stores/__tests__/searchStore.test.ts`
+Run: `pnpm run test -- src/stores/__tests__/searchStore.test.ts`
 Expected: FAIL — module `../searchStore` not found
 
 - [ ] **Step 3: Write the store**

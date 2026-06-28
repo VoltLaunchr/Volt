@@ -2587,13 +2587,21 @@ pub async fn ext_oauth_revoke_token(extension_id: String, provider: String) -> R
 // ============================================================================
 
 /// Event emitted on the streaming Channel for each AI response chunk.
+///
+/// NOTE: enum-level `rename_all` only renames the *variant* tags (`Done` →
+/// `done`); it does NOT touch struct-variant field names. The `full_text` field
+/// must therefore be renamed explicitly, otherwise it ships as snake_case while
+/// every TS consumer reads `event.fullText` — silently dropping the final text.
 #[derive(Clone, Serialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum AiStreamEvent {
     /// A token or partial token received from the provider's SSE stream.
     Chunk { text: String },
     /// Stream finished — carries the full concatenated text.
-    Done { full_text: String },
+    Done {
+        #[serde(rename = "fullText")]
+        full_text: String,
+    },
     /// The provider returned an error mid-stream.
     Error { error: String },
 }
@@ -2605,6 +2613,52 @@ pub enum AiStreamEvent {
 pub enum Creativity {
     Named(String),
     Raw(f64),
+}
+
+/// A single content part inside a conversation turn.
+///
+/// Enum-level `rename_all` only renames the *variant* tags (`Image` → `image`),
+/// not struct-variant field names — so `mediaType` is renamed explicitly,
+/// mirroring the TS `ChatContentPart` union.
+#[derive(Debug, Deserialize)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub enum ChatContentPart {
+    Text {
+        text: String,
+    },
+    Image {
+        #[serde(rename = "mediaType")]
+        media_type: String,
+        /// Base64-encoded image bytes (no `data:` URI prefix).
+        data: String,
+    },
+}
+
+impl ChatContentPart {
+    fn text_len(&self) -> usize {
+        match self {
+            ChatContentPart::Text { text } => text.len(),
+            ChatContentPart::Image { .. } => 0,
+        }
+    }
+}
+
+/// One prior turn of the conversation, forwarded so the model has memory.
+/// `role` is `"user"` or `"assistant"`.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatTurn {
+    pub role: String,
+    pub content: Vec<ChatContentPart>,
+}
+
+/// An image attached to the *current* user turn.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImagePart {
+    pub media_type: String,
+    /// Base64-encoded image bytes (no `data:` URI prefix).
+    pub data: String,
 }
 
 /// Options forwarded from the Worker's `VoltAPI.ai.ask(prompt, options)` call.
@@ -2626,6 +2680,11 @@ pub struct ExtAiOptions {
     pub creativity: Option<Creativity>,
     /// Raw temperature (0–2). Takes precedence over `creativity`.
     pub temperature: Option<f64>,
+    /// Prior conversation turns (oldest → newest), enabling multi-turn memory.
+    /// The current turn is carried separately by `prompt` (+ `images`).
+    pub history: Option<Vec<ChatTurn>>,
+    /// Images attached to the *current* user turn (multimodal input).
+    pub images: Option<Vec<ImagePart>>,
 }
 
 // ── Rate limiting ────────────────────────────────────────────────────────────
@@ -2637,7 +2696,16 @@ static AI_RATE_LIMITER: OnceLock<Mutex<HashMap<String, VecDeque<Instant>>>> = On
 const AI_RATE_LIMIT_PER_MIN: usize = 10;
 const AI_RATE_WINDOW_SECS: u64 = 60;
 
-fn ai_check_rate_limit(extension_id: &str) -> Result<(), String> {
+pub(crate) fn ai_check_rate_limit(extension_id: &str) -> Result<(), String> {
+    ai_check_rate_limit_n(extension_id, AI_RATE_LIMIT_PER_MIN)
+}
+
+/// Like [`ai_check_rate_limit`] but with a caller-supplied per-minute cap.
+///
+/// The built-in chat tool-loop (Sprint 3 — J1) makes several proxied requests
+/// per user turn (one per model→tool→model step), so it needs a higher cap than
+/// the 10/min applied to each extension.
+pub(crate) fn ai_check_rate_limit_n(extension_id: &str, max_per_min: usize) -> Result<(), String> {
     let limiter = AI_RATE_LIMITER.get_or_init(|| Mutex::new(HashMap::new()));
     let mut map = limiter.lock().unwrap_or_else(|p| p.into_inner());
     let now = Instant::now();
@@ -2651,12 +2719,12 @@ fn ai_check_rate_limit(extension_id: &str) -> Result<(), String> {
         queue.pop_front();
     }
 
-    if queue.len() >= AI_RATE_LIMIT_PER_MIN {
+    if queue.len() >= max_per_min {
         let oldest = queue.front().unwrap();
         let retry_in = AI_RATE_WINDOW_SECS.saturating_sub(now.duration_since(*oldest).as_secs());
         return Err(format!(
             "Rate limit exceeded: max {} AI requests per minute. Retry in {}s.",
-            AI_RATE_LIMIT_PER_MIN, retry_in
+            max_per_min, retry_in
         ));
     }
 
@@ -2693,6 +2761,168 @@ fn strip_model_prefix<'a>(model: &'a str, provider: &str) -> &'a str {
         .unwrap_or(model)
 }
 
+/// Total length (in chars) of all text across the conversation: the current
+/// prompt plus every text part of the forwarded history. Image bytes are not
+/// counted — they're bounded separately by the upstream attachment limits.
+fn conversation_char_len(prompt: &str, opts: &ExtAiOptions) -> usize {
+    let history_len: usize = opts
+        .history
+        .as_deref()
+        .map(|turns| {
+            turns
+                .iter()
+                .flat_map(|t| t.content.iter())
+                .map(ChatContentPart::text_len)
+                .sum()
+        })
+        .unwrap_or(0);
+    prompt.len() + history_len
+}
+
+/// Concatenate the text parts of a turn into a single string (drops images).
+fn concat_text_parts(content: &[ChatContentPart]) -> String {
+    content
+        .iter()
+        .filter_map(|p| match p {
+            ChatContentPart::Text { text } => Some(text.as_str()),
+            ChatContentPart::Image { .. } => None,
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Whether an OpenAI model is a reasoning model (o-series / GPT-5 reasoning).
+///
+/// Reasoning models reject `temperature != 1` and must use
+/// `max_completion_tokens`. The GPT-5 *chat* variants (`gpt-5.x-chat-latest`)
+/// are conventional chat models and DO accept a temperature.
+fn openai_is_reasoning_model(model: &str) -> bool {
+    let m = model.to_ascii_lowercase();
+    if m.starts_with("gpt-5") {
+        return !m.contains("chat");
+    }
+    // o-series: an `o` followed immediately by a digit (o1, o3, o3-mini, o4-mini…).
+    let mut chars = m.chars();
+    matches!(chars.next(), Some('o')) && matches!(chars.next(), Some(c) if c.is_ascii_digit())
+}
+
+/// Build the current user turn for OpenAI-compatible providers (OpenAI, Groq,
+/// Hugging Face). Uses a plain string when there are no images, otherwise a
+/// content-parts array with `image_url` data URIs.
+fn openai_user_message(prompt: &str, images: &[ImagePart]) -> serde_json::Value {
+    if images.is_empty() {
+        return serde_json::json!({ "role": "user", "content": prompt });
+    }
+    let mut parts = vec![serde_json::json!({ "type": "text", "text": prompt })];
+    for img in images {
+        parts.push(serde_json::json!({
+            "type": "image_url",
+            "image_url": { "url": format!("data:{};base64,{}", img.media_type, img.data) }
+        }));
+    }
+    serde_json::json!({ "role": "user", "content": parts })
+}
+
+/// Map a single history turn to an OpenAI-compatible message.
+fn openai_history_message(turn: &ChatTurn) -> serde_json::Value {
+    let has_image = turn
+        .content
+        .iter()
+        .any(|p| matches!(p, ChatContentPart::Image { .. }));
+    if !has_image {
+        return serde_json::json!({ "role": turn.role, "content": concat_text_parts(&turn.content) });
+    }
+    let mut parts = Vec::with_capacity(turn.content.len());
+    for part in &turn.content {
+        match part {
+            ChatContentPart::Text { text } => {
+                parts.push(serde_json::json!({ "type": "text", "text": text }))
+            }
+            ChatContentPart::Image { media_type, data } => parts.push(serde_json::json!({
+                "type": "image_url",
+                "image_url": { "url": format!("data:{};base64,{}", media_type, data) }
+            })),
+        }
+    }
+    serde_json::json!({ "role": turn.role, "content": parts })
+}
+
+/// Assemble the full `messages` array for an OpenAI-compatible provider:
+/// `[system?] + history + current user turn`.
+fn build_openai_messages(
+    system: Option<&str>,
+    opts: &ExtAiOptions,
+    prompt: &str,
+) -> Vec<serde_json::Value> {
+    let mut messages = Vec::new();
+    if let Some(system) = system {
+        messages.push(serde_json::json!({ "role": "system", "content": system }));
+    }
+    if let Some(history) = opts.history.as_deref() {
+        for turn in history {
+            messages.push(openai_history_message(turn));
+        }
+    }
+    let images = opts.images.as_deref().unwrap_or(&[]);
+    messages.push(openai_user_message(prompt, images));
+    messages
+}
+
+/// Build the current user turn for Anthropic (`/v1/messages`). Uses a plain
+/// string when there are no images, otherwise a content-blocks array with
+/// base64 `image` sources.
+fn anthropic_user_message(prompt: &str, images: &[ImagePart]) -> serde_json::Value {
+    if images.is_empty() {
+        return serde_json::json!({ "role": "user", "content": prompt });
+    }
+    let mut parts = vec![serde_json::json!({ "type": "text", "text": prompt })];
+    for img in images {
+        parts.push(serde_json::json!({
+            "type": "image",
+            "source": { "type": "base64", "media_type": img.media_type, "data": img.data }
+        }));
+    }
+    serde_json::json!({ "role": "user", "content": parts })
+}
+
+/// Map a single history turn to an Anthropic message.
+fn anthropic_history_message(turn: &ChatTurn) -> serde_json::Value {
+    let has_image = turn
+        .content
+        .iter()
+        .any(|p| matches!(p, ChatContentPart::Image { .. }));
+    if !has_image {
+        return serde_json::json!({ "role": turn.role, "content": concat_text_parts(&turn.content) });
+    }
+    let mut parts = Vec::with_capacity(turn.content.len());
+    for part in &turn.content {
+        match part {
+            ChatContentPart::Text { text } => {
+                parts.push(serde_json::json!({ "type": "text", "text": text }))
+            }
+            ChatContentPart::Image { media_type, data } => parts.push(serde_json::json!({
+                "type": "image",
+                "source": { "type": "base64", "media_type": media_type, "data": data }
+            })),
+        }
+    }
+    serde_json::json!({ "role": turn.role, "content": parts })
+}
+
+/// Assemble the Anthropic `messages` array: `history + current user turn`.
+/// The system prompt lives at the top level of the request body, not here.
+fn build_anthropic_messages(opts: &ExtAiOptions, prompt: &str) -> Vec<serde_json::Value> {
+    let mut messages = Vec::new();
+    if let Some(history) = opts.history.as_deref() {
+        for turn in history {
+            messages.push(anthropic_history_message(turn));
+        }
+    }
+    let images = opts.images.as_deref().unwrap_or(&[]);
+    messages.push(anthropic_user_message(prompt, images));
+    messages
+}
+
 /// Stream an AI model response on behalf of an extension.
 ///
 /// The API key is read from the OS keyring — it never crosses the JS boundary.
@@ -2713,11 +2943,11 @@ pub async fn ext_ai_ask_stream(
         });
         return Err("Prompt cannot be empty".to_string());
     }
-    if prompt.len() > 100_000 {
+    if conversation_char_len(&prompt, &options) > 100_000 {
         let _ = channel.send(AiStreamEvent::Error {
-            error: "Prompt exceeds 100 000 character limit".into(),
+            error: "Conversation exceeds 100 000 character limit".into(),
         });
-        return Err("Prompt exceeds 100 000 character limit".to_string());
+        return Err("Conversation exceeds 100 000 character limit".to_string());
     }
 
     let provider = options
@@ -2806,20 +3036,21 @@ async fn ext_ai_openai_stream(
         .unwrap_or("gpt-4o-mini");
     let max_tokens = opts.max_tokens.unwrap_or(1024);
 
-    let mut messages = vec![];
-    if let Some(system) = &opts.system {
-        messages.push(serde_json::json!({ "role": "system", "content": system }));
-    }
-    messages.push(serde_json::json!({ "role": "user", "content": prompt }));
+    let messages = build_openai_messages(opts.system.as_deref(), opts, prompt);
 
-    // OpenAI temperature range: 0–2
+    // Modern OpenAI models (GPT-5 / o-series and GPT-4o alike) take
+    // `max_completion_tokens`; `max_tokens` is rejected by the reasoning models.
     let mut body = serde_json::json!({
         "model": model,
         "messages": messages,
-        "max_tokens": max_tokens,
+        "max_completion_tokens": max_tokens,
         "stream": true,
     });
-    if let Some(temp) = resolve_temperature(opts, 2.0) {
+    // Reasoning models (o-series / GPT-5 reasoning) reject any temperature other
+    // than the default — only send it for conventional chat models.
+    if !openai_is_reasoning_model(model)
+        && let Some(temp) = resolve_temperature(opts, 2.0)
+    {
         body["temperature"] = serde_json::json!(temp);
     }
 
@@ -2892,7 +3123,7 @@ async fn ext_ai_anthropic_stream(
     let mut body = serde_json::json!({
         "model": model,
         "max_tokens": max_tokens,
-        "messages": [{ "role": "user", "content": prompt }],
+        "messages": build_anthropic_messages(opts, prompt),
         "stream": true,
     });
     if let Some(temp) = resolve_temperature(opts, 1.0) {
@@ -2969,11 +3200,7 @@ async fn ext_ai_groq_stream(
         .unwrap_or("llama-3.1-8b-instant");
     let max_tokens = opts.max_tokens.unwrap_or(1024);
 
-    let mut messages = vec![];
-    if let Some(system) = &opts.system {
-        messages.push(serde_json::json!({ "role": "system", "content": system }));
-    }
-    messages.push(serde_json::json!({ "role": "user", "content": prompt }));
+    let messages = build_openai_messages(opts.system.as_deref(), opts, prompt);
 
     // Groq temperature range: 0–2 (OpenAI-compatible)
     let mut body = serde_json::json!({
@@ -3058,11 +3285,7 @@ async fn ext_ai_huggingface_stream(
         .unwrap_or("deepseek-ai/DeepSeek-V4-Pro");
     let max_tokens = opts.max_tokens.unwrap_or(1024);
 
-    let mut messages = vec![];
-    if let Some(system) = &opts.system {
-        messages.push(serde_json::json!({ "role": "system", "content": system }));
-    }
-    messages.push(serde_json::json!({ "role": "user", "content": prompt }));
+    let messages = build_openai_messages(opts.system.as_deref(), opts, prompt);
 
     let mut body = serde_json::json!({
         "model": model,
@@ -3297,12 +3520,18 @@ pub async fn ai_ask_builtin_stream(
         });
         return Err("Prompt cannot be empty".to_string());
     }
-    if prompt.len() > 100_000 {
+    if conversation_char_len(&prompt, &options) > 100_000 {
         let _ = channel.send(AiStreamEvent::Error {
-            error: "Prompt exceeds 100 000 character limit".into(),
+            error: "Conversation exceeds 100 000 character limit".into(),
         });
-        return Err("Prompt exceeds 100 000 character limit".to_string());
+        return Err("Conversation exceeds 100 000 character limit".to_string());
     }
+
+    // Rate limit the built-in chat too — align with the per-extension limiter,
+    // under a dedicated key so it doesn't share extensions' budget.
+    ai_check_rate_limit("builtin:chat").inspect_err(|e| {
+        let _ = channel.send(AiStreamEvent::Error { error: e.clone() });
+    })?;
 
     // Prepend the persisted AI Profile (if any) to the system prompt.
     if let Some(profile) = crate::commands::ai_profile::load_profile_blocking(&app) {
