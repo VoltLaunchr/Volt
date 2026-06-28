@@ -1,6 +1,6 @@
 # TODO — Refonte cœur Volt 2026
 
-> Suivi opérationnel actuel. `REFONTE-2026.md` conserve le plan initial à titre historique.
+> Suivi opérationnel actuel. [`../../archive/plans/REFONTE-2026.md`](../../archive/plans/REFONTE-2026.md) conserve le plan initial à titre historique.
 > Convention : `[ ]` à faire · `[~]` en cours · `[x]` fait. Chaque tâche note l'effort `[S/M/L/XL]` et le finding d'audit résolu le cas échéant.
 > **Avant tout commit** : `pnpm run lint` + `pnpm run build` + `cargo check` + `cargo clippy -- -D warnings` + `pnpm run test` (cf. CLAUDE.md).
 

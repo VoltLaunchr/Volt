@@ -260,6 +260,6 @@ Backend plugins (Rust, `plugins/builtin/`): `system_monitor`, `game_scanner`, `c
 - Backend module docs: [`src-tauri/README.md`](../../src-tauri/README.md), [`src-tauri/ARCHITECTURE.md`](../../src-tauri/ARCHITECTURE.md), [`src-tauri/MODULES.md`](../../src-tauri/MODULES.md)
 - Plugin development: [`src-tauri/src/plugins/README.md`](../../src-tauri/src/plugins/README.md), [`docs/plugins/DEVELOPMENT.md`](../plugins/DEVELOPMENT.md)
 - Features (user-facing): [`docs/architecture/FEATURES.md`](./FEATURES.md)
-- Security: [`docs/security/`](../security/) (`ACCEPTED_RISKS.md`, `RUST_CODE_REVIEW_2025.md`, `updater-key-custody.md`)
+- Security: [`docs/security/`](../security/) (`ACCEPTED_RISKS.md`, `updater-key-custody.md`); archived [`RUST_CODE_REVIEW_2025.md`](../../archive/audits/RUST_CODE_REVIEW_2025.md)
 - OAuth integration: [`docs/architecture/OAUTH_IMPLEMENTATION.md`](./OAUTH_IMPLEMENTATION.md)
 - Roadmap: [`docs/roadmap/PRODUCT_ROADMAP.md`](../roadmap/PRODUCT_ROADMAP.md), [`COMPETITIVE_ANALYSIS.md`](../roadmap/COMPETITIVE_ANALYSIS.md), [`EXTENSION_ECOSYSTEM_PLAN.md`](../roadmap/EXTENSION_ECOSYSTEM_PLAN.md)

@@ -4,7 +4,7 @@
 
 > Document vivant. Les milestones sont groupes en 4 phases. Chaque milestone liste un **but**, des **taches concretes** (avec fichiers), des **criteres d'acceptation** et une **estimation**.
 >
-> L'ancien plan (`IMPLEMENTATION_PLAN.md`) reste le journal historique (M0 → M5 completes). Cette roadmap couvre ce qui reste pour atteindre 1.0 et au-dela.
+> L'ancien plan ([`../../archive/plans/IMPLEMENTATION_PLAN.md`](../../archive/plans/IMPLEMENTATION_PLAN.md)) reste le journal historique (M0 → M5 completes). Cette roadmap couvre ce qui reste pour atteindre 1.0 et au-dela.
 >
 > **Important pre-marketing :** cette roadmap suit l'implementation. Elle ne remplace pas les preuves release/marketing. Pour une decision Go/No-Go, utiliser [`../marketing/PRODUCT_READINESS_REVIEW.md`](../marketing/PRODUCT_READINESS_REVIEW.md), [`../release/QA_MATRIX.md`](../release/QA_MATRIX.md) et [`../marketing/CLAIMS_EVIDENCE.md`](../marketing/CLAIMS_EVIDENCE.md).
 
@@ -438,7 +438,7 @@
 ## Liens utiles
 
 - Architecture technique : [../architecture/ARCHITECTURE.md](../architecture/ARCHITECTURE.md)
-- Plan historique (M0-M5) : [./IMPLEMENTATION_PLAN.md](./IMPLEMENTATION_PLAN.md)
+- Plan historique (M0-M5) : [../../archive/plans/IMPLEMENTATION_PLAN.md](../../archive/plans/IMPLEMENTATION_PLAN.md)
 - CI/CD : [./CICD.md](./CICD.md)
 - Distribution : [./DISTRIBUTION.md](./DISTRIBUTION.md)
 - Plugin development : [../plugins/DEVELOPMENT.md](../plugins/DEVELOPMENT.md)
