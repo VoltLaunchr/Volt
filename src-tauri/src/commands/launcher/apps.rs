@@ -94,7 +94,7 @@ pub struct AppInfo {
 
 fn normalized_app_identity(name: &str) -> String {
     name.trim()
-        .trim_end_matches(|c: char| c == '.' || c == '_' || c == '-')
+        .trim_end_matches(['.', '_', '-'])
         .split_whitespace()
         .collect::<Vec<_>>()
         .join(" ")
@@ -799,7 +799,7 @@ async fn scan_applications_windows() -> Result<Vec<AppInfo>, String> {
 
     // Remove duplicate launch targets and duplicate app identities.
     deduplicate_app_results(&mut apps);
-    apps.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    apps.sort_by_key(|a| a.name.to_lowercase());
 
     info!("Application scan complete: {} apps found", apps.len());
 
@@ -956,7 +956,7 @@ async fn scan_applications_macos() -> Result<Vec<AppInfo>, String> {
 
     // Remove duplicates
     deduplicate_app_results(&mut apps);
-    apps.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    apps.sort_by_key(|a| a.name.to_lowercase());
 
     info!("Application scan complete: {} apps found", apps.len());
 
@@ -1135,7 +1135,7 @@ async fn scan_applications_linux() -> Result<Vec<AppInfo>, String> {
     // Defense-in-depth: the HashSet above guarantees no duplicates from the
     // bin scan, but the .desktop pass may have produced its own duplicates.
     deduplicate_app_results(&mut apps);
-    apps.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    apps.sort_by_key(|a| a.name.to_lowercase());
 
     info!("Application scan complete: {} apps found", apps.len());
 
