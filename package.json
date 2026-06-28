@@ -132,13 +132,5 @@
     "typescript": "~6.0.3",
     "vite": "^8.1.0",
     "vitest": "^4.1.6"
-  },
-  "overrides": {
-    "fast-uri": ">=3.1.2",
-    "postcss": ">=8.5.10",
-    "picomatch": ">=4.0.4",
-    "flatted": ">=3.4.2",
-    "rollup": ">=4.59.0",
-    "esbuild": ">=0.28.1"
   }
 }
