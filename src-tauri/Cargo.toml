@@ -83,7 +83,7 @@ uuid = { version = "1", features = ["v4"] }
 # that bug. sync-secret-service + crypto-rust cover Linux (D-Bus).
 keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service", "crypto-rust"] }
 hmac = "0.12"
-sha2 = "0.10"
+sha2 = "0.11"
 rand = "0.9"
 hex = "0.4"
 unicode-normalization = "0.1"
