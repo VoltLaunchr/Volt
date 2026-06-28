@@ -235,7 +235,7 @@ Export / import via `export_settings` / `import_settings`.
 
 ## ♿ Accessibility
 
-- Keyboard-first navigation; full accessibility claims depend on the release audit in [`ACCESSIBILITY_AUDIT.md`](../ACCESSIBILITY_AUDIT.md).
+- Keyboard-first navigation; full accessibility claims depend on the release audit in [`ACCESSIBILITY_AUDIT.md`](../../archive/plans/ACCESSIBILITY_AUDIT.md) (archived).
 - Visible focus outlines, ARIA roles on overlays (HUD, toasts, dialogs).
 - Configurable font size (planned), high-contrast theme support.
 - i18n: English + French via `i18next`.

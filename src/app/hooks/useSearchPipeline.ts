@@ -16,6 +16,7 @@ import { parseQuery } from '../../shared/utils/queryParser';
 import { detectUrl } from '../../shared/utils/urlDetector';
 import { useAppStore } from '../../stores/appStore';
 import { useSearchStore } from '../../stores/searchStore';
+import { mergeSearchResults } from '../searchResults';
 
 /** Shorten a file path for display: C:\Users\Noluc\Documents\foo.txt → ~\Documents\foo.txt */
 function shortenPath(fullPath: string): string {
@@ -214,11 +215,11 @@ export function useSearchPipeline({
   const latestSearchId = useRef(0); // Prevent stale search responses
   const activeChannelRef = useRef<Channel<SearchBatch> | null>(null);
 
-  const finishSearch = (searchId: number) => {
+  const finishSearch = useCallback((searchId: number) => {
     if (searchId === latestSearchId.current) {
       useSearchStore.getState().setIsSearching(false);
     }
-  };
+  }, []);
 
   const performSearch = useCallback(
     async (query: string) => {
@@ -327,12 +328,8 @@ export function useSearchPipeline({
       try {
         searchId = ++latestSearchId.current;
 
-        // Merge helper: sort by score, limit
         const mergeResults = (...sources: SearchResult[][]): SearchResult[] =>
-          sources
-            .flat()
-            .sort((a, b) => b.score - a.score)
-            .slice(0, maxResults + 4);
+          mergeSearchResults(maxResults + 4, ...sources);
 
         // Accumulated partial results from streaming
         let streamedApps: SearchResult[] = [];
@@ -383,7 +380,6 @@ export function useSearchPipeline({
                   ? (parsed.operators.modifiedBefore || null)
                   : null,
               },
-              apps: allApps,
               shortcuts: appShortcuts ?? null,
               onEvent: channel,
             }).catch((err) => {
@@ -526,6 +522,7 @@ export function useSearchPipeline({
       allApps,
       appShortcuts,
       fallbackCommands,
+      finishSearch,
       maxResults,
       searchSensitivity,
       setResults,

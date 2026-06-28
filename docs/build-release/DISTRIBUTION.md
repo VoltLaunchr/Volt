@@ -82,7 +82,7 @@ $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = "ton_mot_de_passe"
 ### 2. Build l'application
 
 ```bash
-bun tauri build
+pnpm run tauri -- build
 ```
 
 ### 3. Fichiers générés
@@ -116,7 +116,7 @@ git push origin main --tags
 # 3. Build avec signature
 $env:TAURI_SIGNING_PRIVATE_KEY = Get-Content D:\dev\Volt\tauri-update.key -Raw
 $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = "ton_mot_de_passe"
-bun tauri build
+pnpm run tauri -- build
 
 # 4. Créer la release avec les fichiers
 gh release create v0.2.0 `
@@ -177,7 +177,7 @@ gh release create v0.2.0 `
 - [ ] Commit: `git commit -m "chore: release v0.x.0"`
 - [ ] Tag: `git tag v0.x.0`
 - [ ] Push: `git push origin main --tags`
-- [ ] Build: `bun tauri build` (avec les env vars de signature)
+- [ ] Build: `pnpm run tauri -- build` (avec les env vars de signature)
 - [ ] Upload les 3 fichiers sur GitHub Release
 - [ ] Tester le téléchargement
 - [ ] Tester la mise à jour depuis une ancienne version

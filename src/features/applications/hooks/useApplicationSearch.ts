@@ -91,10 +91,11 @@ export function useApplicationSearch(
       try {
         const searchOptions: AppSearchOptions = {
           query: searchQuery,
+          apps,
           limit: maxResults,
         };
 
-        const searchResults = await applicationService.searchApplications(searchOptions, apps);
+        const searchResults = await applicationService.searchApplications(searchOptions);
 
         // Only update if this is still the latest search
         if (searchId === searchIdRef.current) {

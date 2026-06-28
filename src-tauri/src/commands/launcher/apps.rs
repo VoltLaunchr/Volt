@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::sync::{Arc, LazyLock};
 use std::time::{Duration, SystemTime};
 #[cfg(target_os = "windows")]
@@ -89,6 +90,88 @@ pub struct AppInfo {
     // shape produced by `detect_app_category`.
     #[ts(optional)]
     pub category: Option<String>,
+}
+
+fn normalized_app_identity(name: &str) -> String {
+    name.trim()
+        .trim_end_matches(['.', '_', '-'])
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_lowercase()
+}
+
+#[cfg(target_os = "windows")]
+fn is_uwp_aumid(path: &str) -> bool {
+    path.contains('!') && !path.contains('\\') && !path.contains('/')
+}
+
+fn app_source_priority(app: &AppInfo) -> u8 {
+    #[cfg(target_os = "windows")]
+    {
+        if is_uwp_aumid(&app.path) {
+            return 30;
+        }
+    }
+
+    let path = std::path::Path::new(&app.path);
+    if path.exists()
+        && path
+            .extension()
+            .is_some_and(|ext| ext.to_string_lossy().eq_ignore_ascii_case("exe"))
+    {
+        return 50;
+    }
+
+    if path.exists() {
+        return 40;
+    }
+
+    if app.description.is_some() {
+        return 20;
+    }
+
+    10
+}
+
+fn deduplicate_app_results(apps: &mut Vec<AppInfo>) {
+    let mut best_by_name: HashMap<String, usize> = HashMap::new();
+    let mut keep = vec![true; apps.len()];
+
+    for idx in 0..apps.len() {
+        let path_duplicate = apps[..idx]
+            .iter()
+            .position(|existing| existing.path == apps[idx].path);
+        if path_duplicate.is_some() {
+            keep[idx] = false;
+            continue;
+        }
+
+        let identity = normalized_app_identity(&apps[idx].name);
+        if identity.is_empty() {
+            continue;
+        }
+
+        if let Some(&existing_idx) = best_by_name.get(&identity) {
+            let existing_priority = app_source_priority(&apps[existing_idx]);
+            let current_priority = app_source_priority(&apps[idx]);
+            if current_priority > existing_priority {
+                keep[existing_idx] = false;
+                best_by_name.insert(identity, idx);
+            } else {
+                keep[idx] = false;
+            }
+        } else {
+            best_by_name.insert(identity, idx);
+        }
+    }
+
+    let mut idx = 0;
+    apps.retain(|_| {
+        let should_keep = keep[idx];
+        idx += 1;
+        should_keep
+    });
 }
 
 /// Detect application category based on path and name.
@@ -403,7 +486,9 @@ pub async fn scan_applications_fresh() -> VoltResult<Vec<AppInfo>> {
 }
 
 /// Scans applications with option to force refresh cache
-async fn scan_applications_with_options(force_refresh: bool) -> VoltResult<Vec<AppInfo>> {
+pub(crate) async fn scan_applications_with_options(
+    force_refresh: bool,
+) -> VoltResult<Vec<AppInfo>> {
     // Fast path: cache hit before acquiring the single-flight lock.
     if !force_refresh {
         let cache = SCAN_CACHE.read().await;
@@ -712,9 +797,9 @@ async fn scan_applications_windows() -> Result<Vec<AppInfo>, String> {
         info!("Filtered {} junk apps (SDK, docs, tools)", filtered);
     }
 
-    // Remove duplicates based on path
-    apps.sort_by(|a, b| a.path.cmp(&b.path));
-    apps.dedup_by(|a, b| a.path == b.path);
+    // Remove duplicate launch targets and duplicate app identities.
+    deduplicate_app_results(&mut apps);
+    apps.sort_by_key(|a| a.name.to_lowercase());
 
     info!("Application scan complete: {} apps found", apps.len());
 
@@ -870,8 +955,8 @@ async fn scan_applications_macos() -> Result<Vec<AppInfo>, String> {
     }
 
     // Remove duplicates
-    apps.sort_by(|a, b| a.path.cmp(&b.path));
-    apps.dedup_by(|a, b| a.path == b.path);
+    deduplicate_app_results(&mut apps);
+    apps.sort_by_key(|a| a.name.to_lowercase());
 
     info!("Application scan complete: {} apps found", apps.len());
 
@@ -1049,8 +1134,8 @@ async fn scan_applications_linux() -> Result<Vec<AppInfo>, String> {
 
     // Defense-in-depth: the HashSet above guarantees no duplicates from the
     // bin scan, but the .desktop pass may have produced its own duplicates.
-    apps.sort_by(|a, b| a.path.cmp(&b.path));
-    apps.dedup_by(|a, b| a.path == b.path);
+    deduplicate_app_results(&mut apps);
+    apps.sort_by_key(|a| a.name.to_lowercase());
 
     info!("Application scan complete: {} apps found", apps.len());
 
@@ -1419,6 +1504,76 @@ mod tests {
             detect_app_category("Anything", "C:/SteamApps/common/foo"),
             "gaming"
         );
+    }
+
+    #[test]
+    fn test_deduplicate_apps_collapses_same_name_aumids() {
+        let mut apps = vec![
+            AppInfo {
+                id: "xbox-app".to_string(),
+                name: "Xbox".to_string(),
+                path: "Microsoft.GamingApp_8wekyb3d8bbwe!Microsoft.Xbox.App".to_string(),
+                icon: None,
+                description: Some("Microsoft Store".to_string()),
+                keywords: None,
+                last_used: None,
+                usage_count: 0,
+                category: None,
+            },
+            AppInfo {
+                id: "xbox-appl".to_string(),
+                name: "Xbox".to_string(),
+                path: "Microsoft.GamingApp_8wekyb3d8bbwe!Microsoft.Xbox.AppL".to_string(),
+                icon: None,
+                description: Some("Microsoft Store".to_string()),
+                keywords: None,
+                last_used: None,
+                usage_count: 0,
+                category: None,
+            },
+        ];
+
+        deduplicate_app_results(&mut apps);
+
+        assert_eq!(apps.len(), 1);
+        assert_eq!(apps[0].name, "Xbox");
+    }
+
+    #[test]
+    fn test_deduplicate_apps_prefers_existing_executable_over_registry_entry() {
+        let exe = std::env::current_exe()
+            .expect("test executable path")
+            .to_string_lossy()
+            .to_string();
+        let mut apps = vec![
+            AppInfo {
+                id: "registry".to_string(),
+                name: "Volt".to_string(),
+                path: "C:\\missing\\Volt".to_string(),
+                icon: None,
+                description: Some("Volt".to_string()),
+                keywords: None,
+                last_used: None,
+                usage_count: 0,
+                category: None,
+            },
+            AppInfo {
+                id: "exe".to_string(),
+                name: "Volt".to_string(),
+                path: exe.clone(),
+                icon: None,
+                description: None,
+                keywords: None,
+                last_used: None,
+                usage_count: 0,
+                category: None,
+            },
+        ];
+
+        deduplicate_app_results(&mut apps);
+
+        assert_eq!(apps.len(), 1);
+        assert_eq!(apps[0].path, exe);
     }
 
     #[test]

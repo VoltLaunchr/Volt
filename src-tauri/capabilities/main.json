@@ -21,6 +21,7 @@
     "dialog:default",
     "updater:default",
     "deep-link:default",
+    "notification:default",
     "os:default",
 
     "allow-show-window",
@@ -149,6 +150,8 @@
     "allow-start-clipboard-monitoring",
     "allow-stop-clipboard-monitoring",
     "allow-is-clipboard-monitoring",
+    "allow-paste-text",
+    "allow-paste-sequentially",
 
     "allow-fetch-extension-registry",
     "allow-get-installed-extensions",

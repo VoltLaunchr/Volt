@@ -263,6 +263,7 @@ fn main() {
         "expand_snippet",
         "import_snippets",
         "export_snippets",
+        "set_snippet_expansion_enabled",
         // Notes commands
         "get_notes",
         "get_note",

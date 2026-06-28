@@ -92,7 +92,7 @@ Always end with:
 - Use `#[serde(rename_all = "camelCase")]` for any new struct suggestions.
 - Don't flag theoretical issues without evidence in the actual code.
 - Consider Windows-specific attack vectors (registry, LNK files, winapi usage in `src-tauri`).
-- After any security fix, remind to verify with `cargo check` and `bun run build`.
+- After any security fix, remind to verify with `cargo check` and `pnpm run build`.
 
 **Update your agent memory** as you discover security patterns, vulnerability hotspots, permission configurations, and architectural security decisions in this codebase. Write concise notes about what you found and where.
 

@@ -437,7 +437,7 @@ describe('MyPlugin', () => {
 - [ ] Implémenter `match()`
 - [ ] Implémenter `execute()`
 - [ ] Gérer les erreurs
-- [ ] Tester avec `bun tauri dev`
+- [ ] Tester avec `pnpm run tauri -- dev`
 - [ ] Vérifier les perfs (< 500ms)
 - [ ] Enregistrer dans App.tsx
 - [ ] Documenter le plugin

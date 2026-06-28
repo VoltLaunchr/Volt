@@ -4,6 +4,7 @@
  */
 
 import { logger } from '../../../../shared/utils/logger';
+import { notifyNative } from '../../../../shared/services/nativeNotificationService';
 
 const STORAGE_KEY = 'volt-timers';
 
@@ -86,9 +87,10 @@ class TimerStore {
 
     this.emit({ type: 'start', timer });
     this.persist();
-    this.showNotification('⏱️ Timer Started', `${label} - ${this.formatDuration(duration)}`).catch(
-      (err) => logger.error('Timer start notification failed:', err)
-    );
+    notifyNative({
+      title: 'Timer started',
+      body: `${label} - ${this.formatDuration(duration)}`,
+    }).catch((err) => logger.error('Timer start notification failed:', err));
 
     return id;
   }
@@ -162,8 +164,8 @@ class TimerStore {
     this.emit({ type: 'complete', timer });
     this.persist();
 
-    this.showNotification('⏰ Timer Complete!', `${timer.label} has finished`, true).catch(
-      (err) => logger.error('Timer complete notification failed:', err)
+    notifyNative({ title: 'Timer complete', body: `${timer.label} has finished` }).catch((err) =>
+      logger.error('Timer complete notification failed:', err)
     );
     this.playSound();
   }
@@ -189,29 +191,6 @@ class TimerStore {
       return `${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
     }
     return `${minutes}:${seconds.toString().padStart(2, '0')}`;
-  }
-
-  private async showNotification(
-    title: string,
-    body: string,
-    requireInteraction = false
-  ): Promise<void> {
-    if ('Notification' in window) {
-      let permission = Notification.permission;
-
-      if (permission === 'default') {
-        permission = await Notification.requestPermission();
-      }
-
-      if (permission === 'granted') {
-        new Notification(title, {
-          body,
-          icon: '/icon.png',
-          requireInteraction,
-          tag: 'volt-timer',
-        });
-      }
-    }
   }
 
   // ── Persistence ────────────────────────────────────────────────────────

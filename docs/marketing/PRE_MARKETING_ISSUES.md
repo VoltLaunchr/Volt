@@ -51,7 +51,7 @@ _Backlog préparatoire au 2026-06-13. Chaque item doit devenir une issue GitHub 
 - **Contexte :** les tests automatisés ne couvrent pas l'intégration OS, les permissions et les transitions de fenêtres.
 - **Labels :** `P1`, `qa`, `bug-bash`
 - **Acceptance criteria :** sessions par plateforme et par feature; tous les bugs triés; aucun P0/P1 ouvert sans acceptation signée; re-test de la RC finale.
-- **Fichiers/areas :** `docs/release/BUG_BASH_PLAN.md`, issues GitHub.
+- **Fichiers/areas :** `archive/plans/BUG_BASH_PLAN.md`, issues GitHub.
 - **Bloque :** Developer Preview **un cycle**; Public v1 **deux cycles**.
 
 ### 7. Réconcilier et terminer l'audit accessibilité
@@ -59,7 +59,7 @@ _Backlog préparatoire au 2026-06-13. Chaque item doit devenir une issue GitHub 
 - **Contexte :** les roadmaps indiquent WCAG AA complet alors que `ACCESSIBILITY_AUDIT.md` conserve des checks manuels ouverts.
 - **Labels :** `P1`, `accessibility`, `qa`, `documentation`
 - **Acceptance criteria :** axe sans erreur critique; navigation clavier; focus visible; contraste; NVDA/VoiceOver; état des docs aligné.
-- **Fichiers/areas :** `docs/ACCESSIBILITY_AUDIT.md`, SearchBar, ResultsList, Settings, modales.
+- **Fichiers/areas :** `archive/plans/ACCESSIBILITY_AUDIT.md`, SearchBar, ResultsList, Settings, modales.
 - **Bloque :** Developer Preview **non avec limitation**; Public v1 **oui**.
 
 ### 8. Réparer le contrat de logging frontend/backend

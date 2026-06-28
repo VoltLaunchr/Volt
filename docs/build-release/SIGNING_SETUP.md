@@ -146,7 +146,7 @@ form-action 'self'
 - `connect-src` inclut `https://github.com` et `https://*.githubusercontent.com` pour l'auto-updater (fetch de `latest.json` + download des bundles).
 - `devCsp: null` désactive la CSP en mode dev pour laisser Vite HMR fonctionner.
 
-**Test manuel à faire après le prochain `bun tauri build`** :
+**Test manuel à faire après le prochain `pnpm run tauri -- build`** :
 1. Ouvrir l'app buildée
 2. DevTools → Console → vérifier qu'il n'y a aucune violation CSP
 3. Si une ressource casse, ajouter sa source à la directive correspondante

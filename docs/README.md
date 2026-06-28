@@ -12,14 +12,19 @@ docs/
 ├── user-guide/        End-user shortcuts and guides
 ├── plugins/           Plugin / extension development & publishing
 ├── build-release/     CI/CD · distribution · signing · release roadmap
-├── release/           Cross-platform QA · bug bash and launch gates
+├── release/           Cross-platform QA and launch gates
 ├── benchmarks/        Reproducible performance measurement plans
 ├── marketing/         Product readiness · claims · scorecard · issue backlog
 ├── changelog/         Version history
-├── security/          Audits, privacy, accepted risks, key custody
+├── security/          Privacy, accepted risks, key custody
 ├── roadmap/           Product roadmap, competitive analysis, ecosystem plan
-└── superpowers/       Internal specs & plans (work-in-progress)
+└── refonte/           Active 2026 core-refactor tracking + pillar blueprints
 ```
+
+> **Historical / completed docs** (point-in-time audits, finished implementation
+> plans, frozen status reports, executed superpowers specs) live in
+> [`../archive/`](../archive/) and are no longer maintained — see
+> [`archive/README.md`](../archive/README.md).
 
 ---
 
@@ -77,7 +82,7 @@ See the [Extensions](./architecture/FEATURES.md#-extension-ecosystem) section in
 | [Distribution](./build-release/DISTRIBUTION.md) | Multi-platform packaging, installers, code signing, auto-updates |
 | [Signing Setup](./build-release/SIGNING_SETUP.md) | Windows Authenticode + macOS notarization — certs, `.pfx`/`.p12` export, GitHub secrets |
 | [Roadmap](./build-release/ROADMAP.md) | Release phases & milestones |
-| [Implementation Plan (history)](./build-release/IMPLEMENTATION_PLAN.md) | Journal of past milestones |
+| [Implementation Plan (history)](../archive/plans/IMPLEMENTATION_PLAN.md) | Journal of past milestones (archived) |
 
 > The **mandatory release checklist** (branch naming, cycle scan, smoke test, post-merge verification) lives in [`CLAUDE.md`](../CLAUDE.md) at the repo root — don't skip it.
 
@@ -90,7 +95,7 @@ See the [Extensions](./architecture/FEATURES.md#-extension-ecosystem) section in
 | [Marketing Readiness Scorecard](./marketing/MARKETING_READINESS_SCORECARD.md) | 0–40 launch-readiness score |
 | [Pre-Marketing Issues](./marketing/PRE_MARKETING_ISSUES.md) | Prioritized GitHub issue backlog |
 | [QA Matrix](./release/QA_MATRIX.md) | Windows, macOS and Linux release validation |
-| [Bug Bash Plan](./release/BUG_BASH_PLAN.md) | Platform, feature, security and accessibility sessions |
+| [Bug Bash Plan](../archive/plans/BUG_BASH_PLAN.md) | Platform, feature, security and accessibility sessions (archived) |
 | [Performance Baseline](./benchmarks/PERFORMANCE_BASELINE.md) | Benchmark protocol; no invented results |
 | [Privacy & Telemetry Review](./security/PRIVACY_AND_TELEMETRY_REVIEW.md) | Local data, opt-in network features and user-facing privacy copy |
 
@@ -99,8 +104,8 @@ See the [Extensions](./architecture/FEATURES.md#-extension-ecosystem) section in
 ## 🔐 Security
 
 - [Accepted Risks](./security/ACCEPTED_RISKS.md)
-- [Rust Code Review 2025](./security/RUST_CODE_REVIEW_2025.md)
 - [Updater Key Custody](./security/updater-key-custody.md)
+- [Rust Code Review 2025](../archive/audits/RUST_CODE_REVIEW_2025.md) — archived (May 2025 snapshot)
 
 Operational security details (auth CSRF, JWT validation, keyring HMAC, extension sandbox, SSRF prevention, LOLBIN denylist, deep-link rate-limit) are described in [`ARCHITECTURE.md`](./architecture/ARCHITECTURE.md) §7–§8.
 
@@ -109,8 +114,8 @@ Operational security details (auth CSRF, JWT validation, keyring HMAC, extension
 ## 📋 Changelog
 
 - [Changelog](./changelog/CHANGELOG.md) — full version history
-- [Updates 2025-01](./changelog/UPDATES_2025-01.md)
 - [In-app changelog feed](../public/changelog.json) — source for the "See what's new" suggestion (see [`src/features/changelog/README.md`](../src/features/changelog/README.md))
+- [Updates 2025-01](../archive/reports/UPDATES_2025-01.md) — archived early-2025 summary
 
 ---
 
@@ -120,6 +125,15 @@ Operational security details (auth CSRF, JWT validation, keyring HMAC, extension
 - [Competitive Analysis](./roadmap/COMPETITIVE_ANALYSIS.md)
 - [Extension Ecosystem Plan](./roadmap/EXTENSION_ECOSYSTEM_PLAN.md)
 - [Roadmap README](./roadmap/README.md)
+
+### 🛠️ Core refactor (2026)
+
+Active modernization tracking — see [`refonte/`](./refonte/):
+- [TODO — Refonte](./refonte/TODO-REFONTE.md) — current operational status of the 6 pillars
+- [Pillar C — SQLCipher](./refonte/REFONTE-PILIER-C-SQLCIPHER.md) — encrypted data-at-rest (feature-flagged)
+- [Pillar D — Search](./refonte/REFONTE-PILIER-D-SEARCH.md) — next-gen file search blueprint
+
+The original dated plan and the 2026 audits are archived in [`../archive/`](../archive/).
 
 ---
 
@@ -262,4 +276,4 @@ See the **Lint & Code Quality** section of [`CLAUDE.md`](../CLAUDE.md) — no `e
 
 Volt is open-source under Apache-2.0 — see [LICENSE](../LICENSE).
 
-_Last updated: 2026-05-18 (v0.2.0)_
+_Last updated: 2026-06-28 — docs reorganized; historical material moved to `../archive/`._

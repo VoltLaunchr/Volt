@@ -90,6 +90,8 @@ import { AiSettingsView } from './components/AiSettingsView';
 import { IntegrationsPanel } from './components/IntegrationsPanel';
 import { NotesSettingsPanel } from './components/NotesSettingsPanel';
 import { SnippetsManagerPanel } from './components/SnippetsManagerPanel';
+import { getShortcutCategoryMeta } from './components/ShortcutCategoryIcon';
+import { stripShortcutIcon, useShortcutAppIcons } from './hooks/useShortcutAppIcons';
 import { SyncPanel } from './components/SyncPanel';
 import { AccountSection } from '../auth';
 import logo from '../../assets/icons/logo.svg';
@@ -165,6 +167,10 @@ export function SettingsApp() {
   const [emojiColumns, setEmojiColumnsState] = useState<number>(() => getEmojiColumns());
   const [emojiPrimaryAction, setEmojiPrimaryActionState] = useState<'copy' | 'paste'>(() =>
     getEmojiPrimaryAction()
+  );
+  const { getShortcutIconSrc, markIconFailed } = useShortcutAppIcons(
+    appShortcuts,
+    activeCategory === 'shortcuts'
   );
 
   useEffect(() => {
@@ -304,7 +310,7 @@ export function SettingsApp() {
 
   const saveAppShortcut = async (shortcut: AppShortcut) => {
     try {
-      await invoke<void>('save_app_shortcut', { shortcut });
+      await invoke<void>('save_app_shortcut', { shortcut: stripShortcutIcon(shortcut) });
       await loadAppShortcuts();
     } catch (err) {
       logger.error('Failed to save app shortcut:', err);
@@ -741,18 +747,18 @@ export function SettingsApp() {
 
     return (
       <div className="flex-1 flex flex-col overflow-hidden">
-        <div className="flex items-center justify-between h-14 px-6 border-b border-hairline shrink-0">
+        <div className="flex min-h-14 flex-col gap-3 border-b border-hairline px-4 py-3 shrink-0 lg:flex-row lg:items-center lg:justify-between lg:px-6">
           <h2 className="text-sm font-medium text-ink m-0">{t('shortcuts.title')}</h2>
-          <div className="flex items-center gap-2.5 flex-wrap">
+          <div className="grid w-full grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(12rem,auto)] lg:w-auto lg:grid-cols-[minmax(0,1fr)_minmax(12rem,auto)_auto]">
             <input
               type="text"
-              className="w-52 bg-surface-elevated border border-hairline rounded-md px-3 py-1.5 text-sm text-on-dark outline-none focus:border-hairline-strong placeholder:text-ash"
+              className="min-w-0 w-full bg-surface-elevated border border-hairline rounded-md px-3 py-1.5 text-sm text-on-dark outline-none focus:border-hairline-strong placeholder:text-ash lg:w-64"
               placeholder={t('shortcuts.searchPlaceholder')}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
             />
             <select
-              className="bg-surface-elevated border border-hairline rounded-md px-3 py-1.5 text-sm text-on-dark outline-none focus:border-hairline-strong cursor-pointer"
+              className="min-w-0 w-full bg-surface-elevated border border-hairline rounded-md px-3 py-1.5 text-sm text-on-dark outline-none focus:border-hairline-strong cursor-pointer sm:w-auto"
               value={categoryFilter}
               onChange={(e) => setCategoryFilter(e.target.value)}
             >
@@ -765,6 +771,7 @@ export function SettingsApp() {
             </select>
             <Button
               variant="secondary"
+              className="w-full sm:col-span-2 lg:col-span-1 lg:w-auto"
               onClick={() => {
                 void syncAppShortcuts();
               }}
@@ -774,32 +781,40 @@ export function SettingsApp() {
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-6">
+        <div className="flex-1 overflow-y-auto p-3 sm:p-6">
           {Object.entries(filteredShortcuts).map(([category, shortcuts]) => {
             const isExpanded = expandedCategories.has(category);
+            const categoryMeta = getShortcutCategoryMeta(category);
+            const CategoryIcon = categoryMeta.Icon;
 
             return (
-              <div key={category} className="mb-6">
+              <div key={category} className="mb-4 sm:mb-6">
                 <div
-                  className="flex items-center gap-2.5 px-4 py-3 cursor-pointer bg-surface-elevated/30 rounded-md mb-2 transition-colors hover:bg-surface-elevated/50 select-none"
+                  className="flex min-h-14 items-center gap-2.5 px-3 py-3 cursor-pointer bg-surface-elevated/30 rounded-md mb-2 transition-colors hover:bg-surface-elevated/50 select-none sm:px-4"
                   onClick={() => toggleCategory(category)}
                 >
                   {isExpanded ? (
-                    <ChevronDown size={20} className="text-ash" />
+                    <ChevronDown size={18} className="shrink-0 text-ash" />
                   ) : (
-                    <ChevronRight size={20} className="text-ash" />
+                    <ChevronRight size={18} className="shrink-0 text-ash" />
                   )}
-                  <Package size={20} className="text-ash" />
-                  <span className="flex-1 text-sm font-semibold text-ink">
-                    {category} ({shortcuts.length})
+                  <span
+                    className={cn(
+                      'flex size-8 shrink-0 items-center justify-center rounded-md border',
+                      categoryMeta.bgClass,
+                      categoryMeta.colorClass
+                    )}
+                  >
+                    <CategoryIcon className="size-5" />
                   </span>
+                  <span className="min-w-0 flex-1 truncate text-sm font-semibold text-ink">{category}</span>
+                  <span className="shrink-0 text-xs font-medium text-mute">({shortcuts.length})</span>
                 </div>
 
                 {isExpanded && (
                   <div className="bg-surface-elevated/20 rounded-lg overflow-hidden">
                     <div
-                      className="grid gap-4 px-4 py-2.5 bg-black/20 text-[12px] font-semibold text-mute uppercase tracking-[0.5px]"
-                      style={{ gridTemplateColumns: '1fr 120px 160px 60px' }}
+                      className="hidden gap-4 px-4 py-2.5 bg-black/20 text-[12px] font-semibold text-mute uppercase tracking-[0.5px] md:grid md:grid-cols-[minmax(0,1fr)_120px_160px_60px]"
                     >
                       <span>{t('shortcuts.tableHeaders.name')}</span>
                       <span>{t('shortcuts.tableHeaders.alias')}</span>
@@ -808,71 +823,82 @@ export function SettingsApp() {
                     </div>
 
                     <div className="max-h-[400px] overflow-y-auto">
-                      {shortcuts.map((shortcut) => (
-                        <div
-                          key={shortcut.id}
-                          className="grid gap-4 px-4 py-3 items-center border-b border-hairline/40 last:border-0 transition-colors hover:bg-white/[0.03]"
-                          style={{ gridTemplateColumns: '1fr 120px 160px 60px' }}
-                        >
-                          <span className="flex items-center gap-2.5 text-[13px] text-ink">
-                            {shortcut.icon ? (
-                              <img
-                                src={`data:image/png;base64,${shortcut.icon}`}
-                                alt=""
-                                className="shrink-0"
-                                style={{ width: 16, height: 16 }}
-                              />
-                            ) : (
-                              <Package size={16} className="text-ash shrink-0" />
-                            )}
-                            {shortcut.name}
-                          </span>
-                          <span className="flex items-center pointer-events-auto">
-                            {editingAliasId === shortcut.id ? (
-                              <input
-                                type="text"
-                                className="w-full bg-surface-elevated border border-hairline rounded-md px-2 py-1 text-sm text-on-dark outline-none focus:border-hairline-strong"
-                                defaultValue={shortcut.alias || ''}
-                                autoFocus
-                                onBlur={(e) => {
-                                  void handleAliasChange(shortcut, e.target.value);
+                      {shortcuts.map((shortcut) => {
+                        const shortcutIconSrc = getShortcutIconSrc(shortcut);
+
+                        return (
+                          <div
+                            key={shortcut.id}
+                            className="grid grid-cols-1 gap-2 px-3 py-3 items-center border-b border-hairline/40 last:border-0 transition-colors hover:bg-white/[0.03] sm:px-4 md:grid-cols-[minmax(0,1fr)_120px_160px_60px] md:gap-4"
+                          >
+                            <span className="flex min-w-0 items-center gap-2.5 text-[13px] text-ink">
+                              {shortcutIconSrc ? (
+                                <img
+                                  src={shortcutIconSrc}
+                                  alt=""
+                                  className="size-5 shrink-0 rounded-[4px] object-contain"
+                                  onError={() => markIconFailed(shortcut.path)}
+                                />
+                              ) : (
+                                <span
+                                  className={cn(
+                                    'flex size-5 shrink-0 items-center justify-center rounded-[5px] border',
+                                    categoryMeta.bgClass,
+                                    categoryMeta.colorClass
+                                  )}
+                                >
+                                  <CategoryIcon className="size-3.5" />
+                                </span>
+                              )}
+                              <span className="min-w-0 truncate">{shortcut.name}</span>
+                            </span>
+                            <span className="flex min-w-0 items-center pointer-events-auto">
+                              {editingAliasId === shortcut.id ? (
+                                <input
+                                  type="text"
+                                  className="w-full bg-surface-elevated border border-hairline rounded-md px-2 py-1 text-sm text-on-dark outline-none focus:border-hairline-strong"
+                                  defaultValue={shortcut.alias || ''}
+                                  autoFocus
+                                  onBlur={(e) => {
+                                    void handleAliasChange(shortcut, e.target.value);
+                                  }}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                      void handleAliasChange(shortcut, e.currentTarget.value);
+                                    } else if (e.key === 'Escape') {
+                                      setEditingAliasId(null);
+                                    }
+                                  }}
+                                />
+                              ) : (
+                                <button
+                                  className="px-3 py-1.5 rounded-sm bg-transparent border border-dashed border-white/20 text-mute text-xs cursor-pointer transition-all hover:border-accent-blue hover:text-accent-blue whitespace-nowrap"
+                                  onClick={() => handleAliasClick(shortcut.id)}
+                                >
+                                  {shortcut.alias || t('shortcuts.addAlias')}
+                                </button>
+                              )}
+                            </span>
+                            <span className="flex min-w-0 items-center pointer-events-auto">
+                              <HotkeyCapture
+                                value={shortcut.hotkey || ''}
+                                onChange={(hotkey) => {
+                                  void handleHotkeyChange(shortcut, hotkey);
                                 }}
-                                onKeyDown={(e) => {
-                                  if (e.key === 'Enter') {
-                                    void handleAliasChange(shortcut, e.currentTarget.value);
-                                  } else if (e.key === 'Escape') {
-                                    setEditingAliasId(null);
-                                  }
+                                onError={setHotkeyError}
+                              />
+                            </span>
+                            <span className="flex items-center justify-start pointer-events-auto md:justify-center">
+                              <Toggle
+                                checked={shortcut.enabled}
+                                onChange={() => {
+                                  void handleToggleEnabled(shortcut);
                                 }}
                               />
-                            ) : (
-                              <button
-                                className="px-3 py-1.5 rounded-sm bg-transparent border border-dashed border-white/20 text-mute text-xs cursor-pointer transition-all hover:border-accent-blue hover:text-accent-blue whitespace-nowrap"
-                                onClick={() => handleAliasClick(shortcut.id)}
-                              >
-                                {shortcut.alias || t('shortcuts.addAlias')}
-                              </button>
-                            )}
-                          </span>
-                          <span className="flex items-center pointer-events-auto">
-                            <HotkeyCapture
-                              value={shortcut.hotkey || ''}
-                              onChange={(hotkey) => {
-                                void handleHotkeyChange(shortcut, hotkey);
-                              }}
-                              onError={setHotkeyError}
-                            />
-                          </span>
-                          <span className="flex items-center justify-center pointer-events-auto">
-                            <Toggle
-                              checked={shortcut.enabled}
-                              onChange={() => {
-                                void handleToggleEnabled(shortcut);
-                              }}
-                            />
-                          </span>
-                        </div>
-                      ))}
+                            </span>
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
                 )}

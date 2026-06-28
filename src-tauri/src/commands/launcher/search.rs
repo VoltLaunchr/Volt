@@ -13,10 +13,11 @@ use tauri::ipc::Channel;
 #[cfg(feature = "tantivy-search")]
 use tracing::warn;
 
-use crate::commands::apps::{AppInfo, AppInfoWithScore};
+use crate::commands::apps::AppInfoWithScore;
 use crate::commands::files::FileIndexState;
 #[cfg(feature = "tantivy-search")]
 use crate::commands::files::search_files_fulltext;
+use crate::commands::launcher::apps::scan_applications_with_options;
 use crate::commands::launcher::{LaunchHistoryState, QueryBindingState};
 use crate::commands::settings::AppShortcut;
 use crate::core::error::{VoltError, VoltResult};
@@ -99,10 +100,13 @@ pub enum SearchBatch {
 
 /// Perform app search, file search, and frecency suggestions in a single IPC
 /// call.  The three searches run concurrently via `tokio::join!`.
+///
+/// Reads the app catalog from `SCAN_CACHE` instead of taking it as a
+/// parameter — the frontend no longer needs to re-send the full `AppInfo`
+/// list (icons included) over IPC on every keystroke.
 #[tauri::command]
 pub async fn search_all(
     options: SearchAllOptions,
-    apps: Vec<AppInfo>,
     shortcuts: Option<Vec<AppShortcut>>,
     file_state: State<'_, FileIndexState>,
     history_state: State<'_, LaunchHistoryState>,
@@ -116,7 +120,7 @@ pub async fn search_all(
     // ---- Prepare shared data (all cheap clones) ----
 
     let history = history_state.history.clone();
-    let apps_for_search = apps;
+    let apps_for_search = scan_applications_with_options(false).await?;
     let aliases = shortcuts
         .as_deref()
         .map(build_alias_map)
@@ -227,10 +231,11 @@ pub async fn search_all(
 
 /// Perform a streaming search: apps and files run concurrently and their
 /// results are sent to the frontend as each source completes.
+///
+/// Reads the app catalog from `SCAN_CACHE` instead of taking it as a parameter.
 #[tauri::command]
 pub async fn search_streaming(
     options: SearchAllOptions,
-    apps: Vec<AppInfo>,
     shortcuts: Option<Vec<AppShortcut>>,
     on_event: Channel<SearchBatch>,
     file_state: State<'_, FileIndexState>,
@@ -239,6 +244,9 @@ pub async fn search_streaming(
 ) -> Result<(), String> {
     crate::time_command!("search_streaming");
 
+    let apps = scan_applications_with_options(false)
+        .await
+        .map_err(|e| e.to_string())?;
     let query = options.query.clone();
     let max_results = options.max_results;
     let aliases = shortcuts

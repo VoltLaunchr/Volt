@@ -8,11 +8,11 @@ use crate::utils::process::no_window;
 use std::process::Command;
 use tracing::{info, warn};
 
-/// Enumerate all Store/UWP applications via PowerShell Get-StartApps.
-/// This returns apps visible in the Start Menu including Store apps
-/// that don't have .lnk shortcuts.
+/// Enumerate Start Menu applications via PowerShell Get-StartApps.
+/// This intentionally uses the Start surface rather than all AppX packages:
+/// AppX manifests include background/system endpoints that are not useful
+/// launch targets.
 pub fn enumerate_apps_folder() -> Result<Vec<AppInfo>, String> {
-    // Use Get-AppxPackage for Store apps (faster and more reliable than COM)
     let mut cmd = Command::new("powershell");
     no_window(&mut cmd);
     let output = cmd
@@ -21,23 +21,10 @@ pub fn enumerate_apps_folder() -> Result<Vec<AppInfo>, String> {
             "-NonInteractive",
             "-Command",
             r#"
-Get-AppxPackage -PackageTypeFilter Main | Where-Object { $_.IsFramework -eq $false -and ($_.SignatureKind -eq 'Store' -or $_.SignatureKind -eq 'Developer') } | ForEach-Object {
-    $pkg = $_
-    try {
-        $apps = (Get-AppxPackageManifest $pkg).Package.Applications.Application
-        if ($apps) {
-            foreach ($app in $apps) {
-                $aumid = "$($pkg.PackageFamilyName)!$($app.Id)"
-                $name = $pkg.Name
-                # Try to get a display name from the manifest
-                $displayName = $app.VisualElements.DisplayName
-                if ($displayName -and -not $displayName.StartsWith('ms-resource:')) {
-                    $name = $displayName
-                }
-                Write-Output "$aumid`t$name"
-            }
-        }
-    } catch {}
+Get-StartApps | ForEach-Object {
+    if ($_.Name -and $_.AppID -and $_.AppID -match '^[A-Za-z0-9][A-Za-z0-9.]+_[A-Za-z0-9]{13}!.+$') {
+        Write-Output "$($_.AppID)`t$($_.Name)"
+    }
 }
 "#,
         ])
@@ -74,7 +61,7 @@ Get-AppxPackage -PackageTypeFilter Main | Where-Object { $_.IsFramework -eq $fal
 
         let clean_name = clean_app_name(&name);
 
-        // Skip junk apps (SDK samples, documentation, dev tools)
+        // Skip junk apps (SDK samples, documentation, system endpoints)
         if is_junk_app(&clean_name) {
             continue;
         }
@@ -136,7 +123,7 @@ fn is_system_app(name: &str) -> bool {
 }
 
 /// Filter out obvious junk app names (SDK samples, documentation, internal tools)
-/// Keep it minimal — only filter things that are CLEARLY not user-facing apps.
+/// and known Store/system endpoints that Get-StartApps may still expose.
 pub fn is_junk_app(name: &str) -> bool {
     let lower = name.to_lowercase();
 
@@ -157,6 +144,41 @@ pub fn is_junk_app(name: &str) -> bool {
         "store purchase app",
         "aimgr",
         "aitoolkit.inference",
+        // Store/system endpoints surfaced by Windows app packages
+        "desktop app installer",
+        "app installer",
+        "gaming services",
+        "xbox identity provider",
+        "xbox game bar plugin",
+        "xbox game bar widgets",
+        "xbox tcui",
+        "xbox speech to text overlay",
+        "game bar presence writer",
+        "microsoft gameinput",
+        "microsoft gaming services",
+        "package installer",
+        "package support framework",
+        "update service",
+        "updater",
     ];
     junk_patterns.iter().any(|p| lower.contains(p))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_junk_app;
+
+    #[test]
+    fn filters_known_windows_store_endpoints() {
+        assert!(is_junk_app("Gaming Services"));
+        assert!(is_junk_app("Desktop App Installer"));
+        assert!(is_junk_app("Xbox Identity Provider"));
+        assert!(is_junk_app("Xbox Game Bar Plugin"));
+    }
+
+    #[test]
+    fn keeps_user_facing_apps() {
+        assert!(!is_junk_app("Xbox"));
+        assert!(!is_junk_app("Calculator"));
+    }
 }
