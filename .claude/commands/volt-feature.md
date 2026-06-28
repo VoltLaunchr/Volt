@@ -57,9 +57,9 @@ src-tauri/src/
 
 ### 4. Vérification
 - `cd src-tauri && cargo check` (Rust)
-- `bun run build` (TypeScript)
-- `bun run test` (tests existants passent)
-- `bun run lint` (ESLint)
+- `pnpm run build` (TypeScript)
+- `pnpm run test` (tests existants passent)
+- `pnpm run lint` (ESLint)
 
 ## Conventions du Projet
 

@@ -56,7 +56,7 @@
 ### Ce qu'il NE reste que 🟧
 
 - **M1.3 Code signing** : Windows Authenticode + macOS Developer ID certs (bloque par achat externe ~340 €/an)
-- **M1.3 Test CSP en prod** : `bun tauri build` + verifier DevTools console
+- **M1.3 Test CSP en prod** : `pnpm run tauri -- build` + verifier DevTools console
 - **M1.3 Test fresh install** : Windows + macOS vierges → SmartScreen/Gatekeeper absent
 
 ### Gaps critiques restants 🟧
@@ -64,7 +64,7 @@
 | Zone | Statut | Detail |
 |------|--------|--------|
 | **Code signing** | ❌ BLOQUANT | Windows Authenticode + macOS notarization necessaires (~340 €/an) |
-| **CSP en prod** | ⚠️ A tester | Policy stricte ajoutee, a verifier `bun tauri build` + DevTools |
+| **CSP en prod** | ⚠️ A tester | Policy stricte ajoutee, a verifier `pnpm run tauri -- build` + DevTools |
 | **Matrices de validation** | ✅ Valide | Frontend, Rust default, Tantivy et SQLCipher passent avec Clippy strict |
 
 **Problemes RESOLUS depuis l'audit precedent :**
@@ -100,7 +100,7 @@
 - [x] Pre-commit hook opt-in : `scripts/hooks/pre-commit` + `scripts/setup-hooks.mjs`
 
 **Criteres valides :**
-- ✅ `bunx tsc --noEmit` vert
+- ✅ `pnpm exec tsc --noEmit` vert
 - ✅ `cargo check` vert
 - ✅ Plus aucun fichier a 0 octet dans `src/`
 - ✅ `pnpm run sync-version` operationnel
@@ -134,7 +134,7 @@
 - [ ] **macOS Developer ID + notarization** : inscription Apple Developer (~99 $/an)
 - [ ] **Release de test signee** : v1.0-rc
 - [ ] **Test fresh install** Windows 11 + macOS
-- [ ] **Test CSP en prod** : `bun tauri build` + DevTools console
+- [ ] **Test CSP en prod** : `pnpm run tauri -- build` + DevTools console
 
 ---
 
@@ -420,7 +420,7 @@
 **Actions immediatement necessaires :**
 1. Acquerir Windows Authenticode + macOS Developer ID certs (~340 €/an)
 2. Integrer certs dans CI/CD + tester code signing
-3. Test CSP en prod : `bun tauri build` + verifier DevTools console
+3. Test CSP en prod : `pnpm run tauri -- build` + verifier DevTools console
 4. Test fresh install Windows + macOS vierges
 
 ---

@@ -546,7 +546,7 @@ export { MyPluginView } from './my-plugin/components/MyPluginView';
 - [ ] Créer l'interface dédiée (optionnel)
 - [ ] Exporter le plugin dans `builtin/index.ts`
 - [ ] Enregistrer le plugin dans `App.tsx`
-- [ ] Tester avec `bun tauri dev`
+- [ ] Tester avec `pnpm run tauri -- dev`
 - [ ] Vérifier les performances (< 500ms pour `match()`)
 - [ ] Gérer les erreurs gracieusement
 - [ ] Documenter le plugin
