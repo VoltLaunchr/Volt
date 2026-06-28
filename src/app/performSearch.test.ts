@@ -32,7 +32,7 @@ const fakeFiles: FileInfo[] = [
 
 async function performSearch(query: string) {
   const [searchedApps, searchedFiles, pluginResults] = await Promise.all([
-    applicationService.searchApplications({ query }, fakeApps),
+    applicationService.searchApplications({ query }),
     invoke<FileSearchResult[]>('search_files', { query, limit: 8 }).catch(
       () => [] as FileSearchResult[],
     ),

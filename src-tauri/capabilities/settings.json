@@ -33,6 +33,7 @@
     "allow-get-theme",
     "allow-set-theme",
     "allow-get-app-shortcuts",
+    "allow-get-app-icon",
     "allow-save-app-shortcut",
     "allow-delete-app-shortcut",
     "allow-sync-app-shortcuts",
@@ -88,8 +89,12 @@
     "allow-refresh-dev-extension",
     "allow-get-dev-reload-signal",
 
+    "allow-get-extension-preference",
     "allow-set-extension-preference",
+    "allow-get-extension-secret",
     "allow-set-extension-secret",
+    "allow-ext-oauth-start",
+    "allow-ext-oauth-get-token",
     "allow-ext-oauth-revoke-token",
 
     "allow-save-credential",
@@ -120,6 +125,7 @@
     "allow-expand-snippet",
     "allow-import-snippets",
     "allow-export-snippets",
+    "allow-set-snippet-expansion-enabled",
 
     "allow-get-notes",
     "allow-get-trash",
@@ -143,6 +149,8 @@
     "allow-start-clipboard-monitoring",
     "allow-stop-clipboard-monitoring",
     "allow-is-clipboard-monitoring",
+    "allow-set-clipboard-retention-days",
+    "allow-set-clipboard-disabled-apps",
 
     "allow-get-app-history",
     "allow-clear-launch-history",
@@ -153,6 +161,7 @@
     "allow-invalidate-index",
     "allow-get-index-status",
     "allow-get-db-index-stats",
+    "allow-start-file-watcher",
 
     "allow-record-shell-command",
     "allow-get-shell-history",

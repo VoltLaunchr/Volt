@@ -147,7 +147,7 @@ pub struct LogGuard(#[allow(dead_code)] pub WorkerGuard);
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let mut builder = tauri::Builder::default();
+    let mut builder = tauri::Builder::default().plugin(tauri_plugin_notification::init());
 
     // Single-instance MUST be registered before any other plugin so that
     // subsequent `volt://` launches forward the URL to the running instance

@@ -95,8 +95,7 @@ export function createVoltTools(): ToolSet {
       }),
       execute: async ({ query, limit }) => {
         const capped = clamp(limit, 8, 20);
-        const apps = await invoke<AppInfo[]>('scan_applications');
-        const matches = await invoke<AppInfo[]>('search_applications', { query, apps });
+        const matches = await invoke<AppInfo[]>('search_applications', { query });
         return {
           count: matches.length,
           applications: matches.slice(0, capped).map((a) => ({

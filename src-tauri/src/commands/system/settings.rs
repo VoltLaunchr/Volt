@@ -1110,7 +1110,9 @@ pub async fn sync_app_shortcuts(app_handle: AppHandle) -> VoltResult<Vec<AppShor
                         .category
                         .clone()
                         .unwrap_or_else(|| "Applications".to_string()),
-                    icon: app.icon.clone(),
+                    // Icons are display-only and may be large data URLs. Keep
+                    // them out of persisted settings; the UI hydrates lazily.
+                    icon: None,
                     path: app.path.clone(),
                     alias: existing.alias.clone(),
                     hotkey: existing.hotkey.clone(),
@@ -1125,7 +1127,9 @@ pub async fn sync_app_shortcuts(app_handle: AppHandle) -> VoltResult<Vec<AppShor
                         .category
                         .clone()
                         .unwrap_or_else(|| "Applications".to_string()),
-                    icon: app.icon.clone(),
+                    // Icons are display-only and may be large data URLs. Keep
+                    // them out of persisted settings; the UI hydrates lazily.
+                    icon: None,
                     path: app.path.clone(),
                     alias: None,
                     hotkey: None,

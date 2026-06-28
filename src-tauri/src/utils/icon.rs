@@ -2,6 +2,9 @@
 pub fn extract_icon(path: &str) -> Option<String> {
     #[cfg(target_os = "windows")]
     {
+        if is_uwp_aumid(path) {
+            return extract_uwp_icon_windows(path);
+        }
         extract_icon_windows(path)
     }
 
@@ -10,6 +13,105 @@ pub fn extract_icon(path: &str) -> Option<String> {
         let _ = path;
         None
     }
+}
+
+#[cfg(any(target_os = "windows", target_os = "linux"))]
+fn file_to_data_url(path: &std::path::Path) -> Option<String> {
+    use base64::Engine as _;
+    use base64::engine::general_purpose::STANDARD;
+
+    const MAX_ICON_BYTES: u64 = 2 * 1024 * 1024;
+
+    let metadata = std::fs::metadata(path).ok()?;
+    if !metadata.is_file() || metadata.len() > MAX_ICON_BYTES {
+        return None;
+    }
+
+    let ext = path.extension()?.to_string_lossy().to_lowercase();
+    let mime = match ext.as_str() {
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "svg" => "image/svg+xml",
+        "ico" => "image/x-icon",
+        "xpm" => "image/x-xpixmap",
+        _ => return None,
+    };
+
+    let bytes = std::fs::read(path).ok()?;
+    Some(format!("data:{};base64,{}", mime, STANDARD.encode(bytes)))
+}
+
+#[cfg(target_os = "windows")]
+fn is_uwp_aumid(path: &str) -> bool {
+    path.contains('!') && !path.contains('\\') && !path.contains('/')
+}
+
+#[cfg(target_os = "windows")]
+fn extract_uwp_icon_windows(aumid: &str) -> Option<String> {
+    use crate::utils::process::no_window;
+    use std::process::Command;
+
+    let (package_family, app_id) = aumid.split_once('!')?;
+    if package_family.trim().is_empty() || app_id.trim().is_empty() {
+        return None;
+    }
+
+    let mut cmd = Command::new("powershell");
+    no_window(&mut cmd);
+    let output = cmd
+        .env("VOLT_AUMID_PACKAGE_FAMILY", package_family)
+        .env("VOLT_AUMID_APP_ID", app_id)
+        .args([
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            r#"
+$family = $env:VOLT_AUMID_PACKAGE_FAMILY
+$appId = $env:VOLT_AUMID_APP_ID
+$pkg = Get-AppxPackage -PackageTypeFilter Main -ErrorAction SilentlyContinue |
+    Where-Object { $_.PackageFamilyName -eq $family } |
+    Select-Object -First 1
+if (-not $pkg -or -not $pkg.InstallLocation) { exit 0 }
+$manifestPath = Join-Path $pkg.InstallLocation 'AppxManifest.xml'
+if (-not (Test-Path -LiteralPath $manifestPath)) { exit 0 }
+[xml]$manifest = Get-Content -LiteralPath $manifestPath
+$app = @($manifest.Package.Applications.Application) | Where-Object { $_.Id -eq $appId } | Select-Object -First 1
+if (-not $app -or -not $app.VisualElements) { exit 0 }
+$logo = $app.VisualElements.Square44x44Logo
+if (-not $logo) { $logo = $app.VisualElements.Logo }
+if (-not $logo) { exit 0 }
+$candidate = Join-Path $pkg.InstallLocation $logo
+$candidates = @()
+if (Test-Path -LiteralPath $candidate) { $candidates += (Get-Item -LiteralPath $candidate) }
+$dir = Split-Path -Parent $candidate
+$base = [System.IO.Path]::GetFileNameWithoutExtension($candidate)
+if ($dir -and (Test-Path -LiteralPath $dir)) {
+    $candidates += Get-ChildItem -LiteralPath $dir -File -ErrorAction SilentlyContinue |
+        Where-Object { $_.BaseName -like "$base*" -and $_.Extension -match '^\.(png|jpg|jpeg|ico)$' }
+}
+$best = $candidates |
+    Sort-Object @{
+        Expression = {
+            if ($_.Name -match 'scale-200') { 0 }
+            elseif ($_.Name -match 'scale-100') { 1 }
+            elseif ($_.Extension -eq '.png') { 2 }
+            else { 3 }
+        }
+    }, Length |
+    Select-Object -First 1
+if ($best) { Write-Output $best.FullName }
+"#,
+        ])
+        .output()
+        .ok()?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let icon_path = stdout.lines().next()?.trim();
+    if icon_path.is_empty() {
+        return None;
+    }
+
+    file_to_data_url(std::path::Path::new(icon_path))
 }
 
 /// Maximum icon dimension we accept before bailing out. Windows shell icons
@@ -244,17 +346,16 @@ fn hicon_to_png_base64(hicon: winapi::shared::windef::HICON) -> Option<String> {
 #[cfg(target_os = "linux")]
 pub fn resolve_linux_icon(icon_name: &str) -> Option<String> {
     // If it's already a full path
-    if icon_name.starts_with('/') && std::path::Path::new(icon_name).exists() {
-        // Could load and convert to base64 here
-        // For now, return None to avoid large data
-        return None;
+    if icon_name.starts_with('/') {
+        return file_to_data_url(std::path::Path::new(icon_name));
     }
 
     // Common icon theme locations
     let icon_paths = vec![
-        "/usr/share/icons/hicolor/48x48/apps",
-        "/usr/share/icons/hicolor/64x64/apps",
         "/usr/share/icons/hicolor/128x128/apps",
+        "/usr/share/icons/hicolor/64x64/apps",
+        "/usr/share/icons/hicolor/48x48/apps",
+        "/usr/share/icons/hicolor/32x32/apps",
         "/usr/share/icons/hicolor/scalable/apps",
         "/usr/share/pixmaps",
     ];
@@ -264,10 +365,11 @@ pub fn resolve_linux_icon(icon_name: &str) -> Option<String> {
     for base_path in icon_paths {
         for ext in &extensions {
             let icon_path = format!("{}/{}.{}", base_path, icon_name, ext);
-            if std::path::Path::new(&icon_path).exists() {
-                // Found the icon - could load as base64 here
-                // For now, return None to keep response size small
-                return None;
+            let path = std::path::Path::new(&icon_path);
+            if path.exists()
+                && let Some(data_url) = file_to_data_url(path)
+            {
+                return Some(data_url);
             }
         }
     }

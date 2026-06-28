@@ -34,6 +34,7 @@ import type { Settings } from '../../features/settings/types/settings.types';
 import { updateService } from '../../features/settings/services/updateService';
 import { AppInfo } from '../../shared/types/common.types';
 import { logger } from '../../shared/utils/logger';
+import { notifyNative } from '../../shared/services/nativeNotificationService';
 import { useToastStore } from '../../shared/components/ui/toast-store';
 import { useAppStore } from '../../stores/appStore';
 import { useUiStore } from '../../stores/uiStore';
@@ -69,7 +70,8 @@ export function useAppLifecycle(): UseAppLifecycleResult {
   } = useApplications();
 
   const settings = useAppStore((s) => s.settings);
-  const { setSettings, setIsIndexing, setAllApps, setIsLoading, setAppError } = useAppStore.getState();
+  const { setSettings, setIsIndexing, setAllApps, setIsLoading, setAppError } =
+    useAppStore.getState();
 
   const indexingStarted = useRef(false); // Prevent double indexing (StrictMode)
   const updateCheckDone = useRef(false); // Prevent double update check
@@ -208,12 +210,14 @@ export function useAppLifecycle(): UseAppLifecycleResult {
         () => {
           // Open the settings window and navigate to About section
           void import('@tauri-apps/api/webviewWindow').then(({ WebviewWindow }) => {
-            WebviewWindow.getByLabel('settings').then((win) => {
-              if (win) {
-                void win.show();
-                void win.setFocus();
-              }
-            }).catch(() => {});
+            WebviewWindow.getByLabel('settings')
+              .then((win) => {
+                if (win) {
+                  void win.show();
+                  void win.setFocus();
+                }
+              })
+              .catch(() => {});
           });
         },
         // Critical updates cannot be dismissed — the user must open Settings
@@ -354,8 +358,10 @@ export function useAppLifecycle(): UseAppLifecycleResult {
             }
 
             setIsIndexing(true);
-            const { addToast } = useToastStore.getState();
-            addToast(`Indexing ${newSettings.indexing.folders.length} folder(s)...`, 'info');
+            void notifyNative({
+              title: 'Volt indexing started',
+              body: `Indexing ${newSettings.indexing.folders.length} folder(s)...`,
+            });
 
             const unlisten = await listen<{
               phase: string;
@@ -366,13 +372,19 @@ export function useAppLifecycle(): UseAppLifecycleResult {
               const { phase, indexedFiles } = evt.payload;
               if (phase === 'complete') {
                 setIsIndexing(false);
-                addToast(`Indexing complete — ${indexedFiles} files indexed`, 'success');
+                void notifyNative({
+                  title: 'Volt indexing complete',
+                  body: `${indexedFiles} files indexed`,
+                });
                 unlisten();
                 indexingUnlistenRef.current = null;
                 void fileWatcherRef.current?.start(newSettings.indexing.staleThresholdSecs);
               } else if (phase === 'error') {
                 setIsIndexing(false);
-                addToast('Indexing failed', 'error', 0);
+                void notifyNative({
+                  title: 'Volt indexing failed',
+                  body: 'Could not update the file index.',
+                });
                 unlisten();
                 indexingUnlistenRef.current = null;
               }
@@ -393,6 +405,10 @@ export function useAppLifecycle(): UseAppLifecycleResult {
           } catch (err) {
             if (cancelled || indexingRunId !== indexingRunIdRef.current) return;
             logger.error('Failed to restart indexing after settings change:', err);
+            void notifyNative({
+              title: 'Volt indexing failed',
+              body: 'Could not restart file indexing after settings changed.',
+            });
             setIsIndexing(false);
             indexingUnlistenRef.current?.();
             indexingUnlistenRef.current = null;
@@ -472,8 +488,10 @@ export function useAppLifecycle(): UseAppLifecycleResult {
 
       try {
         setIsIndexing(true);
-        const { addToast } = useToastStore.getState();
-        addToast(`Indexing ${foldersToIndex.length} folder(s)...`, 'info');
+        void notifyNative({
+          title: 'Volt indexing started',
+          body: `Indexing ${foldersToIndex.length} folder(s)...`,
+        });
 
         // Listen for progress events from backend
         const unlisten = await listen<{
@@ -488,13 +506,19 @@ export function useAppLifecycle(): UseAppLifecycleResult {
 
           if (phase === 'complete') {
             setIsIndexing(false);
-            addToast(`Indexing complete — ${indexedFiles} files indexed`, 'success');
+            void notifyNative({
+              title: 'Volt indexing complete',
+              body: `${indexedFiles} files indexed`,
+            });
             unlisten();
             indexingUnlistenRef.current = null;
             void fileWatcherRef.current?.start(currentSettings.indexing.staleThresholdSecs);
           } else if (phase === 'error') {
             setIsIndexing(false);
-            addToast('Indexing failed', 'error', 0); // duration 0 = persistent
+            void notifyNative({
+              title: 'Volt indexing failed',
+              body: 'Could not update the file index.',
+            });
             unlisten();
             indexingUnlistenRef.current = null;
           }
@@ -520,7 +544,10 @@ export function useAppLifecycle(): UseAppLifecycleResult {
       } catch (err) {
         if (indexingRunId !== indexingRunIdRef.current) return;
         logger.error('Failed to start file indexing:', err);
-        useToastStore.getState().addToast('Indexing failed', 'error', 0);
+        void notifyNative({
+          title: 'Volt indexing failed',
+          body: 'Could not start file indexing.',
+        });
         setIsIndexing(false);
         indexingUnlistenRef.current?.();
         indexingUnlistenRef.current = null;

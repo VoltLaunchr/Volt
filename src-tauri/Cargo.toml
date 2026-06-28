@@ -100,6 +100,7 @@ fastembed = "5"
 # `tantivy-search` feature is enabled, so the default build is unaffected.
 # See REFONTE-PILIER-D-SEARCH.md.
 tantivy = { version = "0.26", optional = true }
+tauri-plugin-notification = "2"
 
 [target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
 tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
