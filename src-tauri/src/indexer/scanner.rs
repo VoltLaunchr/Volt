@@ -172,7 +172,10 @@ fn dedup_nested_folders(folders: &[String]) -> Vec<String> {
         .iter()
         .map(|f| {
             let p = Path::new(f);
-            (f.clone(), p.canonicalize().unwrap_or_else(|_| p.to_path_buf()))
+            (
+                f.clone(),
+                p.canonicalize().unwrap_or_else(|_| p.to_path_buf()),
+            )
         })
         .collect();
 

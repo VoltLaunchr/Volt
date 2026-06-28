@@ -131,7 +131,10 @@ fn main() {
         recent_named.len()
     );
     for (usn, is_dir, name) in &recent_named {
-        println!("  usn={usn:<14} {}  {name}", if *is_dir { "[dir]" } else { "     " });
+        println!(
+            "  usn={usn:<14} {}  {name}",
+            if *is_dir { "[dir]" } else { "     " }
+        );
     }
 
     println!("\n--- MARKER TEST (our own file, '{marker_stem}') ---");
@@ -141,7 +144,10 @@ fn main() {
              (the {total} records were all nameless headers)."
         );
     } else {
-        println!("  FOUND {} record(s) carrying our marker NAME:", marker_hits.len());
+        println!(
+            "  FOUND {} record(s) carrying our marker NAME:",
+            marker_hits.len()
+        );
         for (usn, reason, name) in &marker_hits {
             println!("  usn={usn:<14} reason={reason:#010x}  {name}");
         }

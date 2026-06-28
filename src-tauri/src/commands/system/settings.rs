@@ -573,7 +573,10 @@ pub async fn load_settings(app_handle: AppHandle) -> VoltResult<Settings> {
     let mut needs_save = false;
 
     // Migration: add `windowEffect` while preserving legacy `transparency` values.
-    if let Some(appearance) = json_value.get_mut("appearance").and_then(|v| v.as_object_mut()) {
+    if let Some(appearance) = json_value
+        .get_mut("appearance")
+        .and_then(|v| v.as_object_mut())
+    {
         let should_default_window_effect = !appearance.contains_key("windowEffect")
             || (appearance.get("windowEffect") == Some(&serde_json::Value::String("mica".into()))
                 && appearance.contains_key("transparency"));

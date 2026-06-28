@@ -412,9 +412,7 @@ async fn reconcile(params: ReconcileParams) {
                         if let Err(e) = db.mark_full_scan() {
                             warn!("{}: mark_full_scan failed: {}", label, e);
                         }
-                        if record_catchup_telemetry
-                            && let Err(e) = db.record_stale_catchup()
-                        {
+                        if record_catchup_telemetry && let Err(e) = db.record_stale_catchup() {
                             warn!("{}: record_stale_catchup failed: {}", label, e);
                         }
                         true

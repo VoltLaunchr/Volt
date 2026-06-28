@@ -126,7 +126,10 @@ pub async fn ai_proxy_stream(
     if api_key.is_none() && base_url.is_none() {
         return Err(fail(
             &channel,
-            format!("No API key for '{}'. Add one in Volt Settings → AI.", provider),
+            format!(
+                "No API key for '{}'. Add one in Volt Settings → AI.",
+                provider
+            ),
             None,
         ));
     }
@@ -174,6 +177,8 @@ pub async fn ai_proxy_stream(
             .map_err(|e| e.to_string())?;
     }
 
-    channel.send(AiProxyEvent::Done).map_err(|e| e.to_string())?;
+    channel
+        .send(AiProxyEvent::Done)
+        .map_err(|e| e.to_string())?;
     Ok(())
 }

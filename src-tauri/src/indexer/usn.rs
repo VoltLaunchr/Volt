@@ -209,19 +209,31 @@ const VERSION_OFFSET: usize = 4;
 
 #[inline]
 fn rd_u16(buf: &[u8], off: usize) -> Option<u16> {
-    buf.get(off..off + 2)?.try_into().ok().map(u16::from_le_bytes)
+    buf.get(off..off + 2)?
+        .try_into()
+        .ok()
+        .map(u16::from_le_bytes)
 }
 #[inline]
 fn rd_u32(buf: &[u8], off: usize) -> Option<u32> {
-    buf.get(off..off + 4)?.try_into().ok().map(u32::from_le_bytes)
+    buf.get(off..off + 4)?
+        .try_into()
+        .ok()
+        .map(u32::from_le_bytes)
 }
 #[inline]
 fn rd_u64(buf: &[u8], off: usize) -> Option<u64> {
-    buf.get(off..off + 8)?.try_into().ok().map(u64::from_le_bytes)
+    buf.get(off..off + 8)?
+        .try_into()
+        .ok()
+        .map(u64::from_le_bytes)
 }
 #[inline]
 fn rd_i64(buf: &[u8], off: usize) -> Option<i64> {
-    buf.get(off..off + 8)?.try_into().ok().map(i64::from_le_bytes)
+    buf.get(off..off + 8)?
+        .try_into()
+        .ok()
+        .map(i64::from_le_bytes)
 }
 #[inline]
 fn rd_u128(buf: &[u8], off: usize) -> Option<u128> {
@@ -654,7 +666,9 @@ mod platform {
             if len == 0 || len >= buf.len() {
                 return None;
             }
-            Some(std::path::PathBuf::from(String::from_utf16_lossy(&buf[..len])))
+            Some(std::path::PathBuf::from(String::from_utf16_lossy(
+                &buf[..len],
+            )))
         }
     }
 
@@ -919,10 +933,7 @@ mod tests {
 
     /// Build a synthetic `USN_RECORD_V2` for tests.
     fn make_v2(usn: i64, frn: u64, parent: u64, reason: u32, attrs: u32, name: &str) -> Vec<u8> {
-        let name_utf16: Vec<u8> = name
-            .encode_utf16()
-            .flat_map(u16::to_le_bytes)
-            .collect();
+        let name_utf16: Vec<u8> = name.encode_utf16().flat_map(u16::to_le_bytes).collect();
         let name_off: u16 = 60; // fixed V2 header size
         let record_length = (name_off as usize + name_utf16.len()) as u32;
 
@@ -945,10 +956,7 @@ mod tests {
 
     /// Build a synthetic `USN_RECORD_V3` (128-bit FRNs) for tests.
     fn make_v3(usn: i64, reason: u32, attrs: u32, name: &str) -> Vec<u8> {
-        let name_utf16: Vec<u8> = name
-            .encode_utf16()
-            .flat_map(u16::to_le_bytes)
-            .collect();
+        let name_utf16: Vec<u8> = name.encode_utf16().flat_map(u16::to_le_bytes).collect();
         let name_off: u16 = 76; // fixed V3 header size
         let record_length = (name_off as usize + name_utf16.len()) as u32;
 
@@ -996,7 +1004,14 @@ mod tests {
         let recs = vec![
             make_v2(1, 10, 2, USN_REASON_FILE_CREATE, 0, "a.rs"),
             make_v2(2, 11, 2, USN_REASON_FILE_DELETE, 0, "b.rs"),
-            make_v2(3, 12, 2, USN_REASON_DATA_EXTEND | USN_REASON_CLOSE, 0, "c.rs"),
+            make_v2(
+                3,
+                12,
+                2,
+                USN_REASON_DATA_EXTEND | USN_REASON_CLOSE,
+                0,
+                "c.rs",
+            ),
         ];
         let buf = with_header(4, &recs);
 
@@ -1108,16 +1123,27 @@ mod tests {
 
     #[test]
     fn strip_extended_prefix_variants() {
-        assert_eq!(strip_extended_prefix(r"\\?\C:\Users\a.txt"), r"C:\Users\a.txt");
-        assert_eq!(strip_extended_prefix(r"\\?\UNC\srv\share\f"), r"\\srv\share\f");
-        assert_eq!(strip_extended_prefix(r"C:\already\clean"), r"C:\already\clean");
+        assert_eq!(
+            strip_extended_prefix(r"\\?\C:\Users\a.txt"),
+            r"C:\Users\a.txt"
+        );
+        assert_eq!(
+            strip_extended_prefix(r"\\?\UNC\srv\share\f"),
+            r"\\srv\share\f"
+        );
+        assert_eq!(
+            strip_extended_prefix(r"C:\already\clean"),
+            r"C:\already\clean"
+        );
     }
 
     #[test]
     fn is_indexable_excludes_system_and_noise() {
         assert!(is_indexable(r"C:\Users\me\Documents\report.pdf"));
         assert!(!is_indexable(r"C:\Windows\System32\kernel32.dll"));
-        assert!(!is_indexable(r"C:\Users\me\project\node_modules\x\index.js"));
+        assert!(!is_indexable(
+            r"C:\Users\me\project\node_modules\x\index.js"
+        ));
         assert!(!is_indexable(r"C:\Users\me\AppData\Local\app\cache.db"));
     }
 
@@ -1169,11 +1195,18 @@ mod tests {
         );
         let up = idx.apply_records(&[driver_rec(7, USN_REASON_FILE_CREATE)], &resolver);
         assert!(up.upserts.is_empty(), "excluded path must not be indexed");
-        assert_eq!(idx.tracked(), 1, "but the FRN is still tracked for later deletes");
+        assert_eq!(
+            idx.tracked(),
+            1,
+            "but the FRN is still tracked for later deletes"
+        );
 
         let empty = FakeResolver(std::collections::HashMap::new());
         let del = idx.apply_records(&[driver_rec(7, USN_REASON_FILE_DELETE)], &empty);
-        assert!(del.removals.is_empty(), "excluded path must not be removed either");
+        assert!(
+            del.removals.is_empty(),
+            "excluded path must not be removed either"
+        );
         assert_eq!(idx.tracked(), 0);
     }
 }

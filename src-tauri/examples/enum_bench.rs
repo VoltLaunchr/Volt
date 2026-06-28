@@ -48,11 +48,7 @@ fn main() {
         // No args at all: default everything off %USERPROFILE%.
         (None, _) => {
             let home = std::env::var("USERPROFILE").unwrap_or_else(|_| r"C:\".to_string());
-            let drive = home
-                .chars()
-                .next()
-                .unwrap_or('C')
-                .to_ascii_uppercase();
+            let drive = home.chars().next().unwrap_or('C').to_ascii_uppercase();
             (drive, vec![home])
         }
     };
@@ -81,9 +77,7 @@ fn main() {
         Ok(files) => {
             let n = files.len();
             let per_sec = n as f64 / walk_elapsed.as_secs_f64().max(1e-9);
-            println!(
-                "      {n} entries in {walk_elapsed:?}  (~{per_sec:.0} files/s)"
-            );
+            println!("      {n} entries in {walk_elapsed:?}  (~{per_sec:.0} files/s)");
             (n, per_sec)
         }
         Err(e) => {
@@ -115,8 +109,7 @@ fn main() {
     // bounded sample to time the per-file resolve cost separately from the drain
     // (resolution is the real per-file price of the USN path).
     const RESOLVE_SAMPLE_CAP: usize = 40_000;
-    let (mut total, mut named, mut up, mut rm, mut ig) =
-        (0usize, 0usize, 0usize, 0usize, 0usize);
+    let (mut total, mut named, mut up, mut rm, mut ig) = (0usize, 0usize, 0usize, 0usize, 0usize);
     let mut sample_frns: Vec<u128> = Vec::new();
     let mut cursor_usn = 0i64;
 
@@ -156,9 +149,7 @@ fn main() {
     }
     let drain_elapsed = drain_start.elapsed();
     let drain_per_sec = total as f64 / drain_elapsed.as_secs_f64().max(1e-9);
-    println!(
-        "      drained {total} records in {drain_elapsed:?}  (~{drain_per_sec:.0} rec/s)"
-    );
+    println!("      drained {total} records in {drain_elapsed:?}  (~{drain_per_sec:.0} rec/s)");
     println!(
         "      named={named}  nameless={}  (upsert={up} remove={rm} ignore={ig})",
         total - named
