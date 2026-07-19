@@ -2,6 +2,11 @@ import { invoke, Channel } from '@tauri-apps/api/core';
 import { useCallback, useEffect, useRef } from 'react';
 import { pluginRegistry } from '../../features/plugins/core';
 import { PluginResult as PluginResultData, PluginResultType } from '../../features/plugins/types';
+import {
+  braveSearchProvider,
+  webSearchHistory,
+  type WebSearchResult,
+} from '../../features/web-search';
 import { AppInfo, FileInfo, SearchResult, SearchResultType } from '../../shared/types/common.types';
 import {
   SEARCH_SCORING,
@@ -9,6 +14,7 @@ import {
   SEARCH_SENSITIVITY_THRESHOLDS,
   SEARCH_SENSITIVITY_FUZZY_MULTIPLIER,
 } from '../../shared/constants/searchScoring';
+import { resolveFallbackBrandIcon } from '../../shared/constants/webBrandIcons';
 import type { SearchSensitivity } from '../../features/settings/types/settings.types';
 import { extractErrorMessage } from '../../shared/utils/error';
 import { logger } from '../../shared/utils/logger';
@@ -17,6 +23,7 @@ import { detectUrl } from '../../shared/utils/urlDetector';
 import { useAppStore } from '../../stores/appStore';
 import { useSearchStore } from '../../stores/searchStore';
 import { mergeSearchResults } from '../searchResults';
+import { shouldShowWebFallbacks } from '../webSearchConfidence';
 
 /** Shorten a file path for display: C:\Users\Noluc\Documents\foo.txt → ~\Documents\foo.txt */
 function shortenPath(fullPath: string): string {
@@ -66,6 +73,7 @@ interface UseSearchPipelineOptions {
 const convertApps = (
   apps: AppInfoWithScore[],
   sensitivity: SearchSensitivity = 'medium',
+  iconByPath?: Map<string, string>
 ): SearchResult[] => {
   const threshold = SEARCH_SENSITIVITY_THRESHOLDS[sensitivity];
   const fuzzyMultiplier = SEARCH_SENSITIVITY_FUZZY_MULTIPLIER[sensitivity];
@@ -86,9 +94,9 @@ const convertApps = (
         type: SearchResultType.Application,
         title: appWithScore.name,
         subtitle: appWithScore.description || undefined,
-        icon: appWithScore.icon,
+        icon: appWithScore.icon ?? iconByPath?.get(appWithScore.path.toLowerCase()),
         score: SEARCH_SCORING.APPLICATION + adjustedScore,
-        data: appWithScore as AppInfo,
+        data: appWithScore,
       };
     });
 };
@@ -100,10 +108,17 @@ const convertFiles = (files: FileSearchResultCompact[]): SearchResult[] => {
       const path = file.path.toLowerCase();
       if (file.name.toLowerCase().endsWith('.exe')) {
         const systemDirs = [
-          'program files', 'program files (x86)', 'windows',
-          'programdata', 'common files', 'clicktorun',
-          'installer', 'servicehub', 'windows kits',
-          'microsoft shared', 'nvidia corporation',
+          'program files',
+          'program files (x86)',
+          'windows',
+          'programdata',
+          'common files',
+          'clicktorun',
+          'installer',
+          'servicehub',
+          'windows kits',
+          'microsoft shared',
+          'nvidia corporation',
         ];
         if (systemDirs.some((d) => path.includes(d))) return false;
       }
@@ -116,7 +131,7 @@ const convertFiles = (files: FileSearchResultCompact[]): SearchResult[] => {
       subtitle: shortenPath(file.path),
       icon: file.icon,
       score: SEARCH_SCORING.FILE + Math.round((file.score / maxFileScore) * 50),
-      data: file as unknown as FileInfo,
+      data: file,
     }));
 };
 
@@ -165,7 +180,12 @@ const convertPlugins = (pluginResults: PluginResultData[]): SearchResult[] =>
     // replaces the old hand-maintained PLUGIN_KEYWORDS map.
     const baseScore = SEARCH_SCORING.PLUGIN_BASE + result.score;
     const boosted = result.matchKind === 'prefix' || result.matchKind === 'keyword';
-    const finalScore = boosted ? SEARCH_SCORING.PLUGIN_KEYWORD_BOOST + baseScore : baseScore;
+    const finalScore =
+      result.type === PluginResultType.WebSearch && boosted
+        ? SEARCH_SCORING.WEB_EXPLICIT_ACTION
+        : boosted
+          ? SEARCH_SCORING.PLUGIN_KEYWORD_BOOST + baseScore
+          : baseScore;
 
     return {
       id: result.id,
@@ -181,6 +201,70 @@ const convertPlugins = (pluginResults: PluginResultData[]): SearchResult[] =>
       layout: result.layout,
     };
   });
+
+function explicitWebQuery(pluginResults: PluginResultData[]): string | null {
+  const result = pluginResults.find(
+    (candidate) =>
+      candidate.type === PluginResultType.WebSearch &&
+      (candidate.matchKind === 'prefix' || candidate.matchKind === 'keyword') &&
+      typeof candidate.data?.query === 'string'
+  );
+  const query = result?.data?.query;
+  return typeof query === 'string' && query.trim().length >= 2 ? query.trim() : null;
+}
+
+function convertWebResults(results: WebSearchResult[], query: string): SearchResult[] {
+  return results.map((result, index) => {
+    const id = `web-result-${result.providerId}-${index}`;
+    const pluginResult: PluginResultData = {
+      id,
+      type: PluginResultType.WebSearch,
+      title: result.title,
+      subtitle: result.description,
+      icon: result.favicon,
+      badge: result.providerId === 'brave' ? 'Brave' : 'Web',
+      score: SEARCH_SCORING.WEB_EXPLICIT_RESULT - index,
+      pluginId: 'websearch',
+      accessories: result.age ? [{ text: result.age }] : undefined,
+      data: {
+        query,
+        engine: result.providerId,
+        url: result.url,
+      },
+    };
+
+    return {
+      id,
+      type: SearchResultType.WebSearch,
+      title: result.title,
+      subtitle: result.description,
+      icon: result.favicon,
+      badge: pluginResult.badge,
+      score: pluginResult.score,
+      data: pluginResult,
+      accessories: pluginResult.accessories,
+    };
+  });
+}
+
+function waitForWebDebounce(signal: AbortSignal, delayMs = 275): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const onAbort = () => {
+      clearTimeout(timeoutId);
+      reject(new DOMException('The operation was aborted', 'AbortError'));
+    };
+    const timeoutId = setTimeout(() => {
+      signal.removeEventListener('abort', onAbort);
+      resolve();
+    }, delayMs);
+
+    if (signal.aborted) {
+      onAbort();
+      return;
+    }
+    signal.addEventListener('abort', onAbort, { once: true });
+  });
+}
 
 /**
  * Wires up the debounced search pipeline. State lives in useSearchStore.
@@ -199,6 +283,7 @@ export function useSearchPipeline({
   const allApps = useAppStore((s) => s.allApps);
   const searchSensitivity: SearchSensitivity =
     useAppStore((s) => s.settings?.general.searchSensitivity) ?? 'medium';
+  const searchLanguage = useAppStore((s) => s.settings?.general.language) ?? 'auto';
   // App shortcuts carry user-defined aliases. We pass them to the backend
   // cascade ranker on every search so alias-exact / alias-prefix tiers fire
   // (e.g. typing "gh" launches GitHub when GitHub.alias = "gh").
@@ -206,6 +291,8 @@ export function useSearchPipeline({
   // Fallback commands run when the regular search returns no results. They are
   // user-configurable in Settings → Fallback Commands.
   const fallbackCommands = useAppStore((s) => s.settings?.fallbacks?.commands);
+  const rememberWebSearchHistory =
+    useAppStore((s) => s.settings?.fallbacks?.rememberWebSearchHistory) ?? false;
   const searchQuery = useSearchStore((s) => s.searchQuery);
   const results = useSearchStore((s) => s.results);
   const selectedIndex = useSearchStore((s) => s.selectedIndex);
@@ -214,6 +301,7 @@ export function useSearchPipeline({
 
   const latestSearchId = useRef(0); // Prevent stale search responses
   const activeChannelRef = useRef<Channel<SearchBatch> | null>(null);
+  const activeWebSearchRef = useRef<AbortController | null>(null);
 
   const finishSearch = useCallback((searchId: number) => {
     if (searchId === latestSearchId.current) {
@@ -222,19 +310,24 @@ export function useSearchPipeline({
   }, []);
 
   const performSearch = useCallback(
-    async (query: string) => {
+    async (query: string, searchId: number) => {
       // Read isLoading from the store at call-time to avoid stale closures
       // (captured isLoading would reflect the value at callback creation time,
       // potentially skipping searches when apps finish loading between renders)
       const { isLoading: currentIsLoading } = useAppStore.getState();
       // If apps aren't loaded yet, still allow plugin-only search
       const appsReady = !currentIsLoading && allApps.length > 0;
+      const iconByPath = new Map(
+        allApps
+          .filter((app): app is AppInfo & { icon: string } => Boolean(app.icon))
+          .map((app) => [app.path.toLowerCase(), app.icon])
+      );
+      webSearchHistory.setEnabled(rememberWebSearchHistory);
 
       if (!query.trim()) {
         // Predictive results: show top frecency suggestions.
         // Guard with latestSearchId so a late frecency response doesn't
         // overwrite a newer search that started while the IPC was in flight.
-        const searchId = ++latestSearchId.current;
         try {
           const suggestions = await invoke<LaunchRecord[]>('get_frecency_suggestions', {
             limit: maxResults,
@@ -251,13 +344,14 @@ export function useSearchPipeline({
               type: SearchResultType.Application,
               title: record.name,
               subtitle: undefined,
+              icon: iconByPath.get(record.path.toLowerCase()),
               score: SEARCH_LIMITS.SEARCH_ORDER_BASE - i, // preserve frecency order
               data: {
                 id: `frecency-${record.path}`,
                 name: record.name,
                 path: record.path,
                 usageCount: record.launchCount,
-              } as AppInfo,
+              },
             }));
             setResults(predictiveResults);
           } else {
@@ -277,28 +371,32 @@ export function useSearchPipeline({
 
       // Detect "show all" queries — user wants to browse a category, not search by name
       const lowerQuery = query.trim().toLowerCase();
-      const isAppBrowseQuery = ['app', 'apps', 'application', 'applications', 'programmes'].includes(lowerQuery);
+      const isAppBrowseQuery = [
+        'app',
+        'apps',
+        'application',
+        'applications',
+        'programmes',
+      ].includes(lowerQuery);
       const isGameBrowseQuery = ['game', 'games', 'jeu', 'jeux'].includes(lowerQuery);
 
       // If browsing apps, show ALL apps sorted by name (frecency will reorder used ones)
       if (isAppBrowseQuery && appsReady) {
-        const searchId = ++latestSearchId.current;
-        const allAppResults: SearchResult[] = allApps
-          .slice(0, maxResults + 4)
-          .map((app, i) => ({
-            id: app.id,
-            type: SearchResultType.Application,
-            title: app.name,
-            subtitle: app.description || undefined,
-            icon: app.icon,
-            score: SEARCH_SCORING.APPLICATION + 100 - i,
-            data: app,
-          }));
+        const allAppResults: SearchResult[] = allApps.slice(0, maxResults + 4).map((app, i) => ({
+          id: app.id,
+          type: SearchResultType.Application,
+          title: app.name,
+          subtitle: app.description || undefined,
+          icon: app.icon,
+          score: SEARCH_SCORING.APPLICATION + 100 - i,
+          data: app,
+        }));
 
         // Fetch frecency to reorder — used apps first
         try {
-          const frecency = await invoke<LaunchRecord[]>('get_frecency_suggestions', { limit: 20 })
-            .catch(() => [] as LaunchRecord[]);
+          const frecency = await invoke<LaunchRecord[]>('get_frecency_suggestions', {
+            limit: 20,
+          }).catch(() => [] as LaunchRecord[]);
           if (frecency.length > 0) {
             const frecencyPaths = new Set(frecency.map((r) => r.path));
             allAppResults.sort((a, b) => {
@@ -307,7 +405,9 @@ export function useSearchPipeline({
               return bUsed - aUsed || b.score - a.score;
             });
           }
-        } catch { /* continue */ }
+        } catch {
+          /* continue */
+        }
 
         if (searchId === latestSearchId.current) {
           setResults(allAppResults);
@@ -324,10 +424,7 @@ export function useSearchPipeline({
 
       setShowSnowEffect(isChristmasQuery);
 
-      let searchId = 0;
       try {
-        searchId = ++latestSearchId.current;
-
         const mergeResults = (...sources: SearchResult[][]): SearchResult[] =>
           mergeSearchResults(maxResults + 4, ...sources);
 
@@ -355,7 +452,7 @@ export function useSearchPipeline({
           if (searchId !== latestSearchId.current) return;
 
           if (batch.event === 'apps') {
-            streamedApps = convertApps(batch.data.results, searchSensitivity);
+            streamedApps = convertApps(batch.data.results, searchSensitivity, iconByPath);
             // Show partial results immediately (apps arrived)
             setResults(mergeResults(streamedApps, streamedFiles, streamedPlugins));
           } else if (batch.event === 'files') {
@@ -371,19 +468,22 @@ export function useSearchPipeline({
               options: {
                 query: effectiveQuery,
                 maxResults: maxResults * 2,
-                extFilter: parsed.hasOperators ? (parsed.operators.ext || null) : null,
-                dirFilter: parsed.hasOperators ? (parsed.operators.dir || null) : null,
-                sizeMin: parsed.hasOperators ? (parsed.operators.sizeMin || null) : null,
-                sizeMax: parsed.hasOperators ? (parsed.operators.sizeMax || null) : null,
-                modifiedAfter: parsed.hasOperators ? (parsed.operators.modifiedAfter || null) : null,
+                extFilter: parsed.hasOperators ? parsed.operators.ext || null : null,
+                dirFilter: parsed.hasOperators ? parsed.operators.dir || null : null,
+                sizeMin: parsed.hasOperators ? parsed.operators.sizeMin || null : null,
+                sizeMax: parsed.hasOperators ? parsed.operators.sizeMax || null : null,
+                modifiedAfter: parsed.hasOperators ? parsed.operators.modifiedAfter || null : null,
                 modifiedBefore: parsed.hasOperators
-                  ? (parsed.operators.modifiedBefore || null)
+                  ? parsed.operators.modifiedBefore || null
                   : null,
               },
               shortcuts: appShortcuts ?? null,
               onEvent: channel,
             }).catch((err) => {
-              logger.warn('Streaming search failed, results may be partial:', extractErrorMessage(err));
+              logger.warn(
+                'Streaming search failed, results may be partial:',
+                extractErrorMessage(err)
+              );
             })
           : Promise.resolve();
 
@@ -429,17 +529,17 @@ export function useSearchPipeline({
               subtitle: 'Press Enter to open in browser',
               score: SEARCH_SCORING.PLUGIN_KEYWORD_BOOST + 200,
               data: { url: detectedUrl },
-            } as import('../../shared/types/common.types').PluginResultData,
+            },
           };
           allResults.unshift(urlResult);
           // Re-sort so score ordering is respected
           allResults.sort((a, b) => b.score - a.score);
         }
 
-        // Fallback Commands — Raycast-style. When the regular search returns
-        // nothing, surface user-configured fallbacks (search engines, AI prompts,
-        // custom shell commands) that take the typed query as input.
-        if (allResults.length === 0 && effectiveQuery.trim()) {
+        // Fallback Commands — use result confidence rather than array length.
+        // A secondary-field app match or unrelated fuzzy file must not hide the
+        // user's web/AI fallbacks.
+        if (shouldShowWebFallbacks(allResults, effectiveQuery)) {
           const enabled = (fallbackCommands ?? [])
             .filter((cmd) => cmd.enabled)
             .sort((a, b) => a.order - b.order);
@@ -476,7 +576,7 @@ export function useSearchPipeline({
                 type: SearchResultType.ShellCommand,
                 title: resolvedLabel,
                 subtitle: `Run: ${resolvedTarget}`,
-                icon: cmd.icon,
+                icon: resolveFallbackBrandIcon(cmd.id, cmd.icon),
                 score: fallbackScore,
                 badge: 'Fallback',
                 data: shellData,
@@ -500,7 +600,7 @@ export function useSearchPipeline({
               type: SearchResultType.WebSearch,
               title: resolvedLabel,
               subtitle: 'Press Enter to open in browser',
-              icon: cmd.icon,
+              icon: resolveFallbackBrandIcon(cmd.id, cmd.icon),
               score: fallbackScore,
               badge: 'Fallback',
               data: webData,
@@ -509,6 +609,43 @@ export function useSearchPipeline({
         }
 
         setResults(allResults);
+
+        // Progressive web enrichment. It only runs for an explicit web plugin
+        // activation, never for ordinary root-search keystrokes. Local results
+        // are already visible; the network request cannot block the launcher.
+        const webQuery = explicitWebQuery(pluginResults);
+        if (webQuery) {
+          const controller = new AbortController();
+          activeWebSearchRef.current = controller;
+          void waitForWebDebounce(controller.signal)
+            .then(() =>
+              braveSearchProvider.search(webQuery, {
+                signal: controller.signal,
+                limit: 3,
+                country: searchLanguage === 'fr' ? 'FR' : undefined,
+                language: searchLanguage === 'auto' ? undefined : searchLanguage,
+              })
+            )
+            .then((webResults) => {
+              if (
+                controller.signal.aborted ||
+                searchId !== latestSearchId.current ||
+                webResults.length === 0
+              ) {
+                return;
+              }
+              const converted = convertWebResults(webResults, webQuery);
+              setResults(mergeSearchResults(maxResults + 4, allResults, converted));
+            })
+            .catch(() => {
+              // Optional provider: local search and URL fallbacks remain usable.
+            })
+            .finally(() => {
+              if (activeWebSearchRef.current === controller) {
+                activeWebSearchRef.current = null;
+              }
+            });
+        }
       } catch (err) {
         const errorMessage = extractErrorMessage(err);
         logger.error('Search failed:', errorMessage);
@@ -524,7 +661,9 @@ export function useSearchPipeline({
       fallbackCommands,
       finishSearch,
       maxResults,
+      rememberWebSearchHistory,
       searchSensitivity,
+      searchLanguage,
       setResults,
       setSearchError,
       setShowSnowEffect,
@@ -534,8 +673,28 @@ export function useSearchPipeline({
   // Debounced search effect — adaptive: 150ms for short queries, 80ms for longer ones
   useEffect(() => {
     if (suspended) {
+      latestSearchId.current += 1;
+      if (activeChannelRef.current) {
+        activeChannelRef.current.onmessage = () => {};
+        activeChannelRef.current = null;
+      }
+      activeWebSearchRef.current?.abort();
+      activeWebSearchRef.current = null;
+      useSearchStore.getState().setIsSearching(false);
       return;
     }
+
+    // Reserve/invalidate the search generation immediately when an input or
+    // dependency changes. Waiting until the debounced callback runs leaves an
+    // 80–150 ms window where an older streaming/web response can still pass
+    // the stale-response guard and overwrite the new query's UI.
+    const searchId = ++latestSearchId.current;
+    if (activeChannelRef.current) {
+      activeChannelRef.current.onmessage = () => {};
+      activeChannelRef.current = null;
+    }
+    activeWebSearchRef.current?.abort();
+    activeWebSearchRef.current = null;
 
     if (searchQuery.trim()) {
       useSearchStore.getState().setIsSearching(true);
@@ -546,7 +705,7 @@ export function useSearchPipeline({
     const debounceMs = searchQuery.trim().length > 2 ? 80 : 150;
 
     const timeoutId = setTimeout(() => {
-      void performSearch(searchQuery);
+      void performSearch(searchQuery, searchId);
     }, debounceMs);
 
     return () => clearTimeout(timeoutId);

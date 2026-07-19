@@ -3,6 +3,7 @@
 //! Scans for games installed via Xbox app or Microsoft Store
 
 use super::types::{GameInfo, GamePlatform, GameScanner};
+use crate::utils::game_icon::find_game_icon;
 use std::path::PathBuf;
 #[allow(unused_imports)]
 use tracing::{debug, warn};
@@ -141,6 +142,7 @@ impl XboxScanner {
             let game_id = format!("xbox_{}", name.replace(' ', "_").to_lowercase());
 
             let mut game = GameInfo::new(game_id, name.clone(), GamePlatform::Xbox, path.clone());
+            game.icon_path = find_game_icon(&path, None);
 
             // Resolve PackageFamilyName for launch URI. If found, construct the proper
             // shell:AppsFolder URI; otherwise, try to match by installed package name patterns
@@ -193,6 +195,7 @@ impl XboxScanner {
                             GamePlatform::Xbox,
                             install_path.clone(),
                         );
+                        game.icon_path = find_game_icon(&install_path, None);
 
                         // Xbox games launch via shell:AppsFolder, which
                         // requires the PackageFamilyName (not the full name).
@@ -248,6 +251,7 @@ impl XboxScanner {
 
                         let mut game =
                             GameInfo::new(game_id, name, GamePlatform::Xbox, install_path.clone());
+                        game.icon_path = find_game_icon(&install_path, None);
 
                         game.is_installed = !path.is_empty() && install_path.exists();
 

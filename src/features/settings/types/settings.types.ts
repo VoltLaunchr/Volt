@@ -7,6 +7,7 @@ export type ShowOnScreen = 'cursor' | 'focusedWindow' | 'primaryScreen';
 export type SearchSensitivity = 'low' | 'medium' | 'high';
 
 export type UpdateChannel = 'stable' | 'beta';
+export type WebSearchEngine = 'google' | 'bing' | 'duckduckgo';
 
 export interface GeneralSettings {
   startWithWindows: boolean;
@@ -19,6 +20,12 @@ export interface GeneralSettings {
   showOnScreen: ShowOnScreen;
   autoCheckForUpdates: boolean;
   updateChannel: UpdateChannel;
+}
+
+export interface WebSearchSettings {
+  defaultEngine: WebSearchEngine;
+  /** `null` delegates http/https links to the system browser. */
+  preferredBrowserId: string | null;
 }
 
 export interface CustomPosition {
@@ -143,10 +150,13 @@ export interface FallbackCommand {
 
 export interface FallbacksSettings {
   commands: FallbackCommand[];
+  /** Opt-in local history for explicit web searches. */
+  rememberWebSearchHistory: boolean;
 }
 
 export interface Settings {
   general: GeneralSettings;
+  webSearch: WebSearchSettings;
   appearance: AppearanceSettings;
   hotkeys: HotkeySettings;
   indexing: IndexingSettings;
@@ -188,6 +198,10 @@ export const DEFAULT_SETTINGS: Settings = {
     showOnScreen: 'cursor',
     autoCheckForUpdates: true,
     updateChannel: 'stable',
+  },
+  webSearch: {
+    defaultEngine: 'google',
+    preferredBrowserId: null,
   },
   appearance: {
     theme: 'dark',
@@ -278,11 +292,12 @@ export const DEFAULT_SETTINGS: Settings = {
     maxTriggerLen: 32,
   },
   fallbacks: {
+    rememberWebSearchHistory: false,
     commands: [
       {
         id: 'fallback-google',
         label: 'Search {rawQuery} on Google',
-        icon: 'globe',
+        icon: '/icons/web/google.webp',
         kind: 'webSearch',
         target: 'https://www.google.com/search?q={query}',
         enabled: true,
@@ -291,7 +306,7 @@ export const DEFAULT_SETTINGS: Settings = {
       {
         id: 'fallback-duckduckgo',
         label: 'Search {rawQuery} on DuckDuckGo',
-        icon: 'shield',
+        icon: '/icons/web/duckduckgo.webp',
         kind: 'webSearch',
         target: 'https://duckduckgo.com/?q={query}',
         enabled: true,
@@ -300,7 +315,7 @@ export const DEFAULT_SETTINGS: Settings = {
       {
         id: 'fallback-youtube',
         label: 'Search {rawQuery} on YouTube',
-        icon: 'youtube',
+        icon: '/icons/web/youtube.webp',
         kind: 'webSearch',
         target: 'https://www.youtube.com/results?search_query={query}',
         enabled: true,

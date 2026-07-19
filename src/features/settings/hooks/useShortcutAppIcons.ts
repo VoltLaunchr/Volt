@@ -2,7 +2,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { AppShortcut } from '../types/settings.types';
 
-const BATCH_SIZE = 10;
+const BATCH_SIZE = 4;
 
 function normalizeIconSrc(icon: string): string {
   if (icon.startsWith('data:') || icon.startsWith('/') || /^https?:\/\//i.test(icon)) {

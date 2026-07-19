@@ -66,6 +66,8 @@ Après réception du certificat, on a deux modes :
 
 ## macOS — Developer ID + Notarization
 
+> Sans compte Apple Developer, Volt peut seulement produire des builds macOS ad-hoc signes. Le workflow release verifie quand meme le bundle et le DMG via `scripts/macos-smoke.sh`, mais Gatekeeper restera un warning attendu. Voir [`MACOS_STABILITY.md`](./MACOS_STABILITY.md) pour les criteres de stabilite macOS sans Mac local.
+
 ### 1. S'inscrire comme Apple Developer
 
 - [developer.apple.com](https://developer.apple.com) → 99 $/an

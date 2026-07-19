@@ -42,6 +42,7 @@ import { extractErrorMessage } from '../../../shared/utils/error';
 import { logger } from '../../../shared/utils/logger';
 import { extensionService } from '../services/extensionService';
 import { invoke } from '@tauri-apps/api/core';
+import { getVersion } from '@tauri-apps/api/app';
 import type {
   DevExtension,
   ExtensionInfo,
@@ -51,6 +52,7 @@ import type {
   ExtensionPreference,
 } from '../types/extension.types';
 import { EXTENSION_CATEGORIES } from '../types/extension.types';
+import { isVersionAtLeast } from '../utils/version';
 
 const LOCAL_EXTENSION_ICONS: Record<string, string> = {
   github: '/extension-icons/github.svg',
@@ -90,19 +92,21 @@ export function ExtensionsStore(_props: ExtensionsStoreProps): React.JSX.Element
   const [uninstallingIds, setUninstallingIds] = useState<Set<string>>(new Set());
   const [linkingDev, setLinkingDev] = useState(false);
   const [activeTab, setActiveTab] = useState<'browse' | 'installed'>('browse');
+  const [appVersion, setAppVersion] = useState('0.0.0');
 
   const loadExtensions = useCallback(async () => {
     setLoading(true);
     setError(null);
 
     try {
-      const [registry, installed, devExts, downloadCounts] = await Promise.all([
+      const [registry, installed, devExts, downloadCounts, currentVersion] = await Promise.all([
         extensionService
           .fetchRegistry()
           .catch(() => ({ extensions: [] as ExtensionInfo[], version: '0', lastUpdated: '' })),
         extensionService.getInstalledExtensions().catch(() => [] as InstalledExtension[]),
         extensionService.getDevExtensions().catch(() => [] as DevExtension[]),
         extensionService.fetchDownloadCounts().catch((): Record<string, number> => ({})),
+        getVersion().catch(() => '0.0.0'),
       ]);
 
       const extensions = registry.extensions.map((ext) => {
@@ -113,6 +117,7 @@ export function ExtensionsStore(_props: ExtensionsStoreProps): React.JSX.Element
       setAvailableExtensions(extensions);
       setInstalledExtensions(installed);
       setDevExtensions(devExts);
+      setAppVersion(currentVersion);
     } catch (err) {
       logger.error('Failed to load extensions:', err);
       setError('Failed to load extensions. Check your internet connection.');
@@ -426,15 +431,14 @@ export function ExtensionsStore(_props: ExtensionsStoreProps): React.JSX.Element
             <div className="flex flex-col items-center justify-center py-12 text-center">
               <Package size={48} className="opacity-20 text-mute mb-4" />
               <p className="m-0 text-sm font-medium text-body">{t('empty.noExtensions')}</p>
-              {searchQuery && (
-                <p className="text-xs text-mute mt-1">{t('empty.tryDifferent')}</p>
-              )}
+              {searchQuery && <p className="text-xs text-mute mt-1">{t('empty.tryDifferent')}</p>}
             </div>
           ) : (
             filteredExtensions.map((ext) => (
               <ExtensionCard
                 key={ext.manifest.id}
                 extension={ext}
+                appVersion={appVersion}
                 installed={isInstalled(ext.manifest.id)}
                 installing={installingIds.has(ext.manifest.id)}
                 uninstalling={uninstallingIds.has(ext.manifest.id)}
@@ -540,6 +544,7 @@ export function ExtensionsStore(_props: ExtensionsStoreProps): React.JSX.Element
 // Extension card for browse tab
 interface ExtensionCardProps {
   extension: ExtensionInfo;
+  appVersion: string;
   installed: boolean;
   installing: boolean;
   uninstalling: boolean;
@@ -549,6 +554,7 @@ interface ExtensionCardProps {
 
 function ExtensionCard({
   extension,
+  appVersion,
   installed,
   installing,
   uninstalling,
@@ -559,134 +565,169 @@ function ExtensionCard({
   const { manifest } = extension;
   const [showScreenshots, setShowScreenshots] = useState(false);
   const hasScreenshots = (extension.screenshots?.length ?? 0) > 0;
+  const compatible =
+    !manifest.minVoltVersion || isVersionAtLeast(appVersion, manifest.minVoltVersion);
 
   return (
     <>
-    {showScreenshots && hasScreenshots && (
-      <ScreenshotsModal
-        name={manifest.name}
-        screenshots={extension.screenshots!}
-        onClose={() => setShowScreenshots(false)}
-      />
-    )}
-    <div className="flex items-start gap-3 px-4 py-3 bg-white/[0.03] rounded-lg transition-colors hover:bg-white/[0.05]">
-      {/* Icon */}
-      <div className="shrink-0 w-10 h-10 flex items-center justify-center bg-white/[0.06] rounded-md text-mute">
-        {(manifest.icon || LOCAL_EXTENSION_ICONS[manifest.id]) ? (
-          <img src={manifest.icon || LOCAL_EXTENSION_ICONS[manifest.id]} alt={manifest.name} className="w-6 h-6 object-contain" />
-        ) : (
-          <Package size={32} />
-        )}
-      </div>
-
-      {/* Info */}
-      <div className="flex-1 min-w-0 flex flex-col gap-1">
-        <div className="flex items-center gap-2 flex-wrap">
-          <h3 className="m-0 text-sm font-medium text-on-dark">{manifest.name}</h3>
-          <span className="text-[11px] text-mute font-mono">v{manifest.version}</span>
-          {extension.verified && (
-            <span className="inline-flex items-center justify-center text-accent-green" title="Verified by Volt team">
-              <Shield size={14} />
-            </span>
-          )}
-          {extension.featured && (
-            <span className="inline-flex items-center justify-center text-yellow-400" title="Featured">
-              <Star size={14} />
-            </span>
+      {showScreenshots && hasScreenshots && (
+        <ScreenshotsModal
+          name={manifest.name}
+          screenshots={extension.screenshots!}
+          onClose={() => setShowScreenshots(false)}
+        />
+      )}
+      <div className="flex items-start gap-3 px-4 py-3 bg-white/[0.03] rounded-lg transition-colors hover:bg-white/[0.05]">
+        {/* Icon */}
+        <div className="shrink-0 w-10 h-10 flex items-center justify-center bg-white/[0.06] rounded-md text-mute">
+          {manifest.icon || LOCAL_EXTENSION_ICONS[manifest.id] ? (
+            <img
+              src={manifest.icon || LOCAL_EXTENSION_ICONS[manifest.id]}
+              alt={manifest.name}
+              className="w-6 h-6 object-contain"
+            />
+          ) : (
+            <Package size={32} />
           )}
         </div>
 
-        <p className="m-0 text-xs text-mute line-clamp-2 leading-snug">{manifest.description}</p>
-
-        {hasScreenshots && (
-          <div className="flex gap-1.5 mt-1.5">
-            {extension.screenshots!.slice(0, 3).map((src, i) => (
-              <button
-                key={i}
-                className="p-0 border-0 bg-transparent cursor-pointer rounded-sm overflow-hidden opacity-70 hover:opacity-100 transition-opacity"
-                onClick={() => setShowScreenshots(true)}
-                title="Preview screenshots"
+        {/* Info */}
+        <div className="flex-1 min-w-0 flex flex-col gap-1">
+          <div className="flex items-center gap-2 flex-wrap">
+            <h3 className="m-0 text-sm font-medium text-on-dark">{manifest.name}</h3>
+            <span className="text-[11px] text-mute font-mono">v{manifest.version}</span>
+            {extension.verified && (
+              <span
+                className="inline-flex items-center justify-center text-accent-green"
+                title="Verified by Volt team"
               >
-                <img src={src} alt="" className="h-10 w-16 object-cover rounded-sm border border-white/10" />
-              </button>
-            ))}
-          </div>
-        )}
-
-        <div className="flex flex-wrap items-center gap-2 text-[11px] text-mute mt-0.5">
-          <span className="font-medium">by {manifest.author.name}</span>
-          {manifest.category && (
-            <span className="px-1.5 py-0.5 bg-white/[0.06] rounded-xs capitalize">
-              {manifest.category}
-            </span>
-          )}
-          <span className="inline-flex items-center gap-1">
-            <Download size={12} /> {extension.downloads.toLocaleString()}
-          </span>
-        </div>
-      </div>
-
-      {/* Actions */}
-      <div className="flex items-center gap-1.5 shrink-0">
-        {installed ? (
-          <span className="inline-flex items-center gap-1 px-2 py-1 bg-accent-green-soft text-accent-green rounded-sm text-[11px] font-medium">
-            <CheckCircle size={14} />
-            {t('actions.installed')}
-          </span>
-        ) : (
-          <button
-            className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 bg-accent-blue text-white border-0 rounded-sm text-xs font-medium cursor-pointer transition-opacity hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
-            onClick={onInstall}
-            disabled={installing}
-          >
-            {installing ? (
-              <>
-                <Loader2 className="animate-spin" size={16} />
-                {t('actions.installing')}
-              </>
-            ) : (
-              <>
-                <Download size={16} />
-                {t('actions.install')}
-              </>
+                <Shield size={14} />
+              </span>
             )}
-          </button>
-        )}
+            {extension.featured && (
+              <span
+                className="inline-flex items-center justify-center text-yellow-400"
+                title="Featured"
+              >
+                <Star size={14} />
+              </span>
+            )}
+            {manifest.minVoltVersion && (
+              <span
+                className={cn(
+                  'px-1.5 py-0.5 rounded-xs text-[10px]',
+                  compatible ? 'bg-white/[0.06] text-mute' : 'bg-amber-500/15 text-amber-300'
+                )}
+              >
+                Volt {manifest.minVoltVersion}+
+              </span>
+            )}
+          </div>
 
-        <div className="flex gap-1">
-          {installed && (
-            <button
-              className="w-7 h-7 p-0 flex items-center justify-center rounded-sm bg-transparent border-0 text-mute cursor-pointer transition-colors hover:bg-red-500/15 hover:text-red-400 disabled:opacity-50 disabled:cursor-not-allowed"
-              onClick={onUninstall}
-              disabled={uninstalling}
-              title="Uninstall"
-            >
-              {uninstalling ? <Loader2 className="animate-spin" size={16} /> : <Trash2 size={16} />}
-            </button>
-          )}
+          <p className="m-0 text-xs text-mute line-clamp-2 leading-snug">{manifest.description}</p>
+
           {hasScreenshots && (
+            <div className="flex gap-1.5 mt-1.5">
+              {extension.screenshots!.slice(0, 3).map((src, i) => (
+                <button
+                  key={i}
+                  className="p-0 border-0 bg-transparent cursor-pointer rounded-sm overflow-hidden opacity-70 hover:opacity-100 transition-opacity"
+                  onClick={() => setShowScreenshots(true)}
+                  title="Preview screenshots"
+                >
+                  <img
+                    src={src}
+                    alt=""
+                    className="h-10 w-16 object-cover rounded-sm border border-white/10"
+                  />
+                </button>
+              ))}
+            </div>
+          )}
+
+          <div className="flex flex-wrap items-center gap-2 text-[11px] text-mute mt-0.5">
+            <span className="font-medium">by {manifest.author.name}</span>
+            {manifest.category && (
+              <span className="px-1.5 py-0.5 bg-white/[0.06] rounded-xs capitalize">
+                {manifest.category}
+              </span>
+            )}
+            <span className="inline-flex items-center gap-1">
+              <Download size={12} /> {extension.downloads.toLocaleString()}
+            </span>
+          </div>
+        </div>
+
+        {/* Actions */}
+        <div className="flex items-center gap-1.5 shrink-0">
+          {installed ? (
+            <span className="inline-flex items-center gap-1 px-2 py-1 bg-accent-green-soft text-accent-green rounded-sm text-[11px] font-medium">
+              <CheckCircle size={14} />
+              {t('actions.installed')}
+            </span>
+          ) : (
             <button
-              className="w-7 h-7 p-0 flex items-center justify-center rounded-sm bg-transparent border-0 text-mute cursor-pointer transition-colors hover:bg-white/10 hover:text-on-dark"
-              onClick={() => setShowScreenshots(true)}
-              title={`Preview screenshots (${extension.screenshots!.length})`}
+              className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 bg-accent-blue text-white border-0 rounded-sm text-xs font-medium cursor-pointer transition-opacity hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
+              onClick={onInstall}
+              disabled={installing || !compatible}
+              title={
+                compatible
+                  ? t('actions.install')
+                  : `Requires Volt ${manifest.minVoltVersion} or newer (current: ${appVersion})`
+              }
             >
-              <Images size={16} />
+              {installing ? (
+                <>
+                  <Loader2 className="animate-spin" size={16} />
+                  {t('actions.installing')}
+                </>
+              ) : (
+                <>
+                  <Download size={16} />
+                  {t('actions.install')}
+                </>
+              )}
             </button>
           )}
-          {manifest.repository && (
-            <a
-              href={manifest.repository}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="w-7 h-7 p-0 flex items-center justify-center rounded-sm bg-transparent text-mute no-underline transition-colors hover:bg-white/10 hover:text-on-dark"
-              title="View source"
-            >
-              <ExternalLink size={16} />
-            </a>
-          )}
+
+          <div className="flex gap-1">
+            {installed && (
+              <button
+                className="w-7 h-7 p-0 flex items-center justify-center rounded-sm bg-transparent border-0 text-mute cursor-pointer transition-colors hover:bg-red-500/15 hover:text-red-400 disabled:opacity-50 disabled:cursor-not-allowed"
+                onClick={onUninstall}
+                disabled={uninstalling}
+                title="Uninstall"
+              >
+                {uninstalling ? (
+                  <Loader2 className="animate-spin" size={16} />
+                ) : (
+                  <Trash2 size={16} />
+                )}
+              </button>
+            )}
+            {hasScreenshots && (
+              <button
+                className="w-7 h-7 p-0 flex items-center justify-center rounded-sm bg-transparent border-0 text-mute cursor-pointer transition-colors hover:bg-white/10 hover:text-on-dark"
+                onClick={() => setShowScreenshots(true)}
+                title={`Preview screenshots (${extension.screenshots!.length})`}
+              >
+                <Images size={16} />
+              </button>
+            )}
+            {manifest.repository && (
+              <a
+                href={manifest.repository}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-7 h-7 p-0 flex items-center justify-center rounded-sm bg-transparent text-mute no-underline transition-colors hover:bg-white/10 hover:text-on-dark"
+                title="View source"
+              >
+                <ExternalLink size={16} />
+              </a>
+            )}
+          </div>
         </div>
       </div>
-    </div>
     </>
   );
 }
@@ -728,139 +769,160 @@ function InstalledExtensionCard({
         }
         return [...updated.slice(-19), payload];
       });
-    }).then((fn) => { unlisten = fn; });
-    return () => { unlisten?.(); };
+    }).then((fn) => {
+      unlisten = fn;
+    });
+    return () => {
+      unlisten?.();
+    };
   }, [manifest.id]);
 
   return (
     <>
-    {showPrefs && <ExtensionPreferencesDialog manifest={manifest} onClose={() => setShowPrefs(false)} />}
-    <div
-      className={cn(
-        'flex items-start gap-3 px-4 py-3 bg-white/[0.03] rounded-lg transition-colors hover:bg-white/[0.05]',
-        !enabled && 'opacity-50'
+      {showPrefs && (
+        <ExtensionPreferencesDialog manifest={manifest} onClose={() => setShowPrefs(false)} />
       )}
-    >
-      {/* Icon */}
-      <div className="shrink-0 w-10 h-10 flex items-center justify-center bg-white/[0.06] rounded-md text-mute">
-        {(manifest.icon || LOCAL_EXTENSION_ICONS[manifest.id]) ? (
-          <img src={manifest.icon || LOCAL_EXTENSION_ICONS[manifest.id]} alt={manifest.name} className="w-6 h-6 object-contain" />
-        ) : (
-          <Package size={32} />
+      <div
+        className={cn(
+          'flex items-start gap-3 px-4 py-3 bg-white/[0.03] rounded-lg transition-colors hover:bg-white/[0.05]',
+          !enabled && 'opacity-50'
         )}
-      </div>
-
-      {/* Info */}
-      <div className="flex-1 min-w-0 flex flex-col gap-1">
-        <div className="flex items-center gap-2 flex-wrap">
-          <h3 className="m-0 text-sm font-medium text-on-dark">{manifest.name}</h3>
-          <span className="text-[11px] text-mute font-mono">v{manifest.version}</span>
+      >
+        {/* Icon */}
+        <div className="shrink-0 w-10 h-10 flex items-center justify-center bg-white/[0.06] rounded-md text-mute">
+          {manifest.icon || LOCAL_EXTENSION_ICONS[manifest.id] ? (
+            <img
+              src={manifest.icon || LOCAL_EXTENSION_ICONS[manifest.id]}
+              alt={manifest.name}
+              className="w-6 h-6 object-contain"
+            />
+          ) : (
+            <Package size={32} />
+          )}
         </div>
 
-        <p className="m-0 text-xs text-mute line-clamp-2 leading-snug">{manifest.description}</p>
-
-        <div className="flex flex-wrap items-center gap-2 text-[11px] text-mute mt-0.5">
-          <span className="font-medium">by {manifest.author.name}</span>
-          <span>Installed {new Date(installedAt).toLocaleDateString()}</span>
-        </div>
-
-        {manifest.commands && manifest.commands.length > 0 && (
-          <div className="flex flex-wrap gap-1 mt-1">
-            {manifest.commands.map((cmd) => (
-              <span
-                key={cmd.name}
-                className="px-1.5 py-0.5 rounded-xs text-[10px] bg-white/[0.06] text-mute border border-white/[0.06]"
-                title={cmd.description}
-              >
-                {cmd.title}
-              </span>
-            ))}
+        {/* Info */}
+        <div className="flex-1 min-w-0 flex flex-col gap-1">
+          <div className="flex items-center gap-2 flex-wrap">
+            <h3 className="m-0 text-sm font-medium text-on-dark">{manifest.name}</h3>
+            <span className="text-[11px] text-mute font-mono">v{manifest.version}</span>
           </div>
-        )}
 
-        {capturedErrors.length > 0 && (
-          <div className="mt-1.5 flex flex-col gap-1">
-            <div className="flex items-center gap-1.5">
-              <button
-                onClick={() => setShowErrors((v) => !v)}
-                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-xs text-[10px] font-medium bg-red-500/10 text-red-400 hover:bg-red-500/15 border border-red-500/20 transition-colors"
-              >
-                <Bug size={10} />
-                {capturedErrors.length} error{capturedErrors.length !== 1 ? 's' : ''}
-              </button>
-              {showErrors && (
-                <button
-                  onClick={() => { setCapturedErrors([]); setShowErrors(false); }}
-                  className="text-[10px] text-mute hover:text-body transition-colors"
+          <p className="m-0 text-xs text-mute line-clamp-2 leading-snug">{manifest.description}</p>
+
+          <div className="flex flex-wrap items-center gap-2 text-[11px] text-mute mt-0.5">
+            <span className="font-medium">by {manifest.author.name}</span>
+            <span>Installed {new Date(installedAt).toLocaleDateString()}</span>
+          </div>
+
+          {manifest.commands && manifest.commands.length > 0 && (
+            <div className="flex flex-wrap gap-1 mt-1">
+              {manifest.commands.map((cmd) => (
+                <span
+                  key={cmd.name}
+                  className="px-1.5 py-0.5 rounded-xs text-[10px] bg-white/[0.06] text-mute border border-white/[0.06]"
+                  title={cmd.description}
                 >
-                  clear
+                  {cmd.title}
+                </span>
+              ))}
+            </div>
+          )}
+
+          {capturedErrors.length > 0 && (
+            <div className="mt-1.5 flex flex-col gap-1">
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={() => setShowErrors((v) => !v)}
+                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-xs text-[10px] font-medium bg-red-500/10 text-red-400 hover:bg-red-500/15 border border-red-500/20 transition-colors"
+                >
+                  <Bug size={10} />
+                  {capturedErrors.length} error{capturedErrors.length !== 1 ? 's' : ''}
                 </button>
+                {showErrors && (
+                  <button
+                    onClick={() => {
+                      setCapturedErrors([]);
+                      setShowErrors(false);
+                    }}
+                    className="text-[10px] text-mute hover:text-body transition-colors"
+                  >
+                    clear
+                  </button>
+                )}
+              </div>
+              {showErrors && (
+                <div className="p-2 bg-black/20 rounded-md border border-red-500/15 text-[10px] font-mono space-y-1.5 max-h-28 overflow-y-auto">
+                  {capturedErrors.map((err, i) => (
+                    <div key={i} className="flex flex-col gap-0.5">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span
+                          className={cn(
+                            'px-1 py-0.5 rounded-xs font-semibold uppercase',
+                            err.severity === 'error'
+                              ? 'text-red-400 bg-red-500/10'
+                              : 'text-yellow-400 bg-yellow-500/10'
+                          )}
+                        >
+                          {err.severity}
+                        </span>
+                        <span className="text-mute">{err.phase}</span>
+                        {err.count > 1 && <span className="text-mute/70">×{err.count}</span>}
+                        {err.queryContext && (
+                          <span className="text-mute/70 italic truncate max-w-[80px]">
+                            &quot;{err.queryContext}&quot;
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-red-300/90 break-all">{err.message}</div>
+                      {err.stack && (
+                        <div className="text-mute/60 text-[9px] break-all">
+                          {err.stack.split('\n').find((l) => l.trim())}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
               )}
             </div>
-            {showErrors && (
-              <div className="p-2 bg-black/20 rounded-md border border-red-500/15 text-[10px] font-mono space-y-1.5 max-h-28 overflow-y-auto">
-                {capturedErrors.map((err, i) => (
-                  <div key={i} className="flex flex-col gap-0.5">
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      <span className={cn(
-                        'px-1 py-0.5 rounded-xs font-semibold uppercase',
-                        err.severity === 'error' ? 'text-red-400 bg-red-500/10' : 'text-yellow-400 bg-yellow-500/10'
-                      )}>
-                        {err.severity}
-                      </span>
-                      <span className="text-mute">{err.phase}</span>
-                      {err.count > 1 && <span className="text-mute/70">×{err.count}</span>}
-                      {err.queryContext && <span className="text-mute/70 italic truncate max-w-[80px]">&quot;{err.queryContext}&quot;</span>}
-                    </div>
-                    <div className="text-red-300/90 break-all">{err.message}</div>
-                    {err.stack && (
-                      <div className="text-mute/60 text-[9px] break-all">
-                        {err.stack.split('\n').find((l) => l.trim())}
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* Actions */}
-      <div className="flex items-center gap-1.5 shrink-0">
-        {hasPrefs && (
-          <button
-            className="w-7 h-7 p-0 flex items-center justify-center rounded-sm bg-transparent border-0 text-mute cursor-pointer transition-colors hover:bg-white/10 hover:text-on-dark"
-            onClick={() => setShowPrefs(true)}
-            title="Configure preferences"
-          >
-            <Settings size={16} />
-          </button>
-        )}
-
-        <button
-          className={cn(
-            'w-7 h-7 p-0 flex items-center justify-center rounded-sm bg-transparent border-0 cursor-pointer transition-colors',
-            enabled
-              ? 'text-accent-blue hover:bg-accent-blue-soft'
-              : 'text-mute hover:bg-white/10 hover:text-body'
           )}
-          onClick={() => onToggle(!enabled)}
-          title={enabled ? t('actions.disable') : t('actions.enable')}
-        >
-          {enabled ? <ToggleRight size={20} /> : <ToggleLeft size={20} />}
-        </button>
+        </div>
 
-        <button
-          className="w-7 h-7 p-0 flex items-center justify-center rounded-sm bg-transparent border-0 text-mute cursor-pointer transition-colors hover:bg-red-500/15 hover:text-red-400 disabled:opacity-50 disabled:cursor-not-allowed"
-          onClick={onUninstall}
-          disabled={uninstalling}
-          title={t('actions.uninstall')}
-        >
-          {uninstalling ? <Loader2 className="animate-spin" size={16} /> : <Trash2 size={16} />}
-        </button>
+        {/* Actions */}
+        <div className="flex items-center gap-1.5 shrink-0">
+          {hasPrefs && (
+            <button
+              className="w-7 h-7 p-0 flex items-center justify-center rounded-sm bg-transparent border-0 text-mute cursor-pointer transition-colors hover:bg-white/10 hover:text-on-dark"
+              onClick={() => setShowPrefs(true)}
+              title="Configure preferences"
+            >
+              <Settings size={16} />
+            </button>
+          )}
+
+          <button
+            className={cn(
+              'w-7 h-7 p-0 flex items-center justify-center rounded-sm bg-transparent border-0 cursor-pointer transition-colors',
+              enabled
+                ? 'text-accent-blue hover:bg-accent-blue-soft'
+                : 'text-mute hover:bg-white/10 hover:text-body'
+            )}
+            onClick={() => onToggle(!enabled)}
+            title={enabled ? t('actions.disable') : t('actions.enable')}
+          >
+            {enabled ? <ToggleRight size={20} /> : <ToggleLeft size={20} />}
+          </button>
+
+          <button
+            className="w-7 h-7 p-0 flex items-center justify-center rounded-sm bg-transparent border-0 text-mute cursor-pointer transition-colors hover:bg-red-500/15 hover:text-red-400 disabled:opacity-50 disabled:cursor-not-allowed"
+            onClick={onUninstall}
+            disabled={uninstalling}
+            title={t('actions.uninstall')}
+          >
+            {uninstalling ? <Loader2 className="animate-spin" size={16} /> : <Trash2 size={16} />}
+          </button>
+        </div>
       </div>
-    </div>
     </>
   );
 }
@@ -890,7 +952,9 @@ function DevExtensionCard({
   useEffect(() => {
     const poll = async () => {
       try {
-        const ts = await invoke<number | null>('get_dev_reload_signal', { extensionId: manifest.id });
+        const ts = await invoke<number | null>('get_dev_reload_signal', {
+          extensionId: manifest.id,
+        });
         if (ts !== null) {
           if (lastSignalRef.current === null) {
             lastSignalRef.current = ts;
@@ -905,7 +969,9 @@ function DevExtensionCard({
         // extension may not be linked yet
       }
     };
-    const interval = setInterval(() => { void poll(); }, 1500);
+    const interval = setInterval(() => {
+      void poll();
+    }, 1500);
     return () => clearInterval(interval);
   }, [manifest.id, onRefresh]);
 
@@ -928,145 +994,166 @@ function DevExtensionCard({
         }
         return [...updated.slice(-19), payload];
       });
-    }).then((fn) => { unlisten = fn; });
-    return () => { unlisten?.(); };
+    }).then((fn) => {
+      unlisten = fn;
+    });
+    return () => {
+      unlisten?.();
+    };
   }, [manifest.id]);
 
   return (
     <>
-    {showPrefs && <ExtensionPreferencesDialog manifest={manifest} onClose={() => setShowPrefs(false)} />}
-    <div
-      className={cn(
-        'flex items-start gap-3 px-4 py-3 border border-dashed border-accent-blue/30 bg-accent-blue/[0.03] rounded-lg transition-colors hover:bg-accent-blue/[0.06] hover:border-accent-blue/40',
-        !enabled && 'opacity-50'
+      {showPrefs && (
+        <ExtensionPreferencesDialog manifest={manifest} onClose={() => setShowPrefs(false)} />
       )}
-    >
-      {/* Icon */}
-      <div className="shrink-0 w-10 h-10 flex items-center justify-center bg-accent-blue/10 rounded-md text-accent-blue">
-        {(manifest.icon || LOCAL_EXTENSION_ICONS[manifest.id]) ? (
-          <img src={manifest.icon || LOCAL_EXTENSION_ICONS[manifest.id]} alt={manifest.name} className="w-6 h-6 object-contain" />
-        ) : (
-          <Code size={32} />
+      <div
+        className={cn(
+          'flex items-start gap-3 px-4 py-3 border border-dashed border-accent-blue/30 bg-accent-blue/[0.03] rounded-lg transition-colors hover:bg-accent-blue/[0.06] hover:border-accent-blue/40',
+          !enabled && 'opacity-50'
         )}
-      </div>
-
-      {/* Info */}
-      <div className="flex-1 min-w-0 flex flex-col gap-1">
-        <div className="flex items-center gap-2 flex-wrap">
-          <h3 className="m-0 text-sm font-medium text-on-dark">{manifest.name}</h3>
-          <span className="text-[11px] text-mute font-mono">v{manifest.version}</span>
-          <span className="bg-accent-blue-soft text-accent-blue px-1.5 py-0.5 rounded-xs text-[10px] font-semibold uppercase">
-            {t('dev.badge')}
-          </span>
-          {hotReloading && (
-            <span className="flex items-center gap-1 text-[10px] text-green-400">
-              <RefreshCw size={10} className="animate-spin" /> reloaded
-            </span>
+      >
+        {/* Icon */}
+        <div className="shrink-0 w-10 h-10 flex items-center justify-center bg-accent-blue/10 rounded-md text-accent-blue">
+          {manifest.icon || LOCAL_EXTENSION_ICONS[manifest.id] ? (
+            <img
+              src={manifest.icon || LOCAL_EXTENSION_ICONS[manifest.id]}
+              alt={manifest.name}
+              className="w-6 h-6 object-contain"
+            />
+          ) : (
+            <Code size={32} />
           )}
         </div>
 
-        <p className="m-0 text-xs text-mute line-clamp-2 leading-snug">{manifest.description}</p>
-
-        <div className="flex flex-wrap items-center gap-2 text-[11px] text-mute mt-0.5">
-          <span className="font-medium">by {manifest.author.name}</span>
-          <span
-            className="font-mono text-[10px] px-1.5 py-0.5 bg-white/[0.06] rounded-xs max-w-[200px] overflow-hidden text-ellipsis whitespace-nowrap"
-            title={path}
-          >
-            {path.length > 40 ? '...' + path.slice(-37) : path}
-          </span>
-        </div>
-
-        {capturedErrors.length > 0 && (
-          <div className="mt-1.5 flex flex-col gap-1">
-            <div className="flex items-center gap-1.5">
-              <button
-                onClick={() => setShowErrors((v) => !v)}
-                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-xs text-[10px] font-medium bg-red-500/10 text-red-400 hover:bg-red-500/15 border border-red-500/20 transition-colors"
-              >
-                <Bug size={10} />
-                {capturedErrors.length} error{capturedErrors.length !== 1 ? 's' : ''}
-              </button>
-              {showErrors && (
-                <button
-                  onClick={() => { setCapturedErrors([]); setShowErrors(false); }}
-                  className="text-[10px] text-mute hover:text-body transition-colors"
-                >
-                  clear
-                </button>
-              )}
-            </div>
-            {showErrors && (
-              <div className="p-2 bg-black/20 rounded-md border border-red-500/15 text-[10px] font-mono space-y-1.5 max-h-28 overflow-y-auto">
-                {capturedErrors.map((err, i) => (
-                  <div key={i} className="flex flex-col gap-0.5">
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      <span className={cn(
-                        'px-1 py-0.5 rounded-xs font-semibold uppercase',
-                        err.severity === 'error' ? 'text-red-400 bg-red-500/10' : 'text-yellow-400 bg-yellow-500/10'
-                      )}>
-                        {err.severity}
-                      </span>
-                      <span className="text-mute">{err.phase}</span>
-                      {err.count > 1 && <span className="text-mute/70">×{err.count}</span>}
-                      {err.queryContext && <span className="text-mute/70 italic truncate max-w-[80px]">&quot;{err.queryContext}&quot;</span>}
-                    </div>
-                    <div className="text-red-300/90 break-all">{err.message}</div>
-                    {err.stack && (
-                      <div className="text-mute/60 text-[9px] break-all">
-                        {err.stack.split('\n').find((l) => l.trim())}
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
+        {/* Info */}
+        <div className="flex-1 min-w-0 flex flex-col gap-1">
+          <div className="flex items-center gap-2 flex-wrap">
+            <h3 className="m-0 text-sm font-medium text-on-dark">{manifest.name}</h3>
+            <span className="text-[11px] text-mute font-mono">v{manifest.version}</span>
+            <span className="bg-accent-blue-soft text-accent-blue px-1.5 py-0.5 rounded-xs text-[10px] font-semibold uppercase">
+              {t('dev.badge')}
+            </span>
+            {hotReloading && (
+              <span className="flex items-center gap-1 text-[10px] text-green-400">
+                <RefreshCw size={10} className="animate-spin" /> reloaded
+              </span>
             )}
           </div>
-        )}
-      </div>
 
-      {/* Actions */}
-      <div className="flex items-center gap-1.5 shrink-0">
-        {hasPrefs && (
+          <p className="m-0 text-xs text-mute line-clamp-2 leading-snug">{manifest.description}</p>
+
+          <div className="flex flex-wrap items-center gap-2 text-[11px] text-mute mt-0.5">
+            <span className="font-medium">by {manifest.author.name}</span>
+            <span
+              className="font-mono text-[10px] px-1.5 py-0.5 bg-white/[0.06] rounded-xs max-w-[200px] overflow-hidden text-ellipsis whitespace-nowrap"
+              title={path}
+            >
+              {path.length > 40 ? '...' + path.slice(-37) : path}
+            </span>
+          </div>
+
+          {capturedErrors.length > 0 && (
+            <div className="mt-1.5 flex flex-col gap-1">
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={() => setShowErrors((v) => !v)}
+                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-xs text-[10px] font-medium bg-red-500/10 text-red-400 hover:bg-red-500/15 border border-red-500/20 transition-colors"
+                >
+                  <Bug size={10} />
+                  {capturedErrors.length} error{capturedErrors.length !== 1 ? 's' : ''}
+                </button>
+                {showErrors && (
+                  <button
+                    onClick={() => {
+                      setCapturedErrors([]);
+                      setShowErrors(false);
+                    }}
+                    className="text-[10px] text-mute hover:text-body transition-colors"
+                  >
+                    clear
+                  </button>
+                )}
+              </div>
+              {showErrors && (
+                <div className="p-2 bg-black/20 rounded-md border border-red-500/15 text-[10px] font-mono space-y-1.5 max-h-28 overflow-y-auto">
+                  {capturedErrors.map((err, i) => (
+                    <div key={i} className="flex flex-col gap-0.5">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span
+                          className={cn(
+                            'px-1 py-0.5 rounded-xs font-semibold uppercase',
+                            err.severity === 'error'
+                              ? 'text-red-400 bg-red-500/10'
+                              : 'text-yellow-400 bg-yellow-500/10'
+                          )}
+                        >
+                          {err.severity}
+                        </span>
+                        <span className="text-mute">{err.phase}</span>
+                        {err.count > 1 && <span className="text-mute/70">×{err.count}</span>}
+                        {err.queryContext && (
+                          <span className="text-mute/70 italic truncate max-w-[80px]">
+                            &quot;{err.queryContext}&quot;
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-red-300/90 break-all">{err.message}</div>
+                      {err.stack && (
+                        <div className="text-mute/60 text-[9px] break-all">
+                          {err.stack.split('\n').find((l) => l.trim())}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Actions */}
+        <div className="flex items-center gap-1.5 shrink-0">
+          {hasPrefs && (
+            <button
+              className="w-7 h-7 p-0 flex items-center justify-center rounded-sm bg-transparent border-0 text-mute cursor-pointer transition-colors hover:bg-white/10 hover:text-on-dark"
+              onClick={() => setShowPrefs(true)}
+              title="Configure preferences"
+            >
+              <Settings size={16} />
+            </button>
+          )}
+
+          <button
+            className={cn(
+              'w-7 h-7 p-0 flex items-center justify-center rounded-sm bg-transparent border-0 cursor-pointer transition-colors',
+              enabled
+                ? 'text-accent-blue hover:bg-accent-blue-soft'
+                : 'text-mute hover:bg-white/10 hover:text-body'
+            )}
+            onClick={() => onToggle(!enabled)}
+            title={enabled ? t('actions.disable') : t('actions.enable')}
+          >
+            {enabled ? <ToggleRight size={20} /> : <ToggleLeft size={20} />}
+          </button>
+
           <button
             className="w-7 h-7 p-0 flex items-center justify-center rounded-sm bg-transparent border-0 text-mute cursor-pointer transition-colors hover:bg-white/10 hover:text-on-dark"
-            onClick={() => setShowPrefs(true)}
-            title="Configure preferences"
+            onClick={onRefresh}
+            title="Refresh from disk"
           >
-            <Settings size={16} />
+            <RefreshCw size={16} />
           </button>
-        )}
 
-        <button
-          className={cn(
-            'w-7 h-7 p-0 flex items-center justify-center rounded-sm bg-transparent border-0 cursor-pointer transition-colors',
-            enabled
-              ? 'text-accent-blue hover:bg-accent-blue-soft'
-              : 'text-mute hover:bg-white/10 hover:text-body'
-          )}
-          onClick={() => onToggle(!enabled)}
-          title={enabled ? t('actions.disable') : t('actions.enable')}
-        >
-          {enabled ? <ToggleRight size={20} /> : <ToggleLeft size={20} />}
-        </button>
-
-        <button
-          className="w-7 h-7 p-0 flex items-center justify-center rounded-sm bg-transparent border-0 text-mute cursor-pointer transition-colors hover:bg-white/10 hover:text-on-dark"
-          onClick={onRefresh}
-          title="Refresh from disk"
-        >
-          <RefreshCw size={16} />
-        </button>
-
-        <button
-          className="w-7 h-7 p-0 flex items-center justify-center rounded-sm bg-transparent border-0 text-mute cursor-pointer transition-colors hover:bg-red-500/15 hover:text-red-400"
-          onClick={onUnlink}
-          title="Unlink"
-        >
-          <Unlink size={16} />
-        </button>
+          <button
+            className="w-7 h-7 p-0 flex items-center justify-center rounded-sm bg-transparent border-0 text-mute cursor-pointer transition-colors hover:bg-red-500/15 hover:text-red-400"
+            onClick={onUnlink}
+            title="Unlink"
+          >
+            <Unlink size={16} />
+          </button>
+        </div>
       </div>
-    </div>
     </>
   );
 }
@@ -1078,7 +1165,11 @@ interface ScreenshotsModalProps {
   onClose: () => void;
 }
 
-function ScreenshotsModal({ name, screenshots, onClose }: ScreenshotsModalProps): React.JSX.Element {
+function ScreenshotsModal({
+  name,
+  screenshots,
+  onClose,
+}: ScreenshotsModalProps): React.JSX.Element {
   const [idx, setIdx] = useState(0);
   const overlayRef = useRef<HTMLDivElement>(null);
 
@@ -1096,11 +1187,15 @@ function ScreenshotsModal({ name, screenshots, onClose }: ScreenshotsModalProps)
     <div
       ref={overlayRef}
       className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black/80 backdrop-blur-sm"
-      onClick={(e) => { if (e.target === overlayRef.current) onClose(); }}
+      onClick={(e) => {
+        if (e.target === overlayRef.current) onClose();
+      }}
     >
       {/* Header */}
       <div className="flex items-center justify-between w-full max-w-3xl px-4 pb-3">
-        <span className="text-xs text-mute">{name} — {idx + 1} / {screenshots.length}</span>
+        <span className="text-xs text-mute">
+          {name} — {idx + 1} / {screenshots.length}
+        </span>
         <button
           className="w-7 h-7 p-0 flex items-center justify-center rounded-sm bg-transparent border-0 text-mute cursor-pointer hover:text-on-dark hover:bg-white/10 transition-colors"
           onClick={onClose}
@@ -1211,9 +1306,17 @@ function ExtensionPreferencesDialog({
         if (pref.type === 'oauth') continue; // OAuth tokens are stored by the deep-link handler
         const val = values[pref.name] ?? '';
         if (pref.type === 'secret') {
-          await invoke('set_extension_secret', { extensionId: manifest.id, key: pref.name, value: val });
+          await invoke('set_extension_secret', {
+            extensionId: manifest.id,
+            key: pref.name,
+            value: val,
+          });
         } else {
-          await invoke('set_extension_preference', { extensionId: manifest.id, key: pref.name, value: val });
+          await invoke('set_extension_preference', {
+            extensionId: manifest.id,
+            key: pref.name,
+            value: val,
+          });
         }
       }
       setSavedMsg(true);
@@ -1223,7 +1326,7 @@ function ExtensionPreferencesDialog({
     }
   };
 
-  const setValue = (name: string, val: string) => setValues(prev => ({ ...prev, [name]: val }));
+  const setValue = (name: string, val: string) => setValues((prev) => ({ ...prev, [name]: val }));
 
   const hasNonOAuthPrefs = prefs.some((p) => p.type !== 'oauth');
 
@@ -1231,14 +1334,18 @@ function ExtensionPreferencesDialog({
     <div
       ref={overlayRef}
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
-      onClick={(e) => { if (e.target === overlayRef.current) onClose(); }}
+      onClick={(e) => {
+        if (e.target === overlayRef.current) onClose();
+      }}
     >
       <div className="relative w-full max-w-md bg-[var(--bg-panel,#1a1a2e)] border border-white/10 rounded-xl shadow-2xl flex flex-col max-h-[80vh]">
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-white/[0.08]">
           <div className="flex items-center gap-2">
             <Settings size={16} className="text-mute" />
-            <h2 className="m-0 text-sm font-semibold text-on-dark">{manifest.name} — Preferences</h2>
+            <h2 className="m-0 text-sm font-semibold text-on-dark">
+              {manifest.name} — Preferences
+            </h2>
           </div>
           <button
             className="w-7 h-7 p-0 flex items-center justify-center rounded-sm bg-transparent border-0 text-mute cursor-pointer hover:text-on-dark hover:bg-white/10 transition-colors"
@@ -1251,22 +1358,22 @@ function ExtensionPreferencesDialog({
         {/* Fields */}
         <div className="flex-1 overflow-y-auto px-5 py-4 flex flex-col gap-4">
           {prefs.length === 0 ? (
-            <p className="text-xs text-mute text-center py-6">No preferences defined for this extension.</p>
+            <p className="text-xs text-mute text-center py-6">
+              No preferences defined for this extension.
+            </p>
           ) : (
             prefs.map((pref) =>
               pref.type === 'oauth' ? (
-                <OAuthPreferenceField
-                  key={pref.name}
-                  pref={pref}
-                  extensionId={manifest.id}
-                />
+                <OAuthPreferenceField key={pref.name} pref={pref} extensionId={manifest.id} />
               ) : (
                 <PreferenceField
                   key={pref.name}
                   pref={pref}
                   value={values[pref.name] ?? ''}
                   showSecret={showSecrets[pref.name] ?? false}
-                  onToggleSecret={() => setShowSecrets(prev => ({ ...prev, [pref.name]: !prev[pref.name] }))}
+                  onToggleSecret={() =>
+                    setShowSecrets((prev) => ({ ...prev, [pref.name]: !prev[pref.name] }))
+                  }
                   onChange={(val) => setValue(pref.name, val)}
                 />
               )
@@ -1286,7 +1393,9 @@ function ExtensionPreferencesDialog({
             </button>
             <button
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-accent-blue rounded-sm border-0 cursor-pointer hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
-              onClick={() => { void handleSave(); }}
+              onClick={() => {
+                void handleSave();
+              }}
               disabled={saving}
             >
               {saving ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
@@ -1326,11 +1435,11 @@ function OAuthPreferenceField({ pref, extensionId }: OAuthPreferenceFieldProps):
   useEffect(() => {
     const check = async () => {
       try {
-        const token = await invoke<string | null>('ext_oauth_get_token', {
+        const hasToken = await invoke<boolean>('ext_oauth_has_token', {
           extensionId,
           provider,
         });
-        setConnected(token !== null && token !== '');
+        setConnected(hasToken);
       } catch {
         setConnected(false);
       }
@@ -1353,8 +1462,14 @@ function OAuthPreferenceField({ pref, extensionId }: OAuthPreferenceFieldProps):
     const finish = (success: boolean, errMsg?: string) => {
       if (done) return;
       done = true;
-      if (timerId !== null) { clearTimeout(timerId); timerId = null; }
-      if (unlistenFn !== null) { unlistenFn(); unlistenFn = null; }
+      if (timerId !== null) {
+        clearTimeout(timerId);
+        timerId = null;
+      }
+      if (unlistenFn !== null) {
+        unlistenFn();
+        unlistenFn = null;
+      }
       setPending(false);
       if (success) {
         setConnected(true);
@@ -1368,7 +1483,8 @@ function OAuthPreferenceField({ pref, extensionId }: OAuthPreferenceFieldProps):
       unlistenFn = await listen<{ token?: string; error?: string; state?: string }>(
         `ext-oauth-${extensionId}`,
         (event) => {
-          if (pendingState !== null && event.payload.state && event.payload.state !== pendingState) return;
+          if (pendingState !== null && event.payload.state && event.payload.state !== pendingState)
+            return;
           if (event.payload.error) {
             finish(false, event.payload.error);
           } else {
@@ -1382,14 +1498,17 @@ function OAuthPreferenceField({ pref, extensionId }: OAuthPreferenceFieldProps):
         5 * 60 * 1000
       );
 
-      const { authUrl, state } = await invoke<{ authUrl: string; state: string }>('ext_oauth_start', {
-        extensionId,
-        provider,
-        baseAuthUrl: pref.oauthAuthUrl,
-        tokenUrl: pref.oauthTokenUrl,
-        clientId: pref.oauthClientId,
-        scopes: pref.oauthScopes ?? [],
-      });
+      const { authUrl, state } = await invoke<{ authUrl: string; state: string }>(
+        'ext_oauth_start',
+        {
+          extensionId,
+          provider,
+          baseAuthUrl: pref.oauthAuthUrl,
+          tokenUrl: pref.oauthTokenUrl,
+          clientId: pref.oauthClientId,
+          scopes: pref.oauthScopes ?? [],
+        }
+      );
 
       pendingState = state;
 
@@ -1420,7 +1539,9 @@ function OAuthPreferenceField({ pref, extensionId }: OAuthPreferenceFieldProps):
         <label className="text-xs font-medium text-on-dark">{pref.title ?? pref.name}</label>
         {pref.required && <span className="text-[10px] text-red-400">*</span>}
       </div>
-      {pref.description && <p className="m-0 text-[11px] text-mute leading-snug">{pref.description}</p>}
+      {pref.description && (
+        <p className="m-0 text-[11px] text-mute leading-snug">{pref.description}</p>
+      )}
 
       <div className="flex items-center gap-2">
         {connected === null ? (
@@ -1435,7 +1556,9 @@ function OAuthPreferenceField({ pref, extensionId }: OAuthPreferenceFieldProps):
             </span>
             <button
               className="flex items-center gap-1 px-2.5 py-1 text-xs text-mute bg-white/[0.06] border border-white/[0.1] rounded-md cursor-pointer hover:text-red-400 hover:border-red-400/30 transition-colors disabled:opacity-50"
-              onClick={() => { void handleDisconnect(); }}
+              onClick={() => {
+                void handleDisconnect();
+              }}
               disabled={pending}
             >
               {pending ? <Loader2 size={11} className="animate-spin" /> : <LogOut size={11} />}
@@ -1445,13 +1568,12 @@ function OAuthPreferenceField({ pref, extensionId }: OAuthPreferenceFieldProps):
         ) : (
           <button
             className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-accent-blue rounded-md border-0 cursor-pointer hover:opacity-90 transition-opacity disabled:opacity-50"
-            onClick={() => { void handleConnect(); }}
+            onClick={() => {
+              void handleConnect();
+            }}
             disabled={pending}
           >
-            {pending
-              ? <Loader2 size={12} className="animate-spin" />
-              : <Link size={12} />
-            }
+            {pending ? <Loader2 size={12} className="animate-spin" /> : <Link size={12} />}
             {pending ? 'Waiting for authorization…' : `Connect with ${provider}`}
           </button>
         )}
@@ -1475,7 +1597,13 @@ interface PreferenceFieldProps {
   onChange: (val: string) => void;
 }
 
-function PreferenceField({ pref, value, showSecret, onToggleSecret, onChange }: PreferenceFieldProps): React.JSX.Element {
+function PreferenceField({
+  pref,
+  value,
+  showSecret,
+  onToggleSecret,
+  onChange,
+}: PreferenceFieldProps): React.JSX.Element {
   const inputClass =
     'w-full px-3 py-2 text-xs text-on-dark bg-white/[0.06] border border-white/[0.1] rounded-md outline-none focus:border-accent-blue/60 transition-colors';
 
@@ -1485,7 +1613,9 @@ function PreferenceField({ pref, value, showSecret, onToggleSecret, onChange }: 
         <label className="text-xs font-medium text-on-dark">{pref.title ?? pref.name}</label>
         {pref.required && <span className="text-[10px] text-red-400">*</span>}
       </div>
-      {pref.description && <p className="m-0 text-[11px] text-mute leading-snug">{pref.description}</p>}
+      {pref.description && (
+        <p className="m-0 text-[11px] text-mute leading-snug">{pref.description}</p>
+      )}
 
       {pref.type === 'boolean' ? (
         <button
@@ -1509,7 +1639,9 @@ function PreferenceField({ pref, value, showSecret, onToggleSecret, onChange }: 
         >
           {!pref.required && <option value="">— select —</option>}
           {pref.options.map((opt) => (
-            <option key={opt} value={opt}>{opt}</option>
+            <option key={opt} value={opt}>
+              {opt}
+            </option>
           ))}
         </select>
       ) : pref.type === 'secret' ? (

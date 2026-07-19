@@ -46,6 +46,8 @@ Triggered on push of any tag matching `v*` (e.g. `v0.2.0`). Tags are normally cr
 - `macos-latest` (`aarch64-apple-darwin` + `x86_64-apple-darwin`) → `.dmg` + sig
 - `ubuntu-22.04` → `.deb` + `.rpm` + `.AppImage` + sig
 
+After each macOS build, `scripts/macos-smoke.sh` validates the produced `.app` and `.dmg`. Without Apple Developer credentials this is a packaging and ad-hoc code-signing gate; with `APPLE_CERTIFICATE` configured it also requires Developer ID signing and a passing Gatekeeper assessment. See [`MACOS_STABILITY.md`](./MACOS_STABILITY.md).
+
 **Outputs**: a GitHub Release with all artifacts attached plus a `latest.json` manifest consumed by `tauri-plugin-updater` for in-app auto-update.
 
 Required secrets:

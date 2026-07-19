@@ -87,7 +87,7 @@ export interface ExtensionManifest {
   minVoltVersion?: string;
   permissions?: ExtensionPermission[];
   /** Entry point file for the extension (e.g., "index.js" or "src/plugin.ts") */
-  main?: string;
+  main: string;
   /** Declarative preferences (API keys, toggles, selects) shown in extension settings */
   preferences?: ExtensionPreference[];
   /** Multiple named commands — each gets its own search result and entry point */
@@ -135,10 +135,7 @@ export type ExtensionPermission = (typeof EXTENSION_PERMISSIONS)[number];
  * Narrows the type for downstream consumers (no `as` needed).
  */
 export function isExtensionPermission(value: unknown): value is ExtensionPermission {
-  return (
-    typeof value === 'string' &&
-    (EXTENSION_PERMISSIONS as readonly string[]).includes(value)
-  );
+  return typeof value === 'string' && (EXTENSION_PERMISSIONS as readonly string[]).includes(value);
 }
 
 export interface ExtensionInfo {

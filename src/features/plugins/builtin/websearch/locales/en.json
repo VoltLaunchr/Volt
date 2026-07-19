@@ -1,4 +1,10 @@
 {
   "searchOn": "Search \"{{query}}\" on {{engine}}",
-  "pressEnter": "Press Enter to search"
+  "pressEnter": "Press Enter to search",
+  "searchAgainOn": "Search again on {{engine}}",
+  "historyBadge": "History",
+  "sections": {
+    "search": "Search",
+    "recent": "Recent searches"
+  }
 }

@@ -8,6 +8,7 @@
  */
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
+use tauri::AppHandle;
 use tracing::{debug, info, warn};
 use zeroize::Zeroizing;
 
@@ -27,7 +28,7 @@ struct CredentialMeta {
 }
 
 fn validate_service(service: &str) -> Result<(), String> {
-    const VALID: &[&str] = &["github", "notion"];
+    const VALID: &[&str] = &["github", "notion", "brave-search"];
     if VALID.contains(&service) {
         Ok(())
     } else {
@@ -124,12 +125,15 @@ fn service_api_hosts(service: &str) -> &'static [&'static str] {
 /// - Response body is capped at 10 MB to prevent OOM.
 #[tauri::command]
 pub async fn extension_authenticated_fetch(
+    app: AppHandle,
     extension_id: String,
     url: String,
     method: String,
     headers: serde_json::Value,
     body: Option<String>,
 ) -> Result<serde_json::Value, String> {
+    crate::commands::extensions::require_extension_permission(&app, &extension_id, "network")
+        .map_err(|e| e.to_string())?;
     validate_service(&extension_id)?;
 
     let parsed = url::Url::parse(&url).map_err(|_| "Invalid URL".to_string())?;
@@ -332,6 +336,7 @@ pub async fn test_credential(service: String) -> Result<bool, String> {
 
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(10))
+        .redirect(reqwest::redirect::Policy::none())
         .build()
         .map_err(|e| format!("Failed to build HTTP client: {}", e))?;
 
@@ -345,6 +350,15 @@ pub async fn test_credential(service: String) -> Result<bool, String> {
             .get("https://api.notion.com/v1/users/me")
             .header("Authorization", format!("Bearer {}", token.trim()))
             .header("Notion-Version", "2022-06-28"),
+        "brave-search" => {
+            crate::commands::system::web_search::check_rate_limit()
+                .map_err(|error| error.to_string())?;
+            client
+                .get("https://api.search.brave.com/res/v1/web/search")
+                .query(&[("q", "volt"), ("count", "1")])
+                .header("Accept", "application/json")
+                .header("X-Subscription-Token", token.trim())
+        }
         // validate_service already rejects everything else, but keep this
         // arm to make the match exhaustive without an `_` that could
         // silently accept new services.

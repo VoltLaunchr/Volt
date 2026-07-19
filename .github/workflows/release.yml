@@ -5,11 +5,11 @@ name: Release
 on:
   push:
     tags:
-      - "v*.*.*"
+      - 'v*.*.*'
   workflow_dispatch:
     inputs:
       version:
-        description: "Tag to release (e.g. v0.0.6)"
+        description: 'Tag to release (e.g. v0.0.6)'
         required: true
 
 # Cancel any in-progress release for the same tag
@@ -79,8 +79,6 @@ jobs:
   # ---------------------------------------------------------------------------
   publish-tauri:
     needs: prepare-notes
-    outputs:
-      artifact-id: ${{ steps.upload-unsigned.outputs.artifact-id }}
     permissions:
       contents: write
     strategy:
@@ -88,22 +86,24 @@ jobs:
       matrix:
         include:
           - platform: macos-latest
-            args: "--target aarch64-apple-darwin"
+            args: '--target aarch64-apple-darwin'
           - platform: macos-latest
-            args: "--target x86_64-apple-darwin"
+            args: '--target x86_64-apple-darwin'
           - platform: ubuntu-22.04
-            args: ""
+            args: ''
           - platform: windows-latest
-            args: ""
+            args: ''
 
     runs-on: ${{ matrix.platform }}
+    env:
+      APPLE_CERTIFICATE_CONFIGURED: ${{ secrets.APPLE_CERTIFICATE != '' && 'true' || 'false' }}
     steps:
       - uses: actions/checkout@v4
 
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version: '22'
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -139,7 +139,7 @@ jobs:
       # Only attempt if APPLE_CERTIFICATE secret is a valid base64 string (>100 chars).
       # Empty or placeholder values are ignored.
       - name: Import Apple certificate
-        if: matrix.platform == 'macos-latest' && env.APPLE_CERT != ''
+        if: matrix.platform == 'macos-latest' && env.APPLE_CERTIFICATE_CONFIGURED == 'true'
         uses: apple-actions/import-codesign-certs@v3
         env:
           APPLE_CERT: ${{ secrets.APPLE_CERTIFICATE }}
@@ -159,17 +159,22 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           # macOS code signing — use ad-hoc signing ("-") when no Apple certificate is configured
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_CERTIFICATE != '' && secrets.APPLE_SIGNING_IDENTITY || '-' }}
-          APPLE_ID: ${{ secrets.APPLE_CERTIFICATE != '' && secrets.APPLE_ID || '' }}
-          APPLE_ID_PASSWORD: ${{ secrets.APPLE_CERTIFICATE != '' && secrets.APPLE_ID_PASSWORD || '' }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_CERTIFICATE != '' && secrets.APPLE_TEAM_ID || '' }}
+          APPLE_SIGNING_IDENTITY: ${{ env.APPLE_CERTIFICATE_CONFIGURED == 'true' && secrets.APPLE_SIGNING_IDENTITY || '-' }}
+          APPLE_ID: ${{ env.APPLE_CERTIFICATE_CONFIGURED == 'true' && secrets.APPLE_ID || '' }}
+          APPLE_ID_PASSWORD: ${{ env.APPLE_CERTIFICATE_CONFIGURED == 'true' && secrets.APPLE_ID_PASSWORD || '' }}
+          APPLE_TEAM_ID: ${{ env.APPLE_CERTIFICATE_CONFIGURED == 'true' && secrets.APPLE_TEAM_ID || '' }}
         with:
           tagName: ${{ env.TAG }}
-          releaseName: "Volt ${{ env.TAG }}"
+          releaseName: 'Volt ${{ env.TAG }}'
           releaseBody: ${{ needs.prepare-notes.outputs.body }}
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}
+
+      - name: macOS bundle smoke test
+        if: matrix.platform == 'macos-latest'
+        shell: bash
+        run: bash scripts/macos-smoke.sh "${{ matrix.args }}" "${{ env.APPLE_CERTIFICATE_CONFIGURED }}"
 
       # --- Windows: collect artifacts for SignPath ---
       - name: Collect Windows artifacts for signing
@@ -189,6 +194,29 @@ jobs:
         with:
           name: windows-unsigned
           path: signpath-input/
+          if-no-files-found: error
+
+      - name: Write Windows signing metadata
+        if: matrix.platform == 'windows-latest'
+        shell: bash
+        env:
+          WINDOWS_UNSIGNED_ARTIFACT_ID: ${{ steps.upload-unsigned.outputs.artifact-id }}
+        run: |
+          if [ -z "$WINDOWS_UNSIGNED_ARTIFACT_ID" ]; then
+            echo "::error::actions/upload-artifact did not return an artifact id for windows-unsigned"
+            exit 1
+          fi
+          mkdir -p signpath-metadata
+          printf '{"artifactId":"%s"}\n' "$WINDOWS_UNSIGNED_ARTIFACT_ID" > signpath-metadata/windows-unsigned.json
+
+      - name: Upload Windows signing metadata
+        if: matrix.platform == 'windows-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-signpath-metadata
+          path: signpath-metadata/windows-unsigned.json
+          if-no-files-found: error
+          retention-days: 7
 
   # ---------------------------------------------------------------------------
   # SignPath code signing (Windows, non-blocking)
@@ -200,19 +228,42 @@ jobs:
     permissions:
       contents: write
       actions: read
+    env:
+      SIGNPATH_TOKEN_CONFIGURED: ${{ secrets.SIGNPATH_API_TOKEN != '' && 'true' || 'false' }}
     steps:
+      - name: Download Windows signing metadata
+        id: download-metadata
+        if: env.SIGNPATH_TOKEN_CONFIGURED == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-signpath-metadata
+          path: signpath-metadata
+        continue-on-error: true
+
+      - name: Read Windows signing metadata
+        id: signpath-metadata
+        if: env.SIGNPATH_TOKEN_CONFIGURED == 'true' && steps.download-metadata.outcome == 'success'
+        shell: bash
+        run: |
+          artifact_id="$(sed -n 's/.*"artifactId":"\([^"]*\)".*/\1/p' signpath-metadata/windows-unsigned.json)"
+          if [ -z "$artifact_id" ]; then
+            echo "::error::windows-signpath-metadata did not contain artifactId"
+            exit 1
+          fi
+          echo "artifact-id=$artifact_id" >> "$GITHUB_OUTPUT"
+
       - name: Submit signing request to SignPath
         id: sign
-        if: env.SIGNPATH_TOKEN != ''
+        if: env.SIGNPATH_TOKEN_CONFIGURED == 'true' && steps.signpath-metadata.outputs.artifact-id != ''
         uses: signpath/github-action-submit-signing-request@v1
         env:
           SIGNPATH_TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
         with:
           api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
           organization-id: ${{ secrets.SIGNPATH_ORGANIZATION_ID }}
-          project-slug: "Voltlaunchr"
-          signing-policy-slug: "release-signing"
-          github-artifact-id: ${{ needs.publish-tauri.outputs.artifact-id || '' }}
+          project-slug: 'Voltlaunchr'
+          signing-policy-slug: 'release-signing'
+          github-artifact-id: ${{ steps.signpath-metadata.outputs.artifact-id }}
           wait-for-completion: true
           output-artifact-directory: signpath-output
           wait-for-completion-timeout-in-seconds: 600
@@ -237,11 +288,23 @@ jobs:
 
       - name: Report signing status
         if: always()
+        env:
+          SIGN_OUTCOME: ${{ steps.sign.outcome }}
+          WINDOWS_UNSIGNED_ARTIFACT_ID: ${{ steps.signpath-metadata.outputs.artifact-id }}
+          PUBLISH_TAURI_RESULT: ${{ needs.publish-tauri.result }}
         run: |
-          if [ "${{ steps.sign.outcome }}" == "success" ]; then
+          if [ "$SIGN_OUTCOME" == "success" ]; then
             echo "::notice::SignPath signing completed successfully"
-          elif [ "${{ steps.sign.outcome }}" == "skipped" ]; then
+          elif [ "$SIGNPATH_TOKEN_CONFIGURED" != "true" ]; then
             echo "::notice::SignPath signing skipped (SIGNPATH_API_TOKEN not configured for this environment)"
+          elif [ -z "$WINDOWS_UNSIGNED_ARTIFACT_ID" ]; then
+            if [ "$PUBLISH_TAURI_RESULT" == "success" ]; then
+              echo "::error::SignPath signing skipped because windows-signpath-metadata was missing or unreadable after a successful build"
+              exit 1
+            fi
+            echo "::notice::SignPath signing skipped because Windows unsigned artifact metadata was unavailable after publish-tauri result: $PUBLISH_TAURI_RESULT"
+          elif [ "$SIGN_OUTCOME" == "skipped" ]; then
+            echo "::notice::SignPath signing skipped"
           else
             # Signing was attempted but failed. Fail the workflow so unsigned
             # binaries do not silently ship as if they were signed. Maintainers

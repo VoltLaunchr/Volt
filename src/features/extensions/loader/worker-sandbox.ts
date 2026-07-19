@@ -33,6 +33,14 @@ interface AIRequestPayload {
     system?: string;
     creativity?: string | number;
     temperature?: number;
+    history?: Array<{
+      role: 'user' | 'assistant';
+      content: Array<
+        | { type: 'text'; text: string }
+        | { type: 'image'; mediaType: string; data: string }
+      >;
+    }>;
+    images?: Array<{ mediaType: string; data: string }>;
   };
 }
 
@@ -112,6 +120,7 @@ export class WorkerPlugin implements Plugin {
   name: string;
   description: string;
   enabled: boolean;
+  private extensionId: string;
 
   private worker: Worker | null = null;
   // Pending match/execute requests. Keyed by cryptographic random UUIDs
@@ -157,6 +166,7 @@ export class WorkerPlugin implements Plugin {
 
   constructor(options: {
     id: string;
+    extensionId?: string;
     name: string;
     description: string;
     keywords: string[];
@@ -166,6 +176,7 @@ export class WorkerPlugin implements Plugin {
     grantedPermissions: string[];
   }) {
     this.id = options.id;
+    this.extensionId = options.extensionId ?? options.id;
     this.name = options.name;
     this.description = options.description;
     this.enabled = true;
@@ -200,8 +211,8 @@ export class WorkerPlugin implements Plugin {
       );
     }
 
-    // No keywords or prefix → generic extension, receives all queries
-    return true;
+    // No explicit trigger → never run extension code for arbitrary queries.
+    return false;
   }
 
   /**
@@ -767,7 +778,7 @@ export class WorkerPlugin implements Plugin {
       // crosses the Worker or renderer boundary.
       try {
         const parsedUrl = new URL(payload.url);
-        const serviceHosts = SERVICE_API_HOSTS[this.id] ?? [];
+        const serviceHosts = SERVICE_API_HOSTS[this.extensionId] ?? [];
         if ((serviceHosts as string[]).includes(parsedUrl.hostname)) {
           await this.handleAuthenticatedFetch(requestId, payload.url, safeOptions);
           return;
@@ -910,7 +921,7 @@ export class WorkerPlugin implements Plugin {
         body: string;
         bodyEncoding: string;
       }>('extension_authenticated_fetch', {
-        extensionId: this.id,
+        extensionId: this.extensionId,
         url,
         method: (safeOptions.method) ?? 'GET',
         headers,
@@ -1009,17 +1020,27 @@ export class WorkerPlugin implements Plugin {
           break;
         }
         case 'saveCredential': {
+          if (!this.hasPermission('oauth')) {
+            console.warn(
+              `[WorkerPlugin:${this.id}] Blocked saveCredential — oauth permission not granted`
+            );
+            break;
+          }
           // Extension may only save a credential for the service matching its own
           // ID. This prevents a compromised extension from overwriting credentials
           // belonging to a different service.
-          if (action.service !== this.id) {
+          if (action.service !== this.extensionId) {
             console.warn(
               `[WorkerPlugin:${this.id}] Blocked saveCredential for '${action.service}' — must match extension ID`
             );
             break;
           }
           const { invoke } = await import('@tauri-apps/api/core');
-          await invoke('save_credential', { service: action.service, token: action.token });
+          await invoke('ext_save_credential', {
+            extensionId: this.extensionId,
+            service: action.service,
+            token: action.token,
+          });
           break;
         }
         case 'showInFolder': {
@@ -1028,7 +1049,7 @@ export class WorkerPlugin implements Plugin {
             break;
           }
           const { invoke: _inv1 } = await import('@tauri-apps/api/core');
-          await _inv1('ext_show_in_folder', { path: action.path }).catch((e: unknown) => {
+          await _inv1('ext_show_in_folder', { extensionId: this.extensionId, path: action.path }).catch((e: unknown) => {
             logger.error(`[WorkerPlugin:${this.id}] showInFolder failed:`, e);
           });
           break;
@@ -1039,7 +1060,7 @@ export class WorkerPlugin implements Plugin {
             break;
           }
           const { invoke: _inv2 } = await import('@tauri-apps/api/core');
-          await _inv2('ext_move_to_trash', { path: action.path }).catch((e: unknown) => {
+          await _inv2('ext_move_to_trash', { extensionId: this.extensionId, path: action.path }).catch((e: unknown) => {
             logger.error(`[WorkerPlugin:${this.id}] moveToTrash failed:`, e);
           });
           break;
@@ -1125,7 +1146,7 @@ export class WorkerPlugin implements Plugin {
 
       if (msgType === 'oauth-get-token') {
         const token = await invoke<string | null>('ext_oauth_get_token', {
-          extensionId: this.id,
+          extensionId: this.extensionId,
           provider: payload.provider ?? '',
         });
         respond({ token });
@@ -1134,7 +1155,7 @@ export class WorkerPlugin implements Plugin {
 
       if (msgType === 'oauth-revoke-token') {
         await invoke<void>('ext_oauth_revoke_token', {
-          extensionId: this.id,
+          extensionId: this.extensionId,
           provider: payload.provider ?? '',
         });
         respond({ success: true });
@@ -1146,7 +1167,7 @@ export class WorkerPlugin implements Plugin {
       // the callback URL arrives before listen() has resolved. The state nonce is
       // applied as a post-registration filter so concurrent flows don't cross-resolve.
       const { listen } = await import('@tauri-apps/api/event');
-      const eventName = `ext-oauth-${this.id}`;
+      const eventName = `ext-oauth-${this.extensionId}`;
 
       let done = false;
       let unlistenFn: (() => void) | null = null;
@@ -1186,7 +1207,7 @@ export class WorkerPlugin implements Plugin {
             const provider = payload.provider ?? '';
             import('@tauri-apps/api/core').then(({ invoke }) =>
               invoke<string | null>('ext_oauth_get_token', {
-                extensionId: this.id,
+                extensionId: this.extensionId,
                 provider,
               })
             ).then((token) => {
@@ -1203,7 +1224,7 @@ export class WorkerPlugin implements Plugin {
 
       // Rust builds the full auth URL with PKCE params and stores the pending entry.
       const { authUrl, state } = await invoke<{ authUrl: string; state: string }>('ext_oauth_start', {
-        extensionId: this.id,
+        extensionId: this.extensionId,
         provider: payload.provider ?? '',
         baseAuthUrl: payload.authUrl ?? '',
         tokenUrl: payload.tokenUrl ?? '',
@@ -1285,7 +1306,7 @@ export class WorkerPlugin implements Plugin {
 
       await Promise.race([
         invoke('ext_ai_ask_stream', {
-          extensionId: this.id,
+          extensionId: this.extensionId,
           prompt: payload.prompt,
           options: payload.options ?? {},
           channel,
@@ -1324,7 +1345,7 @@ export class WorkerPlugin implements Plugin {
     try {
       const { invoke } = await import('@tauri-apps/api/core');
       if (payload.op === 'getApplications') {
-        const apps = await invoke<unknown[]>('ext_get_applications');
+        const apps = await invoke<unknown[]>('ext_get_applications', { extensionId: this.extensionId });
         worker.postMessage({ type: 'system-response', id: requestId, payload: { value: apps } });
       } else {
         worker.postMessage({ type: 'system-response', id: requestId, payload: { error: 'Unknown system op' } });
@@ -1355,12 +1376,12 @@ export class WorkerPlugin implements Plugin {
     if (existing) {
       existing.count++;
       existing.lastSeen = now;
-      WorkerPlugin.globalLog.set(this.id, this.errorLog.slice());
+      WorkerPlugin.globalLog.set(this.extensionId, this.errorLog.slice());
       return;
     }
 
     const entry: ExtensionError = {
-      extensionId: this.id,
+      extensionId: this.extensionId,
       message,
       stack: payload.stack,
       context: payload.context,
@@ -1377,7 +1398,7 @@ export class WorkerPlugin implements Plugin {
       this.errorLog.shift();
     }
 
-    WorkerPlugin.globalLog.set(this.id, this.errorLog.slice());
+    WorkerPlugin.globalLog.set(this.extensionId, this.errorLog.slice());
 
     if (now - this.lastErrorEventAt > 1000) {
       this.lastErrorEventAt = now;
@@ -1445,7 +1466,7 @@ export class WorkerPlugin implements Plugin {
       let result: unknown = undefined;
       if (payload.op === 'get') {
         result = await invoke<string | null>('get_extension_preference', {
-          extensionId: this.id,
+          extensionId: this.extensionId,
           key: payload.key,
         });
         if (result === null || result === undefined) {
@@ -1453,24 +1474,24 @@ export class WorkerPlugin implements Plugin {
         }
       } else if (payload.op === 'set') {
         await invoke('set_extension_preference', {
-          extensionId: this.id,
+          extensionId: this.extensionId,
           key: payload.key,
           value: payload.value ?? '',
         });
       } else if (payload.op === 'get-secret') {
         result = await invoke<string | null>('get_extension_secret', {
-          extensionId: this.id,
+          extensionId: this.extensionId,
           key: payload.key,
         });
       } else if (payload.op === 'set-secret') {
         await invoke('set_extension_secret', {
-          extensionId: this.id,
+          extensionId: this.extensionId,
           key: payload.key,
           value: payload.value ?? '',
         });
       } else if (payload.op === 'delete-secret') {
         await invoke('delete_extension_secret', {
-          extensionId: this.id,
+          extensionId: this.extensionId,
           key: payload.key,
         });
       }
@@ -1494,7 +1515,7 @@ export class WorkerPlugin implements Plugin {
 
     try {
       const { invoke } = await import('@tauri-apps/api/core');
-      const extensionId = this.id;
+      const extensionId = this.extensionId;
 
       let result: unknown = undefined;
       switch (payload.op) {
@@ -1593,7 +1614,7 @@ export class WorkerPlugin implements Plugin {
     this.pendingAlertCleanup?.();
 
     // Remove from process-wide error log
-    WorkerPlugin.globalLog.delete(this.id);
+    WorkerPlugin.globalLog.delete(this.extensionId);
 
     // Reject all pending match/execute requests via the shared helper (see M12)
     this.cleanupPending('Plugin destroyed');

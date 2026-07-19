@@ -6,6 +6,7 @@
 //! - Enabling/disabling extensions
 //! - Checking for updates
 
+use crate::core::constants::APP_VERSION;
 use crate::core::error::{VoltError, VoltResult};
 use futures_util::StreamExt;
 use rusqlite::OptionalExtension;
@@ -99,6 +100,14 @@ pub struct ExtensionManifest {
     /// Multiple named commands — each surfaces as its own search result
     #[serde(default)]
     pub commands: Vec<ExtensionCommand>,
+    /// Optional background refresh cadence for cached extension results.
+    pub background_refresh: Option<ExtensionBackgroundRefresh>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExtensionBackgroundRefresh {
+    pub interval: String,
 }
 
 /// A single named command exposed by the extension.
@@ -137,6 +146,73 @@ pub struct ExtensionPreference {
     pub oauth_token_url: Option<String>,
     pub oauth_client_id: Option<String>,
     pub oauth_scopes: Option<Vec<String>>,
+}
+
+fn validate_manifest_contract(manifest: &ExtensionManifest) -> VoltResult<()> {
+    let main = manifest.main.as_deref().map(str::trim).unwrap_or_default();
+    if main.is_empty() {
+        return Err(VoltError::InvalidConfig(
+            "Extension manifest requires a non-empty 'main' entry point".to_string(),
+        ));
+    }
+
+    let has_root_trigger = manifest
+        .prefix
+        .as_deref()
+        .is_some_and(|prefix| !prefix.trim().is_empty())
+        || manifest
+            .keywords
+            .as_ref()
+            .is_some_and(|keywords| keywords.iter().any(|keyword| !keyword.trim().is_empty()));
+    if !has_root_trigger && manifest.commands.is_empty() {
+        return Err(VoltError::InvalidConfig(
+            "Extension manifest requires 'prefix', 'keywords', or at least one command".to_string(),
+        ));
+    }
+
+    for command in &manifest.commands {
+        let has_command_trigger =
+            command
+                .prefix
+                .as_deref()
+                .is_some_and(|prefix| !prefix.trim().is_empty())
+                || command.keywords.as_ref().is_some_and(|keywords| {
+                    keywords.iter().any(|keyword| !keyword.trim().is_empty())
+                })
+                || manifest.keywords.as_ref().is_some_and(|keywords| {
+                    keywords.iter().any(|keyword| !keyword.trim().is_empty())
+                });
+        if !has_command_trigger {
+            return Err(VoltError::InvalidConfig(format!(
+                "Extension command '{}' requires 'prefix' or 'keywords', or inherited manifest keywords",
+                command.name
+            )));
+        }
+    }
+
+    if let Some(minimum) = manifest.min_volt_version.as_deref() {
+        let minimum = semver::Version::parse(minimum).map_err(|error| {
+            VoltError::InvalidConfig(format!("Invalid minVoltVersion '{}': {}", minimum, error))
+        })?;
+        let current = semver::Version::parse(APP_VERSION).map_err(|error| {
+            VoltError::InvalidConfig(format!("Invalid Volt application version: {}", error))
+        })?;
+        if current < minimum {
+            if cfg!(debug_assertions) {
+                warn!(
+                    "Development build {} is below extension minimum {}; allowing pre-release testing",
+                    current, minimum
+                );
+            } else {
+                return Err(VoltError::InvalidConfig(format!(
+                    "Extension requires Volt {} or newer; current version is {}",
+                    minimum, current
+                )));
+            }
+        }
+    }
+
+    Ok(())
 }
 
 /// Extension info from the registry
@@ -631,6 +707,171 @@ fn save_installed_state(app: &AppHandle, state: &InstalledExtensionsState) -> Vo
     Ok(())
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RuntimeExtensionKind {
+    Installed,
+    Dev,
+}
+
+#[derive(Debug, Clone)]
+struct RuntimeExtensionAuth {
+    kind: RuntimeExtensionKind,
+    granted_permissions: Vec<String>,
+}
+
+fn resolve_runtime_extension_auth(
+    installed_state: &InstalledExtensionsState,
+    dev_state: &DevExtensionsState,
+    extension_id: &str,
+) -> VoltResult<RuntimeExtensionAuth> {
+    validate_extension_id(extension_id)?;
+
+    if let Some(extension) = installed_state
+        .extensions
+        .iter()
+        .find(|extension| extension.manifest.id == extension_id)
+    {
+        if !extension.enabled {
+            return Err(VoltError::PermissionDenied(format!(
+                "Extension '{}' is disabled",
+                extension_id
+            )));
+        }
+        return Ok(RuntimeExtensionAuth {
+            kind: RuntimeExtensionKind::Installed,
+            granted_permissions: extension.granted_permissions.clone(),
+        });
+    }
+
+    if let Some(extension) = dev_state
+        .extensions
+        .iter()
+        .find(|extension| extension.manifest.id == extension_id)
+    {
+        if !extension.enabled {
+            return Err(VoltError::PermissionDenied(format!(
+                "Extension '{}' is disabled",
+                extension_id
+            )));
+        }
+        return Ok(RuntimeExtensionAuth {
+            kind: RuntimeExtensionKind::Dev,
+            granted_permissions: Vec::new(),
+        });
+    }
+
+    Err(VoltError::NotFound(format!(
+        "Extension '{}' not found",
+        extension_id
+    )))
+}
+
+fn resolve_installed_extension_auth(
+    installed_state: &InstalledExtensionsState,
+    extension_id: &str,
+) -> VoltResult<RuntimeExtensionAuth> {
+    validate_extension_id(extension_id)?;
+
+    installed_state
+        .extensions
+        .iter()
+        .find(|extension| extension.manifest.id == extension_id)
+        .map(|extension| RuntimeExtensionAuth {
+            kind: RuntimeExtensionKind::Installed,
+            granted_permissions: extension.granted_permissions.clone(),
+        })
+        .ok_or_else(|| VoltError::NotFound(format!("Extension '{}' not found", extension_id)))
+}
+
+fn load_runtime_extension_auth(
+    app: &AppHandle,
+    extension_id: &str,
+) -> VoltResult<RuntimeExtensionAuth> {
+    let installed_state = load_installed_state(app)?;
+    let dev_state = load_dev_state(app)?;
+    resolve_runtime_extension_auth(&installed_state, &dev_state, extension_id)
+}
+
+fn load_installed_extension_auth(
+    app: &AppHandle,
+    extension_id: &str,
+) -> VoltResult<RuntimeExtensionAuth> {
+    let installed_state = load_installed_state(app)?;
+    resolve_installed_extension_auth(&installed_state, extension_id)
+}
+
+/// Require that an extension exists in the installed or dev-linked registry and
+/// is enabled before a runtime `ext_*` command uses its declared `extensionId`.
+pub(crate) fn require_extension_active(app: &AppHandle, extension_id: &str) -> VoltResult<()> {
+    load_runtime_extension_auth(app, extension_id).map(|_| ())
+}
+
+fn require_runtime_permission_from_auth(
+    extension_id: &str,
+    auth: &RuntimeExtensionAuth,
+    permission: &str,
+) -> VoltResult<()> {
+    if auth.kind == RuntimeExtensionKind::Dev {
+        return Err(VoltError::PermissionDenied(format!(
+            "Dev extension '{}' has no persisted backend permission grants; install it to use '{}' permission",
+            extension_id, permission
+        )));
+    }
+
+    if auth
+        .granted_permissions
+        .iter()
+        .any(|granted| granted == permission)
+    {
+        Ok(())
+    } else {
+        Err(VoltError::PermissionDenied(format!(
+            "Extension '{}' lacks required '{}' permission",
+            extension_id, permission
+        )))
+    }
+}
+
+/// Require a granted runtime permission for a sensitive `ext_*` command.
+///
+/// Dev extensions currently do not persist backend grants, so permissioned
+/// commands fail closed for dev-linked extensions in this pass. Active-only
+/// commands such as isolated storage still work for enabled dev extensions.
+pub(crate) fn require_extension_permission(
+    app: &AppHandle,
+    extension_id: &str,
+    permission: &str,
+) -> VoltResult<()> {
+    if !ALLOWED_PERMISSIONS.contains(&permission) {
+        return Err(VoltError::InvalidConfig(format!(
+            "Unknown extension permission '{}'",
+            permission
+        )));
+    }
+
+    let auth = load_runtime_extension_auth(app, extension_id)?;
+    require_runtime_permission_from_auth(extension_id, &auth, permission)
+}
+
+/// Require a persisted permission grant for an installed extension without
+/// requiring it to be enabled. This is reserved for management operations such
+/// as checking or revoking credentials after the extension runtime is disabled.
+fn require_installed_extension_permission(
+    app: &AppHandle,
+    extension_id: &str,
+    permission: &str,
+) -> VoltResult<()> {
+    if !ALLOWED_PERMISSIONS.contains(&permission) {
+        return Err(VoltError::InvalidConfig(format!(
+            "Unknown extension permission '{}'",
+            permission
+        )));
+    }
+
+    let auth = load_installed_extension_auth(app, extension_id)?;
+    require_runtime_permission_from_auth(extension_id, &auth, permission)
+}
+
 /// Allowed hosts for extension registry fetches (prevents SSRF)
 const ALLOWED_REGISTRY_HOSTS: &[&str] = &[
     "github.com",
@@ -844,6 +1085,7 @@ pub async fn install_extension(
         .map_err(|e| VoltError::FileSystem(format!("Failed to read manifest: {}", e)))?;
     let manifest: ExtensionManifest = serde_json::from_str(&manifest_content)
         .map_err(|e| VoltError::Serialization(format!("Failed to parse manifest: {}", e)))?;
+    validate_manifest_contract(&manifest)?;
 
     if manifest.id != extension_id {
         return Err(VoltError::InvalidConfig(format!(
@@ -888,10 +1130,56 @@ pub async fn install_extension(
     Ok(installed)
 }
 
+fn extension_keyring_accounts(manifest: &ExtensionManifest) -> Vec<String> {
+    let mut accounts = std::collections::BTreeSet::new();
+
+    for preference in &manifest.preferences {
+        if preference.pref_type.eq_ignore_ascii_case("secret") {
+            accounts.insert(format!("volt:ext:{}:pref:{}", manifest.id, preference.name));
+        } else if preference.pref_type.eq_ignore_ascii_case("oauth") {
+            let provider = preference
+                .oauth_provider
+                .as_deref()
+                .filter(|provider| !provider.is_empty())
+                .unwrap_or(&preference.name);
+            accounts.insert(format!("volt:ext:{}:oauth:{}", manifest.id, provider));
+        }
+    }
+
+    accounts.into_iter().collect()
+}
+
+fn purge_extension_keyring_entries(manifest: &ExtensionManifest) -> VoltResult<()> {
+    for account in extension_keyring_accounts(manifest) {
+        crate::commands::keyring_store::remove_signed(&account).map_err(|error| {
+            VoltError::FileSystem(format!(
+                "Failed to remove extension credential '{}': {}",
+                account, error
+            ))
+        })?;
+    }
+    Ok(())
+}
+
 /// Uninstall an extension
 #[tauri::command]
 pub async fn uninstall_extension(app: AppHandle, extension_id: String) -> VoltResult<()> {
     validate_extension_id(&extension_id)?;
+    let mut state = load_installed_state(&app)?;
+    let installed = state
+        .extensions
+        .iter()
+        .find(|extension| extension.manifest.id == extension_id)
+        .cloned();
+
+    // Purge keyring material before deleting the manifest that tells us which
+    // declarative secret/OAuth accounts belong to this extension. If cleanup
+    // fails, keep the extension installed so the user can retry instead of
+    // silently orphaning credentials that can no longer be managed.
+    if let Some(extension) = installed.as_ref() {
+        purge_extension_keyring_entries(&extension.manifest)?;
+    }
+
     let extensions_dir = get_extensions_dir(&app)?;
     let extension_dir = extensions_dir.join(&extension_id);
 
@@ -903,7 +1191,6 @@ pub async fn uninstall_extension(app: AppHandle, extension_id: String) -> VoltRe
     }
 
     // Update installed state
-    let mut state = load_installed_state(&app)?;
     state.extensions.retain(|e| e.manifest.id != extension_id);
     save_installed_state(&app, &state)?;
 
@@ -1084,8 +1371,9 @@ pub async fn read_extension_source(
         .map_err(|e| VoltError::FileSystem(format!("Failed to read manifest: {}", e)))?;
     let manifest: ExtensionManifest = serde_json::from_str(&manifest_content)
         .map_err(|e| VoltError::Serialization(format!("Failed to parse manifest: {}", e)))?;
+    validate_manifest_contract(&manifest)?;
 
-    // Determine entry point - use manifest.main field, otherwise use default
+    // The canonical manifest contract requires a root entry point.
     let entry_point = manifest
         .main
         .clone()
@@ -1414,6 +1702,7 @@ async fn read_dev_extension_source(path: &str) -> VoltResult<ExtensionSource> {
         .map_err(|e| VoltError::FileSystem(format!("Failed to read manifest: {}", e)))?;
     let manifest: ExtensionManifest = serde_json::from_str(&manifest_content)
         .map_err(|e| VoltError::Serialization(format!("Failed to parse manifest: {}", e)))?;
+    validate_manifest_contract(&manifest)?;
 
     // Determine entry point
     let entry_point = manifest
@@ -1477,7 +1766,14 @@ pub async fn get_dev_extensions(app: AppHandle) -> VoltResult<Vec<DevExtension>>
             if let Ok(content) = fs::read_to_string(&manifest_path)
                 && let Ok(manifest) = serde_json::from_str::<ExtensionManifest>(&content)
             {
-                ext.manifest = manifest;
+                if let Err(error) = validate_manifest_contract(&manifest) {
+                    warn!(
+                        "Ignoring invalid hot-reloaded manifest for '{}': {}",
+                        ext.path, error
+                    );
+                } else {
+                    ext.manifest = manifest;
+                }
             }
             valid_extensions.push(ext);
         } else {
@@ -1559,6 +1855,7 @@ pub async fn link_dev_extension(app: AppHandle, path: String) -> VoltResult<DevE
         .map_err(|e| VoltError::FileSystem(format!("Failed to read manifest: {}", e)))?;
     let manifest: ExtensionManifest = serde_json::from_str(&manifest_content)
         .map_err(|e| VoltError::Serialization(format!("Failed to parse manifest: {}", e)))?;
+    validate_manifest_contract(&manifest)?;
 
     info!("Linking dev extension: {} ({})", manifest.name, manifest.id);
 
@@ -2115,6 +2412,62 @@ pub async fn acknowledge_extension_tamper_alert() {
 // ---------------------------------------------------------------------------
 
 const EXT_STORAGE_MAX_BYTES: u64 = 10 * 1024 * 1024;
+const EXT_STORAGE_MAX_KEY_BYTES: usize = 512;
+
+fn validate_extension_storage_input(key: &str, value: &str) -> Result<(), String> {
+    if key.is_empty() {
+        return Err("Extension storage key cannot be empty".to_string());
+    }
+    if key.len() > EXT_STORAGE_MAX_KEY_BYTES {
+        return Err(format!(
+            "Extension storage key exceeds {} bytes",
+            EXT_STORAGE_MAX_KEY_BYTES
+        ));
+    }
+    if value.len() as u64 > EXT_STORAGE_MAX_BYTES {
+        return Err(format!(
+            "Extension storage value exceeds {} MB",
+            EXT_STORAGE_MAX_BYTES / 1024 / 1024
+        ));
+    }
+    Ok(())
+}
+
+fn projected_extension_storage_bytes(
+    conn: &rusqlite::Connection,
+    key: &str,
+    value: &str,
+) -> Result<u64, String> {
+    let existing_without_key: i64 = conn
+        .query_row(
+            "SELECT COALESCE(SUM(
+                 length(CAST(key AS BLOB)) + length(CAST(value AS BLOB))
+             ), 0)
+             FROM kv
+             WHERE key <> ?1",
+            rusqlite::params![key],
+            |row| row.get(0),
+        )
+        .map_err(|error| error.to_string())?;
+
+    let existing_without_key = u64::try_from(existing_without_key)
+        .map_err(|_| "Extension storage size is invalid".to_string())?;
+    existing_without_key
+        .checked_add(key.len() as u64)
+        .and_then(|size| size.checked_add(value.len() as u64))
+        .ok_or_else(|| "Extension storage size overflow".to_string())
+}
+
+fn ensure_extension_storage_quota(projected: u64) -> Result<(), String> {
+    if projected > EXT_STORAGE_MAX_BYTES {
+        Err(format!(
+            "Extension storage limit exceeded ({} MB max)",
+            EXT_STORAGE_MAX_BYTES / 1024 / 1024
+        ))
+    } else {
+        Ok(())
+    }
+}
 
 fn ext_storage_db_path(
     app: &tauri::AppHandle,
@@ -2149,6 +2502,7 @@ pub async fn ext_storage_get(
     extension_id: String,
     key: String,
 ) -> Result<Option<String>, String> {
+    require_extension_active(&app, &extension_id).map_err(|e| e.to_string())?;
     let path = ext_storage_db_path(&app, &extension_id).map_err(|e| e.to_string())?;
     let conn = ext_storage_open(&path).map_err(|e| e.to_string())?;
     let result: Option<String> = conn
@@ -2171,23 +2525,20 @@ pub async fn ext_storage_set(
     key: String,
     value: String,
 ) -> Result<(), String> {
+    require_extension_active(&app, &extension_id).map_err(|e| e.to_string())?;
+    validate_extension_storage_input(&key, &value)?;
     let path = ext_storage_db_path(&app, &extension_id).map_err(|e| e.to_string())?;
-    // Size guard: refuse writes beyond the per-extension cap.
-    if path.exists() {
-        let size = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
-        if size > EXT_STORAGE_MAX_BYTES {
-            return Err(format!(
-                "Extension storage limit exceeded ({} MB max)",
-                EXT_STORAGE_MAX_BYTES / 1024 / 1024
-            ));
-        }
-    }
-    let conn = ext_storage_open(&path).map_err(|e| e.to_string())?;
-    conn.execute(
-        "INSERT INTO kv (key, value) VALUES (?1, ?2) ON CONFLICT(key) DO UPDATE SET value = ?2",
-        rusqlite::params![key, value],
-    )
-    .map_err(|e| e.to_string())?;
+    let mut conn = ext_storage_open(&path).map_err(|e| e.to_string())?;
+    let transaction = conn.transaction().map_err(|e| e.to_string())?;
+    let projected = projected_extension_storage_bytes(&transaction, &key, &value)?;
+    ensure_extension_storage_quota(projected)?;
+    transaction
+        .execute(
+            "INSERT INTO kv (key, value) VALUES (?1, ?2) ON CONFLICT(key) DO UPDATE SET value = ?2",
+            rusqlite::params![key, value],
+        )
+        .map_err(|e| e.to_string())?;
+    transaction.commit().map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -2198,6 +2549,7 @@ pub async fn ext_storage_remove(
     extension_id: String,
     key: String,
 ) -> Result<(), String> {
+    require_extension_active(&app, &extension_id).map_err(|e| e.to_string())?;
     let path = ext_storage_db_path(&app, &extension_id).map_err(|e| e.to_string())?;
     if !path.exists() {
         return Ok(());
@@ -2211,6 +2563,7 @@ pub async fn ext_storage_remove(
 /// Delete all keys in the extension's isolated KV storage.
 #[tauri::command]
 pub async fn ext_storage_clear(app: tauri::AppHandle, extension_id: String) -> Result<(), String> {
+    require_extension_active(&app, &extension_id).map_err(|e| e.to_string())?;
     let path = ext_storage_db_path(&app, &extension_id).map_err(|e| e.to_string())?;
     if !path.exists() {
         return Ok(());
@@ -2231,6 +2584,45 @@ pub async fn ext_storage_clear(app: tauri::AppHandle, extension_id: String) -> R
 // Secret preferences (type = "secret") → OS keyring via keyring_store,
 //   domain tag: "volt:ext:{id}:pref:{key}"
 // ---------------------------------------------------------------------------
+
+const EXT_PREFS_MAX_BYTES: usize = 10 * 1024 * 1024;
+const EXT_PREFS_MAX_KEY_BYTES: usize = 512;
+const EXT_PREFS_MAX_VALUE_BYTES: usize = 1024 * 1024;
+
+fn validate_extension_preference_input(key: &str, value: &str) -> Result<(), String> {
+    if key.is_empty() {
+        return Err("Extension preference key cannot be empty".to_string());
+    }
+    if key.len() > EXT_PREFS_MAX_KEY_BYTES {
+        return Err(format!(
+            "Extension preference key exceeds {} bytes",
+            EXT_PREFS_MAX_KEY_BYTES
+        ));
+    }
+    if value.len() > EXT_PREFS_MAX_VALUE_BYTES {
+        return Err(format!(
+            "Extension preference value exceeds {} MB",
+            EXT_PREFS_MAX_VALUE_BYTES / 1024 / 1024
+        ));
+    }
+    Ok(())
+}
+
+fn ensure_extension_preferences_size(path: &std::path::Path) -> Result<(), String> {
+    if !path.exists() {
+        return Ok(());
+    }
+    let size = std::fs::metadata(path)
+        .map_err(|error| error.to_string())?
+        .len();
+    if size > EXT_PREFS_MAX_BYTES as u64 {
+        return Err(format!(
+            "Extension preferences exceed {} MB",
+            EXT_PREFS_MAX_BYTES / 1024 / 1024
+        ));
+    }
+    Ok(())
+}
 
 fn ext_prefs_path(app: &tauri::AppHandle, extension_id: &str) -> VoltResult<std::path::PathBuf> {
     validate_extension_id(extension_id)?;
@@ -2257,6 +2649,7 @@ pub async fn get_extension_preference(
     if !path.exists() {
         return Ok(None);
     }
+    ensure_extension_preferences_size(&path)?;
     let raw = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
     let map: std::collections::HashMap<String, String> =
         serde_json::from_str(&raw).unwrap_or_default();
@@ -2273,7 +2666,9 @@ pub async fn set_extension_preference(
     value: String,
 ) -> Result<(), String> {
     validate_extension_id(&extension_id).map_err(|e| e.to_string())?;
+    validate_extension_preference_input(&key, &value)?;
     let path = ext_prefs_path(&app, &extension_id).map_err(|e| e.to_string())?;
+    ensure_extension_preferences_size(&path)?;
     let mut map: std::collections::HashMap<String, String> = if path.exists() {
         let raw = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
         serde_json::from_str(&raw).unwrap_or_default()
@@ -2282,6 +2677,12 @@ pub async fn set_extension_preference(
     };
     map.insert(key, value);
     let serialized = serde_json::to_string_pretty(&map).map_err(|e| e.to_string())?;
+    if serialized.len() > EXT_PREFS_MAX_BYTES {
+        return Err(format!(
+            "Extension preferences limit exceeded ({} MB max)",
+            EXT_PREFS_MAX_BYTES / 1024 / 1024
+        ));
+    }
     std::fs::write(&path, serialized).map_err(|e| e.to_string())?;
     Ok(())
 }
@@ -2293,6 +2694,7 @@ pub async fn get_extension_secret(
     key: String,
 ) -> Result<Option<String>, String> {
     validate_extension_id(&extension_id).map_err(|e| e.to_string())?;
+    validate_extension_preference_input(&key, "")?;
     let tag = format!("volt:ext:{}:pref:{}", extension_id, key);
     match crate::commands::keyring_store::retrieve_signed(&tag) {
         Ok(v) => Ok(v),
@@ -2308,6 +2710,7 @@ pub async fn set_extension_secret(
     value: String,
 ) -> Result<(), String> {
     validate_extension_id(&extension_id).map_err(|e| e.to_string())?;
+    validate_extension_preference_input(&key, &value)?;
     let tag = format!("volt:ext:{}:pref:{}", extension_id, key);
     crate::commands::keyring_store::store_signed(&tag, &value).map_err(|e| e.to_string())
 }
@@ -2316,8 +2719,36 @@ pub async fn set_extension_secret(
 #[tauri::command]
 pub async fn delete_extension_secret(extension_id: String, key: String) -> Result<(), String> {
     validate_extension_id(&extension_id).map_err(|e| e.to_string())?;
+    validate_extension_preference_input(&key, "")?;
     let tag = format!("volt:ext:{}:pref:{}", extension_id, key);
     crate::commands::keyring_store::remove_signed(&tag).map_err(|e| e.to_string())
+}
+
+const EXT_CREDENTIAL_MAX_BYTES: usize = 64 * 1024;
+
+/// Store a service credential on behalf of an enabled extension.
+///
+/// This is deliberately separate from the Settings-facing `save_credential`
+/// command: an extension must prove its own identity and persisted OAuth grant
+/// at the Rust boundary before it may write a global integration credential.
+#[tauri::command]
+pub async fn ext_save_credential(
+    app: AppHandle,
+    extension_id: String,
+    service: String,
+    token: String,
+) -> Result<(), String> {
+    require_extension_permission(&app, &extension_id, "oauth").map_err(|e| e.to_string())?;
+    if extension_id != service {
+        return Err("Credential service must match the calling extension ID".to_string());
+    }
+    if token.len() > EXT_CREDENTIAL_MAX_BYTES {
+        return Err(format!(
+            "Credential exceeds {} KB",
+            EXT_CREDENTIAL_MAX_BYTES / 1024
+        ));
+    }
+    crate::commands::auth::save_credential(service, token)
 }
 
 // ============================================================================
@@ -2379,6 +2810,7 @@ fn validate_ext_provider(provider: &str) -> Result<(), String> {
 /// Tauri event emitted by `handle_ext_oauth_deep_link` after the callback.
 #[tauri::command]
 pub async fn ext_oauth_start(
+    app: AppHandle,
     extension_id: String,
     provider: String,
     base_auth_url: String,
@@ -2386,7 +2818,7 @@ pub async fn ext_oauth_start(
     client_id: String,
     scopes: Vec<String>,
 ) -> Result<serde_json::Value, String> {
-    validate_extension_id(&extension_id).map_err(|e| e.to_string())?;
+    require_extension_permission(&app, &extension_id, "oauth").map_err(|e| e.to_string())?;
     validate_ext_provider(&provider)?;
     validate_ext_oauth_url(&base_auth_url)?;
     validate_ext_oauth_url(&token_url)?;
@@ -2564,19 +2996,39 @@ pub async fn handle_ext_oauth_deep_link(
 /// Retrieve a previously-stored ext OAuth access token from the OS keyring.
 #[tauri::command]
 pub async fn ext_oauth_get_token(
+    app: AppHandle,
     extension_id: String,
     provider: String,
 ) -> Result<Option<String>, String> {
-    validate_extension_id(&extension_id).map_err(|e| e.to_string())?;
+    require_extension_permission(&app, &extension_id, "oauth").map_err(|e| e.to_string())?;
     validate_ext_provider(&provider)?;
     let key = format!("volt:ext:{}:oauth:{}", extension_id, provider);
     crate::commands::keyring_store::retrieve_signed(&key)
 }
 
+/// Check whether a stored ext OAuth token exists without returning the secret.
+#[tauri::command]
+pub async fn ext_oauth_has_token(
+    app: AppHandle,
+    extension_id: String,
+    provider: String,
+) -> Result<bool, String> {
+    require_installed_extension_permission(&app, &extension_id, "oauth")
+        .map_err(|e| e.to_string())?;
+    validate_ext_provider(&provider)?;
+    let key = format!("volt:ext:{}:oauth:{}", extension_id, provider);
+    crate::commands::keyring_store::retrieve_signed(&key).map(|token| token.is_some())
+}
+
 /// Remove a stored ext OAuth access token from the OS keyring.
 #[tauri::command]
-pub async fn ext_oauth_revoke_token(extension_id: String, provider: String) -> Result<(), String> {
-    validate_extension_id(&extension_id).map_err(|e| e.to_string())?;
+pub async fn ext_oauth_revoke_token(
+    app: AppHandle,
+    extension_id: String,
+    provider: String,
+) -> Result<(), String> {
+    require_installed_extension_permission(&app, &extension_id, "oauth")
+        .map_err(|e| e.to_string())?;
     validate_ext_provider(&provider)?;
     let key = format!("volt:ext:{}:oauth:{}", extension_id, provider);
     crate::commands::keyring_store::remove_signed(&key)
@@ -2930,12 +3382,13 @@ fn build_anthropic_messages(opts: &ExtAiOptions, prompt: &str) -> Vec<serde_json
 /// On error, emits `AiStreamEvent::Error` and returns `Err`.
 #[tauri::command]
 pub async fn ext_ai_ask_stream(
+    app: AppHandle,
     extension_id: String,
     prompt: String,
     options: ExtAiOptions,
     channel: tauri::ipc::Channel<AiStreamEvent>,
 ) -> Result<(), String> {
-    validate_extension_id(&extension_id).map_err(|e| e.to_string())?;
+    require_extension_permission(&app, &extension_id, "ai").map_err(|e| e.to_string())?;
 
     if prompt.trim().is_empty() {
         let _ = channel.send(AiStreamEvent::Error {
@@ -3584,7 +4037,11 @@ pub async fn ai_ask_builtin_stream(
 /// Delegates to the existing cached scanner — no re-scan triggered.
 /// Requires `system` permission.
 #[tauri::command]
-pub async fn ext_get_applications() -> Result<Vec<crate::commands::apps::AppInfo>, String> {
+pub async fn ext_get_applications(
+    app: AppHandle,
+    extension_id: String,
+) -> Result<Vec<crate::commands::apps::AppInfo>, String> {
+    require_extension_permission(&app, &extension_id, "system").map_err(|e| e.to_string())?;
     crate::commands::apps::scan_applications()
         .await
         .map_err(|e| e.to_string())
@@ -3649,7 +4106,12 @@ fn validate_extension_user_path(path: &str) -> Result<std::path::PathBuf, String
 /// Reveal a path in the system file manager (Explorer / Finder / Nautilus).
 /// Requires `system` permission.
 #[tauri::command]
-pub async fn ext_show_in_folder(path: String) -> Result<(), String> {
+pub async fn ext_show_in_folder(
+    app: AppHandle,
+    extension_id: String,
+    path: String,
+) -> Result<(), String> {
+    require_extension_permission(&app, &extension_id, "system").map_err(|e| e.to_string())?;
     let canonical = validate_extension_user_path(&path)?;
     let canonical_str = canonical.to_string_lossy().into_owned();
 
@@ -3691,7 +4153,12 @@ pub async fn ext_show_in_folder(path: String) -> Result<(), String> {
 /// macOS/Linux: `trash` crate — NSFileManager.trashItem(at:) on macOS,
 /// FreeDesktop.org spec on Linux (no external tool dependency).
 #[tauri::command]
-pub async fn ext_move_to_trash(path: String) -> Result<(), String> {
+pub async fn ext_move_to_trash(
+    app: AppHandle,
+    extension_id: String,
+    path: String,
+) -> Result<(), String> {
+    require_extension_permission(&app, &extension_id, "system").map_err(|e| e.to_string())?;
     let canonical = validate_extension_user_path(&path)?;
     let path_obj = canonical.as_path();
 
@@ -3746,6 +4213,319 @@ pub async fn ext_move_to_trash(path: String) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn test_manifest(id: &str, permissions: Option<Vec<&str>>) -> ExtensionManifest {
+        ExtensionManifest {
+            id: id.to_string(),
+            name: id.to_string(),
+            version: "1.0.0".to_string(),
+            description: String::new(),
+            author: ExtensionAuthor {
+                name: "Volt".to_string(),
+                github: None,
+                email: None,
+            },
+            icon: None,
+            keywords: Some(vec![id.to_string()]),
+            prefix: None,
+            category: None,
+            repository: None,
+            homepage: None,
+            license: None,
+            min_volt_version: None,
+            permissions: permissions.map(|values| values.into_iter().map(String::from).collect()),
+            main: Some("index.js".to_string()),
+            preferences: Vec::new(),
+            commands: Vec::new(),
+            background_refresh: None,
+        }
+    }
+
+    #[test]
+    fn manifest_contract_requires_main_and_a_trigger() {
+        let mut manifest = test_manifest("contract-test", None);
+        manifest.main = None;
+        assert!(matches!(
+            validate_manifest_contract(&manifest),
+            Err(VoltError::InvalidConfig(message)) if message.contains("main")
+        ));
+
+        manifest.main = Some("index.ts".to_string());
+        manifest.keywords = None;
+        assert!(matches!(
+            validate_manifest_contract(&manifest),
+            Err(VoltError::InvalidConfig(message)) if message.contains("prefix")
+        ));
+    }
+
+    #[test]
+    fn manifest_contract_accepts_command_only_extensions() {
+        let mut manifest = test_manifest("command-suite", None);
+        manifest.keywords = None;
+        manifest.commands.push(ExtensionCommand {
+            name: "search".to_string(),
+            title: "Search".to_string(),
+            description: None,
+            main: None,
+            prefix: Some("search".to_string()),
+            keywords: None,
+            icon: None,
+        });
+
+        assert!(validate_manifest_contract(&manifest).is_ok());
+    }
+
+    fn installed_extension(
+        id: &str,
+        enabled: bool,
+        granted_permissions: Vec<&str>,
+    ) -> InstalledExtension {
+        InstalledExtension {
+            manifest: test_manifest(id, Some(vec!["network", "oauth", "ai", "system"])),
+            installed_at: "2026-01-01T00:00:00Z".to_string(),
+            enabled,
+            path: format!("/extensions/{}", id),
+            granted_permissions: granted_permissions.into_iter().map(String::from).collect(),
+        }
+    }
+
+    fn dev_extension(id: &str, enabled: bool) -> DevExtension {
+        DevExtension {
+            manifest: test_manifest(id, Some(vec!["system"])),
+            path: format!("/dev/{}", id),
+            linked_at: "2026-01-01T00:00:00Z".to_string(),
+            enabled,
+            is_dev: true,
+        }
+    }
+
+    fn assert_permission_denied(result: VoltResult<()>, expected: &str) {
+        match result {
+            Err(VoltError::PermissionDenied(message)) => assert!(
+                message.contains(expected),
+                "message {:?} did not contain {:?}",
+                message,
+                expected
+            ),
+            other => panic!("expected PermissionDenied, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn runtime_extension_auth_rejects_absent_extension() {
+        let installed = InstalledExtensionsState::default();
+        let dev = DevExtensionsState::default();
+
+        let result = resolve_runtime_extension_auth(&installed, &dev, "missing.extension");
+
+        assert!(
+            matches!(result, Err(VoltError::NotFound(message)) if message.contains("not found"))
+        );
+    }
+
+    #[test]
+    fn runtime_extension_active_rejects_disabled_installed_extension() {
+        let installed = InstalledExtensionsState {
+            extensions: vec![installed_extension(
+                "disabled.extension",
+                false,
+                vec!["system"],
+            )],
+        };
+        let dev = DevExtensionsState::default();
+
+        let result =
+            resolve_runtime_extension_auth(&installed, &dev, "disabled.extension").map(|_| ());
+
+        assert_permission_denied(result, "disabled");
+    }
+
+    #[test]
+    fn runtime_extension_active_accepts_enabled_dev_extension() {
+        let installed = InstalledExtensionsState::default();
+        let dev = DevExtensionsState {
+            extensions: vec![dev_extension("dev.extension", true)],
+        };
+
+        let auth = resolve_runtime_extension_auth(&installed, &dev, "dev.extension").unwrap();
+
+        assert_eq!(auth.kind, RuntimeExtensionKind::Dev);
+    }
+
+    #[test]
+    fn runtime_extension_permission_rejects_enabled_extension_without_grant() {
+        let installed = InstalledExtensionsState {
+            extensions: vec![installed_extension(
+                "no-grant.extension",
+                true,
+                vec!["network"],
+            )],
+        };
+        let dev = DevExtensionsState::default();
+        let auth = resolve_runtime_extension_auth(&installed, &dev, "no-grant.extension").unwrap();
+
+        let result = require_runtime_permission_from_auth("no-grant.extension", &auth, "system");
+
+        assert_permission_denied(result, "lacks required 'system'");
+    }
+
+    #[test]
+    fn runtime_extension_permission_accepts_enabled_extension_with_grant() {
+        let installed = InstalledExtensionsState {
+            extensions: vec![installed_extension(
+                "granted.extension",
+                true,
+                vec!["system"],
+            )],
+        };
+        let dev = DevExtensionsState::default();
+        let auth = resolve_runtime_extension_auth(&installed, &dev, "granted.extension").unwrap();
+
+        assert!(require_runtime_permission_from_auth("granted.extension", &auth, "system").is_ok());
+    }
+
+    #[test]
+    fn runtime_extension_permission_rejects_dev_extension_without_persisted_grants() {
+        let installed = InstalledExtensionsState::default();
+        let dev = DevExtensionsState {
+            extensions: vec![dev_extension("dev.extension", true)],
+        };
+        let auth = resolve_runtime_extension_auth(&installed, &dev, "dev.extension").unwrap();
+
+        let result = require_runtime_permission_from_auth("dev.extension", &auth, "system");
+
+        assert_permission_denied(result, "no persisted backend permission grants");
+    }
+
+    #[test]
+    fn installed_management_permission_allows_disabled_extension_with_grant() {
+        let installed = InstalledExtensionsState {
+            extensions: vec![installed_extension(
+                "disabled.extension",
+                false,
+                vec!["oauth"],
+            )],
+        };
+
+        let auth =
+            resolve_installed_extension_auth(&installed, "disabled.extension").expect("auth");
+
+        assert!(require_runtime_permission_from_auth("disabled.extension", &auth, "oauth").is_ok());
+    }
+
+    #[test]
+    fn installed_management_permission_still_requires_the_grant() {
+        let installed = InstalledExtensionsState {
+            extensions: vec![installed_extension(
+                "disabled.extension",
+                false,
+                vec!["network"],
+            )],
+        };
+        let auth =
+            resolve_installed_extension_auth(&installed, "disabled.extension").expect("auth");
+
+        assert_permission_denied(
+            require_runtime_permission_from_auth("disabled.extension", &auth, "oauth"),
+            "lacks required 'oauth'",
+        );
+    }
+
+    #[test]
+    fn uninstall_keyring_accounts_cover_declared_secret_and_oauth_preferences() {
+        let mut manifest = test_manifest("accounts.extension", Some(vec!["oauth"]));
+        manifest.preferences = vec![
+            ExtensionPreference {
+                name: "apiKey".to_string(),
+                pref_type: "secret".to_string(),
+                title: "API key".to_string(),
+                description: None,
+                required: false,
+                default: None,
+                options: None,
+                min: None,
+                max: None,
+                oauth_provider: None,
+                oauth_auth_url: None,
+                oauth_token_url: None,
+                oauth_client_id: None,
+                oauth_scopes: None,
+            },
+            ExtensionPreference {
+                name: "account".to_string(),
+                pref_type: "oauth".to_string(),
+                title: "Account".to_string(),
+                description: None,
+                required: false,
+                default: None,
+                options: None,
+                min: None,
+                max: None,
+                oauth_provider: Some("github".to_string()),
+                oauth_auth_url: None,
+                oauth_token_url: None,
+                oauth_client_id: None,
+                oauth_scopes: None,
+            },
+            ExtensionPreference {
+                name: "region".to_string(),
+                pref_type: "text".to_string(),
+                title: "Region".to_string(),
+                description: None,
+                required: false,
+                default: None,
+                options: None,
+                min: None,
+                max: None,
+                oauth_provider: None,
+                oauth_auth_url: None,
+                oauth_token_url: None,
+                oauth_client_id: None,
+                oauth_scopes: None,
+            },
+        ];
+
+        assert_eq!(
+            extension_keyring_accounts(&manifest),
+            vec![
+                "volt:ext:accounts.extension:oauth:github".to_string(),
+                "volt:ext:accounts.extension:pref:apiKey".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn projected_storage_quota_counts_logical_utf8_bytes_and_replacements() {
+        let conn = rusqlite::Connection::open_in_memory().expect("in-memory sqlite");
+        conn.execute_batch(
+            "CREATE TABLE kv (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+             INSERT INTO kv (key, value) VALUES ('old', 'é'), ('keep', 'xx');",
+        )
+        .expect("seed storage");
+
+        // Existing `old` is excluded because this is an update. `keep` costs
+        // 4 + 2 bytes and the new `old=abc` costs 3 + 3 bytes.
+        assert_eq!(
+            projected_extension_storage_bytes(&conn, "old", "abc").expect("projected size"),
+            12
+        );
+        assert!(ensure_extension_storage_quota(EXT_STORAGE_MAX_BYTES).is_ok());
+        assert!(ensure_extension_storage_quota(EXT_STORAGE_MAX_BYTES + 1).is_err());
+    }
+
+    #[test]
+    fn extension_persistence_inputs_reject_empty_and_oversized_keys() {
+        assert!(validate_extension_storage_input("", "value").is_err());
+        assert!(
+            validate_extension_storage_input(&"k".repeat(EXT_STORAGE_MAX_KEY_BYTES + 1), "value")
+                .is_err()
+        );
+        assert!(validate_extension_preference_input("", "value").is_err());
+        assert!(
+            validate_extension_preference_input(&"k".repeat(EXT_PREFS_MAX_KEY_BYTES + 1), "value")
+                .is_err()
+        );
+    }
 
     #[test]
     fn legitimate_domains_starting_with_fc_or_fd_are_allowed() {

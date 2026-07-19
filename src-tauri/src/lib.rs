@@ -886,12 +886,16 @@ pub fn run() {
             load_settings,
             save_settings,
             update_general_settings,
+            update_web_search_settings,
             update_appearance_settings,
             update_hotkey_settings,
             update_indexing_settings,
             update_plugin_settings,
             update_shortcuts_settings,
             update_shell_settings,
+            list_detected_browsers,
+            open_web_url,
+            web_search_brave,
             get_theme,
             set_theme,
             get_app_shortcuts,
@@ -985,9 +989,11 @@ pub fn run() {
             get_extension_secret,
             set_extension_secret,
             delete_extension_secret,
+            ext_save_credential,
             // Extension OAuth API
             ext_oauth_start,
             ext_oauth_get_token,
+            ext_oauth_has_token,
             ext_oauth_revoke_token,
             // Extension AI API
             ext_ai_ask_stream,
@@ -1055,6 +1061,8 @@ pub fn run() {
             clear_oauth_pending,
             // Logging commands
             get_log_file_path,
+            // Notification commands
+            send_native_notification,
             // Preview panel commands
             get_file_preview,
             // Quicklink commands

@@ -44,8 +44,18 @@ pub fn launch_with_options(
     path: &str,
     options: LaunchOptions,
 ) -> Result<LaunchResult, LaunchError> {
+    #[cfg(target_os = "windows")]
+    if is_windows_uwp_aumid(path) {
+        return launch_windows_uwp_aumid(path, &options);
+    }
+
     // Validate path exists
     let path_obj = Path::new(path);
+    #[cfg(target_os = "linux")]
+    if !path_obj.exists() {
+        return launch_linux_desktop_exec(path, &options);
+    }
+
     if !path_obj.exists() {
         return Err(LaunchError::NotFound {
             path: path.to_string(),
@@ -70,6 +80,101 @@ pub fn launch_with_options(
     {
         launch_linux(path, &options, file_type)
     }
+}
+
+#[cfg(target_os = "linux")]
+fn launch_linux_desktop_exec(
+    exec_line: &str,
+    options: &LaunchOptions,
+) -> Result<LaunchResult, LaunchError> {
+    let mut parts = shlex::split(exec_line).ok_or_else(|| LaunchError::SpawnFailed {
+        path: exec_line.to_string(),
+        message: "Invalid Linux desktop Exec command quoting".to_string(),
+    })?;
+    if parts.is_empty() {
+        return Err(LaunchError::NotFound {
+            path: exec_line.to_string(),
+        });
+    }
+
+    let program = parts.remove(0);
+    let mut command = Command::new(&program);
+    command.args(parts);
+
+    if let Some(ref cwd) = options.working_dir {
+        command.current_dir(cwd);
+    }
+
+    if let Some(ref args) = options.args {
+        command.args(args);
+    }
+
+    if let Some(ref env_vars) = options.env {
+        for (key, value) in env_vars {
+            command.env(key, value);
+        }
+    }
+
+    let child = command.spawn().map_err(|e| LaunchError::SpawnFailed {
+        path: exec_line.to_string(),
+        message: e.to_string(),
+    })?;
+
+    Ok(LaunchResult::new(exec_line).with_pid(child.id()))
+}
+
+#[cfg(target_os = "windows")]
+fn is_windows_uwp_aumid(path: &str) -> bool {
+    if path.contains('\\') || path.contains('/') {
+        return false;
+    }
+
+    let Some((package_family, app_id)) = path.split_once('!') else {
+        return false;
+    };
+    if package_family.is_empty() || app_id.is_empty() {
+        return false;
+    }
+    if !app_id
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-')
+    {
+        return false;
+    }
+
+    let Some((package_name, publisher_hash)) = package_family.rsplit_once('_') else {
+        return false;
+    };
+    !package_name.is_empty()
+        && publisher_hash.len() >= 8
+        && package_name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-')
+        && publisher_hash.chars().all(|c| c.is_ascii_alphanumeric())
+}
+
+#[cfg(target_os = "windows")]
+fn launch_windows_uwp_aumid(
+    aumid: &str,
+    options: &LaunchOptions,
+) -> Result<LaunchResult, LaunchError> {
+    if options.elevated {
+        return Err(LaunchError::PermissionDenied {
+            path: aumid.to_string(),
+            message: "Windows Store apps cannot be launched elevated".to_string(),
+        });
+    }
+
+    let shell_target = format!(r"shell:AppsFolder\{}", aumid);
+    let child = Command::new("explorer.exe")
+        .arg(&shell_target)
+        .spawn()
+        .map_err(|e| LaunchError::SpawnFailed {
+            path: aumid.to_string(),
+            message: e.to_string(),
+        })?;
+
+    Ok(LaunchResult::new(aumid).with_pid(child.id()))
 }
 
 /// Launch URL in default browser
@@ -588,6 +693,20 @@ mod tests {
     fn test_launch_nonexistent_file() {
         let result = launch("C:\\nonexistent\\path\\app.exe");
         assert!(matches!(result, Err(LaunchError::NotFound { .. })));
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_windows_uwp_aumid_detection() {
+        assert!(is_windows_uwp_aumid(
+            "Microsoft.WindowsCalculator_8wekyb3d8bbwe!App"
+        ));
+        assert!(is_windows_uwp_aumid("Spotify.Music_zpdnekdrzrea0!Spotify"));
+        assert!(!is_windows_uwp_aumid("cmd.exe!whatever"));
+        assert!(!is_windows_uwp_aumid("Foo!Bar"));
+        assert!(!is_windows_uwp_aumid(
+            "Microsoft.WindowsCalculator_8wekyb3d8bbwe\\App"
+        ));
     }
 
     #[cfg(target_os = "windows")]

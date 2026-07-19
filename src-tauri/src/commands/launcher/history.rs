@@ -13,6 +13,14 @@ use crate::launcher::{
     launch_with_options,
 };
 
+fn is_forbidden_shell_path(path: &str) -> bool {
+    path.contains('\0')
+        || path.starts_with("\\\\")
+        || path.starts_with("//")
+        || path.starts_with("\\??\\")
+        || path.starts_with("/??/")
+}
+
 /// State wrapper for launch history
 pub struct LaunchHistoryState {
     pub history: Arc<LaunchHistory>,
@@ -326,9 +334,9 @@ pub async fn record_search_selection(
 pub async fn open_file_with_dialog(path: String) -> VoltResult<()> {
     let p = std::path::Path::new(&path);
 
-    if path.starts_with("\\\\") || path.starts_with("//") {
+    if is_forbidden_shell_path(&path) {
         return Err(VoltError::PermissionDenied(
-            "UNC paths are not allowed".into(),
+            "UNC, device, and NUL-containing paths are not allowed".into(),
         ));
     }
     if p.extension()
@@ -399,6 +407,12 @@ pub async fn open_file_with_dialog(path: String) -> VoltResult<()> {
 /// run an executable must use `launch_app`.
 #[tauri::command]
 pub async fn open_path(path: String) -> VoltResult<()> {
+    if is_forbidden_shell_path(&path) {
+        return Err(VoltError::PermissionDenied(
+            "UNC, device, and NUL-containing paths are not allowed".into(),
+        ));
+    }
+
     let p = std::path::Path::new(&path);
     if !p.exists() {
         return Err(VoltError::NotFound(format!("Path not found: {}", path)));
@@ -441,4 +455,20 @@ pub async fn open_path(path: String) -> VoltResult<()> {
     tauri_plugin_opener::open_path(&path, None::<&str>)
         .map_err(|e| VoltError::Launch(format!("Failed to open path: {}", e)))?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn shell_open_path_guard_rejects_unc_device_and_nul_paths() {
+        assert!(is_forbidden_shell_path(r"\\server\share\file.txt"));
+        assert!(is_forbidden_shell_path("//server/share/file.txt"));
+        assert!(is_forbidden_shell_path(
+            r"\??\C:\Windows\System32\config\SAM"
+        ));
+        assert!(is_forbidden_shell_path("C:\\Users\\me\\file.txt\0.exe"));
+        assert!(!is_forbidden_shell_path(r"C:\Users\me\file.txt"));
+    }
 }

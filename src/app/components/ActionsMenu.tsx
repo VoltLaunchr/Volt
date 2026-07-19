@@ -13,8 +13,9 @@ import {
   RotateCcw,
   type LucideIcon,
 } from 'lucide-react';
-import { applicationService } from '../../features/applications/services/applicationService';
+import { openPath } from '../../features/files/services/fileOpenService';
 import type { ShellOutputData } from '../../features/plugins/builtin/shell';
+import { getWebResultDetails, isWebResult } from '../../features/results/resultSections';
 import { Keycap } from '../../shared/components/ui/Keycap';
 import { AppInfo, FileInfo, SearchResult, SearchResultType } from '../../shared/types/common.types';
 import { getDirectoryPath } from '../utils';
@@ -56,7 +57,13 @@ function ShortcutHint({ keys }: { keys: string[] }) {
   );
 }
 
-export function ActionsMenu({ isOpen, result, onLaunch, onShowProperties, onClose }: ActionsMenuProps) {
+export function ActionsMenu({
+  isOpen,
+  result,
+  onLaunch,
+  onShowProperties,
+  onClose,
+}: ActionsMenuProps) {
   const { t } = useTranslation('results');
   const [focusedIndex, setFocusedIndex] = useState(0);
 
@@ -71,23 +78,33 @@ export function ActionsMenu({ isOpen, result, onLaunch, onShowProperties, onClos
       return [
         {
           actions: [
-            { id: 'run', label: 'Run', icon: Play, shortcutKeys: ['↵'], onClick: () => onLaunch(result) },
+            {
+              id: 'run',
+              label: 'Run',
+              icon: Play,
+              shortcutKeys: ['↵'],
+              onClick: () => onLaunch(result),
+            },
             {
               id: 'copy-command',
               label: 'Copy Command',
               icon: Copy,
-              onClick: () => { if (command) void navigator.clipboard.writeText(command); },
+              onClick: () => {
+                if (command) void navigator.clipboard.writeText(command);
+              },
             },
             ...(hasOutput
-              ? [{
-                  id: 'copy-output',
-                  label: 'Copy Output',
-                  icon: FileText,
-                  onClick: () => {
-                    const output = shellData?.stdout || shellData?.stderr || '';
-                    void navigator.clipboard.writeText(output);
-                  },
-                } satisfies Action]
+              ? [
+                  {
+                    id: 'copy-output',
+                    label: 'Copy Output',
+                    icon: FileText,
+                    onClick: () => {
+                      const output = shellData?.stdout || shellData?.stderr || '';
+                      void navigator.clipboard.writeText(output);
+                    },
+                  } satisfies Action,
+                ]
               : []),
             { id: 'rerun', label: 'Re-run', icon: RotateCcw, onClick: () => onLaunch(result) },
           ],
@@ -99,8 +116,53 @@ export function ActionsMenu({ isOpen, result, onLaunch, onShowProperties, onClos
               id: 'pin-command',
               label: 'Pin Command',
               icon: Pin,
-              onClick: () => { if (command) invoke<void>('pin_shell_command', { command }).catch(() => {}); },
+              onClick: () => {
+                if (command) invoke<void>('pin_shell_command', { command }).catch(() => {});
+              },
             },
+          ],
+        },
+      ];
+    }
+
+    if (isWebResult(result)) {
+      const { url, query } = getWebResultDetails(result);
+
+      return [
+        {
+          actions: [
+            {
+              id: 'open-in-browser',
+              label: t('contextMenu.openInBrowser', { defaultValue: 'Open in Browser' }),
+              icon: ExternalLink,
+              shortcutKeys: ['↵'],
+              onClick: () => onLaunch(result),
+            },
+            ...(url
+              ? [
+                  {
+                    id: 'copy-url',
+                    label: t('contextMenu.copyUrl', { defaultValue: 'Copy URL' }),
+                    icon: Copy,
+                    shortcutKeys: ['Ctrl', 'C'],
+                    onClick: () => {
+                      void navigator.clipboard.writeText(url);
+                    },
+                  } satisfies Action,
+                ]
+              : []),
+            ...(query
+              ? [
+                  {
+                    id: 'copy-query',
+                    label: t('contextMenu.copyQuery', { defaultValue: 'Copy Search Query' }),
+                    icon: FileText,
+                    onClick: () => {
+                      void navigator.clipboard.writeText(query);
+                    },
+                  } satisfies Action,
+                ]
+              : []),
           ],
         },
       ];
@@ -120,22 +182,26 @@ export function ActionsMenu({ isOpen, result, onLaunch, onShowProperties, onClos
             onClick: () => onLaunch(result),
           },
           ...(isFileResult
-            ? [{
-                id: 'open-with',
-                label: 'Open With…',
-                icon: Package,
-                onClick: () => {
-                  invoke<void>('open_file_with_dialog', { path }).catch(() => {});
-                  onClose();
-                },
-              } satisfies Action]
+            ? [
+                {
+                  id: 'open-with',
+                  label: 'Open With…',
+                  icon: Package,
+                  onClick: () => {
+                    invoke<void>('open_file_with_dialog', { path }).catch(() => {});
+                    onClose();
+                  },
+                } satisfies Action,
+              ]
             : []),
           {
             id: 'open-location',
             label: t('contextMenu.openFolder'),
             icon: FolderOpen,
             shortcutKeys: ['Ctrl', 'O'],
-            onClick: () => { void applicationService.launchApplication(getDirectoryPath(path)); },
+            onClick: () => {
+              openPath(getDirectoryPath(path)).catch(() => {});
+            },
           },
         ],
       },
@@ -147,7 +213,9 @@ export function ActionsMenu({ isOpen, result, onLaunch, onShowProperties, onClos
             label: t('contextMenu.copyPath'),
             icon: Copy,
             shortcutKeys: ['Ctrl', 'C'],
-            onClick: () => { void navigator.clipboard.writeText(path); },
+            onClick: () => {
+              void navigator.clipboard.writeText(path);
+            },
           },
           {
             id: 'properties',
@@ -222,9 +290,7 @@ export function ActionsMenu({ isOpen, result, onLaunch, onShowProperties, onClos
             Actions
           </p>
           <p className="text-sm font-medium text-ink truncate leading-snug">{result.title}</p>
-          {result.subtitle && (
-            <p className="text-xs text-ash truncate mt-0.5">{result.subtitle}</p>
-          )}
+          {result.subtitle && <p className="text-xs text-ash truncate mt-0.5">{result.subtitle}</p>}
         </div>
 
         {/* Actions list */}
@@ -270,9 +336,7 @@ export function ActionsMenu({ isOpen, result, onLaunch, onShowProperties, onClos
                 );
               })}
 
-              {si < sections.length - 1 && (
-                <div className="my-1 mx-3 h-px bg-hairline" />
-              )}
+              {si < sections.length - 1 && <div className="my-1 mx-3 h-px bg-hairline" />}
             </div>
           ))}
         </div>

@@ -99,10 +99,13 @@
   "shell": {
     "mode": "Mode Commande Shell",
     "pressEnterToRun": "Appuyez sur Entrée pour exécuter",
+    "typeHint": "Saisissez une commande après >, par exemple >git status",
     "running": "Exécution...",
     "ctrlCCancel": "Ctrl+C pour annuler",
     "noOutput": "Aucune sortie",
     "commandFailed": "Commande échouée",
+    "failed": "Échec",
+    "completed": "Terminée",
     "timedOut": "Délai expiré",
     "rerunLast": "Relancer la dernière commande",
     "noHistory": "Pas encore d'historique",

@@ -1,9 +1,10 @@
 import { useTranslation } from 'react-i18next';
 import { invoke } from '@tauri-apps/api/core';
-import { applicationService } from '../../features/applications/services/applicationService';
+import { openPath } from '../../features/files/services/fileOpenService';
 import { ContextMenu } from '../../shared/components/ui';
 import { AppInfo, FileInfo, SearchResult, SearchResultType } from '../../shared/types/common.types';
 import type { ShellOutputData } from '../../features/plugins/builtin/shell';
+import { getWebResultDetails, isWebResult } from '../../features/results/resultSections';
 import { getDirectoryPath } from '../utils';
 
 export interface ContextMenuState {
@@ -99,6 +100,47 @@ export function ResultContextMenu({
 
   const isFileResult = state.result?.type === SearchResultType.File;
 
+  const webActions = () => {
+    if (!state.result) return [];
+
+    const result = state.result;
+    const { url, query } = getWebResultDetails(result);
+
+    return [
+      {
+        id: 'open-in-browser',
+        label: t('contextMenu.openInBrowser', { defaultValue: 'Open in Browser' }),
+        icon: '\ud83c\udf10',
+        shortcut: t('shortcuts.enter'),
+        onClick: () => onLaunch(result),
+      },
+      ...(url
+        ? [
+            {
+              id: 'copy-url',
+              label: t('contextMenu.copyUrl', { defaultValue: 'Copy URL' }),
+              icon: '\ud83d\udccb',
+              onClick: () => {
+                void navigator.clipboard.writeText(url);
+              },
+            },
+          ]
+        : []),
+      ...(query
+        ? [
+            {
+              id: 'copy-query',
+              label: t('contextMenu.copyQuery', { defaultValue: 'Copy Search Query' }),
+              icon: '\ud83d\udd0e',
+              onClick: () => {
+                void navigator.clipboard.writeText(query);
+              },
+            },
+          ]
+        : []),
+    ];
+  };
+
   const defaultActions = [
     {
       id: 'launch',
@@ -117,7 +159,9 @@ export function ResultContextMenu({
             icon: '\ud83d\udce6',
             onClick: () => {
               if (state.result) {
-                invoke<void>('open_file_with_dialog', { path: pathOf(state.result) }).catch(() => {});
+                invoke<void>('open_file_with_dialog', { path: pathOf(state.result) }).catch(
+                  () => {}
+                );
                 onClose();
               }
             },
@@ -130,7 +174,7 @@ export function ResultContextMenu({
       icon: '\ud83d\udcc1',
       onClick: () => {
         if (state.result) {
-          void applicationService.launchApplication(getDirectoryPath(pathOf(state.result)));
+          openPath(getDirectoryPath(pathOf(state.result))).catch(() => {});
         }
       },
     },
@@ -164,7 +208,13 @@ export function ResultContextMenu({
     <ContextMenu
       isOpen={state.isOpen}
       position={state.position}
-      actions={isShellCommand ? shellActions() : defaultActions}
+      actions={
+        isShellCommand
+          ? shellActions()
+          : state.result && isWebResult(state.result)
+            ? webActions()
+            : defaultActions
+      }
       onClose={onClose}
     />
   );

@@ -21,9 +21,6 @@ use tauri::State;
 #[cfg(target_os = "windows")]
 use crate::utils::path::get_local_drives;
 
-#[cfg(target_os = "windows")]
-use lnk::ShellLink;
-
 #[cfg(target_os = "linux")]
 use crate::utils::icon::resolve_linux_icon;
 
@@ -115,6 +112,15 @@ fn app_source_priority(app: &AppInfo) -> u8 {
     }
 
     let path = std::path::Path::new(&app.path);
+    #[cfg(target_os = "windows")]
+    if path.exists()
+        && path
+            .extension()
+            .is_some_and(|ext| ext.to_string_lossy().eq_ignore_ascii_case("lnk"))
+    {
+        return 60;
+    }
+
     if path.exists()
         && path
             .extension()
@@ -246,8 +252,11 @@ fn detect_app_category(name: &str, path: &str) -> String {
         "chromium",
         "waterfox",
         "librewolf",
+        "arc browser",
+        "zen browser",
+        "floorp",
     ];
-    if browser_keywords.iter().any(|k| name_lower.contains(k)) {
+    if name_lower.trim() == "arc" || browser_keywords.iter().any(|k| name_lower.contains(k)) {
         return "browsers".to_string();
     }
 
@@ -1181,18 +1190,7 @@ fn parse_desktop_file(path: &std::path::Path) -> Option<AppInfo> {
             match key {
                 "Name" => name = Some(value.to_string()),
                 "Exec" => {
-                    // Remove field codes like %u, %U, %f, %F, etc.
-                    let clean_exec = value
-                        .replace("%u", "")
-                        .replace("%U", "")
-                        .replace("%f", "")
-                        .replace("%F", "")
-                        .replace("%i", "")
-                        .replace("%c", "")
-                        .replace("%k", "")
-                        .trim()
-                        .to_string();
-                    exec = Some(clean_exec);
+                    exec = clean_desktop_exec(value);
                 }
                 "Icon" => icon = Some(value.to_string()),
                 "Comment" => description = Some(value.to_string()),
@@ -1235,6 +1233,28 @@ fn parse_desktop_file(path: &std::path::Path) -> Option<AppInfo> {
         usage_count: 0,
         category: Some(category),
     })
+}
+
+#[cfg(target_os = "linux")]
+fn clean_desktop_exec(value: &str) -> Option<String> {
+    let words = shlex::split(value)?;
+    let cleaned = words
+        .into_iter()
+        .filter_map(|word| {
+            let literal_percent = "\u{0}";
+            let unescaped_percent = word.replace("%%", literal_percent);
+            if unescaped_percent.contains('%') {
+                return None;
+            }
+            Some(unescaped_percent.replace(literal_percent, "%"))
+        })
+        .collect::<Vec<_>>();
+
+    if cleaned.is_empty() {
+        None
+    } else {
+        Some(shlex::join(cleaned.iter().map(String::as_str)))
+    }
 }
 
 // ============================================================================
@@ -1389,49 +1409,6 @@ fn scan_directory_recursive(
     Ok(apps)
 }
 
-/// Resolves a Windows .lnk shortcut file to get the target path and icon location.
-/// Returns (target_path, icon_location) where icon_location may differ from target.
-#[cfg(target_os = "windows")]
-fn resolve_lnk_shortcut(lnk_path: &std::path::Path) -> Option<(String, Option<String>)> {
-    match ShellLink::open(lnk_path, lnk::encoding::WINDOWS_1252) {
-        Ok(shell_link) => {
-            // Use the high-level link_target() which handles all path resolution
-            if let Some(target_path) = shell_link.link_target()
-                && std::path::Path::new(&target_path).exists()
-            {
-                let icon_location = shell_link
-                    .string_data()
-                    .icon_location()
-                    .as_ref()
-                    .map(|s| s.to_string());
-                return Some((target_path, icon_location));
-            }
-
-            // Fallback: try relative path from string_data
-            if let Some(relative_path) = shell_link.string_data().relative_path()
-                && !relative_path.is_empty()
-                && let Some(parent) = lnk_path.parent()
-            {
-                let resolved = parent.join(relative_path);
-                if resolved.exists() {
-                    let icon_location = shell_link
-                        .string_data()
-                        .icon_location()
-                        .as_ref()
-                        .map(|s| s.to_string());
-                    return Some((resolved.to_string_lossy().to_string(), icon_location));
-                }
-            }
-
-            None
-        }
-        Err(e) => {
-            warn!("Failed to parse .lnk file {:?}: {:?}", lnk_path, e);
-            None
-        }
-    }
-}
-
 #[allow(dead_code)]
 fn scan_shortcuts(dir_path: &str) -> Result<Vec<AppInfo>, String> {
     let mut apps = Vec::new();
@@ -1453,16 +1430,10 @@ fn scan_shortcuts(dir_path: &str) -> Result<Vec<AppInfo>, String> {
                     && ext == "lnk"
                     && let Some(name) = path.file_stem()
                 {
-                    #[cfg(target_os = "windows")]
-                    let path_str = {
-                        // Try to resolve the .lnk shortcut to its actual target
-                        match resolve_lnk_shortcut(&path) {
-                            Some((target_path, _icon_location)) => target_path,
-                            None => path.to_string_lossy().to_string(),
-                        }
-                    };
-
-                    #[cfg(not(target_os = "windows"))]
+                    // Keep the shortcut itself as the launch target. Windows
+                    // ShellExecute preserves shortcut arguments, working
+                    // directory, AppUserModelID, and other shell metadata that
+                    // would be lost if we replaced it with the raw executable.
                     let path_str = path.to_string_lossy().to_string();
 
                     // Icons are loaded lazily via get_app_icon command
@@ -1576,6 +1547,49 @@ mod tests {
         assert_eq!(apps[0].path, exe);
     }
 
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_deduplicate_apps_prefers_shortcut_over_raw_executable() {
+        let exe = std::env::current_exe()
+            .expect("test executable path")
+            .to_string_lossy()
+            .to_string();
+        let temp = tempfile::Builder::new()
+            .suffix(".lnk")
+            .tempfile()
+            .expect("temporary shortcut path");
+        let shortcut = temp.path().to_string_lossy().to_string();
+        let mut apps = vec![
+            AppInfo {
+                id: "exe".to_string(),
+                name: "Volt".to_string(),
+                path: exe,
+                icon: None,
+                description: None,
+                keywords: None,
+                last_used: None,
+                usage_count: 0,
+                category: None,
+            },
+            AppInfo {
+                id: "shortcut".to_string(),
+                name: "Volt".to_string(),
+                path: shortcut.clone(),
+                icon: None,
+                description: None,
+                keywords: None,
+                last_used: None,
+                usage_count: 0,
+                category: None,
+            },
+        ];
+
+        deduplicate_app_results(&mut apps);
+
+        assert_eq!(apps.len(), 1);
+        assert_eq!(apps[0].path, shortcut);
+    }
+
     #[test]
     fn test_detect_app_category_browsers() {
         assert_eq!(
@@ -1584,6 +1598,10 @@ mod tests {
         );
         assert_eq!(
             detect_app_category("Google Chrome", "/Applications/Chrome.app"),
+            "browsers"
+        );
+        assert_eq!(
+            detect_app_category("Arc", "/Applications/Arc.app"),
             "browsers"
         );
     }
@@ -1664,5 +1682,22 @@ mod tests {
             timestamp: SystemTime::now(),
         };
         assert!(!cache.is_expired(Duration::from_secs(300)));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn test_clean_desktop_exec_removes_field_codes() {
+        assert_eq!(
+            clean_desktop_exec(r#"code --unity-launch %F"#).as_deref(),
+            Some("code --unity-launch")
+        );
+        assert_eq!(
+            clean_desktop_exec(r#"/opt/My App/app --name "A B" %u"#).as_deref(),
+            Some("'/opt/My App/app' --name 'A B'")
+        );
+        assert_eq!(
+            clean_desktop_exec(r#"printf 100%%"#).as_deref(),
+            Some("printf '100%'")
+        );
     }
 }

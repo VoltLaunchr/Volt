@@ -84,6 +84,20 @@ export interface VoltOAuthAPI {
  */
 export type VoltAICreativity = 'none' | 'low' | 'medium' | 'high' | 'maximum' | number;
 
+export type VoltAIChatContentPart =
+  | { type: 'text'; text: string }
+  | { type: 'image'; mediaType: string; data: string };
+
+export interface VoltAIChatTurn {
+  role: 'user' | 'assistant';
+  content: VoltAIChatContentPart[];
+}
+
+export interface VoltAIImagePart {
+  mediaType: string;
+  data: string;
+}
+
 /**
  * Known models for each provider — use these string literals for autocomplete.
  * Any other string is passed through as-is (for newer/custom model IDs).
@@ -128,6 +142,10 @@ export interface VoltAIAskOptions {
   creativity?: VoltAICreativity;
   /** Raw temperature (0–2). Overrides `creativity` when set. */
   temperature?: number;
+  /** Prior conversation turns, oldest first. The current turn is passed as `prompt`. */
+  history?: VoltAIChatTurn[];
+  /** Base64-encoded image parts attached to the current user turn. */
+  images?: VoltAIImagePart[];
   /**
    * Abort signal — call `controller.abort()` to cancel an in-flight request.
    * The Promise rejects with an AbortError when triggered.
