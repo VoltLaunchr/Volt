@@ -167,6 +167,8 @@ export interface PluginResultData {
   icon?: string;
   badge?: string;
   pluginId?: string;
+  /** How the originating query activated the plugin (kept in sync with PluginResult). */
+  matchKind?: 'prefix' | 'keyword' | 'always' | 'none';
   score: number;
   data?: Record<string, unknown>;
   actions?: PluginResultAction[];

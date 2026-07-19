@@ -43,6 +43,8 @@ export const SEARCH_SCORING = {
 
   // Boost factors
   PLUGIN_KEYWORD_BOOST: 300, // Boost plugins when query matches their keywords exactly
+  WEB_EXPLICIT_ACTION: 1300, // Explicit web trigger: "search this query" action
+  WEB_EXPLICIT_RESULT: 1250, // Live web hits, directly below the explicit action
   GAME_BOOST: 500, // Push games above everything when query is game-related
   FRECENCY_SUPPLEMENT: 40, // High score for supplementary frecency results, offset from APPLICATION
 

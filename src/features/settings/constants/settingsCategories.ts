@@ -6,6 +6,7 @@ import {
   Package,
   Puzzle,
   Search,
+  Globe2,
   Clipboard,
   Store,
   Link as LinkIcon,
@@ -30,6 +31,7 @@ export type SettingsCategory =
   | 'applications'
   | 'plugins'
   | 'file-search'
+  | 'web-search'
   | 'clipboard'
   | 'shell'
   | 'emoji'
@@ -54,19 +56,96 @@ export const SETTINGS_CATEGORIES: CategoryItem[] = [
   { id: 'general', label: 'General', icon: SettingsIcon, iconSrc: `${APP_ICON}/settings_icon.svg` },
   { id: 'account', label: 'Account', icon: User, iconSrc: `${APP_ICON}/account_icon.svg` },
   { id: 'sync', label: 'Sync', icon: RefreshCw, iconSrc: `${APP_ICON}/sync_icon.svg` },
-  { id: 'shortcuts', label: 'Shortcuts', icon: Keyboard, iconSrc: `${APP_ICON}/short_cut_icon.svg` },
-  { id: 'advanced', label: 'Advanced', icon: Wrench, iconSrc: `${APP_ICON}/advanced_settings_icon.svg` },
+  {
+    id: 'shortcuts',
+    label: 'Shortcuts',
+    icon: Keyboard,
+    iconSrc: `${APP_ICON}/short_cut_icon.svg`,
+  },
+  {
+    id: 'advanced',
+    label: 'Advanced',
+    icon: Wrench,
+    iconSrc: `${APP_ICON}/advanced_settings_icon.svg`,
+  },
   { id: 'about', label: 'About', icon: Info, iconSrc: `${APP_ICON}/about-settings_icon.svg` },
   // Built-in Features
-  { id: 'applications', label: 'Applications', icon: Package, section: 'BUILT-IN', iconSrc: `${APP_ICON}/app_icon.svg` },
-  { id: 'plugins', label: 'Plugins', icon: Puzzle, section: 'BUILT-IN', iconSrc: `${APP_ICON}/plugin_icon.svg` },
-  { id: 'extensions', label: 'Extensions', icon: Store, section: 'BUILT-IN', iconSrc: `${APP_ICON}/extension_icon.svg` },
-  { id: 'integrations', label: 'Integrations', icon: LinkIcon, section: 'BUILT-IN', iconSrc: `${APP_ICON}/integration_icon.svg` },
-  { id: 'file-search', label: 'File Search', icon: Search, section: 'BUILT-IN', iconSrc: `${APP_ICON}/file_search_icon.svg` },
-  { id: 'clipboard', label: 'Clipboard History', icon: Clipboard, section: 'BUILT-IN', iconSrc: `${APP_ICON}/clipboard_history_icon.svg` },
-  { id: 'shell', label: 'Shell Commands', icon: Terminal, section: 'BUILT-IN', iconSrc: `${APP_ICON}/shell_icon.svg` },
-  { id: 'emoji', label: 'Emoji & Symbols', icon: Smile, section: 'BUILT-IN', iconSrc: `${APP_ICON}/emojis_icon.svg` },
+  {
+    id: 'applications',
+    label: 'Applications',
+    icon: Package,
+    section: 'BUILT-IN',
+    iconSrc: `${APP_ICON}/app_icon.svg`,
+  },
+  {
+    id: 'plugins',
+    label: 'Plugins',
+    icon: Puzzle,
+    section: 'BUILT-IN',
+    iconSrc: `${APP_ICON}/plugin_icon.svg`,
+  },
+  {
+    id: 'extensions',
+    label: 'Extensions',
+    icon: Store,
+    section: 'BUILT-IN',
+    iconSrc: `${APP_ICON}/extension_icon.svg`,
+  },
+  {
+    id: 'integrations',
+    label: 'Integrations',
+    icon: LinkIcon,
+    section: 'BUILT-IN',
+    iconSrc: `${APP_ICON}/integration_icon.svg`,
+  },
+  {
+    id: 'file-search',
+    label: 'File Search',
+    icon: Search,
+    section: 'BUILT-IN',
+    iconSrc: `${APP_ICON}/file_search_icon.svg`,
+  },
+  {
+    id: 'web-search',
+    label: 'Web Search',
+    icon: Globe2,
+    section: 'BUILT-IN',
+    iconSrc: `${APP_ICON}/web_search_icon.svg`,
+  },
+  {
+    id: 'clipboard',
+    label: 'Clipboard History',
+    icon: Clipboard,
+    section: 'BUILT-IN',
+    iconSrc: `${APP_ICON}/clipboard_history_icon.svg`,
+  },
+  {
+    id: 'shell',
+    label: 'Shell Commands',
+    icon: Terminal,
+    section: 'BUILT-IN',
+    iconSrc: `${APP_ICON}/shell_icon.svg`,
+  },
+  {
+    id: 'emoji',
+    label: 'Emoji & Symbols',
+    icon: Smile,
+    section: 'BUILT-IN',
+    iconSrc: `${APP_ICON}/emojis_icon.svg`,
+  },
   { id: 'ai', label: 'AI', icon: Package, section: 'BUILT-IN', iconSrc: `${APP_ICON}/ai_icon.svg` },
-  { id: 'notes', label: 'Notes', icon: StickyNote, section: 'BUILT-IN', iconSrc: `${APP_ICON}/volt_note_icons.svg` },
-  { id: 'snippets', label: 'Snippets', icon: Scissors, section: 'BUILT-IN', iconSrc: `${APP_ICON}/snippets_icon.svg` },
+  {
+    id: 'notes',
+    label: 'Notes',
+    icon: StickyNote,
+    section: 'BUILT-IN',
+    iconSrc: `${APP_ICON}/volt_note_icons.svg`,
+  },
+  {
+    id: 'snippets',
+    label: 'Snippets',
+    icon: Scissors,
+    section: 'BUILT-IN',
+    iconSrc: `${APP_ICON}/snippets_icon.svg`,
+  },
 ];

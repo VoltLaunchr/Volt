@@ -278,13 +278,13 @@ Raycast permet `gh issues <repo>` directement dans la search bar avec auto-compl
 
 ```json
 {
-  "$schema": "https://voltlauncher.com/schemas/manifest.json"
+  "$schema": "https://raw.githubusercontent.com/VoltLaunchr/volt-extensions/main/schemas/manifest.schema.json"
 }
 ```
 
 - Générer le schema depuis les types TypeScript (`manifest.types.ts` → `manifest.schema.json`)
 - `volt-plugin test` valide contre le schema en plus du type-check
-- Héberger sur `voltlauncher.com/schemas/manifest.json` (ou GitHub Pages)
+- Héberger le schéma canonique dans `volt-extensions` et référencer son URL GitHub brute.
 
 ---
 

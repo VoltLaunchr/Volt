@@ -51,7 +51,7 @@ function getShortcutGroups(t: (key: string) => string): ShortcutGroup[] {
         { keys: ['Ctrl+,'], description: t('groups.application.openSettings') },
         { keys: ['Ctrl+R'], description: t('groups.application.reload') },
         { keys: ['Ctrl+Q'], description: t('groups.application.quit') },
-        { keys: ['F1', '?'], description: t('groups.application.showHelp') },
+        { keys: ['F1'], description: t('groups.application.showHelp') },
       ],
     },
   ];

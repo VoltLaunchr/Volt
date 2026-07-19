@@ -10,6 +10,7 @@
     "applications": "Applications",
     "plugins": "Plugins",
     "fileSearch": "Recherche de fichiers",
+    "webSearch": "Recherche web",
     "clipboard": "Historique du presse-papiers",
     "integrations": "Intégrations",
     "account": "Compte",
@@ -42,6 +43,20 @@
     "restartOnboarding": "Relancer l'onboarding",
     "restartOnboardingDesc": "Relancer l'assistant de configuration initial"
   },
+  "webSearch": {
+    "title": "Recherche web",
+    "description": "Choisissez le comportement des recherches web explicites et le navigateur installé qui ouvre les liens HTTP et HTTPS.",
+    "searchDefaults": "Préférences de recherche",
+    "defaultEngine": "Moteur de recherche par défaut",
+    "defaultEngineDesc": "Utilisé pour les requêtes ?, web, search et chercher. Les mots-clés propres à un moteur restent prioritaires.",
+    "browser": "Navigateur pour les liens",
+    "browserDesc": "Seuls les navigateurs détectés parmi vos applications installées sont proposés.",
+    "systemBrowser": "Navigateur système",
+    "refreshBrowsers": "Détecter à nouveau les navigateurs installés",
+    "rememberHistory": "Mémoriser l'historique des recherches web",
+    "rememberHistoryDesc": "Activez les suggestions locales issues de vos recherches web explicites précédentes.",
+    "securityNotice": "Volt valide le navigateur sélectionné et ouvre uniquement les URL HTTP ou HTTPS. S'il est désinstallé, Volt revient automatiquement au navigateur système."
+  },
   "shortcuts": {
     "title": "Raccourcis",
     "searchPlaceholder": "Rechercher par nom ou alias",
@@ -53,6 +68,8 @@
       "hotkey": "Raccourci"
     },
     "addAlias": "Ajouter un alias",
+    "hiddenCount_one": "{{count}} app masquée. Utilisez la recherche pour filtrer la liste.",
+    "hiddenCount_other": "{{count}} apps masquées. Utilisez la recherche pour filtrer la liste.",
     "noShortcuts": "Aucun raccourci disponible. Cliquez sur « Synchroniser les apps » pour charger vos applications.",
     "noMatch": "Aucun raccourci ne correspond à votre recherche."
   },
@@ -192,6 +209,65 @@
       "snippets": "Snippets",
       "shell": "Commandes shell",
       "developerTools": "Outils développeur"
+    }
+  },
+  "fallbacks": {
+    "title": "Actions de secours web",
+    "description": "Choisissez les actions web affichées par Volt quand les résultats locaux ne sont pas assez fiables.",
+    "add": "Ajouter une action",
+    "empty": "Aucune action web de secours configurée.",
+    "enabled": "Activé",
+    "rememberHistory": "Mémoriser l’historique des recherches web",
+    "rememberHistoryDesc": "Autoriser Volt à conserver vos requêtes web sur cet appareil. Désactivé par défaut.",
+    "moveUp": "Remonter {{label}}",
+    "moveDown": "Descendre {{label}}",
+    "edit": "Modifier {{label}}",
+    "delete": "Supprimer {{label}}",
+    "confirmDelete": "Supprimer l’action de secours « {{label}} » ?",
+    "kinds": {
+      "webSearch": "Recherche web",
+      "url": "URL"
+    },
+    "validation": {
+      "required": "Un libellé et une URL cible sont requis.",
+      "invalidUrl": "Saisissez une URL HTTP ou HTTPS valide."
+    },
+    "editor": {
+      "addTitle": "Nouvelle action de secours",
+      "editTitle": "Modifier l’action de secours",
+      "label": "Libellé du résultat",
+      "labelPlaceholder": "Rechercher {rawQuery} sur Exemple",
+      "kind": "Type d’action",
+      "target": "URL cible",
+      "targetPlaceholder": "https://example.com/search?q={query}",
+      "targetHelp": "Utilisez {query} pour la requête encodée dans l’URL ou {rawQuery} pour le texte original.",
+      "icon": "Nom de l’icône (optionnel)",
+      "iconPlaceholder": "globe",
+      "cancel": "Annuler",
+      "save": "Enregistrer l’action"
+    },
+    "brave": {
+      "title": "API Brave Search",
+      "description": "Fournisseur optionnel pour afficher des résultats web et des suggestions directement dans Volt.",
+      "configured": "Clé enregistrée",
+      "notConfigured": "Aucune clé",
+      "apiKey": "Clé API",
+      "apiKeyPlaceholder": "Collez votre clé API Brave Search",
+      "storageNotice": "Stockée dans le coffre d’identifiants du système. La clé n’est jamais écrite dans votre fichier de paramètres.",
+      "disabledWithoutKey": "Les résultats Brave restent désactivés tant qu’aucune clé n’est enregistrée.",
+      "keyRequired": "Saisissez d’abord une clé API.",
+      "save": "Enregistrer la clé",
+      "update": "Mettre à jour la clé",
+      "test": "Tester la clé",
+      "delete": "Supprimer la clé",
+      "saveBeforeTest": "Enregistrez la nouvelle clé avant de la tester.",
+      "confirmDelete": "Supprimer la clé API Brave Search enregistrée ?",
+      "status": {
+        "saved": "Clé API enregistrée de façon sécurisée.",
+        "valid": "La clé API enregistrée est valide.",
+        "invalid": "La clé API enregistrée n’a pas pu être validée.",
+        "deleted": "Clé API supprimée."
+      }
     }
   },
   "clipboard": {

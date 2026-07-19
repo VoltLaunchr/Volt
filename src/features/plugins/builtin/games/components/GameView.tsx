@@ -42,6 +42,62 @@ interface GameViewProps {
 
 type PlatformFilter = string;
 
+interface PlatformVisual {
+  iconPath: string;
+  color: string;
+}
+
+const PLATFORM_VISUALS: Record<string, PlatformVisual> = {
+  steam: { iconPath: '/icons/platforms/steam.svg', color: '#9aa4b2' },
+  epicgames: { iconPath: '/icons/platforms/epic-games.svg', color: '#e5e7eb' },
+  goggalaxy: { iconPath: '/icons/platforms/gog-galaxy.svg', color: '#b56cff' },
+  ubisoftconnect: { iconPath: '/icons/platforms/ubisoft-connect.svg', color: '#7dd3fc' },
+  eaapp: { iconPath: '/icons/platforms/ea-app.svg', color: '#60a5fa' },
+  xbox: { iconPath: '/icons/platforms/xbox.svg', color: '#63d471' },
+  riotgames: { iconPath: '/icons/platforms/riot-games.svg', color: '#ff5364' },
+  battlenet: { iconPath: '/icons/platforms/battle-net.svg', color: '#6bbcff' },
+  amazongames: { iconPath: '/icons/platforms/amazon-games.svg', color: '#f59e0b' },
+  rockstargames: { iconPath: '/icons/platforms/rockstar-games.svg', color: '#facc15' },
+};
+
+function normalizePlatformName(platform: string): string {
+  return platform.toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+function getPlatformVisual(platform: string): PlatformVisual | null {
+  return PLATFORM_VISUALS[normalizePlatformName(platform)] ?? null;
+}
+
+function PlatformLogo({
+  platform,
+  size = 20,
+  className,
+}: {
+  platform: string;
+  size?: number;
+  className?: string;
+}): React.JSX.Element {
+  const visual = getPlatformVisual(platform);
+
+  if (!visual) {
+    return (
+      <GameControllerIcon size={size} className={cn('inline-block align-middle', className)} />
+    );
+  }
+
+  const style: React.CSSProperties = {
+    width: size,
+    height: size,
+    backgroundColor: visual.color,
+    WebkitMask: `url("${visual.iconPath}") center / contain no-repeat`,
+    mask: `url("${visual.iconPath}") center / contain no-repeat`,
+  };
+
+  return (
+    <span aria-hidden="true" className={cn('inline-block shrink-0', className)} style={style} />
+  );
+}
+
 export function GameView({ onClose }: GameViewProps): React.JSX.Element {
   const { t } = useTranslation('games');
   const [games, setGames] = useState<GameInfo[]>([]);
@@ -174,8 +230,8 @@ export function GameView({ onClose }: GameViewProps): React.JSX.Element {
   };
 
   // Get platform icon as JSX element
-  const getPlatformIcon = (_platform: string, size: number = 20): React.ReactNode => {
-    return <GameControllerIcon size={size} className="inline-block align-middle text-current" />;
+  const getPlatformIcon = (platform: string, size: number = 20): React.ReactNode => {
+    return <PlatformLogo platform={platform} size={size} className="align-middle" />;
   };
 
   // Group games by platform
@@ -249,7 +305,7 @@ export function GameView({ onClose }: GameViewProps): React.JSX.Element {
         {/* Platform filter dropdown */}
         <div className="relative">
           <button
-            className="flex items-center gap-2 px-3 py-2 bg-canvas border border-hairline rounded-md text-ink text-sm cursor-pointer transition-all whitespace-nowrap hover:bg-surface-elevated hover:border-hairline-strong"
+            className="flex h-10 items-center gap-2 px-3 bg-canvas border border-hairline rounded-md text-ink text-sm cursor-pointer transition-all whitespace-nowrap hover:bg-surface-elevated hover:border-hairline-strong"
             onClick={() => setShowPlatformDropdown(!showPlatformDropdown)}
           >
             <svg
@@ -263,6 +319,7 @@ export function GameView({ onClose }: GameViewProps): React.JSX.Element {
             >
               <path d="M22 3H2l8 9.46V19l4 2v-8.54L22 3z" />
             </svg>
+            {platformFilter !== 'all' && getPlatformIcon(platformFilter, 16)}
             <span>{platformFilter === 'all' ? t('view.allPlatforms') : platformFilter}</span>
             <svg
               width="12"
@@ -278,33 +335,42 @@ export function GameView({ onClose }: GameViewProps): React.JSX.Element {
           </button>
 
           {showPlatformDropdown && (
-            <div className="absolute top-[calc(100%+4px)] right-0 min-w-[200px] bg-surface border border-hairline rounded-md shadow-[0_4px_12px_rgba(0,0,0,0.15)] overflow-hidden z-[100]">
+            <div className="absolute top-[calc(100%+6px)] right-0 min-w-[260px] bg-surface-elevated border border-hairline rounded-lg shadow-[0_16px_40px_rgba(0,0,0,0.35)] overflow-hidden z-[100] p-1.5">
               <button
                 className={cn(
-                  'flex items-center gap-2 w-full px-3.5 py-2.5 text-left text-sm text-ink bg-transparent cursor-pointer transition-colors border-0 hover:bg-surface-elevated',
-                  platformFilter === 'all' && 'bg-accent-blue-soft text-on-dark'
+                  'flex items-center gap-3 w-full h-10 px-3 text-left text-sm text-ink bg-transparent cursor-pointer transition-colors border-0 rounded-md hover:bg-surface',
+                  platformFilter === 'all' &&
+                    'bg-accent-blue-soft text-on-dark hover:bg-accent-blue-soft'
                 )}
                 onClick={() => {
                   setPlatformFilter('all');
                   setShowPlatformDropdown(false);
                 }}
               >
-                {t('view.allPlatforms')} ({games.length})
+                <span className="flex size-6 items-center justify-center rounded-md bg-canvas text-mute">
+                  <GameControllerIcon size={15} />
+                </span>
+                <span className="flex-1 truncate font-medium">{t('view.allPlatforms')}</span>
+                <span className="text-xs text-current/70 tabular-nums">{games.length}</span>
               </button>
               {platforms.map((platform) => (
                 <button
                   key={platform.id}
                   className={cn(
-                    'flex items-center gap-2 w-full px-3.5 py-2.5 text-left text-sm text-ink bg-transparent cursor-pointer transition-colors border-0 hover:bg-surface-elevated',
-                    platformFilter === platform.name && 'bg-accent-blue-soft text-on-dark'
+                    'flex items-center gap-3 w-full h-10 px-3 text-left text-sm text-ink bg-transparent cursor-pointer transition-colors border-0 rounded-md hover:bg-surface',
+                    platformFilter === platform.name &&
+                      'bg-accent-blue-soft text-on-dark hover:bg-accent-blue-soft'
                   )}
                   onClick={() => {
                     setPlatformFilter(platform.name);
                     setShowPlatformDropdown(false);
                   }}
                 >
-                  <span className="text-base">{platform.icon}</span>
-                  {platform.name} ({platform.gameCount})
+                  <span className="flex size-6 items-center justify-center rounded-md bg-canvas/80">
+                    {getPlatformIcon(platform.name, 17)}
+                  </span>
+                  <span className="flex-1 truncate font-medium">{platform.name}</span>
+                  <span className="text-xs text-current/70 tabular-nums">{platform.gameCount}</span>
                 </button>
               ))}
             </div>

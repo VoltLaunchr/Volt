@@ -82,6 +82,32 @@ impl Default for GeneralSettings {
     }
 }
 
+/// Web search preferences shared by the launcher and Settings window.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "WebSearchSettings.ts")]
+pub struct WebSearchSettings {
+    /// Engine used for generic `?`, `web`, `search`, and `chercher` queries.
+    #[serde(default = "default_web_search_engine")]
+    pub default_engine: String,
+    /// Stable id from the native application scanner. `None` uses the system browser.
+    #[serde(default)]
+    pub preferred_browser_id: Option<String>,
+}
+
+fn default_web_search_engine() -> String {
+    "google".to_string()
+}
+
+impl Default for WebSearchSettings {
+    fn default() -> Self {
+        Self {
+            default_engine: default_web_search_engine(),
+            preferred_browser_id: None,
+        }
+    }
+}
+
 /// Appearance settings
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -443,12 +469,17 @@ pub struct FallbackCommand {
 pub struct FallbacksSettings {
     #[serde(default = "default_fallback_commands")]
     pub commands: Vec<FallbackCommand>,
+    /// Opt-in local history for explicit web searches. Raw queries are never
+    /// persisted unless the user enables this setting.
+    #[serde(default)]
+    pub remember_web_search_history: bool,
 }
 
 impl Default for FallbacksSettings {
     fn default() -> Self {
         Self {
             commands: default_fallback_commands(),
+            remember_web_search_history: false,
         }
     }
 }
@@ -461,7 +492,7 @@ fn default_fallback_commands() -> Vec<FallbackCommand> {
         FallbackCommand {
             id: "fallback-google".to_string(),
             label: "Search {rawQuery} on Google".to_string(),
-            icon: Some("globe".to_string()),
+            icon: Some("/icons/web/google.webp".to_string()),
             kind: FallbackKind::WebSearch,
             target: "https://www.google.com/search?q={query}".to_string(),
             enabled: true,
@@ -470,7 +501,7 @@ fn default_fallback_commands() -> Vec<FallbackCommand> {
         FallbackCommand {
             id: "fallback-duckduckgo".to_string(),
             label: "Search {rawQuery} on DuckDuckGo".to_string(),
-            icon: Some("shield".to_string()),
+            icon: Some("/icons/web/duckduckgo.webp".to_string()),
             kind: FallbackKind::WebSearch,
             target: "https://duckduckgo.com/?q={query}".to_string(),
             enabled: true,
@@ -479,7 +510,7 @@ fn default_fallback_commands() -> Vec<FallbackCommand> {
         FallbackCommand {
             id: "fallback-youtube".to_string(),
             label: "Search {rawQuery} on YouTube".to_string(),
-            icon: Some("youtube".to_string()),
+            icon: Some("/icons/web/youtube.webp".to_string()),
             kind: FallbackKind::WebSearch,
             target: "https://www.youtube.com/results?search_query={query}".to_string(),
             enabled: true,
@@ -512,6 +543,8 @@ fn default_fallback_commands() -> Vec<FallbackCommand> {
 pub struct Settings {
     #[serde(default)]
     pub general: GeneralSettings,
+    #[serde(default, rename = "webSearch")]
+    pub web_search: WebSearchSettings,
     #[serde(default)]
     pub appearance: AppearanceSettings,
     #[serde(default)]
@@ -692,6 +725,15 @@ pub async fn update_general_settings(
     general: GeneralSettings,
 ) -> VoltResult<Settings> {
     update_settings_section(app_handle, |s| s.general = general).await
+}
+
+#[tauri::command]
+pub async fn update_web_search_settings(
+    app_handle: AppHandle,
+    web_search: WebSearchSettings,
+) -> VoltResult<Settings> {
+    crate::commands::system::web_search::validate_web_search_settings(&web_search).await?;
+    update_settings_section(app_handle, |s| s.web_search = web_search).await
 }
 
 #[tauri::command]

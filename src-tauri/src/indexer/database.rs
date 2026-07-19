@@ -297,6 +297,76 @@ impl FileIndexDb {
         Ok(())
     }
 
+    /// Remove an indexed path and every indexed descendant below it.
+    ///
+    /// Descendant matching is path-component based rather than a string
+    /// prefix, so removing `/data/game` cannot remove `/data/game-old`.
+    /// Returns the exact stored paths that were deleted so derived indexes and
+    /// in-memory caches can apply the same mutation.
+    pub fn remove_path_tree(&self, root: &Path) -> Result<Vec<String>, String> {
+        let root_text = root.to_string_lossy().into_owned();
+        let mut descendant_prefix = root_text.clone();
+        if !descendant_prefix.ends_with(std::path::MAIN_SEPARATOR) {
+            descendant_prefix.push(std::path::MAIN_SEPARATOR);
+        }
+        // Both supported separators are ASCII. Replacing the final separator
+        // with its immediate successor creates an exclusive upper bound for
+        // every string beginning with `descendant_prefix`. This stays
+        // index-friendly without SQL LIKE wildcard/case-folding semantics.
+        let mut descendant_upper_bound = descendant_prefix.clone();
+        descendant_upper_bound.pop();
+        descendant_upper_bound.push(
+            char::from_u32(std::path::MAIN_SEPARATOR as u32 + 1)
+                .expect("path separator has a Unicode successor"),
+        );
+
+        let mut conn = self
+            .conn
+            .lock()
+            .map_err(|e| format!("DB lock poisoned: {}", e))?;
+        let tx = conn
+            .transaction()
+            .map_err(|e| format!("Failed to start path-tree removal: {}", e))?;
+
+        let removed = {
+            let mut stmt = tx
+                .prepare(
+                    "SELECT path FROM files
+                     WHERE path = ?1 OR (path >= ?2 AND path < ?3)",
+                )
+                .map_err(|e| format!("Failed to prepare path-tree lookup: {}", e))?;
+            let paths = stmt
+                .query_map(
+                    params![root_text, descendant_prefix, descendant_upper_bound],
+                    |row| row.get::<_, String>(0),
+                )
+                .map_err(|e| format!("Failed to query path-tree entries: {}", e))?;
+
+            let mut removed = Vec::new();
+            for path in paths {
+                let path = path.map_err(|e| format!("Failed to read path-tree entry: {}", e))?;
+                removed.push(path);
+            }
+            removed
+        };
+
+        tx.execute(
+            "DELETE FROM files
+             WHERE path = ?1 OR (path >= ?2 AND path < ?3)",
+            params![root_text, descendant_prefix, descendant_upper_bound],
+        )
+        .map_err(|e| format!("Failed to remove indexed path tree '{}': {}", root_text, e))?;
+
+        tx.commit()
+            .map_err(|e| format!("Failed to commit path-tree removal: {}", e))?;
+        debug!(
+            "Removed {} indexed path(s) under {}",
+            removed.len(),
+            root.display()
+        );
+        Ok(removed)
+    }
+
     /// Delete all rows from the files table.
     pub fn clear_all(&self) -> Result<(), String> {
         let conn = self
@@ -663,6 +733,31 @@ mod tests {
 
         db.remove_file("/tmp/foo.txt").unwrap();
         assert_eq!(db.count().unwrap(), 0);
+    }
+
+    #[test]
+    fn test_remove_path_tree_is_separator_safe() {
+        let dir = tempdir().unwrap();
+        let db = FileIndexDb::open(dir.path().join("t.db")).unwrap();
+        let tree = dir.path().join("game");
+        let child = tree.join("saves").join("slot.txt");
+        let sibling = dir.path().join("game-old").join("keep.txt");
+
+        db.upsert_files(&[
+            make_file("game", &tree.to_string_lossy()),
+            make_file("slot.txt", &child.to_string_lossy()),
+            make_file("keep.txt", &sibling.to_string_lossy()),
+        ])
+        .unwrap();
+
+        let removed = db.remove_path_tree(&tree).unwrap();
+        assert_eq!(removed.len(), 2);
+        assert!(removed.contains(&tree.to_string_lossy().into_owned()));
+        assert!(removed.contains(&child.to_string_lossy().into_owned()));
+
+        let remaining = db.get_all_files().unwrap();
+        assert_eq!(remaining.len(), 1);
+        assert_eq!(remaining[0].path, sibling.to_string_lossy().into_owned());
     }
 
     #[test]

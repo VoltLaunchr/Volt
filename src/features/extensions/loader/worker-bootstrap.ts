@@ -426,6 +426,8 @@ const VoltAPI = {
           system: opts && opts.system,
           creativity: opts && opts.creativity,
           temperature: opts && opts.temperature,
+          history: opts && opts.history,
+          images: opts && opts.images,
         };
         self.postMessage({ type: 'ai-request', id: aiId, payload: { prompt: prompt, options: msgOpts } });
       });

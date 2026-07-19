@@ -68,7 +68,10 @@ export function evaluateExpression(expr: string): number | null {
 
     function parseTerm(): number {
       let result = parseExp();
-      while (pos < cleaned.length && (cleaned[pos] === '*' || cleaned[pos] === '/' || cleaned[pos] === '%')) {
+      while (
+        pos < cleaned.length &&
+        (cleaned[pos] === '*' || cleaned[pos] === '/' || cleaned[pos] === '%')
+      ) {
         const op = cleaned[pos++];
         const right = parseExp();
         if (op === '*') result *= right;
@@ -89,8 +92,13 @@ export function evaluateExpression(expr: string): number | null {
     }
 
     function parseUnary(): number {
-      if (cleaned[pos] === '-') { pos++; return -parsePrimary(); }
-      if (cleaned[pos] === '+') { pos++; }
+      if (cleaned[pos] === '-') {
+        pos++;
+        return -parsePrimary();
+      }
+      if (cleaned[pos] === '+') {
+        pos++;
+      }
       return parsePrimary();
     }
 
@@ -102,7 +110,10 @@ export function evaluateExpression(expr: string): number | null {
         return result;
       }
       const start = pos;
-      while (pos < cleaned.length && ((cleaned[pos] >= '0' && cleaned[pos] <= '9') || cleaned[pos] === '.')) {
+      while (
+        pos < cleaned.length &&
+        ((cleaned[pos] >= '0' && cleaned[pos] <= '9') || cleaned[pos] === '.')
+      ) {
         pos++;
       }
       if (pos === start) throw new Error('Unexpected token');
@@ -148,7 +159,8 @@ export async function copyToClipboard(text: string): Promise<boolean> {
 }
 
 /**
- * Open URL in default browser.
+ * Open a URL. HTTP(S) links use Volt's validated browser preference; mailto
+ * remains delegated to the operating system.
  * Only http:, https:, and mailto: schemes are allowed.
  */
 export async function openUrl(url: string): Promise<void> {
@@ -167,9 +179,13 @@ export async function openUrl(url: string): Promise<void> {
   }
 
   try {
-    // Use Tauri plugin-opener to open URL in default browser
-    const { openUrl: tauriOpenUrl } = await import('@tauri-apps/plugin-opener');
-    await tauriOpenUrl(url);
+    if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+      const { invoke } = await import('@tauri-apps/api/core');
+      await invoke('open_web_url', { url });
+    } else {
+      const { openUrl: tauriOpenUrl } = await import('@tauri-apps/plugin-opener');
+      await tauriOpenUrl(url);
+    }
   } catch (error) {
     logger.error('Failed to open URL via Tauri:', error);
   }

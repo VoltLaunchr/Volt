@@ -2,7 +2,7 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import { getVersion } from '@tauri-apps/api/app';
 import { invoke } from '@tauri-apps/api/core';
 import { emit } from '@tauri-apps/api/event';
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import i18n, { resolveAppLanguage } from '../../i18n';
 import {
@@ -38,6 +38,12 @@ import {
   RefreshCw,
   Plus,
   X,
+  ArrowUp,
+  ArrowDown,
+  Pencil,
+  Trash2,
+  KeyRound,
+  Loader2,
 } from 'lucide-react';
 import { Button, HotkeyCapture, Spinner, Toggle } from '../../shared/components/ui';
 import { extractErrorMessage } from '../../shared/utils/error';
@@ -82,6 +88,8 @@ import {
   WindowPosition,
   ShowOnScreen,
   AppShortcut,
+  FallbackCommand,
+  FallbackKind,
 } from './types/settings.types';
 import { SETTINGS_CATEGORIES, type SettingsCategory } from './constants/settingsCategories';
 import { MANAGED_PLUGINS } from '../plugins/builtin/manifest';
@@ -90,6 +98,9 @@ import { AiSettingsView } from './components/AiSettingsView';
 import { IntegrationsPanel } from './components/IntegrationsPanel';
 import { NotesSettingsPanel } from './components/NotesSettingsPanel';
 import { SnippetsManagerPanel } from './components/SnippetsManagerPanel';
+import { WebSearchSettingsPanel } from './components/WebSearchSettingsPanel';
+import { webSearchHistory } from '../web-search';
+import { credentialsService } from './services/credentialsService';
 import { getShortcutCategoryMeta } from './components/ShortcutCategoryIcon';
 import { stripShortcutIcon, useShortcutAppIcons } from './hooks/useShortcutAppIcons';
 import { SyncPanel } from './components/SyncPanel';
@@ -115,6 +126,24 @@ const PLUGIN_ICONS: Record<string, React.ComponentType<{ size?: number; classNam
   quicklinks: LinkIcon,
   'window-management': LayoutGrid,
   'developer-tools': Wrench,
+};
+
+const SHORTCUTS_RENDER_LIMIT = 80;
+const SHORTCUT_ICON_PREFETCH_LIMIT = 96;
+const getShortcutCategory = (shortcut: AppShortcut) => shortcut.category || 'Applications';
+const BRAVE_SEARCH_SERVICE = 'brave-search' as const;
+
+type EditableFallbackKind = Extract<FallbackKind, 'webSearch' | 'url'>;
+type FallbackDraft = Pick<FallbackCommand, 'label' | 'target' | 'icon' | 'enabled'> & {
+  kind: EditableFallbackKind;
+};
+
+const EMPTY_FALLBACK_DRAFT: FallbackDraft = {
+  label: '',
+  target: '',
+  icon: 'globe',
+  kind: 'webSearch',
+  enabled: true,
 };
 
 export function SettingsApp() {
@@ -168,8 +197,42 @@ export function SettingsApp() {
   const [emojiPrimaryAction, setEmojiPrimaryActionState] = useState<'copy' | 'paste'>(() =>
     getEmojiPrimaryAction()
   );
+  const [editingFallbackId, setEditingFallbackId] = useState<string | null>(null);
+  const [fallbackDraft, setFallbackDraft] = useState<FallbackDraft>(EMPTY_FALLBACK_DRAFT);
+  const [fallbackFormError, setFallbackFormError] = useState<string | null>(null);
+  const [braveApiKey, setBraveApiKey] = useState('');
+  const [hasBraveApiKey, setHasBraveApiKey] = useState(false);
+  const [isBraveCredentialBusy, setIsBraveCredentialBusy] = useState(false);
+  const [braveCredentialStatus, setBraveCredentialStatus] = useState<
+    'idle' | 'saved' | 'valid' | 'invalid' | 'deleted'
+  >('idle');
+  const [braveCredentialError, setBraveCredentialError] = useState<string | null>(null);
+  const shortcutsForIconLoading = useMemo(() => {
+    if (activeCategory !== 'shortcuts') return [];
+
+    const query = searchQuery.trim().toLowerCase();
+    const normalizedCategoryFilter = categoryFilter.toLowerCase();
+
+    return appShortcuts
+      .filter((shortcut) => {
+        const category = getShortcutCategory(shortcut);
+        if (!expandedCategories.has(category)) return false;
+        if (
+          normalizedCategoryFilter !== 'all' &&
+          category.toLowerCase() !== normalizedCategoryFilter
+        ) {
+          return false;
+        }
+        if (!query) return true;
+
+        const name = shortcut.name.toLowerCase();
+        const alias = shortcut.alias?.toLowerCase() ?? '';
+        return name.includes(query) || alias.includes(query);
+      })
+      .slice(0, SHORTCUT_ICON_PREFETCH_LIMIT);
+  }, [activeCategory, appShortcuts, categoryFilter, expandedCategories, searchQuery]);
   const { getShortcutIconSrc, markIconFailed } = useShortcutAppIcons(
-    appShortcuts,
+    shortcutsForIconLoading,
     activeCategory === 'shortcuts'
   );
 
@@ -242,25 +305,23 @@ export function SettingsApp() {
     void loadSettings();
   }, [loadSettings]);
 
+  useEffect(() => {
+    if (activeCategory !== 'plugins') return;
+
+    let cancelled = false;
+    void credentialsService.hasToken(BRAVE_SEARCH_SERVICE).then((hasToken) => {
+      if (!cancelled) setHasBraveApiKey(hasToken);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeCategory]);
+
   // Apply theme on mount
   useEffect(() => {
     applyTheme(settings.appearance.theme);
   }, [settings.appearance.theme]);
-
-  // Handle escape key to close window
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        void (async () => {
-          const currentWindow = getCurrentWindow();
-          await currentWindow.close();
-        })();
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
 
   // Switch to a target section when the main window pings us via Tauri event.
   // This covers the case where the settings window is already open — the URL
@@ -328,27 +389,41 @@ export function SettingsApp() {
     setExpandedCategories(newExpanded);
   };
 
-  const handleSave = async () => {
+  const handleSave = useCallback(async (): Promise<boolean> => {
     setIsSaving(true);
     setError(null);
     try {
       await settingsService.saveSettings(settings);
       setHasChanges(false);
+      return true;
     } catch (err) {
       setError(t('errors.saveFailed'));
       logger.error('Failed to save settings:', err);
+      return false;
     } finally {
       setIsSaving(false);
     }
-  };
+  }, [settings, t]);
 
-  const handleClose = async () => {
-    if (hasChanges) {
-      await handleSave();
+  const handleClose = useCallback(async () => {
+    if (hasChanges && !(await handleSave())) {
+      return;
     }
     const currentWindow = getCurrentWindow();
     await currentWindow.close();
-  };
+  }, [handleSave, hasChanges]);
+
+  // Escape follows the same save-before-close contract as the title-bar button.
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        void handleClose();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleClose]);
 
   const handleMinimize = async () => {
     const currentWindow = getCurrentWindow();
@@ -372,6 +447,10 @@ export function SettingsApp() {
     },
     []
   );
+
+  const handleWebSearchSettingsUpdated = useCallback((webSearch: Settings['webSearch']) => {
+    setSettings((current) => ({ ...current, webSearch }));
+  }, []);
 
   const handleThemeChange = useCallback(
     (theme: Theme) => {
@@ -471,6 +550,177 @@ export function SettingsApp() {
     updateSettings('plugins', 'enabledPlugins', newPlugins);
   };
 
+  const beginAddFallback = () => {
+    setFallbackDraft(EMPTY_FALLBACK_DRAFT);
+    setFallbackFormError(null);
+    setEditingFallbackId('new');
+  };
+
+  const beginEditFallback = (command: FallbackCommand) => {
+    if (command.kind === 'shell') return;
+    setFallbackDraft({
+      label: command.label,
+      target: command.target,
+      icon: command.icon ?? '',
+      kind: command.kind,
+      enabled: command.enabled,
+    });
+    setFallbackFormError(null);
+    setEditingFallbackId(command.id);
+  };
+
+  const closeFallbackEditor = () => {
+    setEditingFallbackId(null);
+    setFallbackDraft(EMPTY_FALLBACK_DRAFT);
+    setFallbackFormError(null);
+  };
+
+  const saveFallbackDraft = () => {
+    const label = fallbackDraft.label.trim();
+    const target = fallbackDraft.target.trim();
+    if (!label || !target) {
+      setFallbackFormError(t('fallbacks.validation.required'));
+      return;
+    }
+    try {
+      const parsedTarget = new URL(
+        target.replaceAll('{query}', 'query').replaceAll('{rawQuery}', 'query')
+      );
+      if (parsedTarget.protocol !== 'http:' && parsedTarget.protocol !== 'https:') {
+        throw new Error('Unsupported fallback protocol');
+      }
+    } catch {
+      setFallbackFormError(t('fallbacks.validation.invalidUrl'));
+      return;
+    }
+
+    const currentCommands = settings.fallbacks.commands;
+    const nextCommand: FallbackCommand = {
+      ...fallbackDraft,
+      id:
+        editingFallbackId === 'new'
+          ? `fallback-custom-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+          : editingFallbackId!,
+      label,
+      target,
+      icon: fallbackDraft.icon?.trim() || undefined,
+      order:
+        editingFallbackId === 'new'
+          ? currentCommands.reduce((max, command) => Math.max(max, command.order), -1) + 1
+          : (currentCommands.find((command) => command.id === editingFallbackId)?.order ?? 0),
+    };
+
+    const commands =
+      editingFallbackId === 'new'
+        ? [...currentCommands, nextCommand]
+        : currentCommands.map((command) =>
+            command.id === editingFallbackId ? nextCommand : command
+          );
+
+    updateSettings('fallbacks', 'commands', commands);
+    closeFallbackEditor();
+  };
+
+  const toggleFallback = (id: string, enabled: boolean) => {
+    updateSettings(
+      'fallbacks',
+      'commands',
+      settings.fallbacks.commands.map((command) =>
+        command.id === id ? { ...command, enabled } : command
+      )
+    );
+  };
+
+  const moveFallback = (id: string, direction: -1 | 1) => {
+    const ordered = [...settings.fallbacks.commands].sort(
+      (a, b) => a.order - b.order || a.id.localeCompare(b.id)
+    );
+    const fromIndex = ordered.findIndex((command) => command.id === id);
+    if (fromIndex < 0) return;
+
+    let toIndex = fromIndex + direction;
+    while (toIndex >= 0 && toIndex < ordered.length && ordered[toIndex].kind === 'shell') {
+      toIndex += direction;
+    }
+    if (toIndex < 0 || toIndex >= ordered.length) return;
+
+    const [moved] = ordered.splice(fromIndex, 1);
+    ordered.splice(toIndex, 0, moved);
+    updateSettings(
+      'fallbacks',
+      'commands',
+      ordered.map((command, order) => ({ ...command, order }))
+    );
+  };
+
+  const removeFallback = (command: FallbackCommand) => {
+    if (!window.confirm(t('fallbacks.confirmDelete', { label: command.label }))) return;
+    updateSettings(
+      'fallbacks',
+      'commands',
+      settings.fallbacks.commands
+        .filter((candidate) => candidate.id !== command.id)
+        .sort((a, b) => a.order - b.order)
+        .map((candidate, order) => ({ ...candidate, order }))
+    );
+    if (editingFallbackId === command.id) closeFallbackEditor();
+  };
+
+  const handleSaveBraveApiKey = async () => {
+    const apiKey = braveApiKey.trim();
+    if (!apiKey) {
+      setBraveCredentialError(t('fallbacks.brave.keyRequired'));
+      return;
+    }
+
+    setIsBraveCredentialBusy(true);
+    setBraveCredentialError(null);
+    setBraveCredentialStatus('idle');
+    try {
+      await credentialsService.saveToken(BRAVE_SEARCH_SERVICE, apiKey);
+      setBraveApiKey('');
+      setHasBraveApiKey(true);
+      setBraveCredentialStatus('saved');
+    } catch (credentialError) {
+      setBraveCredentialError(extractErrorMessage(credentialError));
+    } finally {
+      setIsBraveCredentialBusy(false);
+    }
+  };
+
+  const handleTestBraveApiKey = async () => {
+    setIsBraveCredentialBusy(true);
+    setBraveCredentialError(null);
+    setBraveCredentialStatus('idle');
+    try {
+      const isValid = await credentialsService.testToken(BRAVE_SEARCH_SERVICE);
+      setBraveCredentialStatus(isValid ? 'valid' : 'invalid');
+    } catch (credentialError) {
+      setBraveCredentialError(extractErrorMessage(credentialError));
+      setBraveCredentialStatus('invalid');
+    } finally {
+      setIsBraveCredentialBusy(false);
+    }
+  };
+
+  const handleDeleteBraveApiKey = async () => {
+    if (!window.confirm(t('fallbacks.brave.confirmDelete'))) return;
+
+    setIsBraveCredentialBusy(true);
+    setBraveCredentialError(null);
+    setBraveCredentialStatus('idle');
+    try {
+      await credentialsService.deleteToken(BRAVE_SEARCH_SERVICE);
+      setBraveApiKey('');
+      setHasBraveApiKey(false);
+      setBraveCredentialStatus('deleted');
+    } catch (credentialError) {
+      setBraveCredentialError(extractErrorMessage(credentialError));
+    } finally {
+      setIsBraveCredentialBusy(false);
+    }
+  };
+
   const handleClipboardMonitoringToggle = async (enabled: boolean) => {
     try {
       if (enabled) {
@@ -535,7 +785,7 @@ export function SettingsApp() {
                   )}
                   <span className="flex-1">
                     {t(
-                      `sections.${category.id === 'file-search' ? 'fileSearch' : category.id === 'clipboard' ? 'clipboard' : category.id}`
+                      `sections.${category.id === 'file-search' ? 'fileSearch' : category.id === 'web-search' ? 'webSearch' : category.id === 'clipboard' ? 'clipboard' : category.id}`
                     )}
                   </span>
                 </button>
@@ -691,7 +941,7 @@ export function SettingsApp() {
     // Group shortcuts by category
     const groupedShortcuts = appShortcuts.reduce(
       (acc, shortcut) => {
-        const category = shortcut.category || 'Applications';
+        const category = getShortcutCategory(shortcut);
         if (!acc[category]) {
           acc[category] = [];
         }
@@ -702,6 +952,7 @@ export function SettingsApp() {
     );
 
     // Filter shortcuts based on search query and category filter
+    const normalizedSearchQuery = searchQuery.trim().toLowerCase();
     const filteredShortcuts = Object.entries(groupedShortcuts).reduce(
       (acc, [category, shortcuts]) => {
         if (categoryFilter !== 'all' && category.toLowerCase() !== categoryFilter.toLowerCase()) {
@@ -709,11 +960,10 @@ export function SettingsApp() {
         }
 
         const filtered = shortcuts.filter((shortcut) => {
-          if (!searchQuery) return true;
-          const query = searchQuery.toLowerCase();
+          if (!normalizedSearchQuery) return true;
           return (
-            shortcut.name.toLowerCase().includes(query) ||
-            shortcut.alias?.toLowerCase().includes(query)
+            shortcut.name.toLowerCase().includes(normalizedSearchQuery) ||
+            shortcut.alias?.toLowerCase().includes(normalizedSearchQuery)
           );
         });
 
@@ -786,6 +1036,11 @@ export function SettingsApp() {
             const isExpanded = expandedCategories.has(category);
             const categoryMeta = getShortcutCategoryMeta(category);
             const CategoryIcon = categoryMeta.Icon;
+            const shouldLimitRows = !normalizedSearchQuery;
+            const visibleShortcuts = shouldLimitRows
+              ? shortcuts.slice(0, SHORTCUTS_RENDER_LIMIT)
+              : shortcuts;
+            const hiddenShortcutCount = shortcuts.length - visibleShortcuts.length;
 
             return (
               <div key={category} className="mb-4 sm:mb-6">
@@ -807,29 +1062,31 @@ export function SettingsApp() {
                   >
                     <CategoryIcon className="size-5" />
                   </span>
-                  <span className="min-w-0 flex-1 truncate text-sm font-semibold text-ink">{category}</span>
-                  <span className="shrink-0 text-xs font-medium text-mute">({shortcuts.length})</span>
+                  <span className="min-w-0 flex-1 truncate text-sm font-semibold text-ink">
+                    {category}
+                  </span>
+                  <span className="shrink-0 text-xs font-medium text-mute">
+                    ({shortcuts.length})
+                  </span>
                 </div>
 
                 {isExpanded && (
-                  <div className="bg-surface-elevated/20 rounded-lg overflow-hidden">
-                    <div
-                      className="hidden gap-4 px-4 py-2.5 bg-black/20 text-[12px] font-semibold text-mute uppercase tracking-[0.5px] md:grid md:grid-cols-[minmax(0,1fr)_120px_160px_60px]"
-                    >
+                  <div className="min-w-0 overflow-hidden rounded-lg bg-surface-elevated/20">
+                    <div className="hidden gap-3 bg-black/20 px-4 py-2.5 text-[12px] font-semibold uppercase tracking-[0.5px] text-mute md:grid md:grid-cols-[minmax(10rem,1fr)_minmax(8.5rem,9.5rem)_minmax(8rem,9rem)_3rem]">
                       <span>{t('shortcuts.tableHeaders.name')}</span>
                       <span>{t('shortcuts.tableHeaders.alias')}</span>
                       <span>{t('shortcuts.tableHeaders.hotkey')}</span>
                       <span></span>
                     </div>
 
-                    <div className="max-h-[400px] overflow-y-auto">
-                      {shortcuts.map((shortcut) => {
+                    <div className="max-h-[400px] overflow-y-auto overflow-x-hidden">
+                      {visibleShortcuts.map((shortcut) => {
                         const shortcutIconSrc = getShortcutIconSrc(shortcut);
 
                         return (
                           <div
                             key={shortcut.id}
-                            className="grid grid-cols-1 gap-2 px-3 py-3 items-center border-b border-hairline/40 last:border-0 transition-colors hover:bg-white/[0.03] sm:px-4 md:grid-cols-[minmax(0,1fr)_120px_160px_60px] md:gap-4"
+                            className="grid grid-cols-1 items-center gap-2 border-b border-hairline/40 px-3 py-3 transition-colors last:border-0 hover:bg-white/[0.03] sm:px-4 md:grid-cols-[minmax(10rem,1fr)_minmax(8.5rem,9.5rem)_minmax(8rem,9rem)_3rem] md:gap-3"
                           >
                             <span className="flex min-w-0 items-center gap-2.5 text-[13px] text-ink">
                               {shortcutIconSrc ? (
@@ -872,14 +1129,14 @@ export function SettingsApp() {
                                 />
                               ) : (
                                 <button
-                                  className="px-3 py-1.5 rounded-sm bg-transparent border border-dashed border-white/20 text-mute text-xs cursor-pointer transition-all hover:border-accent-blue hover:text-accent-blue whitespace-nowrap"
+                                  className="w-full min-w-0 overflow-hidden text-ellipsis whitespace-nowrap rounded-sm border border-dashed border-white/20 bg-transparent px-2.5 py-1.5 text-xs text-mute transition-all hover:border-accent-blue hover:text-accent-blue"
                                   onClick={() => handleAliasClick(shortcut.id)}
                                 >
                                   {shortcut.alias || t('shortcuts.addAlias')}
                                 </button>
                               )}
                             </span>
-                            <span className="flex min-w-0 items-center pointer-events-auto">
+                            <span className="flex min-w-0 items-center pointer-events-auto [&_button]:w-full [&_button]:justify-center [&_button]:px-2.5 [&_button]:py-1.5">
                               <HotkeyCapture
                                 value={shortcut.hotkey || ''}
                                 onChange={(hotkey) => {
@@ -899,6 +1156,11 @@ export function SettingsApp() {
                           </div>
                         );
                       })}
+                      {hiddenShortcutCount > 0 && (
+                        <div className="border-t border-hairline/40 px-4 py-2.5 text-xs text-mute">
+                          {t('shortcuts.hiddenCount', { count: hiddenShortcutCount })}
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}
@@ -2086,6 +2348,10 @@ export function SettingsApp() {
   // Render Plugins section. The list is driven by the canonical MANAGED_PLUGINS
   // manifest so it stays in lockstep with the registry and default settings.
   const renderPluginsSection = () => {
+    const fallbackCommands = settings.fallbacks.commands
+      .filter((command) => command.kind !== 'shell')
+      .sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
+
     return (
       <div className="flex-1 flex flex-col overflow-hidden">
         <div className="flex items-center justify-between h-14 px-6 border-b border-hairline shrink-0">
@@ -2093,7 +2359,8 @@ export function SettingsApp() {
         </div>
 
         <div className="flex-1 overflow-y-auto p-6">
-          <div className="flex flex-col gap-2">
+          <h3 className="mb-3 mt-0 text-sm font-semibold text-ink">{t('plugins.builtin')}</h3>
+          <div className="flex flex-col gap-2" aria-label={t('plugins.builtin')}>
             {MANAGED_PLUGINS.map((plugin) => {
               const isEnabled = settings.plugins.enabledPlugins.includes(plugin.id);
               const Icon = PLUGIN_ICONS[plugin.id] ?? Package;
@@ -2110,7 +2377,9 @@ export function SettingsApp() {
                     </kbd>
                   </div>
                   <Toggle
+                    id={`plugin-${plugin.id}`}
                     checked={isEnabled}
+                    label={t('fallbacks.enabled')}
                     onChange={(checked) => {
                       void handlePluginToggle(plugin.id, checked);
                     }}
@@ -2119,6 +2388,360 @@ export function SettingsApp() {
               );
             })}
           </div>
+
+          <div className="my-6 h-px bg-hairline" />
+
+          <section aria-labelledby="fallback-commands-title">
+            <div className="mb-1.5 flex items-center justify-between gap-4">
+              <div>
+                <h3 id="fallback-commands-title" className="m-0 text-sm font-semibold text-ink">
+                  {t('fallbacks.title')}
+                </h3>
+                <p className="mb-0 mt-1 text-xs leading-relaxed text-mute">
+                  {t('fallbacks.description')}
+                </p>
+              </div>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={beginAddFallback}
+                disabled={editingFallbackId !== null}
+              >
+                <Plus size={14} />
+                {t('fallbacks.add')}
+              </Button>
+            </div>
+
+            <div className="mt-4 flex items-center justify-between gap-4 rounded-lg border border-hairline bg-surface-elevated/20 px-3.5 py-3">
+              <div className="min-w-0">
+                <label
+                  htmlFor="remember-web-search-history"
+                  className="block text-[13px] font-medium text-ink"
+                >
+                  {t('fallbacks.rememberHistory')}
+                </label>
+                <p className="mb-0 mt-1 text-[11px] leading-relaxed text-mute">
+                  {t('fallbacks.rememberHistoryDesc')}
+                </p>
+              </div>
+              <Toggle
+                id="remember-web-search-history"
+                checked={settings.fallbacks.rememberWebSearchHistory}
+                onChange={(checked) => {
+                  webSearchHistory.setEnabled(checked);
+                  if (!checked) webSearchHistory.clear();
+                  updateSettings('fallbacks', 'rememberWebSearchHistory', checked);
+                }}
+              />
+            </div>
+
+            <div className="mt-4 flex flex-col gap-2">
+              {fallbackCommands.length === 0 && editingFallbackId !== 'new' ? (
+                <div className="rounded-lg border border-dashed border-hairline px-4 py-5 text-center text-xs text-mute">
+                  {t('fallbacks.empty')}
+                </div>
+              ) : (
+                fallbackCommands.map((command, index) => (
+                  <div
+                    key={command.id}
+                    className={cn(
+                      'rounded-lg border bg-surface-elevated/30 transition-colors',
+                      editingFallbackId === command.id
+                        ? 'border-accent-blue/40'
+                        : 'border-hairline hover:bg-surface-elevated/50'
+                    )}
+                  >
+                    <div className="flex items-center gap-3 px-3.5 py-3">
+                      <Globe size={18} className="shrink-0 text-accent-blue" />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex min-w-0 items-center gap-2">
+                          <span className="truncate text-[13px] font-medium text-ink">
+                            {command.label}
+                          </span>
+                          <span className="shrink-0 rounded-sm bg-black/25 px-1.5 py-0.5 font-mono text-[10px] text-mute">
+                            {t(`fallbacks.kinds.${command.kind}`)}
+                          </span>
+                        </div>
+                        <p
+                          className="mb-0 mt-1 truncate font-mono text-[11px] text-ash"
+                          title={command.target}
+                        >
+                          {command.target}
+                        </p>
+                      </div>
+
+                      <Toggle
+                        id={`fallback-enabled-${command.id}`}
+                        checked={command.enabled}
+                        label={t('fallbacks.enabled')}
+                        onChange={(checked) => toggleFallback(command.id, checked)}
+                      />
+
+                      <div className="flex shrink-0 items-center gap-0.5">
+                        <button
+                          type="button"
+                          className="flex size-7 items-center justify-center rounded-md border-none bg-transparent text-ash transition-colors hover:bg-white/5 hover:text-on-dark focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-hairline-strong disabled:cursor-not-allowed disabled:opacity-30"
+                          onClick={() => moveFallback(command.id, -1)}
+                          disabled={index === 0}
+                          aria-label={t('fallbacks.moveUp', { label: command.label })}
+                          title={t('fallbacks.moveUp', { label: command.label })}
+                        >
+                          <ArrowUp size={14} />
+                        </button>
+                        <button
+                          type="button"
+                          className="flex size-7 items-center justify-center rounded-md border-none bg-transparent text-ash transition-colors hover:bg-white/5 hover:text-on-dark focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-hairline-strong disabled:cursor-not-allowed disabled:opacity-30"
+                          onClick={() => moveFallback(command.id, 1)}
+                          disabled={index === fallbackCommands.length - 1}
+                          aria-label={t('fallbacks.moveDown', { label: command.label })}
+                          title={t('fallbacks.moveDown', { label: command.label })}
+                        >
+                          <ArrowDown size={14} />
+                        </button>
+                        <button
+                          type="button"
+                          className="flex size-7 items-center justify-center rounded-md border-none bg-transparent text-ash transition-colors hover:bg-white/5 hover:text-on-dark focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-hairline-strong disabled:cursor-not-allowed disabled:opacity-30"
+                          onClick={() => beginEditFallback(command)}
+                          disabled={editingFallbackId !== null}
+                          aria-label={t('fallbacks.edit', { label: command.label })}
+                          title={t('fallbacks.edit', { label: command.label })}
+                        >
+                          <Pencil size={14} />
+                        </button>
+                        <button
+                          type="button"
+                          className="flex size-7 items-center justify-center rounded-md border-none bg-transparent text-ash transition-colors hover:bg-accent-red/15 hover:text-accent-red focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent-red/50 disabled:cursor-not-allowed disabled:opacity-30"
+                          onClick={() => removeFallback(command)}
+                          disabled={editingFallbackId !== null}
+                          aria-label={t('fallbacks.delete', { label: command.label })}
+                          title={t('fallbacks.delete', { label: command.label })}
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            {editingFallbackId !== null && (
+              <div
+                className="mt-3 rounded-lg border border-accent-blue/30 bg-accent-blue/5 p-4"
+                aria-labelledby="fallback-editor-title"
+              >
+                <h4 id="fallback-editor-title" className="m-0 text-[13px] font-semibold text-ink">
+                  {editingFallbackId === 'new'
+                    ? t('fallbacks.editor.addTitle')
+                    : t('fallbacks.editor.editTitle')}
+                </h4>
+
+                <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <label className="flex flex-col gap-1.5 text-xs font-medium text-body">
+                    {t('fallbacks.editor.label')}
+                    <input
+                      type="text"
+                      value={fallbackDraft.label}
+                      onChange={(event) =>
+                        setFallbackDraft((draft) => ({ ...draft, label: event.target.value }))
+                      }
+                      placeholder={t('fallbacks.editor.labelPlaceholder')}
+                      className="rounded-md border border-hairline bg-surface-elevated px-3 py-2 text-[13px] text-on-dark outline-none placeholder:text-ash focus:border-hairline-strong"
+                      autoFocus
+                    />
+                  </label>
+
+                  <label className="flex flex-col gap-1.5 text-xs font-medium text-body">
+                    {t('fallbacks.editor.kind')}
+                    <select
+                      value={fallbackDraft.kind}
+                      onChange={(event) =>
+                        setFallbackDraft((draft) => ({
+                          ...draft,
+                          kind: event.target.value as EditableFallbackKind,
+                        }))
+                      }
+                      className="rounded-md border border-hairline bg-surface-elevated px-3 py-2 text-[13px] text-on-dark outline-none focus:border-hairline-strong"
+                    >
+                      <option value="webSearch">{t('fallbacks.kinds.webSearch')}</option>
+                      <option value="url">{t('fallbacks.kinds.url')}</option>
+                    </select>
+                  </label>
+                </div>
+
+                <label className="mt-3 flex flex-col gap-1.5 text-xs font-medium text-body">
+                  {t('fallbacks.editor.target')}
+                  <input
+                    type="url"
+                    value={fallbackDraft.target}
+                    onChange={(event) =>
+                      setFallbackDraft((draft) => ({ ...draft, target: event.target.value }))
+                    }
+                    placeholder={t('fallbacks.editor.targetPlaceholder')}
+                    aria-describedby="fallback-target-help"
+                    className="rounded-md border border-hairline bg-surface-elevated px-3 py-2 font-mono text-[12px] text-on-dark outline-none placeholder:text-ash focus:border-hairline-strong"
+                  />
+                  <span id="fallback-target-help" className="font-normal leading-relaxed text-mute">
+                    {t('fallbacks.editor.targetHelp')}
+                  </span>
+                </label>
+
+                <label className="mt-3 flex flex-col gap-1.5 text-xs font-medium text-body">
+                  {t('fallbacks.editor.icon')}
+                  <input
+                    type="text"
+                    value={fallbackDraft.icon ?? ''}
+                    onChange={(event) =>
+                      setFallbackDraft((draft) => ({ ...draft, icon: event.target.value }))
+                    }
+                    placeholder={t('fallbacks.editor.iconPlaceholder')}
+                    className="rounded-md border border-hairline bg-surface-elevated px-3 py-2 text-[13px] text-on-dark outline-none placeholder:text-ash focus:border-hairline-strong"
+                  />
+                </label>
+
+                {fallbackFormError && (
+                  <p role="alert" className="mb-0 mt-3 text-xs text-accent-red">
+                    {fallbackFormError}
+                  </p>
+                )}
+
+                <div className="mt-4 flex items-center justify-end gap-2">
+                  <Button type="button" size="sm" variant="ghost" onClick={closeFallbackEditor}>
+                    {t('fallbacks.editor.cancel')}
+                  </Button>
+                  <Button type="button" size="sm" onClick={saveFallbackDraft}>
+                    {t('fallbacks.editor.save')}
+                  </Button>
+                </div>
+              </div>
+            )}
+          </section>
+
+          <div className="my-6 h-px bg-hairline" />
+
+          <section aria-labelledby="brave-search-title">
+            <div className="rounded-xl border border-hairline bg-surface/60 p-4">
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex min-w-0 items-start gap-3">
+                  <span className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-accent-blue/20 bg-accent-blue/10 text-accent-blue">
+                    <KeyRound size={17} />
+                  </span>
+                  <div>
+                    <h3 id="brave-search-title" className="m-0 text-sm font-semibold text-ink">
+                      {t('fallbacks.brave.title')}
+                    </h3>
+                    <p className="mb-0 mt-1 text-xs leading-relaxed text-mute">
+                      {t('fallbacks.brave.description')}
+                    </p>
+                  </div>
+                </div>
+                <span
+                  className={cn(
+                    'shrink-0 rounded-full px-2.5 py-1 text-[10px] font-semibold',
+                    hasBraveApiKey
+                      ? 'bg-accent-green/10 text-accent-green'
+                      : 'bg-surface-elevated text-mute'
+                  )}
+                >
+                  {hasBraveApiKey
+                    ? t('fallbacks.brave.configured')
+                    : t('fallbacks.brave.notConfigured')}
+                </span>
+              </div>
+
+              <label
+                htmlFor="brave-search-api-key"
+                className="mt-4 flex flex-col gap-1.5 text-xs font-medium text-body"
+              >
+                {t('fallbacks.brave.apiKey')}
+                <input
+                  id="brave-search-api-key"
+                  type="password"
+                  value={braveApiKey}
+                  onChange={(event) => {
+                    setBraveApiKey(event.target.value);
+                    setBraveCredentialError(null);
+                    setBraveCredentialStatus('idle');
+                  }}
+                  placeholder={t('fallbacks.brave.apiKeyPlaceholder')}
+                  autoComplete="off"
+                  spellCheck={false}
+                  disabled={isBraveCredentialBusy}
+                  className="rounded-md border border-hairline bg-surface-elevated px-3 py-2 font-mono text-[13px] text-on-dark outline-none placeholder:text-ash focus:border-hairline-strong disabled:cursor-wait disabled:opacity-50"
+                />
+              </label>
+              <p className="mb-0 mt-1.5 text-[11px] leading-relaxed text-mute">
+                {t('fallbacks.brave.storageNotice')}
+              </p>
+
+              <div
+                className="mt-3 min-h-5 text-xs"
+                role="status"
+                aria-live="polite"
+                aria-atomic="true"
+              >
+                {braveCredentialError ? (
+                  <span className="text-accent-red">{braveCredentialError}</span>
+                ) : braveCredentialStatus !== 'idle' ? (
+                  <span
+                    className={
+                      braveCredentialStatus === 'invalid' ? 'text-accent-red' : 'text-accent-green'
+                    }
+                  >
+                    {t(`fallbacks.brave.status.${braveCredentialStatus}`)}
+                  </span>
+                ) : !hasBraveApiKey ? (
+                  <span className="text-mute">{t('fallbacks.brave.disabledWithoutKey')}</span>
+                ) : null}
+              </div>
+
+              <div className="mt-3 flex flex-wrap justify-end gap-2">
+                {hasBraveApiKey && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="destructive"
+                    onClick={() => {
+                      void handleDeleteBraveApiKey();
+                    }}
+                    disabled={isBraveCredentialBusy}
+                  >
+                    <Trash2 size={14} />
+                    {t('fallbacks.brave.delete')}
+                  </Button>
+                )}
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    void handleTestBraveApiKey();
+                  }}
+                  disabled={
+                    isBraveCredentialBusy || !hasBraveApiKey || braveApiKey.trim().length > 0
+                  }
+                  title={
+                    braveApiKey.trim().length > 0 ? t('fallbacks.brave.saveBeforeTest') : undefined
+                  }
+                >
+                  {isBraveCredentialBusy && <Loader2 size={14} className="animate-spin" />}
+                  {t('fallbacks.brave.test')}
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={() => {
+                    void handleSaveBraveApiKey();
+                  }}
+                  disabled={isBraveCredentialBusy || braveApiKey.trim().length === 0}
+                >
+                  {isBraveCredentialBusy && <Loader2 size={14} className="animate-spin" />}
+                  {hasBraveApiKey ? t('fallbacks.brave.update') : t('fallbacks.brave.save')}
+                </Button>
+              </div>
+            </div>
+          </section>
         </div>
       </div>
     );
@@ -2561,6 +3184,19 @@ export function SettingsApp() {
         return renderPluginsSection();
       case 'file-search':
         return renderFileSearchSection();
+      case 'web-search':
+        return (
+          <WebSearchSettingsPanel
+            settings={settings.webSearch}
+            rememberHistory={settings.fallbacks.rememberWebSearchHistory}
+            onSettingsUpdated={handleWebSearchSettingsUpdated}
+            onRememberHistoryChange={(checked) => {
+              webSearchHistory.setEnabled(checked);
+              if (!checked) webSearchHistory.clear();
+              updateSettings('fallbacks', 'rememberWebSearchHistory', checked);
+            }}
+          />
+        );
       case 'clipboard':
         return renderClipboardSection();
       case 'shell':

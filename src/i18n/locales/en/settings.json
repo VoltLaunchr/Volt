@@ -10,6 +10,7 @@
     "applications": "Applications",
     "plugins": "Plugins",
     "fileSearch": "File Search",
+    "webSearch": "Web Search",
     "clipboard": "Clipboard History",
     "integrations": "Integrations",
     "account": "Account",
@@ -42,6 +43,20 @@
     "restartOnboarding": "Restart Onboarding",
     "restartOnboardingDesc": "Re-run the initial setup wizard"
   },
+  "webSearch": {
+    "title": "Web Search",
+    "description": "Choose how explicit web searches behave and which installed browser opens HTTP and HTTPS links.",
+    "searchDefaults": "Search defaults",
+    "defaultEngine": "Default search engine",
+    "defaultEngineDesc": "Used for ?, web, search, and chercher queries. Engine-specific keywords still take priority.",
+    "browser": "Browser for links",
+    "browserDesc": "Only browsers detected among your installed applications are shown.",
+    "systemBrowser": "System browser",
+    "refreshBrowsers": "Detect installed browsers again",
+    "rememberHistory": "Remember web search history",
+    "rememberHistoryDesc": "Opt in to local suggestions from your previous explicit web searches.",
+    "securityNotice": "Volt validates the selected browser and only opens HTTP or HTTPS URLs. If that browser is removed, Volt automatically returns to the system browser."
+  },
   "shortcuts": {
     "title": "Shortcuts",
     "searchPlaceholder": "Search by name or alias",
@@ -53,6 +68,8 @@
       "hotkey": "Hotkey"
     },
     "addAlias": "Add Alias",
+    "hiddenCount_one": "{{count}} more app hidden. Use search to narrow the list.",
+    "hiddenCount_other": "{{count}} more apps hidden. Use search to narrow the list.",
     "noShortcuts": "No shortcuts available. Click \"Sync Apps\" to load your applications.",
     "noMatch": "No shortcuts match your search."
   },
@@ -192,6 +209,65 @@
       "snippets": "Snippets",
       "shell": "Shell Commands",
       "developerTools": "Developer Tools"
+    }
+  },
+  "fallbacks": {
+    "title": "Search fallbacks",
+    "description": "Choose the web actions Volt shows when local results are not confident enough.",
+    "add": "Add fallback",
+    "empty": "No web fallback configured.",
+    "enabled": "Enabled",
+    "rememberHistory": "Remember web search history",
+    "rememberHistoryDesc": "Allow Volt to keep your web queries on this device. Disabled by default.",
+    "moveUp": "Move {{label}} up",
+    "moveDown": "Move {{label}} down",
+    "edit": "Edit {{label}}",
+    "delete": "Delete {{label}}",
+    "confirmDelete": "Delete the fallback “{{label}}”?",
+    "kinds": {
+      "webSearch": "Web search",
+      "url": "URL"
+    },
+    "validation": {
+      "required": "A label and target URL are required.",
+      "invalidUrl": "Enter a valid HTTP or HTTPS URL."
+    },
+    "editor": {
+      "addTitle": "New search fallback",
+      "editTitle": "Edit search fallback",
+      "label": "Result label",
+      "labelPlaceholder": "Search {rawQuery} on Example",
+      "kind": "Action type",
+      "target": "Target URL",
+      "targetPlaceholder": "https://example.com/search?q={query}",
+      "targetHelp": "Use {query} for the URL-encoded query or {rawQuery} for the original text.",
+      "icon": "Icon name (optional)",
+      "iconPlaceholder": "globe",
+      "cancel": "Cancel",
+      "save": "Save fallback"
+    },
+    "brave": {
+      "title": "Brave Search API",
+      "description": "Optional provider for live web results and suggestions inside Volt.",
+      "configured": "Key saved",
+      "notConfigured": "No key",
+      "apiKey": "API key",
+      "apiKeyPlaceholder": "Paste your Brave Search API key",
+      "storageNotice": "Stored in the operating system credential vault. The key is never written to your settings file.",
+      "disabledWithoutKey": "Live Brave results stay disabled until a key is saved.",
+      "keyRequired": "Enter an API key first.",
+      "save": "Save key",
+      "update": "Update key",
+      "test": "Test key",
+      "delete": "Delete key",
+      "saveBeforeTest": "Save the new key before testing it.",
+      "confirmDelete": "Delete the saved Brave Search API key?",
+      "status": {
+        "saved": "API key saved securely.",
+        "valid": "The saved API key is valid.",
+        "invalid": "The saved API key could not be validated.",
+        "deleted": "API key deleted."
+      }
     }
   },
   "clipboard": {

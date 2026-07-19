@@ -1267,14 +1267,16 @@ pub async fn start_file_watcher(
         *handle = None;
     }
 
-    // Get the current config's folders.
-    let folders = {
+    // Get the current indexing config. The watcher must enforce the same
+    // folders/extensions/exclusions/limits as the initial scan.
+    let config = {
         let cfg = index_state
             .config
             .lock()
             .map_err(|e| VoltError::Unknown(e.to_string()))?;
-        cfg.folders.clone()
+        cfg.clone()
     };
+    let folders = config.folders.clone();
 
     if folders.is_empty() {
         info!("No folders configured for watching");
@@ -1315,14 +1317,14 @@ pub async fn start_file_watcher(
 
     #[cfg(feature = "tantivy-search")]
     let watcher_result = start_watcher(
-        folders.clone(),
+        config,
         db_arc,
         index_state.fulltext.clone(),
         in_memory_files,
         in_memory_lookup,
     );
     #[cfg(not(feature = "tantivy-search"))]
-    let watcher_result = start_watcher(folders.clone(), db_arc, in_memory_files, in_memory_lookup);
+    let watcher_result = start_watcher(config, db_arc, in_memory_files, in_memory_lookup);
 
     match watcher_result {
         Ok(handle) => {

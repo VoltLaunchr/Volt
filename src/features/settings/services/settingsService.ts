@@ -11,9 +11,15 @@ import {
   PluginSettings,
   Settings,
   Theme,
+  WebSearchSettings,
 } from '../types/settings.types';
 
 const errorMessage = extractErrorMessage;
+
+export interface DetectedBrowser {
+  id: string;
+  name: string;
+}
 
 /**
  * Migrate persisted plugin ids to their canonical runtime ids. Legacy installs
@@ -67,6 +73,28 @@ export const settingsService = {
     } catch (error) {
       logger.error('Failed to update general settings:', error);
       throw new Error(`Failed to update general settings: ${errorMessage(error)}`, {
+        cause: error,
+      });
+    }
+  },
+
+  async updateWebSearchSettings(webSearch: WebSearchSettings): Promise<Settings> {
+    try {
+      return await invoke<Settings>('update_web_search_settings', { webSearch });
+    } catch (error) {
+      logger.error('Failed to update web search settings:', error);
+      throw new Error(`Failed to update web search settings: ${errorMessage(error)}`, {
+        cause: error,
+      });
+    }
+  },
+
+  async listDetectedBrowsers(): Promise<DetectedBrowser[]> {
+    try {
+      return await invoke<DetectedBrowser[]>('list_detected_browsers');
+    } catch (error) {
+      logger.error('Failed to detect installed browsers:', error);
+      throw new Error(`Failed to detect installed browsers: ${errorMessage(error)}`, {
         cause: error,
       });
     }

@@ -1,6 +1,20 @@
-import { describe, it, expect } from 'vitest';
+import { beforeEach, describe, it, expect, vi } from 'vitest';
+import { invoke } from '@tauri-apps/api/core';
+import { getVersion } from '@tauri-apps/api/app';
 import { transform } from 'sucrase';
 import vm from 'node:vm';
+import { pluginRegistry } from '../../plugins/core';
+import { ExtensionLoader, type LoadedExtension } from './index';
+import { generateWorkerBootstrap } from './worker-bootstrap';
+import { WorkerPlugin } from './worker-sandbox';
+
+vi.mock('@tauri-apps/api/core', () => ({
+  invoke: vi.fn(),
+}));
+
+vi.mock('@tauri-apps/api/app', () => ({
+  getVersion: vi.fn(() => Promise.resolve('0.4.0')),
+}));
 
 /**
  * These tests lock in the security-critical behaviour of the new Sucrase-based
@@ -42,8 +56,7 @@ describe('ExtensionLoader Sucrase transform', () => {
   });
 
   it('does NOT rewrite import-like text inside a template literal', () => {
-    const src =
-      'const fake = `import { x } from "../../api"`;\nexport default fake;';
+    const src = 'const fake = `import { x } from "../../api"`;\nexport default fake;';
     const out = runTransform(src);
     expect(out).toContain('`import { x } from "../../api"`');
     expect(out).not.toMatch(/require\(/);
@@ -84,6 +97,138 @@ describe('ExtensionLoader Sucrase transform', () => {
     const out = runTransform(src);
     // Type-only re-exports produce no require / no exports assignment.
     expect(out).not.toMatch(/require\(/);
+  });
+});
+
+describe('ExtensionLoader command-only manifests', () => {
+  beforeEach(() => {
+    vi.mocked(invoke).mockReset();
+    vi.mocked(getVersion).mockResolvedValue('0.4.0');
+    pluginRegistry.plugins.clear();
+  });
+
+  it('loads commands[] without requiring top-level keywords or prefix', async () => {
+    const refreshSpy = vi.spyOn(WorkerPlugin.prototype, 'startBackgroundRefresh');
+    const loader = new ExtensionLoader();
+    const source = {
+      id: 'command-suite',
+      manifest: {
+        id: 'command-suite',
+        name: 'Command Suite',
+        version: '1.0.0',
+        description: 'Command-only extension',
+        author: { name: 'Volt' },
+        main: 'index.ts',
+        permissions: [],
+        backgroundRefresh: { interval: '5m' },
+        commands: [
+          {
+            name: 'search_docs',
+            title: 'Search Docs',
+            prefix: 'docs',
+            main: 'index.ts',
+          },
+        ],
+      },
+      source: '',
+      entryPoint: 'index.ts',
+      files: {
+        'index.ts': `
+          export default {
+            match() { return []; },
+            execute() {}
+          };
+        `,
+      },
+    };
+
+    const loaded = await (
+      loader as unknown as {
+        loadExtension(source: unknown): Promise<LoadedExtension | null>;
+      }
+    ).loadExtension(source);
+
+    expect(loaded).not.toBeNull();
+    expect(pluginRegistry.getPlugin('command-suite:search_docs')).toBeDefined();
+    expect(pluginRegistry.getPlugin('command-suite')).toBeUndefined();
+    expect(refreshSpy).toHaveBeenCalledTimes(1);
+    refreshSpy.mockRestore();
+  });
+
+  it('allows a future extension in development builds for pre-release testing', async () => {
+    vi.mocked(getVersion).mockResolvedValue('0.3.0');
+    const loader = new ExtensionLoader();
+    const source = {
+      id: 'future-extension',
+      manifest: {
+        id: 'future-extension',
+        name: 'Future Extension',
+        version: '1.0.0',
+        description: 'Requires a future Volt release',
+        author: { name: 'Volt' },
+        main: 'index.ts',
+        minVoltVersion: '0.4.0',
+        keywords: ['future'],
+        permissions: [],
+      },
+      source: '',
+      entryPoint: 'index.ts',
+      files: { 'index.ts': 'export default { match() { return []; }, execute() {} };' },
+    };
+
+    const loaded = await (
+      loader as unknown as {
+        loadExtension(source: unknown): Promise<LoadedExtension | null>;
+      }
+    ).loadExtension(source);
+
+    expect(loaded).not.toBeNull();
+    expect(pluginRegistry.getPlugin('future-extension')).toBeDefined();
+  });
+
+  it('still rejects manifests with no trigger and no commands', async () => {
+    const loader = new ExtensionLoader();
+    const source = {
+      id: 'untriggered',
+      manifest: {
+        id: 'untriggered',
+        name: 'Untriggered',
+        version: '1.0.0',
+        description: 'No trigger',
+        author: { name: 'Volt' },
+        main: 'index.ts',
+        permissions: [],
+      },
+      source: '',
+      entryPoint: 'index.ts',
+      files: {
+        'index.ts': `
+          export default {
+            match() { return []; },
+            execute() {}
+          };
+        `,
+      },
+    };
+
+    const loaded = await (
+      loader as unknown as {
+        loadExtension(source: unknown): Promise<LoadedExtension | null>;
+      }
+    ).loadExtension(source);
+
+    expect(loaded).toBeNull();
+    expect(pluginRegistry.getAllPlugins()).toHaveLength(0);
+  });
+});
+
+describe('generateWorkerBootstrap AI bridge', () => {
+  it('forwards serializable chat history and image parts to the Tauri AI bridge', () => {
+    const bootstrap = generateWorkerBootstrap('', 'index.ts');
+
+    expect(bootstrap).toContain('history: opts && opts.history');
+    expect(bootstrap).toContain('images: opts && opts.images');
+    expect(bootstrap).not.toContain('signal: opts && opts.signal');
   });
 });
 
