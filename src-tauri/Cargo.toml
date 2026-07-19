@@ -43,7 +43,7 @@ tauri-plugin-updater = "2.9.0"
 tauri-plugin-process = "2.3.1"
 tauri-plugin-os = "2"
 regex = "1.11"
-dirs = "5.0"
+dirs = "6.0"
 tokio = { version = "1", features = ["full"] }
 sysinfo = "0.32"
 semver = "1.0"
