@@ -115,9 +115,17 @@ fn launch_linux_desktop_exec(
         }
     }
 
-    let child = command.spawn().map_err(|e| LaunchError::SpawnFailed {
-        path: exec_line.to_string(),
-        message: e.to_string(),
+    let child = command.spawn().map_err(|error| {
+        if error.kind() == std::io::ErrorKind::NotFound {
+            LaunchError::NotFound {
+                path: exec_line.to_string(),
+            }
+        } else {
+            LaunchError::SpawnFailed {
+                path: exec_line.to_string(),
+                message: error.to_string(),
+            }
+        }
     })?;
 
     Ok(LaunchResult::new(exec_line).with_pid(child.id()))

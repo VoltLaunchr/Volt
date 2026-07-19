@@ -1692,7 +1692,7 @@ mod tests {
             Some("code --unity-launch")
         );
         assert_eq!(
-            clean_desktop_exec(r#"/opt/My App/app --name "A B" %u"#).as_deref(),
+            clean_desktop_exec(r#""/opt/My App/app" --name "A B" %u"#).as_deref(),
             Some("'/opt/My App/app' --name 'A B'")
         );
         assert_eq!(
