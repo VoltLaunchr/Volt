@@ -145,7 +145,9 @@ test.describe('Keyboard Navigation', () => {
     await typeAndWaitForResults(page, 'Test');
     const input = page.locator('#search-input');
     const optionCount = await page.locator('[role="option"]').count();
-    await page.evaluate(() => { (window as any).__TAURI_INVOKE_CALLS__ = []; });
+    await page.evaluate(() => {
+      (window as any).__TAURI_INVOKE_CALLS__ = [];
+    });
     if (optionCount < 9) {
       await input.press('Alt+9');
       const calls = await page.evaluate(() => (window as any).__TAURI_INVOKE_CALLS__);
