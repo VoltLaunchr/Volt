@@ -91,10 +91,12 @@ test.describe('Keyboard Navigation', () => {
   test('PageUp moves selection up by 5', async ({ page }) => {
     await typeAndWaitForResults(page, 'Test');
     const input = page.locator('#search-input');
+    const optionCount = await page.locator('[role="option"]').count();
     await input.press('End');
     await input.press('PageUp');
-    const firstOption = page.locator('[role="option"]').first();
-    await expect(firstOption).toHaveAttribute('aria-selected', 'true');
+    const expectedIndex = Math.max(optionCount - 1 - 5, 0);
+    const targetOption = page.locator('[role="option"]').nth(expectedIndex);
+    await expect(targetOption).toHaveAttribute('aria-selected', 'true');
   });
 
   test('Enter key launches the selected result', async ({ page }) => {
