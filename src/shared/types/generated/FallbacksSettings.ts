@@ -5,7 +5,7 @@ import type { FallbackCommand } from "./FallbackCommand";
  * Fallback commands settings — the configurable list shown when a search
  * returns no regular results.
  */
-export type FallbacksSettings = { commands: Array<FallbackCommand>,
+export type FallbacksSettings = { commands: Array<FallbackCommand>, 
 /**
  * Opt-in local history for explicit web searches. Raw queries are never
  * persisted unless the user enables this setting.

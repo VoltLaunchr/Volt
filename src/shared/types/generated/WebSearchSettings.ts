@@ -3,11 +3,11 @@
 /**
  * Web search preferences shared by the launcher and Settings window.
  */
-export type WebSearchSettings = {
+export type WebSearchSettings = { 
 /**
  * Engine used for generic `?`, `web`, `search`, and `chercher` queries.
  */
-defaultEngine: string,
+defaultEngine: string, 
 /**
  * Stable id from the native application scanner. `None` uses the system browser.
  */

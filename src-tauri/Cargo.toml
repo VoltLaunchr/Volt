@@ -62,7 +62,7 @@ nucleo-matcher = "0.3"
 # `export_bindings_*` tests into src/shared/types/generated/ and guarded by a
 # vitest type test, so a Rust struct change that drifts from the frontend fails
 # CI. serde-compat (default) honours #[serde(rename_all)].
-ts-rs = "12"
+ts-rs = "10"
 log = "0.4"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
