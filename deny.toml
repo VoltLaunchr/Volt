@@ -42,18 +42,7 @@ unmaintained = "workspace"
 # positive or has no available fix. Every entry MUST carry a `reason`, is
 # auditable in git history, and should be revisited whenever the upstream
 # situation changes.
-ignore = [
-  # Marvin Attack — RSA timing side-channel. Reached only transitively via
-  # jsonwebtoken (rust_crypto feature) -> rsa. There is NO patched release of
-  # the `rsa` crate as of this writing ("No safe upgrade is available"), so the
-  # only alternatives are (a) block CI on an unfixable advisory or (b) track it
-  # explicitly here. We choose (b). The exposure is narrow: RSA is used for JWT
-  # signature verification of tokens Volt itself fetches, not as a network
-  # timing oracle exposed to attackers. REVISIT when `rsa` publishes a fix
-  # (https://github.com/RustCrypto/RSA/issues/626) or when jsonwebtoken can be
-  # configured to avoid pulling `rsa`.
-  { id = "RUSTSEC-2023-0071", reason = "rsa timing side-channel; no upstream fix available, narrow JWT-verify exposure, tracked for revisit" },
-]
+ignore = []
 
 # ---------------------------------------------------------------------------
 # Crate bans / duplicates  (`cargo deny check bans`)

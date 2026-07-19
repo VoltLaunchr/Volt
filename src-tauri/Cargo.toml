@@ -62,7 +62,7 @@ nucleo-matcher = "0.3"
 # `export_bindings_*` tests into src/shared/types/generated/ and guarded by a
 # vitest type test, so a Rust struct change that drifts from the frontend fails
 # CI. serde-compat (default) honours #[serde(rename_all)].
-ts-rs = "10"
+ts-rs = "12"
 log = "0.4"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
@@ -87,7 +87,7 @@ sha2 = "0.10"
 rand = "0.9"
 hex = "0.4"
 unicode-normalization = "0.1"
-jsonwebtoken = { version = "10", features = ["rust_crypto"] }
+jsonwebtoken = { version = "10", features = ["aws_lc_rs"] }
 trash = "5.2.6"
 thiserror = "2"
 shlex = "1.3"

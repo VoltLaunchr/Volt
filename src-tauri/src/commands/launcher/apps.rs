@@ -1253,7 +1253,7 @@ fn clean_desktop_exec(value: &str) -> Option<String> {
     if cleaned.is_empty() {
         None
     } else {
-        Some(shlex::join(cleaned.iter().map(String::as_str)))
+        shlex::try_join(cleaned.iter().map(String::as_str)).ok()
     }
 }
 
