@@ -31,7 +31,7 @@ jobs:
     outputs:
       body: ${{ steps.body.outputs.body }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -98,7 +98,7 @@ jobs:
     env:
       APPLE_CERTIFICATE_CONFIGURED: ${{ secrets.APPLE_CERTIFICATE != '' && 'true' || 'false' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -321,7 +321,7 @@ jobs:
     if: needs.publish-tauri.result == 'success'
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: main
           token: ${{ secrets.GITHUB_TOKEN }}
