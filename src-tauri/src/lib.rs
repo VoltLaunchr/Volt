@@ -186,8 +186,6 @@ pub fn run() {
         .plugin(tauri_plugin_positioner::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
-        .plugin(tauri_plugin_shell::init())
-        .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
@@ -697,8 +695,17 @@ pub fn run() {
             // Register deep link handler for volt:// URLs
             // On Windows/Linux in dev mode, the OS scheme registration normally done
             // by the installer doesn't happen — we must register it at runtime so
-            // the browser knows which app to launch for volt:// URLs.
-            #[cfg(any(target_os = "linux", all(debug_assertions, target_os = "windows")))]
+            // the browser knows which app to launch for volt:// URLs. In release
+            // builds the installer/package (NSIS, deb/rpm/AppImage, the Arch
+            // PKGBUILD's packaged .desktop, ...) already owns this association, so
+            // this must stay dev-only on both platforms — doing it unconditionally
+            // on Linux release builds re-registers the scheme on every single
+            // startup, shelling out to `xdg-mime`/`update-desktop-database` (which
+            // fails loudly if `desktop-file-utils` isn't installed) and rewriting
+            // `~/.local/share/applications/<identifier>-handler.desktop` to point
+            // at whatever binary happens to be running, silently overriding the
+            // properly packaged desktop entry.
+            #[cfg(all(debug_assertions, any(target_os = "linux", target_os = "windows")))]
             {
                 use tauri_plugin_deep_link::DeepLinkExt;
                 if let Err(e) = app.deep_link().register_all() {

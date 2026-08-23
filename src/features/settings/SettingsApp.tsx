@@ -77,6 +77,7 @@ import {
   clearPendingUpdate,
   snoozeUpdate,
   skipVersion,
+  isPackageManagerManaged,
   type UpdateInfo,
   type UpdateChannel,
 } from './services/updateService';
@@ -1646,6 +1647,13 @@ export function SettingsApp() {
           </div>
 
           <div className="flex flex-col gap-2">
+            {isPackageManagerManaged() ? (
+              <div className="flex items-center gap-2 rounded-lg border border-accent-blue/20 bg-accent-blue/10 px-3 py-2.5 text-[13px] text-ink">
+                <Package size={16} className="text-accent-blue shrink-0" />
+                <span>{t('about.packageManagerManaged')}</span>
+              </div>
+            ) : (
+              <>
             {/* Deferred update ready banner */}
             {deferralReady && (
               <div className="flex items-center justify-between gap-2 px-3 py-2 rounded-md bg-accent-blue/10 border border-accent-blue/30 text-[13px] text-ink">
@@ -1797,6 +1805,8 @@ export function SettingsApp() {
                 <AlertCircle size={16} />
                 <span>{updateError}</span>
               </div>
+            )}
+              </>
             )}
           </div>
         </div>

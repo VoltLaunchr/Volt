@@ -287,7 +287,6 @@ export class TimerPlugin implements Plugin {
 
 // Re-export components and hooks
 export { TimerDisplay } from './TimerDisplay';
-export { TimerView } from './TimerView';
 export { useTimers } from './useTimers';
 export { timerStore } from './timerStore';
 export { tasksStore } from './tasksStore';

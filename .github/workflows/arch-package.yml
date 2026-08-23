@@ -1,0 +1,54 @@
+name: Arch package
+
+on:
+  pull_request:
+    paths:
+      - 'packaging/arch/**'
+      - 'src/**'
+      - 'src-tauri/**'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - '.github/workflows/arch-package.yml'
+  push:
+    branches: [main, dev]
+    paths:
+      - 'packaging/arch/**'
+      - '.github/workflows/arch-package.yml'
+  workflow_dispatch:
+
+jobs:
+  makepkg:
+    runs-on: ubuntu-latest
+    container: archlinux:base-devel
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Arch build and validation tools
+        run: >-
+          pacman -Syu --noconfirm --needed
+          appstream dbus desktop-file-utils gtk3 libgcc namcap nodejs
+          onnxruntime-cpu openssl pnpm rust webkit2gtk-4.1 xdg-utils xz
+
+      - name: Create an unprivileged package builder
+        run: |
+          useradd --create-home builder
+          chown -R builder:builder "$GITHUB_WORKSPACE"
+
+      - name: Validate metadata and build the package
+        working-directory: packaging/arch
+        run: |
+          su builder -c 'makepkg --printsrcinfo > .SRCINFO.generated'
+          diff -u .SRCINFO .SRCINFO.generated
+          desktop-file-validate com.voltlaunchr.volt.desktop
+          appstreamcli validate --pedantic --no-net com.voltlaunchr.volt.metainfo.xml
+          namcap PKGBUILD
+          su builder -c 'makepkg --cleanbuild --clean --noconfirm'
+          namcap ./*.pkg.tar.zst
+
+      - name: Upload package for inspection
+        uses: actions/upload-artifact@v4
+        with:
+          name: volt-launchr-arch-package
+          path: packaging/arch/*.pkg.tar.zst
+          if-no-files-found: error

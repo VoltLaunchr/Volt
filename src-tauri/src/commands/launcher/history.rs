@@ -12,6 +12,7 @@ use crate::launcher::{
     LaunchError, LaunchHistory, LaunchOptions, LaunchRecord, QueryBindingStore, launch,
     launch_with_options,
 };
+use crate::utils::serialized_file_writer::SerializedFileWriter;
 
 fn is_forbidden_shell_path(path: &str) -> bool {
     path.contains('\0')
@@ -37,16 +38,17 @@ impl LaunchHistoryState {
 /// State wrapper for query-result bindings
 pub struct QueryBindingState {
     pub store: std::sync::Mutex<QueryBindingStore>,
-    pub file_path: PathBuf,
+    writer: SerializedFileWriter,
 }
 
 impl QueryBindingState {
     pub fn new(data_dir: PathBuf) -> Self {
         let file_path = data_dir.join("query_bindings.json");
         let store = QueryBindingStore::load(&file_path);
+        let writer = SerializedFileWriter::new(file_path.clone());
         Self {
             store: std::sync::Mutex::new(store),
-            file_path,
+            writer,
         }
     }
 }
@@ -302,19 +304,25 @@ pub async fn record_search_selection(
     result_id: String,
     binding_state: State<'_, QueryBindingState>,
 ) -> VoltResult<()> {
-    // Clone store snapshot while holding the lock briefly, then release before I/O
-    let (store_snapshot, file_path) = {
+    // Reserve the generation while holding the same mutex as the mutation, so
+    // disk order cannot diverge from in-memory update order.
+    let (generation, json) = {
         let mut store = binding_state
             .store
             .lock()
             .map_err(|e| VoltError::Unknown(e.to_string()))?;
         store.record_binding(&query, &result_id);
-        (store.clone(), binding_state.file_path.clone())
+        let generation = binding_state.writer.reserve();
+        let json = serde_json::to_string_pretty(&*store)
+            .map_err(|e| VoltError::Serialization(e.to_string()))?;
+        (generation, json)
     }; // MutexGuard dropped here — before disk I/O
 
-    store_snapshot
-        .save(&file_path)
-        .map_err(VoltError::Unknown)?;
+    binding_state
+        .writer
+        .write_async(generation, json)
+        .await
+        .map_err(VoltError::FileSystem)?;
 
     info!("Recorded query binding: '{}' -> '{}'", query, result_id);
 

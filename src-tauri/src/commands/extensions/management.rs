@@ -8,6 +8,7 @@
 
 use crate::core::constants::APP_VERSION;
 use crate::core::error::{VoltError, VoltResult};
+use crate::core::service_config::supabase_config;
 use futures_util::StreamExt;
 use rusqlite::OptionalExtension;
 use serde::{Deserialize, Serialize};
@@ -2276,9 +2277,6 @@ pub async fn get_dev_reload_signal(
 // DOWNLOAD TRACKING - Supabase-backed counters
 // ============================================================================
 
-const SUPABASE_URL: &str = env!("SUPABASE_URL");
-const SUPABASE_ANON_KEY: &str = env!("SUPABASE_ANON_KEY");
-
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DownloadCount {
@@ -2289,13 +2287,11 @@ pub struct DownloadCount {
 /// Fetch download counts for all extensions from Supabase.
 #[tauri::command]
 pub async fn fetch_extension_downloads() -> VoltResult<Vec<DownloadCount>> {
-    if SUPABASE_URL.is_empty() || SUPABASE_ANON_KEY.is_empty() {
-        return Ok(vec![]);
-    }
+    let config = supabase_config().await.map_err(VoltError::InvalidConfig)?;
 
     let url = format!(
         "{}/rest/v1/extension_downloads?select=extension_id,count",
-        SUPABASE_URL.trim_end_matches('/')
+        config.supabase_url.trim_end_matches('/')
     );
 
     let client = reqwest::Client::builder()
@@ -2304,8 +2300,11 @@ pub async fn fetch_extension_downloads() -> VoltResult<Vec<DownloadCount>> {
         .map_err(|e| VoltError::Unknown(format!("HTTP client build failed: {}", e)))?;
     let resp = client
         .get(&url)
-        .header("apikey", SUPABASE_ANON_KEY)
-        .header("Authorization", format!("Bearer {}", SUPABASE_ANON_KEY))
+        .header("apikey", &config.supabase_publishable_key)
+        .header(
+            "Authorization",
+            format!("Bearer {}", config.supabase_publishable_key),
+        )
         .send()
         .await
         .map_err(|e| VoltError::Unknown(format!("fetch_extension_downloads: {}", e)))?;
@@ -2358,13 +2357,11 @@ pub async fn increment_extension_download(extension_id: String) -> VoltResult<()
         return Ok(());
     }
 
-    if SUPABASE_URL.is_empty() || SUPABASE_ANON_KEY.is_empty() {
-        return Ok(());
-    }
+    let config = supabase_config().await.map_err(VoltError::InvalidConfig)?;
 
     let url = format!(
         "{}/rest/v1/rpc/increment_extension_download",
-        SUPABASE_URL.trim_end_matches('/')
+        config.supabase_url.trim_end_matches('/')
     );
 
     let client = reqwest::Client::builder()
@@ -2373,8 +2370,11 @@ pub async fn increment_extension_download(extension_id: String) -> VoltResult<()
         .map_err(|e| VoltError::Unknown(format!("HTTP client build failed: {}", e)))?;
     let _ = client
         .post(&url)
-        .header("apikey", SUPABASE_ANON_KEY)
-        .header("Authorization", format!("Bearer {}", SUPABASE_ANON_KEY))
+        .header("apikey", &config.supabase_publishable_key)
+        .header(
+            "Authorization",
+            format!("Bearer {}", config.supabase_publishable_key),
+        )
         .json(&serde_json::json!({ "p_extension_id": extension_id }))
         .send()
         .await;

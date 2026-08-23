@@ -18,18 +18,18 @@
 
 <br />
 
-<img src="./docs/readme-assets/screenshots/hero-search.png" alt="Volt launcher showing universal search results" width="802" />
+<img src="./docs/readme-assets/screenshots/hero-search.png" alt="Volt launcher showing its keyboard-first command suggestions" width="802" />
 
 <br />
 
 <table>
   <tr>
     <td align="center" width="33%">
-      <img src="./docs/readme-assets/screenshots/feature-ai-chat.png" alt="AI chat inside Volt" width="260" />
+      <img src="./docs/readme-assets/screenshots/feature-ai-chat.png" alt="Volt AI Chat ready for a new conversation" width="260" />
       <br /><sub><strong>AI workflows</strong></sub>
     </td>
     <td align="center" width="33%">
-      <img src="./docs/readme-assets/screenshots/feature-games-launcher.png" alt="Game launcher inside Volt" width="260" />
+      <img src="./docs/readme-assets/screenshots/feature-games-launcher.png" alt="Volt game search across Xbox, EA App, and Steam" width="260" />
       <br /><sub><strong>Game library</strong></sub>
     </td>
     <td align="center" width="33%">

@@ -129,6 +129,7 @@
     "upToDate": "Volt est \u00e0 jour",
     "updateAvailable": "Mise \u00e0 jour disponible",
     "downloadAndInstall": "T\u00e9l\u00e9charger et installer",
+    "packageManagerManaged": "Les mises \u00e0 jour sont g\u00e9r\u00e9es par le gestionnaire de paquets du syst\u00e8me.",
     "installOnNextRestart": "Installer au prochain red\u00e9marrage",
     "deferring": "T\u00e9l\u00e9chargement pour le prochain red\u00e9marrage...",
     "deferralReady": "Mise \u00e0 jour pr\u00eate \u2014 installation au prochain red\u00e9marrage",

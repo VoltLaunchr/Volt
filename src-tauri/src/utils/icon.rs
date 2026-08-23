@@ -342,7 +342,49 @@ fn hicon_to_png_base64(hicon: winapi::shared::windef::HICON) -> Option<String> {
     Some(STANDARD.encode(&png_data))
 }
 
+/// Builds the ordered, deduplicated list of XDG data directories to search
+/// for icons, mirroring `scan_applications_linux`'s `.desktop` search roots
+/// (`$XDG_DATA_HOME`, `$XDG_DATA_DIRS`, Flatpak exports). Takes its inputs
+/// explicitly rather than reading the environment so it can be unit tested
+/// without touching process-global env vars (which `cargo test` runs share
+/// across threads).
+#[cfg(target_os = "linux")]
+fn linux_icon_search_dirs(
+    home: &str,
+    xdg_data_home: Option<&str>,
+    xdg_data_dirs: Option<&str>,
+) -> Vec<String> {
+    let xdg_data_home = xdg_data_home
+        .map(str::to_string)
+        .unwrap_or_else(|| format!("{home}/.local/share"));
+    let xdg_data_dirs = xdg_data_dirs
+        .map(str::to_string)
+        .unwrap_or_else(|| "/usr/local/share:/usr/share".to_string());
+
+    let mut base_dirs: Vec<String> = vec![xdg_data_home];
+    base_dirs.extend(
+        xdg_data_dirs
+            .split(':')
+            .filter(|d| !d.is_empty())
+            .map(|d| d.to_string()),
+    );
+    base_dirs.push("/var/lib/flatpak/exports/share".to_string());
+    base_dirs.push(format!("{home}/.local/share/flatpak/exports/share"));
+
+    let mut seen = std::collections::HashSet::new();
+    base_dirs.retain(|d| seen.insert(d.clone()));
+    base_dirs
+}
+
 /// Try to resolve icon name to a full path on Linux
+///
+/// Mirrors the search roots used by `scan_applications_linux` for `.desktop`
+/// discovery ($XDG_DATA_HOME, $XDG_DATA_DIRS, Flatpak exports) instead of the
+/// hardcoded `/usr/share/...` this used to be limited to. Without this, any
+/// app discovered from a non-default prefix — most commonly Flatpak, whose
+/// icons live under `~/.local/share/flatpak/exports/share/icons/...` or
+/// `/var/lib/flatpak/exports/share/icons/...`, neither of which is under
+/// `/usr/share` — showed up in results with no icon at all.
 #[cfg(target_os = "linux")]
 pub fn resolve_linux_icon(icon_name: &str) -> Option<String> {
     // If it's already a full path
@@ -350,21 +392,29 @@ pub fn resolve_linux_icon(icon_name: &str) -> Option<String> {
         return file_to_data_url(std::path::Path::new(icon_name));
     }
 
-    // Common icon theme locations
-    let icon_paths = vec![
-        "/usr/share/icons/hicolor/128x128/apps",
-        "/usr/share/icons/hicolor/64x64/apps",
-        "/usr/share/icons/hicolor/48x48/apps",
-        "/usr/share/icons/hicolor/32x32/apps",
-        "/usr/share/icons/hicolor/scalable/apps",
-        "/usr/share/pixmaps",
-    ];
+    let home = std::env::var("HOME").unwrap_or_default();
+    let xdg_data_home = std::env::var("XDG_DATA_HOME").ok().filter(|v| !v.is_empty());
+    let xdg_data_dirs = std::env::var("XDG_DATA_DIRS").ok().filter(|v| !v.is_empty());
+    let base_dirs =
+        linux_icon_search_dirs(&home, xdg_data_home.as_deref(), xdg_data_dirs.as_deref());
 
+    let icon_sizes = ["128x128", "64x64", "48x48", "32x32", "scalable"];
     let extensions = ["png", "svg", "xpm"];
 
-    for base_path in icon_paths {
+    for base in &base_dirs {
+        for size in &icon_sizes {
+            for ext in &extensions {
+                let icon_path = format!("{base}/icons/hicolor/{size}/apps/{icon_name}.{ext}");
+                let path = std::path::Path::new(&icon_path);
+                if path.exists()
+                    && let Some(data_url) = file_to_data_url(path)
+                {
+                    return Some(data_url);
+                }
+            }
+        }
         for ext in &extensions {
-            let icon_path = format!("{}/{}.{}", base_path, icon_name, ext);
+            let icon_path = format!("{base}/pixmaps/{icon_name}.{ext}");
             let path = std::path::Path::new(&icon_path);
             if path.exists()
                 && let Some(data_url) = file_to_data_url(path)
@@ -375,4 +425,97 @@ pub fn resolve_linux_icon(icon_name: &str) -> Option<String> {
     }
 
     None
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod linux_icon_tests {
+    use super::*;
+
+    #[test]
+    fn search_dirs_defaults_when_xdg_vars_unset() {
+        let dirs = linux_icon_search_dirs("/home/alice", None, None);
+        assert_eq!(
+            dirs,
+            vec![
+                "/home/alice/.local/share".to_string(),
+                "/usr/local/share".to_string(),
+                "/usr/share".to_string(),
+                "/var/lib/flatpak/exports/share".to_string(),
+                "/home/alice/.local/share/flatpak/exports/share".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn search_dirs_honors_custom_xdg_data_home_and_dirs() {
+        let dirs = linux_icon_search_dirs(
+            "/home/alice",
+            Some("/custom/data"),
+            Some("/opt/share:/nix/var/nix/profiles/default/share"),
+        );
+        assert_eq!(
+            dirs,
+            vec![
+                "/custom/data".to_string(),
+                "/opt/share".to_string(),
+                "/nix/var/nix/profiles/default/share".to_string(),
+                "/var/lib/flatpak/exports/share".to_string(),
+                "/home/alice/.local/share/flatpak/exports/share".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn search_dirs_ignores_empty_xdg_data_dirs_entries() {
+        // A stray leading/trailing/doubled colon must not produce an empty
+        // base dir that every icon lookup would then stat against "".
+        let dirs = linux_icon_search_dirs("/home/alice", None, Some(":/usr/share::"));
+        assert_eq!(
+            dirs,
+            vec![
+                "/home/alice/.local/share".to_string(),
+                "/usr/share".to_string(),
+                "/var/lib/flatpak/exports/share".to_string(),
+                "/home/alice/.local/share/flatpak/exports/share".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn search_dirs_deduplicates() {
+        // XDG_DATA_HOME pointing at the same place as one of the XDG_DATA_DIRS
+        // entries (or as the Flatpak user export dir) must not be searched twice.
+        let dirs = linux_icon_search_dirs(
+            "/home/alice",
+            Some("/home/alice/.local/share"),
+            Some("/usr/share"),
+        );
+        assert_eq!(
+            dirs,
+            vec![
+                "/home/alice/.local/share".to_string(),
+                "/usr/share".to_string(),
+                "/var/lib/flatpak/exports/share".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn resolve_absolute_icon_path_reads_file_directly() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let icon_path = dir.path().join("app-icon.png");
+        // Smallest possible valid-looking payload — resolve_linux_icon only
+        // cares that the file exists and has a recognized extension; the
+        // actual PNG decoding happens client-side.
+        std::fs::write(&icon_path, [0x89, b'P', b'N', b'G']).expect("write icon");
+
+        let resolved = resolve_linux_icon(icon_path.to_str().expect("utf8 path"));
+        assert!(resolved.is_some());
+        assert!(resolved.unwrap().starts_with("data:image/png;base64,"));
+    }
+
+    #[test]
+    fn resolve_absolute_icon_path_missing_file_returns_none() {
+        assert!(resolve_linux_icon("/definitely/not/a/real/icon-xyz.png").is_none());
+    }
 }

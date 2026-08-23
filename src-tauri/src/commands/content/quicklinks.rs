@@ -12,6 +12,7 @@ use uuid::Uuid;
 
 use crate::core::error::{VoltError, VoltResult};
 use crate::utils::launch_validation::validate_launch_path;
+use crate::utils::process::reap_in_background;
 
 /// Characters that allow shell command chaining / redirection / substitution.
 /// Rejected in command-type quicklinks to prevent shell injection even though
@@ -299,10 +300,11 @@ pub async fn open_quicklink(_app: tauri::AppHandle, quicklink: Quicklink) -> Vol
             // including cmd.exe, powershell.exe, regsvr32.exe, etc.
             validate_launch_path(program).map_err(VoltError::Launch)?;
 
-            std::process::Command::new(program)
+            let child = std::process::Command::new(program)
                 .args(&args)
                 .spawn()
                 .map_err(|e| VoltError::Launch(format!("Failed to execute command: {}", e)))?;
+            reap_in_background(child);
         }
         _ => {
             return Err(VoltError::Unknown(format!(

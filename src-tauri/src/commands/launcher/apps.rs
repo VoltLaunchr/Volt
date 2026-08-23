@@ -1069,16 +1069,53 @@ fn convert_icns_to_base64_png(icns_path: &std::path::Path) -> Result<String, Str
 async fn scan_applications_linux() -> Result<Vec<AppInfo>, String> {
     let mut apps = Vec::new();
 
-    // Linux .desktop file locations (XDG standard)
     let home = std::env::var("HOME").unwrap_or_default();
-    let search_paths = vec![
-        "/usr/share/applications".to_string(),
-        "/usr/local/share/applications".to_string(),
-        format!("{}/.local/share/applications", home),
-        "/var/lib/flatpak/exports/share/applications".to_string(),
-        format!("{}/.local/share/flatpak/exports/share/applications", home),
-        "/snap/bin".to_string(), // Snap apps
-    ];
+
+    // XDG Base Directory Specification: application discovery must honor
+    // $XDG_DATA_HOME (default $HOME/.local/share) and $XDG_DATA_DIRS
+    // (default /usr/local/share:/usr/share) instead of assuming the
+    // defaults — NixOS/home-manager profiles, distrobox, and other
+    // non-stock setups routinely customize these, and apps installed there
+    // would otherwise be invisible to the launcher.
+    let xdg_data_home = std::env::var("XDG_DATA_HOME")
+        .ok()
+        .filter(|v| !v.is_empty())
+        .unwrap_or_else(|| format!("{home}/.local/share"));
+    let xdg_data_dirs = std::env::var("XDG_DATA_DIRS")
+        .ok()
+        .filter(|v| !v.is_empty())
+        .unwrap_or_else(|| "/usr/local/share:/usr/share".to_string());
+
+    let mut search_paths: Vec<String> = vec![format!("{xdg_data_home}/applications")];
+    search_paths.extend(
+        xdg_data_dirs
+            .split(':')
+            .filter(|d| !d.is_empty())
+            .map(|d| format!("{d}/applications")),
+    );
+    // Flatpak's exports aren't always folded into $XDG_DATA_DIRS depending on
+    // how the user's shell profile is set up, and Snap's desktop files live
+    // outside XDG_DATA_DIRS entirely (/snap/bin only holds executables, not
+    // .desktop files) — keep both as explicit fallbacks.
+    search_paths.push("/var/lib/flatpak/exports/share/applications".to_string());
+    search_paths.push(format!(
+        "{home}/.local/share/flatpak/exports/share/applications"
+    ));
+    search_paths.push("/var/lib/snapd/desktop/applications".to_string());
+
+    let mut seen_search_dirs = std::collections::HashSet::new();
+    search_paths.retain(|p| seen_search_dirs.insert(p.clone()));
+
+    // $XDG_CURRENT_DESKTOP is a colon-separated list (e.g. "ubuntu:GNOME");
+    // desktop entries use semicolon-separated OnlyShowIn/NotShowIn lists of
+    // the same registered names, so entries scoped to another DE can be
+    // filtered out correctly.
+    let current_desktops: Vec<String> = std::env::var("XDG_CURRENT_DESKTOP")
+        .unwrap_or_default()
+        .split(':')
+        .filter(|d| !d.is_empty())
+        .map(|d| d.to_string())
+        .collect();
 
     for base_path in search_paths {
         if let Ok(entries) = std::fs::read_dir(&base_path) {
@@ -1087,7 +1124,7 @@ async fn scan_applications_linux() -> Result<Vec<AppInfo>, String> {
 
                 // Parse .desktop files
                 if path.extension().map(|e| e == "desktop").unwrap_or(false)
-                    && let Some(app_info) = parse_desktop_file(&path)
+                    && let Some(app_info) = parse_desktop_file(&path, &current_desktops)
                 {
                     apps.push(app_info);
                 }
@@ -1153,7 +1190,7 @@ async fn scan_applications_linux() -> Result<Vec<AppInfo>, String> {
 
 /// Parse a .desktop file and extract application info
 #[cfg(target_os = "linux")]
-fn parse_desktop_file(path: &std::path::Path) -> Option<AppInfo> {
+fn parse_desktop_file(path: &std::path::Path, current_desktops: &[String]) -> Option<AppInfo> {
     let content = std::fs::read_to_string(path).ok()?;
 
     let mut name = None;
@@ -1163,6 +1200,9 @@ fn parse_desktop_file(path: &std::path::Path) -> Option<AppInfo> {
     let mut keywords = None;
     let mut no_display = false;
     let mut hidden = false;
+    let mut try_exec = None;
+    let mut only_show_in = None;
+    let mut not_show_in = None;
 
     let mut in_desktop_entry = false;
 
@@ -1205,6 +1245,9 @@ fn parse_desktop_file(path: &std::path::Path) -> Option<AppInfo> {
                 }
                 "NoDisplay" => no_display = value.eq_ignore_ascii_case("true"),
                 "Hidden" => hidden = value.eq_ignore_ascii_case("true"),
+                "TryExec" => try_exec = Some(value.to_string()),
+                "OnlyShowIn" => only_show_in = Some(value.to_string()),
+                "NotShowIn" => not_show_in = Some(value.to_string()),
                 _ => {}
             }
         }
@@ -1213,6 +1256,37 @@ fn parse_desktop_file(path: &std::path::Path) -> Option<AppInfo> {
     // Skip hidden or no-display apps
     if no_display || hidden {
         return None;
+    }
+
+    // TryExec: per the Desktop Entry Specification, if the named binary
+    // cannot be found (bare name resolved via $PATH, or an absolute path
+    // that doesn't exist/isn't executable) the entry must be skipped.
+    if let Some(try_exec) = &try_exec
+        && !tryexec_resolves(try_exec)
+    {
+        return None;
+    }
+
+    // OnlyShowIn/NotShowIn scope an entry to specific desktop environments
+    // via the semicolon-separated registered names matched against
+    // $XDG_CURRENT_DESKTOP. The two keys are mutually exclusive per spec;
+    // honor whichever is present.
+    if let Some(only_show_in) = &only_show_in {
+        let allowed = only_show_in.split(';').filter(|s| !s.is_empty());
+        if !current_desktops
+            .iter()
+            .any(|d| allowed.clone().any(|a| a == d))
+        {
+            return None;
+        }
+    } else if let Some(not_show_in) = &not_show_in {
+        let denied = not_show_in.split(';').filter(|s| !s.is_empty());
+        if current_desktops
+            .iter()
+            .any(|d| denied.clone().any(|n| n == d))
+        {
+            return None;
+        }
     }
 
     let name = name?;
@@ -1233,6 +1307,21 @@ fn parse_desktop_file(path: &std::path::Path) -> Option<AppInfo> {
         usage_count: 0,
         category: Some(category),
     })
+}
+
+/// Resolves a `TryExec=` value: an absolute path must exist and be
+/// executable; a bare command name is looked up in `$PATH`, matching how a
+/// shell would resolve it at launch time.
+#[cfg(target_os = "linux")]
+fn tryexec_resolves(try_exec: &str) -> bool {
+    let candidate = std::path::Path::new(try_exec);
+    if candidate.is_absolute() {
+        return is_executable(candidate);
+    }
+
+    std::env::var_os("PATH")
+        .map(|paths| std::env::split_paths(&paths).any(|dir| is_executable(&dir.join(try_exec))))
+        .unwrap_or(false)
 }
 
 #[cfg(target_os = "linux")]
@@ -1673,6 +1762,72 @@ mod tests {
             timestamp: SystemTime::now() - Duration::from_secs(600),
         };
         assert!(cache.is_expired(Duration::from_secs(60)));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn test_tryexec_resolves_absolute_path() {
+        let exe = std::env::current_exe().expect("test executable path");
+        assert!(tryexec_resolves(&exe.to_string_lossy()));
+        assert!(!tryexec_resolves("/definitely/not/a/real/binary-xyz"));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn test_tryexec_resolves_bare_name_via_path() {
+        assert!(tryexec_resolves("sh"));
+        assert!(!tryexec_resolves("definitely-not-a-real-command-xyz"));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn test_parse_desktop_file_skips_tryexec_missing_binary() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("test.desktop");
+        std::fs::write(
+            &path,
+            "[Desktop Entry]\nName=Test\nExec=sh\nTryExec=definitely-not-a-real-command-xyz\n",
+        )
+        .expect("write desktop file");
+        assert!(parse_desktop_file(&path, &[]).is_none());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn test_parse_desktop_file_keeps_entry_when_tryexec_resolves() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("test.desktop");
+        std::fs::write(&path, "[Desktop Entry]\nName=Test\nExec=sh\nTryExec=sh\n")
+            .expect("write desktop file");
+        assert!(parse_desktop_file(&path, &[]).is_some());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn test_parse_desktop_file_only_show_in_filters_other_desktop() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("test.desktop");
+        std::fs::write(
+            &path,
+            "[Desktop Entry]\nName=Test\nExec=sh\nOnlyShowIn=KDE;\n",
+        )
+        .expect("write desktop file");
+        assert!(parse_desktop_file(&path, &["GNOME".to_string()]).is_none());
+        assert!(parse_desktop_file(&path, &["KDE".to_string()]).is_some());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn test_parse_desktop_file_not_show_in_filters_matching_desktop() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("test.desktop");
+        std::fs::write(
+            &path,
+            "[Desktop Entry]\nName=Test\nExec=sh\nNotShowIn=GNOME;\n",
+        )
+        .expect("write desktop file");
+        assert!(parse_desktop_file(&path, &["GNOME".to_string()]).is_none());
+        assert!(parse_desktop_file(&path, &["KDE".to_string()]).is_some());
     }
 
     #[test]

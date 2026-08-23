@@ -28,6 +28,7 @@ use tracing::{debug, error, info, warn};
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
 use super::keyring_store;
+use crate::core::service_config::supabase_config;
 
 /// Per-flow state held in memory between `auth_start_login` and the
 /// matching `volt://auth/callback`. The `code_verifier` MUST never be
@@ -137,21 +138,9 @@ fn generate_pkce_pair() -> (String, String) {
     (verifier, challenge)
 }
 
-// Injected at compile time from .env or CI secrets via build.rs.
-const SUPABASE_URL: &str = env!("SUPABASE_URL");
-const SUPABASE_ANON_KEY: &str = env!("SUPABASE_ANON_KEY");
 const AUTH_REDIRECT_URL: &str = "https://voltlaunchr.com/auth/desktop-login";
 
 const AUTH_ACCOUNT: &str = "supabase_auth";
-
-fn ensure_configured() -> Result<(), String> {
-    if SUPABASE_URL.is_empty() || SUPABASE_ANON_KEY.is_empty() {
-        return Err(
-            "Supabase not configured. Set SUPABASE_URL and SUPABASE_ANON_KEY in .env".into(),
-        );
-    }
-    Ok(())
-}
 
 /// Full auth session stored in the OS keyring. Tokens never leave the backend.
 #[derive(Debug, Clone, Serialize, Deserialize, Zeroize, ZeroizeOnDrop)]
@@ -249,8 +238,6 @@ fn delete_auth_session() -> Result<(), String> {
 /// obtain tokens. Tokens never travel through the browser.
 #[tauri::command]
 pub async fn auth_start_login() -> Result<String, String> {
-    ensure_configured()?;
-
     let state = uuid::Uuid::new_v4().to_string();
     let (verifier, challenge) = generate_pkce_pair();
 
@@ -280,7 +267,6 @@ pub async fn auth_start_login() -> Result<String, String> {
 /// state-bound URL so that `volt://auth/callback` payloads can be verified.
 #[tauri::command]
 pub async fn auth_login() -> Result<(), String> {
-    ensure_configured()?;
     info!("Starting Supabase auth login flow");
 
     let url = auth_start_login().await?;
@@ -315,7 +301,7 @@ pub async fn auth_get_session() -> Result<Option<SessionStatus>, String> {
 /// Fetch user profile from Supabase REST API using stored access_token.
 #[tauri::command]
 pub async fn auth_get_profile() -> Result<Option<UserProfile>, String> {
-    ensure_configured()?;
+    let config = supabase_config().await?;
     debug!("Fetching user profile from Supabase");
 
     let session = match load_auth_session()? {
@@ -331,13 +317,13 @@ pub async fn auth_get_profile() -> Result<Option<UserProfile>, String> {
 
     let url = format!(
         "{}/rest/v1/profiles?id=eq.{}&select=*",
-        SUPABASE_URL, session.user_id
+        config.supabase_url, session.user_id
     );
 
     let client = reqwest::Client::new();
     let resp = client
         .get(&url)
-        .header("apikey", SUPABASE_ANON_KEY)
+        .header("apikey", &config.supabase_publishable_key)
         .header("Authorization", format!("Bearer {}", session.access_token))
         .send()
         .await
@@ -369,18 +355,21 @@ pub async fn auth_get_profile() -> Result<Option<UserProfile>, String> {
 /// Returns only session status (no tokens) to the renderer.
 #[tauri::command]
 pub async fn auth_refresh_token() -> Result<SessionStatus, String> {
-    ensure_configured()?;
+    let config = supabase_config().await?;
     info!("Refreshing Supabase auth token");
 
     let session =
         load_auth_session()?.ok_or_else(|| "No auth session found to refresh".to_string())?;
 
-    let url = format!("{}/auth/v1/token?grant_type=refresh_token", SUPABASE_URL);
+    let url = format!(
+        "{}/auth/v1/token?grant_type=refresh_token",
+        config.supabase_url
+    );
 
     let client = reqwest::Client::new();
     let resp = client
         .post(&url)
-        .header("apikey", SUPABASE_ANON_KEY)
+        .header("apikey", &config.supabase_publishable_key)
         .header("Content-Type", "application/json")
         .json(&serde_json::json!({
             "refresh_token": session.refresh_token
@@ -647,7 +636,8 @@ pub struct AccessTokenClaims {
 /// not retried — those signal a misconfigured project / upstream outage,
 /// and hammering with retries doesn't help.
 async fn fetch_jwks() -> Result<JwkSet, String> {
-    let base = SUPABASE_URL.trim_end_matches('/');
+    let config = supabase_config().await?;
+    let base = config.supabase_url.trim_end_matches('/');
     let url = format!("{}/auth/v1/.well-known/jwks.json", base);
     let client = reqwest::Client::builder()
         .timeout(JWKS_FETCH_TIMEOUT)
@@ -756,8 +746,9 @@ pub async fn validate_access_token(access_token: &str) -> Result<AccessTokenClai
     let key = DecodingKey::from_jwk(jwk)
         .map_err(|e| format!("Failed to load decoding key from JWK: {}", e))?;
 
+    let config = supabase_config().await?;
     let mut validation = Validation::new(alg);
-    let expected_iss = format!("{}/auth/v1", SUPABASE_URL.trim_end_matches('/'));
+    let expected_iss = format!("{}/auth/v1", config.supabase_url.trim_end_matches('/'));
     validation.set_issuer(&[&expected_iss]);
     validation.set_audience(&["authenticated"]);
     validation.validate_exp = true;

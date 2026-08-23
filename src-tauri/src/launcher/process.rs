@@ -7,6 +7,8 @@ use std::process::Command;
 use std::time::Instant;
 
 use super::types::{LaunchError, LaunchOptions, LaunchResult, LaunchableFileType};
+#[cfg(unix)]
+use crate::utils::process::reap_in_background;
 
 /// Launch an application with default options
 ///
@@ -127,8 +129,10 @@ fn launch_linux_desktop_exec(
             }
         }
     })?;
+    let pid = child.id();
+    reap_in_background(child);
 
-    Ok(LaunchResult::new(exec_line).with_pid(child.id()))
+    Ok(LaunchResult::new(exec_line).with_pid(pid))
 }
 
 #[cfg(target_os = "windows")]
@@ -235,24 +239,26 @@ pub fn launch_url(url: &str) -> Result<LaunchResult, LaunchError> {
 
     #[cfg(target_os = "macos")]
     {
-        Command::new("open")
+        let child = Command::new("open")
             .arg(url)
             .spawn()
             .map_err(|e| LaunchError::SpawnFailed {
                 path: url.to_string(),
                 message: e.to_string(),
             })?;
+        reap_in_background(child);
     }
 
     #[cfg(target_os = "linux")]
     {
-        Command::new("xdg-open")
+        let child = Command::new("xdg-open")
             .arg(url)
             .spawn()
             .map_err(|e| LaunchError::SpawnFailed {
                 path: url.to_string(),
                 message: e.to_string(),
             })?;
+        reap_in_background(child);
     }
 
     Ok(LaunchResult::new(url))
@@ -619,8 +625,10 @@ fn launch_macos(
             path: path.to_string(),
             message: e.to_string(),
         })?;
+        let pid = child.id();
+        reap_in_background(child);
 
-        Ok(LaunchResult::new(path).with_pid(child.id()))
+        Ok(LaunchResult::new(path).with_pid(pid))
     }
 }
 
@@ -688,8 +696,10 @@ fn launch_linux(
             path: path.to_string(),
             message: e.to_string(),
         })?;
+        let pid = child.id();
+        reap_in_background(child);
 
-        Ok(LaunchResult::new(path).with_pid(child.id()))
+        Ok(LaunchResult::new(path).with_pid(pid))
     }
 }
 
@@ -701,6 +711,42 @@ mod tests {
     fn test_launch_nonexistent_file() {
         let result = launch("C:\\nonexistent\\path\\app.exe");
         assert!(matches!(result, Err(LaunchError::NotFound { .. })));
+    }
+
+    /// Regression test for the zombie-process leak: every fire-and-forget
+    /// launch used to skip `wait()`, so a short-lived child sat as
+    /// `<defunct>` in the process table for as long as Volt kept running.
+    /// `reap_in_background` must clear the zombie shortly after the child
+    /// exits, without the caller having to wait on it itself.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn test_reap_in_background_clears_zombie() {
+        let child = Command::new("true").spawn().expect("spawn `true`");
+        let pid = child.id();
+        reap_in_background(child);
+
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        loop {
+            match std::fs::read_to_string(format!("/proc/{pid}/status")) {
+                // Process table entry is gone entirely — reaped.
+                Err(_) => return,
+                // Still present but not a zombie (hasn't exited yet) — keep polling.
+                Ok(status) if !status.contains("State:\tZ") => {
+                    if std::time::Instant::now() >= deadline {
+                        return;
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(20));
+                }
+                Ok(_zombie) => {
+                    if std::time::Instant::now() >= deadline {
+                        panic!(
+                            "pid {pid} is still a zombie after 5s — reap_in_background failed to wait() it"
+                        );
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(20));
+                }
+            }
+        }
     }
 
     #[cfg(target_os = "windows")]

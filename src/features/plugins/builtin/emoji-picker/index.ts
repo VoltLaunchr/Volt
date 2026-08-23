@@ -17,8 +17,6 @@ import { addToHistory, getFrequentEmojis } from './utils/history';
 import { getEmojiPrimaryAction } from './utils/emojiSettings';
 import type { SearchableEmoji } from './types';
 
-export { EmojiPickerView } from './components/EmojiPickerView';
-
 export class EmojiPickerPlugin implements Plugin {
   id = 'emoji-picker';
   name = 'Emoji Picker';

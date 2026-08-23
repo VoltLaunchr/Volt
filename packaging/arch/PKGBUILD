@@ -1,0 +1,121 @@
+# Maintainer: VoltLaunchr Contributors <contact at voltlaunchr dot com>
+
+pkgname=volt-launchr
+pkgver=0.4.0
+pkgrel=1
+pkgdesc='Keyboard-driven desktop launcher for applications, files, and commands'
+arch=('x86_64')
+url='https://github.com/VoltLaunchr/Volt'
+license=('Apache-2.0')
+# LTO (a default makepkg build option) appends -flto to CFLAGS/LDFLAGS but
+# not RUSTFLAGS. The native C build scripts pulled in by this crate graph
+# (libsqlite3-sys via bundled-sqlite, aws-lc-sys via rustls) then emit LTO
+# bitcode objects that the plain (non-LTO) Rust codegen cannot link against,
+# failing with "undefined symbol" for every sqlite3_*/aws_lc_* symbol at the
+# final link step. Opt out until cross-language LTO is wired up correctly.
+# debug: the release profile does not emit split DWARF debuginfo, so
+# makepkg's debug-package splitting has nothing to extract from
+# usr/bin/volt — it produces an empty debug-source dir and a dangling
+# .build-id symlink (namcap flags this as an error). Opt out until the
+# release profile is configured to keep debug info.
+options=('!lto' '!debug')
+depends=(
+  'bash'
+  'cairo'
+  'dbus'
+  'glibc'
+  'glib2'
+  'gtk3'
+  'libgcc'
+  'onnxruntime-cpu'
+  'openssl'
+  'webkit2gtk-4.1'
+  'xdg-utils'
+  'xz'
+)
+makedepends=(
+  'cargo'
+  'nodejs'
+  'pnpm'
+  'pkgconf'
+)
+optdepends=('org.freedesktop.secrets: store credentials in the desktop keyring')
+source=(
+  "volt-${pkgver}.tar.gz::${url}/archive/refs/tags/v${pkgver}.tar.gz"
+  'com.voltlaunchr.volt.desktop'
+  'com.voltlaunchr.volt.metainfo.xml'
+  'disable-self-updater.patch'
+  'use-system-onnxruntime.patch'
+)
+sha256sums=(
+  '4a0194cbd41e7174faab5b7e84def9ff67554f8dfc2dd09245a042f0c820bbc4'
+  'a7bb5619b16236390174f25d8b2d29ddd690cced44c647a2ee5b2bb3d8db1e32'
+  '482347ccc250eae9503edbeaea7b5450d27386088a91ecc67b1f7bdcd2b699f9'
+  'd98daa9cabbffa104bed3e3872b032ca049ba16af82ea2a5b8702df6da976a9b'
+  '2d6715e1c2ecf866caf3ba7fa48cc67424a3855e7d7b1dc1be8e04456da553bf'
+)
+
+prepare() {
+  cd "Volt-${pkgver}"
+  patch -Np1 -i "${srcdir}/disable-self-updater.patch"
+  patch -Np1 -i "${srcdir}/use-system-onnxruntime.patch"
+
+  pnpm fetch --frozen-lockfile
+
+  export RUSTUP_TOOLCHAIN=stable
+  cargo fetch --manifest-path src-tauri/Cargo.toml --locked \
+    --target "${CARCH}-unknown-linux-gnu"
+}
+
+build() {
+  cd "Volt-${pkgver}"
+
+  pnpm install --offline --frozen-lockfile
+  VITE_VOLT_PACKAGE_MANAGER=1 pnpm run build
+
+  export RUSTUP_TOOLCHAIN=stable
+  export CARGO_TARGET_DIR=target
+  # The release profile links a single crate (staticlib+cdylib+rlib) against a
+  # heavy ML/embedding dependency graph (tokenizers, ort, image, ndarray,
+  # fastembed) while Arch's makepkg RUSTFLAGS request full debuginfo
+  # (-Cdebuginfo=2 -Cstrip=none) for the -debug split package. Unbounded
+  # parallelism lets several such codegen/link units run at once and has been
+  # observed to exceed available RAM (OOM SIGKILL) on 2-4 core / <16GB
+  # builders. Capping jobs keeps peak memory bounded at the cost of wall time.
+  export CARGO_BUILD_JOBS=2
+  cargo build --manifest-path src-tauri/Cargo.toml --release --frozen --offline \
+    --no-default-features --features bundled-sqlite,system-onnxruntime
+}
+
+check() {
+  cd "Volt-${pkgver}"
+
+  pnpm run test
+
+  export RUSTUP_TOOLCHAIN=stable
+  export CARGO_TARGET_DIR=target
+  export CARGO_BUILD_JOBS=2
+  cargo test --manifest-path src-tauri/Cargo.toml --workspace --lib --frozen --offline \
+    --no-default-features --features bundled-sqlite,system-onnxruntime
+}
+
+package() {
+  cd "Volt-${pkgver}"
+
+  install -Dm755 target/release/volt "${pkgdir}/usr/bin/volt"
+  install -Dm644 LICENSE "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
+
+  install -Dm644 "${srcdir}/com.voltlaunchr.volt.desktop" \
+    "${pkgdir}/usr/share/applications/com.voltlaunchr.volt.desktop"
+  install -Dm644 "${srcdir}/com.voltlaunchr.volt.metainfo.xml" \
+    "${pkgdir}/usr/share/metainfo/com.voltlaunchr.volt.metainfo.xml"
+
+  install -Dm644 src-tauri/icons/32x32.png \
+    "${pkgdir}/usr/share/icons/hicolor/32x32/apps/com.voltlaunchr.volt.png"
+  install -Dm644 src-tauri/icons/64x64.png \
+    "${pkgdir}/usr/share/icons/hicolor/64x64/apps/com.voltlaunchr.volt.png"
+  install -Dm644 src-tauri/icons/128x128.png \
+    "${pkgdir}/usr/share/icons/hicolor/128x128/apps/com.voltlaunchr.volt.png"
+  install -Dm644 src-tauri/icons/128x128@2x.png \
+    "${pkgdir}/usr/share/icons/hicolor/256x256/apps/com.voltlaunchr.volt.png"
+}

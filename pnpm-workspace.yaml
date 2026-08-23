@@ -7,12 +7,18 @@ allowBuilds:
 # Security/transitive pins. pnpm 10+ reads `overrides` from this file, not the
 # npm-style top-level `overrides` block in package.json.
 overrides:
-  fast-uri: '>=3.1.2'
-  postcss: '>=8.5.10'
+  # Versions fixed for the complete current npm advisory set. Exact pins keep
+  # installs reproducible until each direct parent raises its own lower bound.
+  brace-expansion: 5.0.9
+  dompurify: 3.4.13
+  fast-uri: 3.1.5
+  js-yaml: 4.3.1
+  postcss: 8.5.25
+  undici: 7.29.0
   picomatch: '>=4.0.4'
   flatted: '>=3.4.2'
   rollup: '>=4.59.0'
   esbuild: '>=0.28.1'
-  # GHSA-22p9-wv53-3rq4: quadratic complexity in linkify-it match() (<=5.0.0),
+  # GHSA-22p9-wv53-3rq4 and GHSA-g2pg-6438-jwpf affect linkify-it <=5.0.1,
   # pulled transitively by ansi-to-react. match() API is stable 3.x -> 5.x.
-  linkify-it: '>=5.0.1'
+  linkify-it: 5.0.2

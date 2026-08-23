@@ -199,6 +199,3 @@ export class AiChatPlugin implements Plugin {
     emitVoltEvent(eventName, { query: data.query ?? '', systemPrompt: data.systemPrompt });
   }
 }
-
-export { AiChatView } from './components/AiChatView';
-export { QuickAiView } from './components/QuickAiView';

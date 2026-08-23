@@ -4,6 +4,7 @@ pub mod constants;
 /// `sqlcipher` Cargo feature is enabled. See `REFONTE-PILIER-C-SQLCIPHER.md`.
 pub mod encrypted_db;
 pub mod error;
+pub mod service_config;
 /// Core module - Shared traits, constants, and error types
 ///
 /// This module contains fundamental traits and definitions used across the application.

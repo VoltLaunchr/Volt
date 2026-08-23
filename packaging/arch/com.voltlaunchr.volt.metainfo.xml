@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>com.voltlaunchr.volt</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>Apache-2.0</project_license>
+  <name>Volt</name>
+  <summary>Keyboard-driven desktop launcher</summary>
+  <description>
+    <p>
+      Volt launches applications, finds files and folders, runs commands, and
+      combines results from built-in plugins in one keyboard-driven interface.
+    </p>
+  </description>
+  <launchable type="desktop-id">com.voltlaunchr.volt.desktop</launchable>
+  <url type="homepage">https://voltlaunchr.com/en/home</url>
+  <url type="bugtracker">https://github.com/VoltLaunchr/Volt/issues</url>
+  <developer id="com.voltlaunchr">
+    <name>VoltLaunchr Contributors</name>
+  </developer>
+  <provides>
+    <binary>volt</binary>
+  </provides>
+  <categories>
+    <category>Utility</category>
+  </categories>
+  <releases>
+    <release version="0.4.0" date="2026-07-19"/>
+  </releases>
+  <content_rating type="oars-1.1"/>
+</component>

@@ -1,0 +1,67 @@
+diff --git a/src-tauri/Cargo.toml b/src-tauri/Cargo.toml
+index 4cf96f36..b5464da4 100644
+--- a/src-tauri/Cargo.toml
++++ b/src-tauri/Cargo.toml
+@@ -95,7 +95,7 @@ shlex = "1.3"
+ # and ships pure-Rust tokenizers; the model itself is downloaded on first use
+ # to `app_data_dir/embeddings/` (NOT bundled into the binary). Uses native-tls
+ # by default — matches our existing reqwest config.
+-fastembed = "5"
++fastembed = { version = "5", default-features = false, features = ["hf-hub-native-tls", "image-models"] }
+ # Pilier D Track 1: full-text/relevance file index. Pure-Rust, builds on
+ # Windows/macOS/Linux. OPTIONAL and OFF by default — only compiled when the
+ # `tantivy-search` feature is enabled, so the default build is unaffected.
+@@ -123,10 +123,15 @@ tauri-plugin-positioner = "2"
+ 
+ [features]
+ # Default keeps plain bundled SQLite — today's behavior, no new build deps.
+-default = ["bundled-sqlite"]
++default = ["bundled-sqlite", "bundled-onnxruntime"]
+ # Plain bundled SQLite (current behavior). Kept as an explicit feature so the
+ # bundling flavor is selected here rather than on the rusqlite dep line.
+ bundled-sqlite = ["rusqlite/bundled"]
++# Upstream installers keep fastembed's verified prebuilt ONNX Runtime download.
++# Native distribution packages can instead select `system-onnxruntime` and use
++# the runtime shipped by the distribution without network access in build().
++bundled-onnxruntime = ["fastembed/ort-download-binaries-native-tls"]
++system-onnxruntime = ["fastembed/ort-load-dynamic"]
+ # Pilier C — encrypted data-at-rest. Replaces plain SQLite with bundled
+ # SQLCipher + vendored OpenSSL (no system OpenSSL required, best for Windows).
+ # Implies `rusqlite/bundled-sqlcipher`. NOT in `default`: keeps the everyday
+diff --git a/src-tauri/Cargo.lock b/src-tauri/Cargo.lock
+index 2f1bc055..fc3d1c46 100644
+--- a/src-tauri/Cargo.lock
++++ b/src-tauri/Cargo.lock
+@@ -3308,6 +3308,6 @@ checksum = "6e9ec52138abedcc58dc17a7c6c0c00a2bdb4f3427c7f63fa97fd0d859155caf"
+ dependencies = [
+  "gtk-sys",
+- "libloading",
++ "libloading 0.7.4",
+  "once_cell",
+ ]
+ 
+@@ -3348,6 +3348,16 @@ dependencies = [
+ ]
+ 
+ [[package]]
++name = "libloading"
++version = "0.9.0"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "754ca22de805bb5744484a5b151a9e1a8e837d5dc232c2d7d8c2e3492edc8b60"
++dependencies = [
++ "cfg-if",
++ "windows-link 0.2.1",
++]
++
++[[package]]
+ name = "libredox"
+ version = "0.1.16"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+@@ -4327,6 +4337,7 @@ version = "2.0.0-rc.12"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+ checksum = "d7de3af33d24a745ffb8fab904b13478438d1cd52868e6f17735ef6e1f8bf133"
+ dependencies = [
++ "libloading 0.9.0",
+  "ndarray",
+  "ort-sys",
+  "smallvec",

@@ -10,7 +10,6 @@ import {
 import { AppInfo, FileInfo, SearchResult, SearchResultType } from '../../shared/types/common.types';
 import {
   SEARCH_SCORING,
-  SEARCH_LIMITS,
   SEARCH_SENSITIVITY_THRESHOLDS,
   SEARCH_SENSITIVITY_FUZZY_MULTIPLIER,
 } from '../../shared/constants/searchScoring';
@@ -325,41 +324,10 @@ export function useSearchPipeline({
       webSearchHistory.setEnabled(rememberWebSearchHistory);
 
       if (!query.trim()) {
-        // Predictive results: show top frecency suggestions.
-        // Guard with latestSearchId so a late frecency response doesn't
-        // overwrite a newer search that started while the IPC was in flight.
-        try {
-          const suggestions = await invoke<LaunchRecord[]>('get_frecency_suggestions', {
-            limit: maxResults,
-          }).catch(() => [] as LaunchRecord[]);
-
-          if (searchId !== latestSearchId.current) {
-            finishSearch(searchId);
-            return;
-          }
-
-          if (suggestions.length > 0) {
-            const predictiveResults: SearchResult[] = suggestions.map((record, i) => ({
-              id: `frecency-${record.path}`,
-              type: SearchResultType.Application,
-              title: record.name,
-              subtitle: undefined,
-              icon: iconByPath.get(record.path.toLowerCase()),
-              score: SEARCH_LIMITS.SEARCH_ORDER_BASE - i, // preserve frecency order
-              data: {
-                id: `frecency-${record.path}`,
-                name: record.name,
-                path: record.path,
-                usageCount: record.launchCount,
-              },
-            }));
-            setResults(predictiveResults);
-          } else {
-            setResults([]);
-          }
-        } catch {
-          if (searchId === latestSearchId.current) setResults([]);
-        }
+        // The root view uses an empty result set to render its default command
+        // suggestions. Frecency results here hide that view after a query is
+        // cleared and can make a stale application appear to remain selected.
+        if (searchId === latestSearchId.current) setResults([]);
         setShowSnowEffect(false);
         finishSearch(searchId);
         return;
@@ -699,6 +667,11 @@ export function useSearchPipeline({
     if (searchQuery.trim()) {
       useSearchStore.getState().setIsSearching(true);
     } else {
+      // Restore the default suggestions synchronously when the input is
+      // cleared; do not leave the previous search visible for the debounce.
+      setResults([]);
+      setSelectedIndex(0);
+      setShowSnowEffect(false);
       useSearchStore.getState().setIsSearching(false);
     }
 
@@ -709,7 +682,14 @@ export function useSearchPipeline({
     }, debounceMs);
 
     return () => clearTimeout(timeoutId);
-  }, [searchQuery, performSearch, suspended]);
+  }, [
+    searchQuery,
+    performSearch,
+    setResults,
+    setSelectedIndex,
+    setShowSnowEffect,
+    suspended,
+  ]);
 
   // Keep selected index in range when results change
   useEffect(() => {
