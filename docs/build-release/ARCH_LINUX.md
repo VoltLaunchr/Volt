@@ -47,6 +47,7 @@ artefacts et compile le tag depuis les sources.
   `TryExec`, `OnlyShowIn`/`NotShowIn` (filtrés via `XDG_CURRENT_DESKTOP`) sont
   pris en charge ;
 - indexation : scan filesystem, watcher et SQLite. Elle n'impose pas X11 ;
+- gestion des fenêtres : repositionnement et snap (`snap_window`) via X11/EWMH (`x11rb`) avec géométrie d'écrans RandR ; détection de la fenêtre active sous X11 (`_NET_ACTIVE_WINDOW`) et Hyprland (`hyprctl`) pour le presse-papiers et les snippets ;
 - tray : aucun tray n'est créé par le code actuel. La présence transitive de
   crates relatives au tray ne constitue pas une fonctionnalité ;
 - updater : désactivé à la compilation pour un paquet système avec

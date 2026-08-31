@@ -29,6 +29,8 @@ utils/         # Reusable utilities
   icon.rs              # Icon extraction (Windows/macOS/Linux)
   matching.rs          # Fuzzy matching helpers
   path.rs              # Path utilities
+  win32.rs             # Foreground app resolution (Windows, Hyprland via hyprctl, Linux X11)
+  x11.rs               # (Linux) X11 connection, active window & WM_CLASS helpers via x11rb
   extension_state_sig.rs # HMAC-SHA256 state signatures for extension tampering detection
   launch_validation.rs # LOLBIN denylist, NTFS normalization, executable validation
   shell_apps.rs        # Win Shell AppsFolder enumeration (Windows only)
@@ -57,7 +59,7 @@ commands/      # Tauri command handlers
   hotkey.rs    # Hotkey commands
   autostart.rs # Autostart management
   logging.rs   # Log management
-  window_management.rs # Window snap commands
+  window_management.rs # Window snap commands (Windows Win32 + Linux X11/EWMH via x11rb)
 hotkey/        # Global hotkey management
 expansion/     # Global snippet expansion (Pilier E1): WH_KEYBOARD_LL hook, no uiAccess.
                #   Windows + `snippet-global-expansion` feature only (OFF by default); no-op elsewhere.
