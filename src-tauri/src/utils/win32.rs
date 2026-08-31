@@ -1,7 +1,10 @@
-//! Small Win32 helpers shared across modules (clipboard manager, global
-//! snippet expansion). Kept separate from `utils::process` (which deals with
-//! generic process lookups) because these are foreground-window-specific and
-//! Windows-only.
+//! Small foreground-window helpers shared across modules (clipboard manager,
+//! global snippet expansion). Kept separate from `utils::process` (which
+//! deals with generic process lookups) because these are specific to "what
+//! window/app currently has focus". Historically Windows-only (hence the
+//! filename); now also covers Linux (Hyprland via `hyprctl`, X11/XWayland via
+//! `utils::x11`). Generic Wayland compositors without a Hyprland-style CLI
+//! IPC have no unprivileged way to answer this, so they fall back to `None`.
 
 /// Return the lowercase executable basename of the current foreground window's
 /// process, or `None` if it cannot be determined.
@@ -54,7 +57,42 @@ pub(crate) fn get_foreground_app_name() -> Option<String> {
     }
 }
 
-#[cfg(not(windows))]
+/// Runs `hyprctl -j activewindow` and extracts the `class` field, if Hyprland
+/// is the running compositor (`HYPRLAND_INSTANCE_SIGNATURE` is set by Hyprland
+/// for every client, including the one launching Volt). `hyprctl` is
+/// Hyprland's own IPC CLI, always present alongside the compositor — no
+/// optional dependency to detect or degrade around.
+#[cfg(target_os = "linux")]
+fn get_foreground_app_name_hyprland() -> Option<String> {
+    let output = std::process::Command::new("hyprctl")
+        .args(["-j", "activewindow"])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).ok()?;
+    value
+        .get("class")?
+        .as_str()
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_lowercase())
+}
+
+#[cfg(target_os = "linux")]
+pub(crate) fn get_foreground_app_name() -> Option<String> {
+    if std::env::var_os("HYPRLAND_INSTANCE_SIGNATURE").is_some() {
+        return get_foreground_app_name_hyprland();
+    }
+    // Other Wayland compositors (GNOME Mutter, KDE KWin, ...) have no
+    // standard unprivileged protocol for "which app is focused" — only
+    // XWayland clients are visible via the X11 path below.
+    let x = crate::utils::x11::connect().ok()?;
+    let window = crate::utils::x11::active_window(&x).ok()?;
+    crate::utils::x11::wm_class(&x, window)
+}
+
+#[cfg(not(any(windows, target_os = "linux")))]
 pub(crate) fn get_foreground_app_name() -> Option<String> {
     None
 }

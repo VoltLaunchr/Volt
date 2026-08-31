@@ -393,8 +393,12 @@ pub fn resolve_linux_icon(icon_name: &str) -> Option<String> {
     }
 
     let home = std::env::var("HOME").unwrap_or_default();
-    let xdg_data_home = std::env::var("XDG_DATA_HOME").ok().filter(|v| !v.is_empty());
-    let xdg_data_dirs = std::env::var("XDG_DATA_DIRS").ok().filter(|v| !v.is_empty());
+    let xdg_data_home = std::env::var("XDG_DATA_HOME")
+        .ok()
+        .filter(|v| !v.is_empty());
+    let xdg_data_dirs = std::env::var("XDG_DATA_DIRS")
+        .ok()
+        .filter(|v| !v.is_empty());
     let base_dirs =
         linux_icon_search_dirs(&home, xdg_data_home.as_deref(), xdg_data_dirs.as_deref());
 
@@ -483,17 +487,18 @@ mod linux_icon_tests {
 
     #[test]
     fn search_dirs_deduplicates() {
-        // XDG_DATA_HOME pointing at the same place as one of the XDG_DATA_DIRS
-        // entries (or as the Flatpak user export dir) must not be searched twice.
+        // XDG_DATA_HOME pointing at the same place as the Flatpak user export
+        // dir (a real layout: some distros set XDG_DATA_HOME to include the
+        // Flatpak overlay) must not be searched twice.
         let dirs = linux_icon_search_dirs(
             "/home/alice",
-            Some("/home/alice/.local/share"),
+            Some("/home/alice/.local/share/flatpak/exports/share"),
             Some("/usr/share"),
         );
         assert_eq!(
             dirs,
             vec![
-                "/home/alice/.local/share".to_string(),
+                "/home/alice/.local/share/flatpak/exports/share".to_string(),
                 "/usr/share".to_string(),
                 "/var/lib/flatpak/exports/share".to_string(),
             ]
