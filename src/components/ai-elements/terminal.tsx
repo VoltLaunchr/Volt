@@ -146,7 +146,9 @@ export const TerminalCopyButton = ({
         "size-7 shrink-0 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100",
         className
       )}
-      onClick={copyToClipboard}
+      onClick={() => {
+        void copyToClipboard();
+      }}
       size="icon"
       variant="ghost"
       {...props}
