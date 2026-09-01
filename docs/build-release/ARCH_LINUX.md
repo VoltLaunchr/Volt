@@ -22,7 +22,8 @@ protocole ; il doit donc faire l'objet d'une migration upstream distincte.
 Vite construit le frontend React, puis Cargo construit l'application Tauri 2.
 La configuration Tauri demande actuellement tous les formats de bundle : deb,
 RPM et AppImage. Le workflow de release utilise pnpm, et non Bun. Le fichier
-verrou réellement utilisé est `pnpm-lock.yaml` avec pnpm 11.7.0 ; Cargo utilise
+verrou réellement utilisé est `pnpm-lock.yaml`, avec la version de pnpm déclarée
+dans `package.json#packageManager` ; Cargo utilise
 `src-tauri/Cargo.lock`.
 
 Les releases stables récentes doivent être contrôlées avant chaque publication
