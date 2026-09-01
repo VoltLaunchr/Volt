@@ -316,10 +316,11 @@ fn hicon_to_png_base64(hicon: winapi::shared::windef::HICON) -> Option<String> {
         return None;
     }
 
-    // 5. BGRA → RGBA in place. `chunks_exact_mut(4)` enforces the 4-byte
-    //    stride invariant and never panics; the previous `step_by(4) + swap`
-    //    pattern silently assumed `buffer.len() % 4 == 0`.
-    for px in buffer.chunks_exact_mut(4) {
+    // 5. BGRA → RGBA in place. Typed chunks encode the 4-byte pixel stride;
+    //    width * height * 4 guarantees that no remainder is possible.
+    let (pixels, remainder) = buffer.as_chunks_mut::<4>();
+    debug_assert!(remainder.is_empty());
+    for px in pixels {
         px.swap(0, 2);
     }
 
