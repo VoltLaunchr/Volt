@@ -1,36 +1,70 @@
 //! Window management commands for snapping/resizing the foreground window.
 //!
 //! These commands manipulate the PREVIOUSLY focused window (not Volt's own window).
-//! The backend hides Volt atomically after capturing the target window so a
-//! focus change between `hide_window` and `snap_window` cannot snap the wrong
-//! window. On failure Volt is shown again so the user is not left without the
-//! launcher.
+//! The backend uses the last external foreground window recorded immediately
+//! before Volt took focus, then hides Volt only after validating that target.
+//! On failure Volt is shown again so the user is not left without the launcher.
 //!
 //! The `open_notes_window` command is the lone exception: it acts on Volt's
 //! own webview windows (creating or focusing the dedicated Notes window).
 
+#[cfg(any(target_os = "windows", target_os = "linux"))]
 use tauri::Manager;
+
+/// Last non-Volt foreground window observed immediately before the launcher
+/// was shown. A focus target must come from this explicit history, not from
+/// Z-order (which is not a focus history and may contain tool/always-on-top
+/// windows between Volt and the user's application).
+#[derive(Default)]
+pub struct SnapTargetState {
+    window: std::sync::Mutex<Option<u64>>,
+}
+
+impl SnapTargetState {
+    fn validated_target(&self) -> Option<u64> {
+        match self.window.lock() {
+            Ok(stored) => *stored,
+            Err(poisoned) => {
+                tracing::warn!("snap target lock poisoned; recovering state");
+                *poisoned.into_inner()
+            }
+        }
+    }
+}
+
+/// Record the current external foreground window before Volt takes focus.
+pub(crate) fn remember_foreground_target(app: &tauri::AppHandle) {
+    #[cfg(target_os = "windows")]
+    let target = windows_impl::current_external_window();
+    #[cfg(target_os = "linux")]
+    let target = linux_impl::current_external_window();
+    #[cfg(not(any(target_os = "windows", target_os = "linux")))]
+    let target: Option<u64> = None;
+
+    if let Some(target) = target
+        && let Some(state) = app.try_state::<SnapTargetState>()
+    {
+        match state.window.lock() {
+            Ok(mut stored) => *stored = Some(target),
+            Err(poisoned) => {
+                tracing::warn!("snap target lock poisoned; recovering state");
+                *poisoned.into_inner() = Some(target);
+            }
+        }
+    }
+}
 
 #[cfg(target_os = "windows")]
 mod windows_impl {
-    use tauri::{AppHandle, Manager};
     use std::mem;
+    use tauri::{AppHandle, Manager};
     use winapi::shared::windef::{HWND, RECT};
     use winapi::um::winuser::{
         GWL_STYLE, GetForegroundWindow, GetMonitorInfoW, GetWindowLongW, GetWindowRect,
-        GetWindowThreadProcessId, GetWindow, IsWindowVisible, MONITOR_DEFAULTTONEAREST, MONITORINFO, MonitorFromWindow, SW_MAXIMIZE, SW_MINIMIZE,
-        SW_RESTORE, SWP_NOACTIVATE, SWP_NOZORDER, SetWindowPos, ShowWindow, WS_MAXIMIZE,
+        GetWindowThreadProcessId, IsWindow, IsWindowVisible, MONITOR_DEFAULTTONEAREST, MONITORINFO,
+        MonitorFromWindow, SW_MAXIMIZE, SW_MINIMIZE, SW_RESTORE, SWP_NOACTIVATE, SWP_NOZORDER,
+        SetWindowPos, ShowWindow, WS_MAXIMIZE,
     };
-
-    /// Returns the foreground window handle, or an error if none is found.
-    fn get_foreground() -> Result<HWND, String> {
-        let hwnd = unsafe { GetForegroundWindow() };
-        if hwnd.is_null() {
-            Err("No foreground window found".to_string())
-        } else {
-            Ok(hwnd)
-        }
-    }
 
     /// Returns the work-area rectangle (excluding taskbar) of the monitor
     /// that contains the given window.
@@ -74,62 +108,35 @@ mod windows_impl {
         Ok(())
     }
 
-    /// Find the next window in Z-order that is not Volt itself.
-    /// `volt_hwnd` is the window that was foreground before hide (i.e. Volt).
-    /// We walk GW_HWNDNEXT until we find a visible window that does not belong
-    /// to the current process.
-    fn find_next_window(volt_hwnd: HWND) -> Option<HWND> {
-        const GW_HWNDNEXT: u32 = 2;
-        let current_pid = std::process::id();
-        let mut next = unsafe { GetWindow(volt_hwnd, GW_HWNDNEXT) };
-        let mut iterations = 0;
-        while !next.is_null() && iterations < 20 {
-            // Skip invisible windows and windows belonging to Volt's process
-            let mut pid: u32 = 0;
-            unsafe { GetWindowThreadProcessId(next, &mut pid as *mut u32); }
-            let is_visible = unsafe { IsWindowVisible(next) } != 0;
-            if pid != current_pid && is_visible {
-                return Some(next);
-            }
-            next = unsafe { GetWindow(next, GW_HWNDNEXT) };
-            iterations += 1;
+    fn external_window(hwnd: HWND) -> Option<HWND> {
+        if hwnd.is_null() || unsafe { IsWindow(hwnd) } == 0 || unsafe { IsWindowVisible(hwnd) } == 0
+        {
+            return None;
         }
-        None
+        let current_pid = std::process::id();
+        let mut pid: u32 = 0;
+        unsafe {
+            GetWindowThreadProcessId(hwnd, &mut pid as *mut u32);
+        }
+        (pid != current_pid).then_some(hwnd)
+    }
+
+    pub(super) fn current_external_window() -> Option<u64> {
+        external_window(unsafe { GetForegroundWindow() }).map(|hwnd| hwnd as usize as u64)
     }
 
     pub fn snap_window_impl(app: &AppHandle, position: &str) -> Result<(), String> {
-        // Capture target before hiding Volt to avoid race where focus changes
-        // between hide and GetForegroundWindow. If the current foreground is
-        // Volt (same PID), the window below Volt in Z-order is the user's
-        // intended target.
-        let volt_hwnd = unsafe { GetForegroundWindow() };
-        let target_hwnd: Option<HWND> = if !volt_hwnd.is_null() {
-            let mut pid: u32 = 0;
-            unsafe { GetWindowThreadProcessId(volt_hwnd, &mut pid as *mut u32); }
-            let is_volt = pid == std::process::id();
-            if is_volt {
-                find_next_window(volt_hwnd)
-            } else {
-                // Already not Volt — likely frontend hid already, use it
-                Some(volt_hwnd)
-            }
-        } else {
-            None
-        };
+        let target_hwnd = app
+            .try_state::<super::SnapTargetState>()
+            .and_then(|state| state.validated_target())
+            .and_then(|stored| external_window(stored as usize as HWND));
+
+        let hwnd = target_hwnd.ok_or_else(|| "No previously focused window found".to_string())?;
 
         // Hide Volt now that we have captured the target.
         if let Some(w) = app.get_webview_window("main") {
             let _ = w.hide();
         }
-
-        // Resolve final hwnd: prefer captured target, fallback to current foreground
-        let hwnd = if let Some(h) = target_hwnd {
-            h
-        } else {
-            // Brief yield to let WM process hide, then query
-            std::thread::sleep(std::time::Duration::from_millis(20));
-            get_foreground()?
-        };
 
         let wa = get_work_area(hwnd)?;
         let wa_x = wa.left;
@@ -200,7 +207,9 @@ mod linux_impl {
     use tauri::{AppHandle, Manager};
     use x11rb::connection::Connection as _;
     use x11rb::protocol::randr::ConnectionExt as _;
-    use x11rb::protocol::xproto::{AtomEnum, ConnectionExt as _, ClientMessageEvent, EventMask, Window};
+    use x11rb::protocol::xproto::{
+        AtomEnum, ClientMessageEvent, ConnectionExt as _, EventMask, Window,
+    };
 
     /// Root-relative geometry of `window` (its own coordinates are relative to
     /// its parent, which for a reparenting WM is the decoration frame, not root).
@@ -345,74 +354,33 @@ mod linux_impl {
         send_root_client_message(x, event)
     }
 
-    /// Query `_NET_CLIENT_LIST_STACKING` (bottom-to-top) to find the window
-    /// directly below `volt_window`. This is the window that was focused
-    /// before Volt was opened and is stable across a `hide_window` + focus
-    /// change race.
-    fn stacking_below_volt(x: &X11, volt_window: Window) -> Option<Window> {
-        let atom = atom(&x.conn, "_NET_CLIENT_LIST_STACKING").ok()?;
-        let reply = x
-            .conn
-            .get_property(false, x.root, atom, AtomEnum::WINDOW, 0, 2048)
-            .ok()?
-            .reply()
-            .ok()?;
-        let windows: Vec<Window> = reply.value32()?.collect();
-        let pos = windows.iter().position(|&w| w == volt_window)?;
-        if pos > 0 {
-            let prev = windows[pos - 1];
-            if prev != 0 {
-                return Some(prev);
-            }
+    fn external_window(x: &X11, window: Window) -> Option<Window> {
+        if window == 0 || wm_class(x, window)?.contains("volt") {
+            return None;
         }
-        None
+        x.conn.get_window_attributes(window).ok()?.reply().ok()?;
+        Some(window)
+    }
+
+    pub(super) fn current_external_window() -> Option<u64> {
+        let x = connect().ok()?;
+        external_window(&x, active_window(&x).ok()?).map(u64::from)
     }
 
     pub fn snap_window_impl(app: &AppHandle, position: &str) -> Result<(), String> {
         let x = connect()?;
 
-        // Capture target before hiding Volt to avoid race.
-        // If the current active window is Volt itself, the stacking predecessor
-        // is the intended target and is stable even if focus changes after hide.
-        let target_window: Option<Window> = match active_window(&x) {
-            Ok(active) => {
-                let class = wm_class(&x, active).unwrap_or_default();
-                let is_volt = class.contains("volt");
-                if is_volt {
-                    stacking_below_volt(&x, active).or(Some(active))
-                } else {
-                    Some(active)
-                }
-            }
-            Err(_) => None,
-        };
+        let target_window = app
+            .try_state::<super::SnapTargetState>()
+            .and_then(|state| state.validated_target())
+            .and_then(|stored| u32::try_from(stored).ok())
+            .and_then(|stored| external_window(&x, stored));
+        let window =
+            target_window.ok_or_else(|| "No previously focused window found".to_string())?;
 
-        // Decide final window to act on. If we could determine it before hide,
-        // use it directly. Otherwise hide first and query again.
-        let window: Window = if let Some(t) = target_window {
-            // Hide Volt now that target is captured. If stacking gave us Volt
-            // itself (no predecessor), we fallback to querying after hide.
-            let needs_fallback = {
-                let class = wm_class(&x, t).unwrap_or_default();
-                class.contains("volt")
-            };
-            if let Some(w) = app.get_webview_window("main") {
-                let _ = w.hide();
-            }
-            if needs_fallback {
-                // Stacking had no predecessor; give WM a moment then query active
-                std::thread::sleep(std::time::Duration::from_millis(20));
-                active_window(&x)?
-            } else {
-                t
-            }
-        } else {
-            if let Some(w) = app.get_webview_window("main") {
-                let _ = w.hide();
-            }
-            std::thread::sleep(std::time::Duration::from_millis(20));
-            active_window(&x)?
-        };
+        if let Some(w) = app.get_webview_window("main") {
+            let _ = w.hide();
+        }
 
         match position {
             "maximize" => maximize(&x, window),
@@ -491,8 +459,8 @@ mod linux_impl {
 
 /// Snap/resize/move the foreground window to the given position.
 ///
-/// The backend hides Volt atomically after capturing the target window so the
-/// correct window is snapped even if focus changes immediately after hide.
+/// The backend validates the explicit target recorded before Volt took focus,
+/// so a Z-order neighbor or a focus change after hide cannot become the target.
 /// On failure Volt is shown again.
 #[tauri::command]
 #[allow(clippy::needless_return, clippy::collapsible_if)]

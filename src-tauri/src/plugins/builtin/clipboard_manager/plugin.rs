@@ -136,9 +136,11 @@ impl ClipboardManagerPlugin {
     /// Update the list of apps whose clipboard changes should not be recorded.
     /// `apps` contains executable basenames (e.g. "1password", "keepass"), case-insensitive.
     pub fn set_disabled_apps(&self, apps: Vec<String>) {
-        if let Ok(mut guard) = self.disabled_apps_filter.lock() {
-            *guard = apps.into_iter().map(|a| a.to_lowercase()).collect();
-        }
+        let mut guard = self.disabled_apps_filter.lock().unwrap_or_else(|poisoned| {
+            tracing::warn!("clipboard disabled-apps lock poisoned; recovering state");
+            poisoned.into_inner()
+        });
+        *guard = apps.into_iter().map(|a| a.to_lowercase()).collect();
     }
 
     /// Set the plugin API
@@ -663,7 +665,10 @@ impl ClipboardManagerPlugin {
                                                 true
                                             }
                                         } else {
-                                            false
+                                            tracing::warn!(
+                                                "clipboard disabled-apps lock poisoned; blocking capture"
+                                            );
+                                            true
                                         };
                                         if !blocked {
                                             *last_hash_guard = Some(current_hash.clone());
@@ -750,7 +755,10 @@ impl ClipboardManagerPlugin {
                                     true
                                 }
                             } else {
-                                false
+                                tracing::warn!(
+                                    "clipboard disabled-apps lock poisoned; blocking capture"
+                                );
+                                true
                             };
                             if blocked {
                                 continue;

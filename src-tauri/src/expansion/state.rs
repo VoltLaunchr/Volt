@@ -234,7 +234,7 @@ fn run_processor_loop(
                 Ok(list) => !list.is_empty(),
                 Err(e) => {
                     tracing::warn!("snippet expansion: excluded_apps lock poisoned: {e}");
-                    false
+                    true
                 }
             },
             Some(app) => {
@@ -243,7 +243,7 @@ fn run_processor_loop(
                     Ok(list) => list.iter().any(|e| e.to_lowercase() == *app),
                     Err(e) => {
                         tracing::warn!("snippet expansion: excluded_apps lock poisoned: {e}");
-                        false
+                        true
                     }
                 };
                 is_self || is_user_excluded

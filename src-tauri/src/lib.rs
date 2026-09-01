@@ -175,6 +175,7 @@ pub fn run() {
                 }
             }
             if let Some(window) = app.get_webview_window("main") {
+                commands::window_management::remember_foreground_target(app);
                 let _ = window.show();
                 let _ = window.unminimize();
                 let _ = window.set_focus();
@@ -258,6 +259,10 @@ pub fn run() {
             app.manage(HotkeyState {
                 current: std::sync::Mutex::new(None),
             });
+
+            // Remember the explicit external focus target used by window-snap
+            // commands; Z-order is not a reliable focus history.
+            app.manage(commands::window_management::SnapTargetState::default());
 
             // Initialize AI quick-action hotkey state
             app.manage(commands::ai_quick_actions::QuickActionHotkeyState::default());
