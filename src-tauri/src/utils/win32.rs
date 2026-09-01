@@ -81,16 +81,14 @@ fn get_foreground_app_name_hyprland() -> Option<String> {
 
 #[cfg(target_os = "linux")]
 pub(crate) fn get_foreground_app_name() -> Option<String> {
-    if std::env::var_os("HYPRLAND_INSTANCE_SIGNATURE").is_some() {
-        if let Some(app) = get_foreground_app_name_hyprland() {
-            return Some(app);
-        }
-        // Hyprland detected but hyprctl did not yield a usable class
-        // (missing/empty/malformed response or command failure). Fall
-        // through to the X11/XWayland path so XWayland windows can still
-        // be identified; if that also fails we return None and callers
-        // must fail closed when an exclusion list is configured.
+    if std::env::var_os("HYPRLAND_INSTANCE_SIGNATURE").is_some()
+        && let Some(app) = get_foreground_app_name_hyprland()
+    {
+        return Some(app);
     }
+    // If Hyprland was detected but hyprctl did not yield a usable class,
+    // fall through to X11 so XWayland windows can still be identified. If
+    // that also fails, callers must fail closed when exclusions are configured.
     // Other Wayland compositors (GNOME Mutter, KDE KWin, ...) have no
     // standard unprivileged protocol for "which app is focused" — only
     // XWayland clients are visible via the X11 path below.

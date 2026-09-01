@@ -206,9 +206,7 @@ mod linux_impl {
     use tauri::{AppHandle, Manager};
     use x11rb::connection::Connection as _;
     use x11rb::protocol::randr::ConnectionExt as _;
-    use x11rb::protocol::xproto::{
-        AtomEnum, ClientMessageEvent, ConnectionExt as _, EventMask, Window,
-    };
+    use x11rb::protocol::xproto::{ClientMessageEvent, ConnectionExt as _, EventMask, Window};
 
     /// Root-relative geometry of `window` (its own coordinates are relative to
     /// its parent, which for a reparenting WM is the decoration frame, not root).
