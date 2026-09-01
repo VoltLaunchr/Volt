@@ -20,6 +20,7 @@ pub struct SnapTargetState {
 }
 
 impl SnapTargetState {
+    #[cfg(any(target_os = "windows", target_os = "linux"))]
     fn validated_target(&self) -> Option<u64> {
         match self.window.lock() {
             Ok(stored) => *stored,
