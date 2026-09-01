@@ -8,7 +8,6 @@
 //! The `open_notes_window` command is the lone exception: it acts on Volt's
 //! own webview windows (creating or focusing the dedicated Notes window).
 
-#[cfg(any(target_os = "windows", target_os = "linux"))]
 use tauri::Manager;
 
 /// Last non-Volt foreground window observed immediately before the launcher
