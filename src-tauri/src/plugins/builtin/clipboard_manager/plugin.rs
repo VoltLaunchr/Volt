@@ -648,7 +648,10 @@ impl ClipboardManagerPlugin {
                                         };
 
                                     if should_add {
-                                        // Skip if the source app is in the disabled list
+                                        // Skip if the source app is in the disabled list.
+                                        // Fail closed: when the foreground app cannot be identified
+                                        // and the exclusion list is non-empty, treat as blocked
+                                        // to avoid leaking clipboard data into a protected app.
                                         let blocked = if let Ok(disabled) =
                                             disabled_apps_filter.lock()
                                         {
@@ -657,7 +660,7 @@ impl ClipboardManagerPlugin {
                                             } else if let Some(app) = get_foreground_app_name() {
                                                 disabled.iter().any(|d| app.contains(d.as_str()))
                                             } else {
-                                                false
+                                                true
                                             }
                                         } else {
                                             false
@@ -734,14 +737,17 @@ impl ClipboardManagerPlugin {
                         };
 
                         if should_add {
-                            // Skip if the source app is in the disabled list
+                            // Skip if the source app is in the disabled list.
+                            // Fail closed: when the foreground app cannot be identified
+                            // and the exclusion list is non-empty, treat as blocked
+                            // to avoid leaking clipboard data into a protected app.
                             let blocked = if let Ok(disabled) = disabled_apps_filter.lock() {
                                 if disabled.is_empty() {
                                     false
                                 } else if let Some(app) = get_foreground_app_name() {
                                     disabled.iter().any(|d| app.contains(d.as_str()))
                                 } else {
-                                    false
+                                    true
                                 }
                             } else {
                                 false

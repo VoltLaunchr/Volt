@@ -185,7 +185,10 @@ export class WindowManagementPlugin implements Plugin {
 
   /**
    * Execute the window management command.
-   * Hides Volt first, then invokes the backend snap command.
+   * Delegates hiding to the backend so the target window can be captured
+   * atomically before Volt hides — avoids the race where a focus change
+   * between `hide_window` and `snap_window` snaps the wrong window.
+   * If snapping fails, restores Volt so the user is not left without the launcher.
    */
   async execute(result: PluginResult): Promise<void> {
     const position = result.data?.position as string;
@@ -194,16 +197,19 @@ export class WindowManagementPlugin implements Plugin {
       return;
     }
 
+    const { invoke } = await import('@tauri-apps/api/core');
+
     try {
-      const { invoke } = await import('@tauri-apps/api/core');
-
-      // Hide Volt first so the foreground window is the user's target
-      await invoke<void>('hide_window');
-
-      // Snap the (now-foreground) window
+      // Backend hides Volt atomically after capturing the target window
       await invoke<void>('snap_window', { position });
     } catch (error) {
       logger.error('Failed to snap window:', error);
+      // Restore Volt so the user can retry — previously the launcher stayed hidden on failure
+      try {
+        await invoke<void>('show_window');
+      } catch (showError) {
+        logger.error('Failed to restore window after snap failure:', showError);
+      }
     }
   }
 }
