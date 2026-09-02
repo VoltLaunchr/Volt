@@ -217,7 +217,7 @@ export function ViewRouter({ onSelectEmoji, onLaunchResult, onActivateSuggestion
     );
   }
 
-  if (!searchQuery.trim() && deferredResults.length === 0) {
+  if (!searchQuery.trim() && results.length === 0) {
     return (
       <SuggestionsView
         suggestions={defaultSuggestions}
@@ -228,7 +228,7 @@ export function ViewRouter({ onSelectEmoji, onLaunchResult, onActivateSuggestion
     );
   }
 
-  if (isLoading && searchQuery.trim() && deferredResults.length === 0) {
+  if (isLoading && searchQuery.trim() && results.length === 0) {
     return (
       <div className="loading-container">
         <Spinner size="medium" message={t('viewRouter.loading')} />

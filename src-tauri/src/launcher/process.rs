@@ -239,25 +239,27 @@ pub fn launch_url(url: &str) -> Result<LaunchResult, LaunchError> {
 
     #[cfg(target_os = "macos")]
     {
-        let child = Command::new("open")
-            .arg(url)
-            .spawn()
-            .map_err(|e| LaunchError::SpawnFailed {
-                path: url.to_string(),
-                message: e.to_string(),
-            })?;
+        let child =
+            Command::new("open")
+                .arg(url)
+                .spawn()
+                .map_err(|e| LaunchError::SpawnFailed {
+                    path: url.to_string(),
+                    message: e.to_string(),
+                })?;
         reap_in_background(child);
     }
 
     #[cfg(target_os = "linux")]
     {
-        let child = Command::new("xdg-open")
-            .arg(url)
-            .spawn()
-            .map_err(|e| LaunchError::SpawnFailed {
-                path: url.to_string(),
-                message: e.to_string(),
-            })?;
+        let child =
+            Command::new("xdg-open")
+                .arg(url)
+                .spawn()
+                .map_err(|e| LaunchError::SpawnFailed {
+                    path: url.to_string(),
+                    message: e.to_string(),
+                })?;
         reap_in_background(child);
     }
 

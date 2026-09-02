@@ -197,6 +197,7 @@ fn register_one(app: &AppHandle, action: &AiQuickAction, hotkey_str: &str) -> Re
             let _ = app_handle.emit("volt://ai-quick-action", payload.clone());
             // Bring the main window forward — the frontend will handle the UI flow.
             if let Some(win) = app_handle.get_webview_window("main") {
+                crate::commands::window_management::remember_foreground_target(&app_handle);
                 let _ = win.show();
                 let _ = win.set_focus();
             }

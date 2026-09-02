@@ -216,10 +216,19 @@ export const StackTraceHeader = memo(
 
     return (
       <Collapsible onOpenChange={setIsOpen} open={isOpen}>
-        <CollapsibleTrigger {...props} render={<div className={cn(
-                          "flex w-full cursor-pointer items-center gap-3 p-3 text-left transition-colors hover:bg-muted/50",
-                          className
-                        )} />}>{children}</CollapsibleTrigger>
+        <CollapsibleTrigger
+          {...props}
+          render={
+            <div
+              className={cn(
+                "flex w-full cursor-pointer items-center gap-3 p-3 text-left transition-colors hover:bg-muted/50",
+                className
+              )}
+            />
+          }
+        >
+          {children}
+        </CollapsibleTrigger>
       </Collapsible>
     );
   }
@@ -346,7 +355,9 @@ export const StackTraceCopyButton = memo(
     return (
       <Button
         className={cn("size-7", className)}
-        onClick={copyToClipboard}
+        onClick={() => {
+          void copyToClipboard();
+        }}
         size="icon"
         variant="ghost"
         {...props}

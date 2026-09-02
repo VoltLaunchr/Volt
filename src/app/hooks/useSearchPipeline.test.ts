@@ -113,17 +113,19 @@ describe('useSearchPipeline', () => {
     });
     expect(tauriMocks.channels).toHaveLength(1);
 
-    useSearchStore.setState({
-      results: [
-        {
-          id: 'stale-app',
-          type: SearchResultType.Application,
-          title: 'Stale App',
-          score: 100,
-          data: { id: 'stale-app', name: 'Stale App', path: 'stale.exe', usageCount: 0 },
-        },
-      ],
-      selectedIndex: 1,
+    act(() => {
+      useSearchStore.setState({
+        results: [
+          {
+            id: 'stale-app',
+            type: SearchResultType.Application,
+            title: 'Stale App',
+            score: 100,
+            data: { id: 'stale-app', name: 'Stale App', path: 'stale.exe', usageCount: 0 },
+          },
+        ],
+        selectedIndex: 1,
+      });
     });
 
     act(() => {

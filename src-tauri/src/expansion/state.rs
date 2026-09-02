@@ -224,16 +224,26 @@ fn run_processor_loop(
         };
 
         // Foreground-app exclusion check (sensitive apps + Volt itself).
+        // Fail closed: when the foreground app cannot be identified and the
+        // exclusion list is non-empty, treat as excluded to avoid expanding
+        // in a protected app. When no exclusions are configured, preserve
+        // the prior permissive behaviour.
         let foreground = crate::utils::win32::get_foreground_app_name();
         let is_excluded = match &foreground {
-            None => false,
+            None => match excluded_apps.lock() {
+                Ok(list) => !list.is_empty(),
+                Err(e) => {
+                    tracing::warn!("snippet expansion: excluded_apps lock poisoned: {e}");
+                    true
+                }
+            },
             Some(app) => {
                 let is_self = own_exe_stem.as_deref() == Some(app.as_str());
                 let is_user_excluded = match excluded_apps.lock() {
                     Ok(list) => list.iter().any(|e| e.to_lowercase() == *app),
                     Err(e) => {
                         tracing::warn!("snippet expansion: excluded_apps lock poisoned: {e}");
-                        false
+                        true
                     }
                 };
                 is_self || is_user_excluded

@@ -30,8 +30,6 @@ jobs:
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
-        with:
-          version: 11.7.0
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -82,7 +80,7 @@ jobs:
         run: cd src-tauri && cargo clippy --all-targets --no-default-features --features sqlcipher -- -D warnings
 
       - name: SQLCipher Tests
-        run: cd src-tauri && cargo test --workspace --lib --no-default-features --features sqlcipher
+        run: cd src-tauri && cargo test --workspace --lib --no-default-features --features sqlcipher,bundled-onnxruntime
 
       - name: Verify generated TS bindings are up to date
         # The Rust test step regenerates the ts-rs IPC bindings; fail if they

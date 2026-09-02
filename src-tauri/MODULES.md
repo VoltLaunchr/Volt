@@ -225,9 +225,11 @@ Reusable utility functions.
 ```
 utils/
 ├── mod.rs        # Module exports
-├── icon.rs       # Icon extraction
+├── icon.rs       # Icon extraction (Windows/macOS/Linux)
 ├── matching.rs   # Search algorithms
 ├── path.rs       # Path utilities
+├── win32.rs      # Foreground app name resolution (Windows, Hyprland via hyprctl, Linux X11)
+├── x11.rs        # (Linux) X11 connection, active window & WM_CLASS helpers via x11rb
 └── shell_apps.rs # (Windows) Shell AppsFolder enumeration for Store/UWP apps, junk app filtering
 ```
 
@@ -338,6 +340,7 @@ All commands return `VoltResult<T>` using the `VoltError` discriminated union.
 - **snippets.rs**: Snippet CRUD (get/create/update/delete/expand/import/export) with JSON storage
 - **steam.rs**: Steam library integration
 - **system_monitor.rs**: System resource monitoring
+- **window_management.rs**: Window snap/maximize/minimize/restore commands (Windows Win32 + Linux X11/EWMH via `x11rb`)
 
 ---
 

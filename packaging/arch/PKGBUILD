@@ -90,7 +90,9 @@ build() {
 check() {
   cd "Volt-${pkgver}"
 
-  pnpm run test
+  GITHUB_STEP_SUMMARY="${srcdir}/vitest-summary.md" \
+    NODE_OPTIONS=--no-experimental-webstorage \
+    pnpm run test
 
   export RUSTUP_TOOLCHAIN=stable
   export CARGO_TARGET_DIR=target

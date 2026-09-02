@@ -316,10 +316,11 @@ fn hicon_to_png_base64(hicon: winapi::shared::windef::HICON) -> Option<String> {
         return None;
     }
 
-    // 5. BGRA → RGBA in place. `chunks_exact_mut(4)` enforces the 4-byte
-    //    stride invariant and never panics; the previous `step_by(4) + swap`
-    //    pattern silently assumed `buffer.len() % 4 == 0`.
-    for px in buffer.chunks_exact_mut(4) {
+    // 5. BGRA → RGBA in place. Typed chunks encode the 4-byte pixel stride;
+    //    width * height * 4 guarantees that no remainder is possible.
+    let (pixels, remainder) = buffer.as_chunks_mut::<4>();
+    debug_assert!(remainder.is_empty());
+    for px in pixels {
         px.swap(0, 2);
     }
 
@@ -393,8 +394,12 @@ pub fn resolve_linux_icon(icon_name: &str) -> Option<String> {
     }
 
     let home = std::env::var("HOME").unwrap_or_default();
-    let xdg_data_home = std::env::var("XDG_DATA_HOME").ok().filter(|v| !v.is_empty());
-    let xdg_data_dirs = std::env::var("XDG_DATA_DIRS").ok().filter(|v| !v.is_empty());
+    let xdg_data_home = std::env::var("XDG_DATA_HOME")
+        .ok()
+        .filter(|v| !v.is_empty());
+    let xdg_data_dirs = std::env::var("XDG_DATA_DIRS")
+        .ok()
+        .filter(|v| !v.is_empty());
     let base_dirs =
         linux_icon_search_dirs(&home, xdg_data_home.as_deref(), xdg_data_dirs.as_deref());
 
@@ -483,17 +488,18 @@ mod linux_icon_tests {
 
     #[test]
     fn search_dirs_deduplicates() {
-        // XDG_DATA_HOME pointing at the same place as one of the XDG_DATA_DIRS
-        // entries (or as the Flatpak user export dir) must not be searched twice.
+        // XDG_DATA_HOME pointing at the same place as the Flatpak user export
+        // dir (a real layout: some distros set XDG_DATA_HOME to include the
+        // Flatpak overlay) must not be searched twice.
         let dirs = linux_icon_search_dirs(
             "/home/alice",
-            Some("/home/alice/.local/share"),
+            Some("/home/alice/.local/share/flatpak/exports/share"),
             Some("/usr/share"),
         );
         assert_eq!(
             dirs,
             vec![
-                "/home/alice/.local/share".to_string(),
+                "/home/alice/.local/share/flatpak/exports/share".to_string(),
                 "/usr/share".to_string(),
                 "/var/lib/flatpak/exports/share".to_string(),
             ]
