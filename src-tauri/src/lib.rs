@@ -143,7 +143,9 @@ pub struct ShowOnScreenState {
 /// Holds the background worker guard for the rotating file log appender.
 /// Dropping the guard flushes and closes the log file, so we keep it in
 /// Tauri's managed state for the lifetime of the application.
-pub struct LogGuard(#[allow(dead_code)] pub WorkerGuard);
+pub struct LogGuard {
+    _guard: WorkerGuard,
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -252,7 +254,7 @@ pub fn run() {
             };
 
             if let Some(guard) = log_guard {
-                app.manage(LogGuard(guard));
+                app.manage(LogGuard { _guard: guard });
             }
 
             // Initialize hotkey state

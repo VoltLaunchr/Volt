@@ -1421,7 +1421,6 @@ pub async fn launch_application(
 // ============================================================================
 
 /// Recursively scans a directory for applications up to a given depth
-#[allow(dead_code)]
 fn scan_directory_recursive(
     dir_path: &str,
     current_depth: usize,
@@ -1498,7 +1497,6 @@ fn scan_directory_recursive(
     Ok(apps)
 }
 
-#[allow(dead_code)]
 fn scan_shortcuts(dir_path: &str) -> Result<Vec<AppInfo>, String> {
     let mut apps = Vec::new();
 

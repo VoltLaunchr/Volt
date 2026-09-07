@@ -21,9 +21,9 @@ use std::thread::JoinHandle;
 use winapi::shared::minwindef::{LPARAM, LRESULT, WPARAM};
 use winapi::shared::windef::HHOOK;
 use winapi::um::winuser::{
-    CallNextHookEx, DispatchMessageW, GetMessageW, HC_ACTION, KBDLLHOOKSTRUCT, LLKHF_INJECTED, MSG,
-    PostThreadMessageW, SetWindowsHookExW, TranslateMessage, UnhookWindowsHookEx, WH_KEYBOARD_LL,
-    WM_KEYDOWN, WM_QUIT, WM_SYSKEYDOWN,
+    CallNextHookEx, DispatchMessageW, GetForegroundWindow, GetMessageW, HC_ACTION, KBDLLHOOKSTRUCT,
+    LLKHF_INJECTED, MSG, PostThreadMessageW, SetWindowsHookExW, TranslateMessage,
+    UnhookWindowsHookEx, WH_KEYBOARD_LL, WM_KEYDOWN, WM_QUIT, WM_SYSKEYDOWN,
 };
 
 // A raw C function pointer (the hook callback) cannot capture a closure, so
@@ -175,6 +175,9 @@ unsafe extern "system" fn low_level_keyboard_proc(
                 scan_code: info.scanCode,
                 flags: info.flags,
                 time: info.time,
+                // SAFETY: GetForegroundWindow takes no pointers and returns
+                // an opaque handle; the worker only uses it for identity.
+                foreground_window: unsafe { GetForegroundWindow() } as usize,
             };
             EVENT_SENDER.with(|slot| {
                 if let Some(sender) = slot.borrow().as_ref() {

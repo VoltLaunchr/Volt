@@ -5,7 +5,6 @@
 use super::types::{GameInfo, GamePlatform, GameScanner};
 use crate::utils::game_icon::find_game_icon;
 use std::path::PathBuf;
-#[allow(unused_imports)]
 use tracing::{debug, warn};
 
 /// Xbox/Microsoft Store scanner
@@ -22,14 +21,12 @@ impl XboxScanner {
     /// `Microsoft.254428597CFE2_1.0.50.0_x64__8wekyb3d8bbwe`. The first
     /// underscore-separated segment is `Publisher.GameIdentifier`; we strip
     /// the publisher prefix where present. Exposed for unit testing.
-    #[allow(dead_code)]
     pub(crate) fn clean_package_name(package_name: &str) -> String {
         let head = package_name.split('_').next().unwrap_or(package_name);
         head.split('.').next_back().unwrap_or(head).to_string()
     }
 
     /// Format a stable game id from a package name (lowercased, dots → _).
-    #[allow(dead_code)]
     pub(crate) fn format_package_id(package_name: &str) -> String {
         format!("xbox_{}", package_name.replace('.', "_").to_lowercase())
     }
@@ -45,7 +42,6 @@ impl XboxScanner {
     ///
     /// Returns `None` if `full_name` doesn't have the expected 5 underscore-
     /// separated segments.
-    #[allow(dead_code)]
     pub(crate) fn package_family_name_from_full_name(full_name: &str) -> Option<String> {
         let parts: Vec<&str> = full_name.split('_').collect();
         if parts.len() != 5 {

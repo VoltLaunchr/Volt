@@ -612,10 +612,6 @@ pub struct AccessTokenClaims {
     pub sub: String,
     /// Expiration unix timestamp.
     pub exp: i64,
-    /// Issuer — kept for diagnostics; the value is also independently asserted
-    /// by `Validation::set_issuer` during decode.
-    #[allow(dead_code)]
-    pub iss: String,
     /// Optional `tier` claim published by a Supabase auth hook (defense in
     /// depth for premium gating). Renderers can't issue the underlying JWT,
     /// so a `tier` claim that survives signature verification is

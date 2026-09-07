@@ -1,5 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import {
+  lazy,
+  Suspense,
   useCallback,
   useEffect,
   useMemo,
@@ -53,7 +55,7 @@ import {
   ConversationEmptyState,
   ConversationScrollButton,
 } from '@/components/ai-elements/conversation';
-import { Message, MessageContent, MessageResponse } from '@/components/ai-elements/message';
+import { Message, MessageContent } from '@/components/ai-elements/message';
 import {
   PromptInput,
   PromptInputBody,
@@ -65,6 +67,15 @@ import {
 } from '@/components/ai-elements/prompt-input';
 import { Suggestion } from '@/components/ai-elements/suggestion';
 import type { ChatStatus, FileUIPart } from 'ai';
+
+// Markdown, syntax highlighting, math and Mermaid are the heaviest part of
+// the chat renderer. Keep them out of the initial AI view and fetch them only
+// when an assistant text response is actually rendered.
+const MessageResponse = lazy(() =>
+  import('@/components/ai-elements/message-response').then((module) => ({
+    default: module.MessageResponse,
+  }))
+);
 
 interface ProviderStatus {
   provider: string;
@@ -586,7 +597,11 @@ function ToolPartView({ part }: { part: Extract<ChatPart, { kind: 'tool' }>['par
 function AssistantPart({ part, streaming }: { part: ChatPart; streaming?: boolean }) {
   if (part.kind === 'text') {
     if (!part.text) return null;
-    return <MessageResponse>{part.text}</MessageResponse>;
+    return (
+      <Suspense fallback={<span className="whitespace-pre-wrap break-words">{part.text}</span>}>
+        <MessageResponse>{part.text}</MessageResponse>
+      </Suspense>
+    );
   }
   if (part.kind === 'reasoning') {
     return (
