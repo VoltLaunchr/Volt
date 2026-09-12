@@ -4,9 +4,13 @@
 //! RockstarLibrary launches games by invoking the launcher directly with
 //! `Launcher.exe -launchTitleInFolder "<install_dir>"` — we do the same.
 
-use super::types::{GameInfo, GamePlatform, GameScanner};
+#[cfg(target_os = "windows")]
+use super::types::GamePlatform;
+use super::types::{GameInfo, GameScanner};
+#[cfg(target_os = "windows")]
 use crate::utils::game_icon::find_game_icon;
 use std::path::PathBuf;
+#[cfg(target_os = "windows")]
 use tracing::debug;
 
 /// Rockstar Games scanner
@@ -38,6 +42,7 @@ impl RockstarScanner {
 
     /// Build the Volt game ID for a Rockstar install folder name. Pure
     /// helper exposed for tests.
+    #[cfg(any(target_os = "windows", test))]
     pub(crate) fn build_game_id(folder_name: &str) -> String {
         format!("rockstar_{}", folder_name.replace(' ', "_").to_lowercase())
     }

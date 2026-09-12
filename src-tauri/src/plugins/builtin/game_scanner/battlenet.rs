@@ -7,9 +7,14 @@
 //! v1 compatibility code-path, while the URL scheme hits the current
 //! launcher directly.
 
-use super::types::{GameInfo, GamePlatform, GameScanner};
+#[cfg(target_os = "windows")]
+use super::types::GamePlatform;
+use super::types::{GameInfo, GameScanner};
+#[cfg(target_os = "windows")]
 use crate::utils::game_icon::find_game_icon;
+#[cfg(any(target_os = "windows", target_os = "macos"))]
 use std::path::PathBuf;
+#[cfg(target_os = "windows")]
 use tracing::{debug, warn};
 
 /// Battle.net scanner
@@ -26,6 +31,7 @@ impl BattleNetScanner {
     /// the one maintained by Playnite's BattleNetLibrary.
     ///
     /// Exposed as a pure helper for unit testing.
+    #[cfg(any(target_os = "windows", test))]
     pub(crate) fn resolve_product_code(
         display_name: &str,
         install_folder: &str,

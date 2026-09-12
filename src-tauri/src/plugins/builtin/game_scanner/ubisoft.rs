@@ -3,9 +3,16 @@
 //! Scans for games installed via Ubisoft Connect by reading
 //! the launcher's configuration and registry.
 
-use super::types::{GameInfo, GamePlatform, GameScanner};
+#[cfg(target_os = "windows")]
+use super::types::GamePlatform;
+use super::types::{GameInfo, GameScanner};
+#[cfg(target_os = "windows")]
 use crate::utils::game_icon::find_game_icon;
-use std::path::{Path, PathBuf};
+#[cfg(target_os = "windows")]
+use std::path::Path;
+#[cfg(any(target_os = "windows", target_os = "macos"))]
+use std::path::PathBuf;
+#[cfg(target_os = "windows")]
 use tracing::debug;
 
 /// Ubisoft Connect scanner
@@ -23,6 +30,7 @@ impl UbisoftScanner {
     }
 
     /// Build the stable game id used by Volt for Ubisoft entries.
+    #[cfg(any(target_os = "windows", test))]
     pub(crate) fn build_game_id(install_id: &str) -> String {
         format!("ubisoft_{}", install_id)
     }
@@ -173,6 +181,7 @@ impl UbisoftScanner {
     }
 
     /// Find executable in game directory
+    #[cfg(target_os = "windows")]
     fn find_executable(install_path: &Path) -> Option<PathBuf> {
         if !install_path.exists() {
             return None;

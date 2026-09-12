@@ -5,6 +5,7 @@
 use super::types::{GameInfo, GamePlatform, GameScanner};
 use crate::utils::game_icon::find_game_icon;
 use std::path::{Path, PathBuf};
+#[cfg(target_os = "windows")]
 use tracing::{debug, warn};
 
 /// Build the modern EA App launch URI from one or more offer IDs.
@@ -63,6 +64,7 @@ impl EAScanner {
 
     /// True if the uninstall entry's publisher string looks like an EA entry.
     /// Pure helper extracted for unit testing.
+    #[cfg(any(target_os = "windows", test))]
     pub(crate) fn is_ea_publisher(publisher: &str, key_name: &str) -> bool {
         let pub_lc = publisher.to_lowercase();
         pub_lc.contains("electronic arts")
@@ -72,6 +74,7 @@ impl EAScanner {
 
     /// True if an uninstall display-name represents the launcher / a
     /// non-game helper component (and should be skipped).
+    #[cfg(any(target_os = "windows", test))]
     pub(crate) fn is_non_game_display_name(name: &str) -> bool {
         let name_lc = name.to_lowercase();
         name_lc.contains("ea desktop")
