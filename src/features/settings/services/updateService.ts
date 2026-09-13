@@ -43,6 +43,21 @@ export type UpdateCallback = (progress: UpdateProgress) => void;
 const ENDPOINT_BETA =
   'https://github.com/VoltLaunchr/Volt/releases/latest/download/latest-beta.json';
 
+/**
+ * Distribution packages must be upgraded by the operating-system package
+ * manager. Upstream bundles leave this unset and retain Tauri's updater.
+ */
+export function isPackageManagerManaged(): boolean {
+  return import.meta.env.VITE_VOLT_PACKAGE_MANAGER === '1';
+}
+
+export const PACKAGE_MANAGER_UPDATE_MESSAGE =
+  'Updates are managed by the operating-system package manager';
+
+function assertSelfUpdaterAvailable(): void {
+  if (isPackageManagerManaged()) throw new Error(PACKAGE_MANAGER_UPDATE_MESSAGE);
+}
+
 // ── Storage keys ─────────────────────────────────────────────────────────────
 
 const KEY_LAST_CHECK = 'volt:lastUpdateCheckAt';
@@ -157,6 +172,7 @@ export function skipVersion(version: string): void {
 
 /** True when a deferred update has been downloaded and is awaiting install. */
 export function hasPendingUpdate(): boolean {
+  if (isPackageManagerManaged()) return false;
   return localStorage.getItem(KEY_PENDING_UPDATE) !== null;
 }
 
@@ -173,6 +189,8 @@ export function clearPendingUpdate(): void {
  * - `beta`: manually fetches `latest-beta.json` and compares versions.
  */
 export async function checkForUpdate(channel: UpdateChannel = 'stable'): Promise<UpdateInfo | null> {
+  if (isPackageManagerManaged()) return null;
+
   try {
     if (channel === 'beta') {
       return await checkBetaUpdate();
@@ -200,6 +218,8 @@ export async function checkForUpdate(channel: UpdateChannel = 'stable'): Promise
  * Beta updates show a GitHub link instead.
  */
 export async function downloadAndInstall(onProgress?: UpdateCallback): Promise<void> {
+  assertSelfUpdaterAvailable();
+
   try {
     const update = await check();
     if (!update) throw new Error('No update available');
@@ -229,6 +249,8 @@ export async function downloadAndInstall(onProgress?: UpdateCallback): Promise<v
  * Call `installPendingUpdate()` from the `CloseRequested` handler.
  */
 export async function deferredInstall(onProgress?: UpdateCallback): Promise<void> {
+  assertSelfUpdaterAvailable();
+
   const update = await check();
   if (!update) throw new Error('No update available');
 
@@ -255,6 +277,7 @@ export async function deferredInstall(onProgress?: UpdateCallback): Promise<void
  * If the in-memory reference was lost (app restarted), clears the stale flag.
  */
 export async function installPendingUpdate(): Promise<void> {
+  assertSelfUpdaterAvailable();
   if (!_pendingUpdate) {
     clearPendingUpdate();
     throw new Error('Downloaded update not in memory — restart required to retry');
@@ -273,6 +296,7 @@ export async function installPendingUpdate(): Promise<void> {
 export async function checkUpdateThrottled(
   channel: UpdateChannel = 'stable'
 ): Promise<UpdateInfo | null> {
+  if (isPackageManagerManaged()) return null;
   if (!isThrottleExpired()) return null;
 
   const update = await checkForUpdate(channel);
@@ -307,6 +331,7 @@ export function startPeriodicCheck(
   channel: UpdateChannel = 'stable'
 ): void {
   stopPeriodicCheck();
+  if (isPackageManagerManaged()) return;
   periodicInterval = setInterval(() => {
     void (async () => {
       const update = await checkUpdateThrottled(channel);

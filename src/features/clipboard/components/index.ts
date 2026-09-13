@@ -1,1 +1,0 @@
-export { ClipboardHistoryView } from './ClipboardHistoryView';

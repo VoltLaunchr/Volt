@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { emit, listen } from '@tauri-apps/api/event';
+import { emit } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { OnboardingModal } from '../shared/components/ui/OnboardingModal';
 import { settingsService } from '../features/settings';
 import { useAppStore } from '../stores/appStore';
 import type { Settings } from '../features/settings/types/settings.types';
+import { useTauriEvent } from '../app/hooks/tauriEvent';
 
 export function OnboardingPage() {
   const [ready, setReady] = useState(false);
@@ -27,13 +28,7 @@ export function OnboardingPage() {
 
   // Restart-onboarding flow: the main window resets `hasSeenOnboarding` and
   // emits this event so we re-show even after the OnboardingPage has been idle.
-  useEffect(() => {
-    let unlisten: (() => void) | undefined;
-    void listen('volt://show-onboarding', () => setShouldShow(true)).then((fn) => {
-      unlisten = fn;
-    });
-    return () => unlisten?.();
-  }, []);
+  useTauriEvent('volt://show-onboarding', () => setShouldShow(true));
 
   useEffect(() => {
     if (!ready || !shouldShow) return;

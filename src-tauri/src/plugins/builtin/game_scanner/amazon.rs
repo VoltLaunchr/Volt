@@ -48,7 +48,6 @@ impl AmazonScanner {
     /// its install directory containing `{ "Main": { "Command": "…" } }` and
     /// a `metadata.json` with `{ "Id": "<game_id>", "DisplayName": "…" }`.
     /// We rely on the latter since it doesn't require a SQLite dependency.
-    #[allow(dead_code)]
     pub(crate) fn parse_metadata_json(content: &str) -> Option<(String, String)> {
         let json: serde_json::Value = serde_json::from_str(content).ok()?;
         let id = json.get("Id").and_then(|v| v.as_str())?.to_string();

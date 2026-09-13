@@ -22,9 +22,9 @@ mod injector;
 #[cfg(all(windows, feature = "snippet-global-expansion"))]
 mod keyboard_layout;
 mod state;
-// Pure and platform-independent: compiled unconditionally (not gated behind
-// `windows`) so its unit tests run in CI on every OS, regardless of whether
-// the `snippet-global-expansion` feature is enabled.
+// Keep the platform-independent tests on every target, but only compile
+// production matching code when its Windows consumer is enabled.
+#[cfg(any(test, all(windows, feature = "snippet-global-expansion")))]
 pub(crate) mod trigger_buffer;
 
 pub use state::SnippetExpansionState;

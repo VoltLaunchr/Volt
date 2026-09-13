@@ -7,11 +7,13 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicU64, Ordering};
 use tauri::State;
 use uuid::Uuid;
 
 use crate::core::error::{VoltError, VoltResult};
 use crate::utils::launch_validation::validate_launch_path;
+use crate::utils::process::reap_in_background;
 
 /// Characters that allow shell command chaining / redirection / substitution.
 /// Rejected in command-type quicklinks to prevent shell injection even though
@@ -37,6 +39,7 @@ pub struct Quicklink {
 pub struct QuicklinkState {
     quicklinks: Mutex<HashMap<String, Quicklink>>,
     file_path: PathBuf,
+    revision: AtomicU64,
 }
 
 impl QuicklinkState {
@@ -46,6 +49,7 @@ impl QuicklinkState {
         Self {
             quicklinks: Mutex::new(quicklinks),
             file_path,
+            revision: AtomicU64::new(0),
         }
     }
 
@@ -72,10 +76,32 @@ impl QuicklinkState {
         Ok(quicklinks.values().cloned().collect())
     }
 
+    pub(crate) fn revision(&self) -> u64 {
+        self.revision.load(Ordering::Acquire)
+    }
+
+    pub(crate) fn replace_all_if_revision(
+        &self,
+        new_quicklinks: HashMap<String, Quicklink>,
+        expected_revision: u64,
+    ) -> Result<bool, String> {
+        {
+            let mut quicklinks = self.quicklinks.lock().map_err(|e| e.to_string())?;
+            if self.revision.load(Ordering::Acquire) != expected_revision {
+                return Ok(false);
+            }
+            *quicklinks = new_quicklinks;
+            self.revision.fetch_add(1, Ordering::Release);
+        }
+        self.save()?;
+        Ok(true)
+    }
+
     pub fn replace_all(&self, new_quicklinks: HashMap<String, Quicklink>) -> Result<(), String> {
         {
             let mut quicklinks = self.quicklinks.lock().map_err(|e| e.to_string())?;
             *quicklinks = new_quicklinks;
+            self.revision.fetch_add(1, Ordering::Release);
         }
         self.save()
     }
@@ -140,6 +166,7 @@ pub async fn save_quicklink(
             .lock()
             .map_err(|e| VoltError::Unknown(e.to_string()))?;
         quicklinks.insert(ql.id.clone(), ql.clone());
+        state.revision.fetch_add(1, Ordering::Release);
     }
 
     state.save().map_err(VoltError::Unknown)?;
@@ -240,6 +267,7 @@ pub async fn delete_quicklink(state: State<'_, QuicklinkState>, id: String) -> V
         quicklinks
             .remove(&id)
             .ok_or_else(|| VoltError::NotFound(format!("Quicklink not found: {}", id)))?;
+        state.revision.fetch_add(1, Ordering::Release);
     }
 
     state.save().map_err(VoltError::Unknown)?;
@@ -299,10 +327,11 @@ pub async fn open_quicklink(_app: tauri::AppHandle, quicklink: Quicklink) -> Vol
             // including cmd.exe, powershell.exe, regsvr32.exe, etc.
             validate_launch_path(program).map_err(VoltError::Launch)?;
 
-            std::process::Command::new(program)
+            let child = std::process::Command::new(program)
                 .args(&args)
                 .spawn()
                 .map_err(|e| VoltError::Launch(format!("Failed to execute command: {}", e)))?;
+            reap_in_background(child);
         }
         _ => {
             return Err(VoltError::Unknown(format!(
@@ -317,8 +346,21 @@ pub async fn open_quicklink(_app: tauri::AppHandle, quicklink: Quicklink) -> Vol
 
 #[cfg(test)]
 mod tests {
-    #[cfg(target_os = "windows")]
     use super::*;
+
+    #[test]
+    fn conditional_replace_rejects_a_stale_sync_snapshot() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = QuicklinkState::new(dir.path().to_path_buf());
+        let revision = state.revision();
+        state.revision.fetch_add(1, Ordering::Release);
+
+        assert!(
+            !state
+                .replace_all_if_revision(HashMap::new(), revision)
+                .unwrap()
+        );
+    }
 
     /// Regression test for the LOLBIN-via-quicklink bypass.
     ///

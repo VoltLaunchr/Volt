@@ -4,6 +4,7 @@ import { useAppStore } from '../../stores/appStore';
 import { useSearchStore } from '../../stores/searchStore';
 import { DEFAULT_SETTINGS } from '../../features/settings/types/settings.types';
 import { PluginResultType, type PluginResult } from '../../features/plugins/types';
+import { SearchResultType } from '../../shared/types/common.types';
 import { useSearchPipeline } from './useSearchPipeline';
 
 const tauriMocks = vi.hoisted(() => ({
@@ -102,6 +103,81 @@ describe('useSearchPipeline', () => {
 
     expect(useSearchStore.getState().results).toEqual([]);
     expect(useSearchStore.getState().isSearching).toBe(false);
+  });
+
+  it('ignores both streaming and completed plugin results after unmount', async () => {
+    let finishStreaming: (() => void) | undefined;
+    tauriMocks.invoke.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          finishStreaming = resolve;
+        })
+    );
+    pluginMocks.query.mockResolvedValue([
+      {
+        id: 'late-plugin',
+        type: PluginResultType.Calculator,
+        title: 'Late result',
+        score: 100,
+      },
+    ]);
+    const { unmount } = renderHook(() => useSearchPipeline({ maxResults: 8 }));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(150);
+    });
+    const queuedMessage = tauriMocks.channels[0].onmessage;
+    unmount();
+    await act(async () => {
+      queuedMessage({
+        event: 'apps',
+        data: { results: [{ id: 'late', name: 'Late App', path: 'late.exe', score: 100 }] },
+      });
+      finishStreaming?.();
+      await Promise.resolve();
+    });
+    expect(useSearchStore.getState().results).toEqual([]);
+    expect(useSearchStore.getState().isSearching).toBe(false);
+  });
+
+  it('restores default suggestions immediately when the query is cleared', async () => {
+    const { rerender } = renderHook(() => useSearchPipeline({ maxResults: 8 }));
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(150);
+    });
+    expect(tauriMocks.channels).toHaveLength(1);
+
+    act(() => {
+      useSearchStore.setState({
+        results: [
+          {
+            id: 'stale-app',
+            type: SearchResultType.Application,
+            title: 'Stale App',
+            score: 100,
+            data: { id: 'stale-app', name: 'Stale App', path: 'stale.exe', usageCount: 0 },
+          },
+        ],
+        selectedIndex: 1,
+      });
+    });
+
+    act(() => {
+      useSearchStore.getState().setQuery('');
+      rerender();
+    });
+
+    expect(useSearchStore.getState().results).toEqual([]);
+    expect(useSearchStore.getState().selectedIndex).toBe(0);
+
+    act(() => {
+      tauriMocks.channels[0].onmessage({
+        event: 'apps',
+        data: { results: [{ id: 'late', name: 'Late App', path: 'late.exe', score: 100 }] },
+      });
+    });
+
+    expect(useSearchStore.getState().results).toEqual([]);
   });
 
   it('shows configured web fallbacks alongside a weak local match', async () => {

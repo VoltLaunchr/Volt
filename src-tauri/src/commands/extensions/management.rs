@@ -8,6 +8,7 @@
 
 use crate::core::constants::APP_VERSION;
 use crate::core::error::{VoltError, VoltResult};
+use crate::core::service_config::supabase_config;
 use futures_util::StreamExt;
 use rusqlite::OptionalExtension;
 use serde::{Deserialize, Serialize};
@@ -23,6 +24,84 @@ use sha2::Digest as _;
 use std::collections::{HashMap, VecDeque};
 use std::sync::{LazyLock, Mutex, OnceLock};
 use std::time::Instant;
+
+// Serializes publication with the synchronous storage/preference operations so
+// SQLite and its WAL cannot change while an update preserves their files.
+static EXTENSION_FILES_LOCK: Mutex<()> = Mutex::new(());
+
+struct ExtensionStaging(PathBuf);
+
+impl Drop for ExtensionStaging {
+    fn drop(&mut self) {
+        if self.0.exists()
+            && let Err(error) = fs::remove_dir_all(&self.0)
+        {
+            warn!("Failed to clean extension staging directory: {error}");
+        }
+    }
+}
+
+fn publish_extension(
+    staged: &Path,
+    destination: &Path,
+    save_state: impl FnOnce() -> VoltResult<()>,
+) -> VoltResult<()> {
+    let backup = destination.with_file_name(format!(".backup-{}", uuid::Uuid::new_v4()));
+    let had_previous = destination.exists();
+    // These are user data, never extension archive content. Keep all SQLite
+    // sidecars together; callers hold EXTENSION_FILES_LOCK until publication.
+    for name in [
+        "storage.db",
+        "storage.db-wal",
+        "storage.db-shm",
+        "preferences.json",
+    ] {
+        let target = staged.join(name);
+        if target.exists() {
+            return Err(VoltError::InvalidConfig(format!(
+                "Extension archive contains reserved user data file: {name}"
+            )));
+        }
+        let source = destination.join(name);
+        if source.exists() {
+            fs::copy(&source, &target).map_err(|e| VoltError::FileSystem(e.to_string()))?;
+        }
+    }
+    if had_previous {
+        fs::rename(destination, &backup).map_err(|e| VoltError::FileSystem(e.to_string()))?;
+    }
+    if let Err(error) = fs::rename(staged, destination) {
+        if had_previous {
+            fs::rename(&backup, destination).map_err(|restore| {
+                VoltError::FileSystem(format!(
+                    "Publish failed: {error}; restore failed: {restore}"
+                ))
+            })?;
+        }
+        return Err(VoltError::FileSystem(error.to_string()));
+    }
+    if let Err(error) = save_state() {
+        // Move the failed version back to staging for cleanup, then restore
+        // the untouched previous directory, including its user data.
+        fs::rename(destination, staged).map_err(|restore| {
+            VoltError::FileSystem(format!(
+                "State save failed: {error}; rollback failed: {restore}"
+            ))
+        })?;
+        if had_previous {
+            fs::rename(&backup, destination).map_err(|restore| {
+                VoltError::FileSystem(format!(
+                    "State save failed: {error}; restore failed: {restore}"
+                ))
+            })?;
+        }
+        return Err(error);
+    }
+    if had_previous && let Err(error) = fs::remove_dir_all(&backup) {
+        warn!("Extension updated but old backup cleanup failed: {error}");
+    }
+    Ok(())
+}
 
 /// Reject paths that escape `root` (via `..` or symlink resolution).
 /// Returns the canonical path on success.
@@ -964,14 +1043,12 @@ pub async fn install_extension(
     validate_download_url(&download_url)?;
 
     let extensions_dir = get_extensions_dir(&app)?;
-    let extension_dir = extensions_dir.join(&extension_id);
+    let installed_dir = extensions_dir.join(&extension_id);
+    let staging =
+        ExtensionStaging(extensions_dir.join(format!(".install-{}", uuid::Uuid::new_v4())));
+    let extension_dir = staging.0.clone();
 
-    // Create extension directory
-    if extension_dir.exists() {
-        fs::remove_dir_all(&extension_dir).map_err(|e| {
-            VoltError::FileSystem(format!("Failed to remove existing extension: {}", e))
-        })?;
-    }
+    // Download and validate completely before touching the installed version.
     fs::create_dir_all(&extension_dir).map_err(|e| {
         VoltError::FileSystem(format!("Failed to create extension directory: {}", e))
     })?;
@@ -1116,15 +1193,20 @@ pub async fn install_extension(
         manifest,
         installed_at: chrono::Utc::now().to_rfc3339(),
         enabled: true,
-        path: extension_dir.to_string_lossy().to_string(),
+        path: installed_dir.to_string_lossy().to_string(),
         granted_permissions: Vec::new(),
     };
 
     // Update installed state
+    let _files_guard = EXTENSION_FILES_LOCK
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
     let mut state = load_installed_state(&app)?;
     state.extensions.retain(|e| e.manifest.id != extension_id);
     state.extensions.push(installed.clone());
-    save_installed_state(&app, &state)?;
+    publish_extension(&extension_dir, &installed_dir, || {
+        save_installed_state(&app, &state)
+    })?;
 
     info!("Installed extension: {}", extension_id);
     Ok(installed)
@@ -1164,6 +1246,9 @@ fn purge_extension_keyring_entries(manifest: &ExtensionManifest) -> VoltResult<(
 /// Uninstall an extension
 #[tauri::command]
 pub async fn uninstall_extension(app: AppHandle, extension_id: String) -> VoltResult<()> {
+    let _files_guard = EXTENSION_FILES_LOCK
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
     validate_extension_id(&extension_id)?;
     let mut state = load_installed_state(&app)?;
     let installed = state
@@ -1205,6 +1290,9 @@ pub async fn toggle_extension(
     extension_id: String,
     enabled: bool,
 ) -> VoltResult<()> {
+    let _files_guard = EXTENSION_FILES_LOCK
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
     validate_extension_id(&extension_id)?;
     let mut state = load_installed_state(&app)?;
 
@@ -1242,6 +1330,9 @@ pub async fn update_extension_permissions(
     extension_id: String,
     permissions: Vec<String>,
 ) -> VoltResult<()> {
+    let _files_guard = EXTENSION_FILES_LOCK
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
     validate_extension_id(&extension_id)?;
 
     // Reject anything not on the canonical permission list. We refuse the
@@ -2276,9 +2367,6 @@ pub async fn get_dev_reload_signal(
 // DOWNLOAD TRACKING - Supabase-backed counters
 // ============================================================================
 
-const SUPABASE_URL: &str = env!("SUPABASE_URL");
-const SUPABASE_ANON_KEY: &str = env!("SUPABASE_ANON_KEY");
-
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DownloadCount {
@@ -2289,13 +2377,11 @@ pub struct DownloadCount {
 /// Fetch download counts for all extensions from Supabase.
 #[tauri::command]
 pub async fn fetch_extension_downloads() -> VoltResult<Vec<DownloadCount>> {
-    if SUPABASE_URL.is_empty() || SUPABASE_ANON_KEY.is_empty() {
-        return Ok(vec![]);
-    }
+    let config = supabase_config().await.map_err(VoltError::InvalidConfig)?;
 
     let url = format!(
         "{}/rest/v1/extension_downloads?select=extension_id,count",
-        SUPABASE_URL.trim_end_matches('/')
+        config.supabase_url.trim_end_matches('/')
     );
 
     let client = reqwest::Client::builder()
@@ -2304,8 +2390,11 @@ pub async fn fetch_extension_downloads() -> VoltResult<Vec<DownloadCount>> {
         .map_err(|e| VoltError::Unknown(format!("HTTP client build failed: {}", e)))?;
     let resp = client
         .get(&url)
-        .header("apikey", SUPABASE_ANON_KEY)
-        .header("Authorization", format!("Bearer {}", SUPABASE_ANON_KEY))
+        .header("apikey", &config.supabase_publishable_key)
+        .header(
+            "Authorization",
+            format!("Bearer {}", config.supabase_publishable_key),
+        )
         .send()
         .await
         .map_err(|e| VoltError::Unknown(format!("fetch_extension_downloads: {}", e)))?;
@@ -2358,13 +2447,11 @@ pub async fn increment_extension_download(extension_id: String) -> VoltResult<()
         return Ok(());
     }
 
-    if SUPABASE_URL.is_empty() || SUPABASE_ANON_KEY.is_empty() {
-        return Ok(());
-    }
+    let config = supabase_config().await.map_err(VoltError::InvalidConfig)?;
 
     let url = format!(
         "{}/rest/v1/rpc/increment_extension_download",
-        SUPABASE_URL.trim_end_matches('/')
+        config.supabase_url.trim_end_matches('/')
     );
 
     let client = reqwest::Client::builder()
@@ -2373,8 +2460,11 @@ pub async fn increment_extension_download(extension_id: String) -> VoltResult<()
         .map_err(|e| VoltError::Unknown(format!("HTTP client build failed: {}", e)))?;
     let _ = client
         .post(&url)
-        .header("apikey", SUPABASE_ANON_KEY)
-        .header("Authorization", format!("Bearer {}", SUPABASE_ANON_KEY))
+        .header("apikey", &config.supabase_publishable_key)
+        .header(
+            "Authorization",
+            format!("Bearer {}", config.supabase_publishable_key),
+        )
         .json(&serde_json::json!({ "p_extension_id": extension_id }))
         .send()
         .await;
@@ -2502,6 +2592,9 @@ pub async fn ext_storage_get(
     extension_id: String,
     key: String,
 ) -> Result<Option<String>, String> {
+    let _files_guard = EXTENSION_FILES_LOCK
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
     require_extension_active(&app, &extension_id).map_err(|e| e.to_string())?;
     let path = ext_storage_db_path(&app, &extension_id).map_err(|e| e.to_string())?;
     let conn = ext_storage_open(&path).map_err(|e| e.to_string())?;
@@ -2525,6 +2618,9 @@ pub async fn ext_storage_set(
     key: String,
     value: String,
 ) -> Result<(), String> {
+    let _files_guard = EXTENSION_FILES_LOCK
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
     require_extension_active(&app, &extension_id).map_err(|e| e.to_string())?;
     validate_extension_storage_input(&key, &value)?;
     let path = ext_storage_db_path(&app, &extension_id).map_err(|e| e.to_string())?;
@@ -2549,6 +2645,9 @@ pub async fn ext_storage_remove(
     extension_id: String,
     key: String,
 ) -> Result<(), String> {
+    let _files_guard = EXTENSION_FILES_LOCK
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
     require_extension_active(&app, &extension_id).map_err(|e| e.to_string())?;
     let path = ext_storage_db_path(&app, &extension_id).map_err(|e| e.to_string())?;
     if !path.exists() {
@@ -2563,6 +2662,9 @@ pub async fn ext_storage_remove(
 /// Delete all keys in the extension's isolated KV storage.
 #[tauri::command]
 pub async fn ext_storage_clear(app: tauri::AppHandle, extension_id: String) -> Result<(), String> {
+    let _files_guard = EXTENSION_FILES_LOCK
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
     require_extension_active(&app, &extension_id).map_err(|e| e.to_string())?;
     let path = ext_storage_db_path(&app, &extension_id).map_err(|e| e.to_string())?;
     if !path.exists() {
@@ -2644,6 +2746,9 @@ pub async fn get_extension_preference(
     extension_id: String,
     key: String,
 ) -> Result<Option<String>, String> {
+    let _files_guard = EXTENSION_FILES_LOCK
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
     validate_extension_id(&extension_id).map_err(|e| e.to_string())?;
     let path = ext_prefs_path(&app, &extension_id).map_err(|e| e.to_string())?;
     if !path.exists() {
@@ -2665,6 +2770,9 @@ pub async fn set_extension_preference(
     key: String,
     value: String,
 ) -> Result<(), String> {
+    let _files_guard = EXTENSION_FILES_LOCK
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
     validate_extension_id(&extension_id).map_err(|e| e.to_string())?;
     validate_extension_preference_input(&key, &value)?;
     let path = ext_prefs_path(&app, &extension_id).map_err(|e| e.to_string())?;
@@ -2767,6 +2875,16 @@ struct ExtOAuthPending {
 
 static EXT_OAUTH_PENDING: LazyLock<Mutex<HashMap<String, ExtOAuthPending>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
+
+fn take_ext_oauth_pending(state: &str) -> Result<ExtOAuthPending, String> {
+    let mut map = EXT_OAUTH_PENDING.lock().unwrap_or_else(|e| e.into_inner());
+    let cutoff = chrono::Local::now() - chrono::Duration::minutes(10);
+    map.retain(|_, pending| pending.initiated_at > cutoff);
+    map.remove(state).ok_or_else(|| {
+        warn!("ext OAuth callback with unknown state (hint: {:.8})", state);
+        "Invalid or expired ext OAuth state parameter".to_string()
+    })
+}
 
 /// Emitted on every webview after a successful ext OAuth callback.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -2918,17 +3036,19 @@ pub async fn handle_ext_oauth_deep_link(
         .cloned()
         .ok_or("Missing 'state' in ext OAuth callback URL")?;
 
-    // Look up and remove the pending flow entry.
-    let pending = {
-        let mut map = EXT_OAUTH_PENDING.lock().unwrap_or_else(|e| e.into_inner());
-        map.remove(&state).ok_or_else(|| {
-            warn!("ext OAuth callback with unknown state (hint: {:.8})", state);
-            "Invalid or expired ext OAuth state parameter".to_string()
-        })?
-    };
+    let pending = take_ext_oauth_pending(&state)?;
+    // The extension may have been disabled, removed, or lost its grant while
+    // the user was authorizing in the browser.
+    require_extension_permission(app, &pending.extension_id, "oauth").map_err(|e| e.to_string())?;
 
     // Exchange the authorization code for an access token.
-    let client = reqwest::Client::new();
+    // A redirect must not forward the authorization code and PKCE verifier
+    // to a different endpoint (in particular for 307/308 responses).
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .map_err(|e| e.to_string())?;
     let response = client
         .post(&pending.token_url)
         .header("Accept", "application/json")
@@ -2959,6 +3079,9 @@ pub async fn handle_ext_oauth_deep_link(
         .and_then(|v| v.as_str())
         .ok_or("No access_token in token response")?
         .to_string();
+
+    // Recheck after the network await before persisting credentials.
+    require_extension_permission(app, &pending.extension_id, "oauth").map_err(|e| e.to_string())?;
 
     // Store token in keyring under a namespaced key.
     let keyring_key = format!(
@@ -4213,6 +4336,104 @@ pub async fn ext_move_to_trash(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn extension_update_preserves_user_data() {
+        let root = tempfile::tempdir().unwrap();
+        let previous = root.path().join("extension");
+        let staged = root.path().join("staged");
+        fs::create_dir(&previous).unwrap();
+        fs::create_dir(&staged).unwrap();
+        fs::write(previous.join("index.js"), "old code").unwrap();
+        fs::write(staged.join("index.js"), "new code").unwrap();
+        fs::write(previous.join("preferences.json"), r#"{"theme":"dark"}"#).unwrap();
+        let database = previous.join("storage.db");
+        let connection = rusqlite::Connection::open(&database).unwrap();
+        connection.execute_batch("CREATE TABLE kv (key TEXT, value TEXT); INSERT INTO kv VALUES ('note', 'keep me');").unwrap();
+        drop(connection);
+
+        publish_extension(&staged, &previous, || Ok(())).unwrap();
+        assert_eq!(
+            fs::read_to_string(previous.join("index.js")).unwrap(),
+            "new code"
+        );
+        assert_eq!(
+            fs::read_to_string(previous.join("preferences.json")).unwrap(),
+            r#"{"theme":"dark"}"#
+        );
+        let connection = rusqlite::Connection::open(&database).unwrap();
+        let value: String = connection
+            .query_row("SELECT value FROM kv WHERE key = 'note'", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(value, "keep me");
+    }
+
+    #[test]
+    fn extension_update_rolls_back_when_state_save_fails() {
+        let root = tempfile::tempdir().unwrap();
+        let previous = root.path().join("extension");
+        let staged = root.path().join("staged");
+        fs::create_dir(&previous).unwrap();
+        fs::create_dir(&staged).unwrap();
+        fs::write(previous.join("index.js"), "old code").unwrap();
+        fs::write(previous.join("preferences.json"), "user data").unwrap();
+        fs::write(staged.join("index.js"), "new code").unwrap();
+        assert!(
+            publish_extension(&staged, &previous, || Err(VoltError::FileSystem(
+                "disk full".into()
+            )))
+            .is_err()
+        );
+        assert_eq!(
+            fs::read_to_string(previous.join("index.js")).unwrap(),
+            "old code"
+        );
+        assert_eq!(
+            fs::read_to_string(previous.join("preferences.json")).unwrap(),
+            "user data"
+        );
+    }
+
+    #[test]
+    fn extension_staging_failure_keeps_previous_installation() {
+        let root = tempfile::tempdir().unwrap();
+        let previous = root.path().join("extension");
+        fs::create_dir(&previous).unwrap();
+        fs::write(previous.join("index.js"), "old code").unwrap();
+        let staged_path = root.path().join("staged");
+        {
+            let _staging = ExtensionStaging(staged_path.clone());
+            fs::create_dir(&staged_path).unwrap();
+            fs::write(staged_path.join("partial.zip"), "incomplete download").unwrap();
+        }
+        assert!(!staged_path.exists());
+        assert_eq!(
+            fs::read_to_string(previous.join("index.js")).unwrap(),
+            "old code"
+        );
+    }
+
+    #[test]
+    fn ext_oauth_pending_expiry_and_single_use() {
+        for (age_minutes, should_accept) in [(11, false), (1, true)] {
+            let state = uuid::Uuid::new_v4().to_string();
+            EXT_OAUTH_PENDING.lock().unwrap().insert(
+                state.clone(),
+                ExtOAuthPending {
+                    extension_id: "test-extension".to_string(),
+                    provider: "test".to_string(),
+                    token_url: "https://example.com/token".to_string(),
+                    client_id: "test-client".to_string(),
+                    code_verifier: "test-verifier".to_string(),
+                    initiated_at: chrono::Local::now() - chrono::Duration::minutes(age_minutes),
+                },
+            );
+            assert_eq!(take_ext_oauth_pending(&state).is_ok(), should_accept);
+            assert!(take_ext_oauth_pending(&state).is_err());
+        }
+    }
 
     fn test_manifest(id: &str, permissions: Option<Vec<&str>>) -> ExtensionManifest {
         ExtensionManifest {

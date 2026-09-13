@@ -8,6 +8,7 @@ use crate::commands::quicklinks::{
     Quicklink, QuicklinkState, validate_command_target, validate_folder_target, validate_url_target,
 };
 use crate::commands::snippets::{Snippet, SnippetState};
+use crate::core::service_config::supabase_config;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -21,9 +22,6 @@ const MAX_SNIPPET_TRIGGER_LEN: usize = 64;
 const MAX_SNIPPET_CONTENT_LEN: usize = 100_000;
 const MAX_SNIPPET_ID_LEN: usize = 128;
 const MAX_QUICKLINK_FIELD_LEN: usize = 4096;
-
-const SUPABASE_URL: &str = env!("SUPABASE_URL");
-const SUPABASE_ANON_KEY: &str = env!("SUPABASE_ANON_KEY");
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -40,6 +38,7 @@ pub struct SyncStatus {
 pub struct SyncState {
     pub last_synced_at: Mutex<Option<i64>>,
     pub client: reqwest::Client,
+    pub operation_lock: tokio::sync::Mutex<()>,
 }
 
 impl Default for SyncState {
@@ -47,6 +46,7 @@ impl Default for SyncState {
         Self {
             last_synced_at: Mutex::new(None),
             client: reqwest::Client::new(),
+            operation_lock: tokio::sync::Mutex::new(()),
         }
     }
 }
@@ -114,7 +114,8 @@ async fn upsert(
     data_type: &str,
     data: &serde_json::Value,
 ) -> Result<(), String> {
-    let url = format!("{}/rest/v1/sync_data", SUPABASE_URL);
+    let config = supabase_config().await?;
+    let url = format!("{}/rest/v1/sync_data", config.supabase_url);
 
     let body = serde_json::json!({
         "user_id":    session.user_id,
@@ -125,7 +126,7 @@ async fn upsert(
 
     let resp = client
         .post(&url)
-        .header("apikey", SUPABASE_ANON_KEY)
+        .header("apikey", &config.supabase_publishable_key)
         .header("Authorization", format!("Bearer {}", session.access_token))
         .header("Prefer", "resolution=merge-duplicates")
         .json(&body)
@@ -147,7 +148,8 @@ async fn fetch(
     session: &auth::AuthSession,
     data_type: &str,
 ) -> Result<Option<serde_json::Value>, String> {
-    let url = format!("{}/rest/v1/sync_data", SUPABASE_URL);
+    let config = supabase_config().await?;
+    let url = format!("{}/rest/v1/sync_data", config.supabase_url);
 
     let resp = client
         .get(&url)
@@ -156,7 +158,7 @@ async fn fetch(
             ("data_type", format!("eq.{}", data_type)),
             ("select", "data".to_string()),
         ])
-        .header("apikey", SUPABASE_ANON_KEY)
+        .header("apikey", &config.supabase_publishable_key)
         .header("Authorization", format!("Bearer {}", session.access_token))
         .send()
         .await
@@ -242,6 +244,7 @@ pub async fn sync_push(
     snippet_state: State<'_, SnippetState>,
     quicklink_state: State<'_, QuicklinkState>,
 ) -> Result<SyncStatus, String> {
+    let _operation = sync_state.operation_lock.lock().await;
     let session = require_premium().await?;
     let now = chrono::Utc::now().timestamp();
     let client = sync_state.client.clone();
@@ -278,6 +281,7 @@ pub async fn sync_pull(
     snippet_state: State<'_, SnippetState>,
     quicklink_state: State<'_, QuicklinkState>,
 ) -> Result<SyncStatus, String> {
+    let _operation = sync_state.operation_lock.lock().await;
     let session = require_premium().await?;
     let now = chrono::Utc::now().timestamp();
     let client = sync_state.client.clone();
@@ -287,7 +291,7 @@ pub async fn sync_pull(
         let remote: Vec<Snippet> =
             serde_json::from_value(data).map_err(|e| format!("parse remote snippets: {}", e))?;
 
-        let local = snippet_state.get_all()?;
+        let (local, snippet_revision) = snippet_state.snapshot()?;
         let mut merged: HashMap<String, Snippet> =
             local.into_iter().map(|s| (s.id.clone(), s)).collect();
 
@@ -317,10 +321,13 @@ pub async fn sync_pull(
             snip_accepted, snip_rejected
         );
 
-        snippet_state.replace_all(merged)?;
+        if !snippet_state.replace_all_if_revision(merged, snippet_revision)? {
+            return Err("local_data_changed_retry".to_string());
+        }
     }
 
     // Quicklinks: full replace (no timestamps on quicklinks)
+    let quicklink_revision = quicklink_state.revision();
     if let Some(data) = fetch(&client, &session, "quicklinks").await? {
         let remote: Vec<Quicklink> =
             serde_json::from_value(data).map_err(|e| format!("parse remote quicklinks: {}", e))?;
@@ -344,7 +351,9 @@ pub async fn sync_pull(
             "sync_pull quicklinks: accepted={} rejected={}",
             ql_accepted, ql_rejected
         );
-        quicklink_state.replace_all(map)?;
+        if !quicklink_state.replace_all_if_revision(map, quicklink_revision)? {
+            return Err("local_data_changed_retry".to_string());
+        }
     }
 
     {

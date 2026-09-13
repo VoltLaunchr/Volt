@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use tauri::State;
 use uuid::Uuid;
@@ -29,6 +30,7 @@ pub struct Snippet {
 pub struct SnippetState {
     snippets: Arc<Mutex<HashMap<String, Snippet>>>,
     file_path: PathBuf,
+    revision: AtomicU64,
 }
 
 impl SnippetState {
@@ -38,6 +40,7 @@ impl SnippetState {
         Self {
             snippets: Arc::new(Mutex::new(snippets)),
             file_path,
+            revision: AtomicU64::new(0),
         }
     }
 
@@ -64,10 +67,36 @@ impl SnippetState {
         Ok(snippets.values().cloned().collect())
     }
 
+    pub(crate) fn snapshot(&self) -> Result<(Vec<Snippet>, u64), String> {
+        let snippets = self.snippets.lock().map_err(|e| e.to_string())?;
+        Ok((
+            snippets.values().cloned().collect(),
+            self.revision.load(Ordering::Acquire),
+        ))
+    }
+
+    pub(crate) fn replace_all_if_revision(
+        &self,
+        new_snippets: HashMap<String, Snippet>,
+        expected_revision: u64,
+    ) -> Result<bool, String> {
+        {
+            let mut snippets = self.snippets.lock().map_err(|e| e.to_string())?;
+            if self.revision.load(Ordering::Acquire) != expected_revision {
+                return Ok(false);
+            }
+            *snippets = new_snippets;
+            self.revision.fetch_add(1, Ordering::Release);
+        }
+        self.save()?;
+        Ok(true)
+    }
+
     pub fn replace_all(&self, new_snippets: HashMap<String, Snippet>) -> Result<(), String> {
         {
             let mut snippets = self.snippets.lock().map_err(|e| e.to_string())?;
             *snippets = new_snippets;
+            self.revision.fetch_add(1, Ordering::Release);
         }
         self.save()
     }
@@ -142,6 +171,7 @@ pub async fn create_snippet(
             .lock()
             .map_err(|e| VoltError::Unknown(e.to_string()))?;
         snippets.insert(snippet.id.clone(), snippet.clone());
+        state.revision.fetch_add(1, Ordering::Release);
     }
 
     state.save().map_err(VoltError::Unknown)?;
@@ -185,7 +215,9 @@ pub async fn update_snippet(
             snippet.enabled = e;
         }
         snippet.updated_at = now_millis();
-        snippet.clone()
+        let updated = snippet.clone();
+        state.revision.fetch_add(1, Ordering::Release);
+        updated
     };
 
     state.save().map_err(VoltError::Unknown)?;
@@ -203,6 +235,7 @@ pub async fn delete_snippet(state: State<'_, SnippetState>, id: String) -> VoltR
         snippets
             .remove(&id)
             .ok_or_else(|| VoltError::NotFound(format!("Snippet not found: {}", id)))?;
+        state.revision.fetch_add(1, Ordering::Release);
     }
 
     state.save().map_err(VoltError::Unknown)?;
@@ -269,6 +302,9 @@ pub async fn import_snippets(state: State<'_, SnippetState>, json: String) -> Vo
             snippet.updated_at = now_millis();
             snippets.insert(snippet.id.clone(), snippet);
         }
+        if count > 0 {
+            state.revision.fetch_add(1, Ordering::Release);
+        }
     }
 
     state.save().map_err(VoltError::Unknown)?;
@@ -322,5 +358,19 @@ mod tests {
     fn test_resolve_no_variables() {
         let result = resolve_variables("plain text", None);
         assert_eq!(result, "plain text");
+    }
+
+    #[test]
+    fn conditional_replace_rejects_a_stale_sync_snapshot() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = SnippetState::new(dir.path().to_path_buf());
+        let (_, revision) = state.snapshot().unwrap();
+        state.revision.fetch_add(1, Ordering::Release);
+
+        assert!(
+            !state
+                .replace_all_if_revision(HashMap::new(), revision)
+                .unwrap()
+        );
     }
 }

@@ -5,9 +5,7 @@
 //! versioned via a `schema_version` table so future migrations can branch off.
 //!
 //! Soft delete: `deleted_at` is set on delete; rows can be restored or hard-
-//! deleted via `empty_trash` (which removes ALL trashed notes). A separate
-//! `purge_old_trashed(retention_days)` helper is exposed for an app-startup
-//! retention sweep (default 30 days) and is intentionally NOT a Tauri command.
+//! deleted via `empty_trash` (which removes ALL trashed notes).
 //!
 //! The `note_chunks` table is created here but never written from this module —
 //! it is reserved for the future embedding pipeline (Agent 4 will populate it).
@@ -494,33 +492,13 @@ impl NoteState {
     }
 
     /// Hard-delete every note currently in the trash. Returns the count
-    /// removed. (Use `purge_old_trashed` from app startup for the time-windowed
-    /// cleanup.)
+    /// removed.
     pub fn empty_trash_all(&self) -> VoltResult<usize> {
         let conn = self.lock()?;
         let removed = conn
             .execute("DELETE FROM notes WHERE deleted_at IS NOT NULL", [])
             .map_err(|e| VoltError::Unknown(format!("Failed to empty trash: {}", e)))?;
         info!("Emptied {} note(s) from trash", removed);
-        Ok(removed)
-    }
-
-    /// Hard-delete trashed notes older than `retention_days`. Intended for an
-    /// app-startup retention sweep. NOT exposed as a Tauri command — keeps the
-    /// "user empties trash" UX explicit.
-    #[allow(dead_code)] // wired in by the app-startup task in a follow-up
-    pub fn purge_old_trashed(&self, retention_days: i64) -> VoltResult<usize> {
-        let conn = self.lock()?;
-        let cutoff = now_millis() - retention_days * 24 * 60 * 60 * 1000;
-        let removed = conn
-            .execute(
-                "DELETE FROM notes WHERE deleted_at IS NOT NULL AND deleted_at < ?1",
-                params![cutoff],
-            )
-            .map_err(|e| VoltError::Unknown(format!("Failed to purge trash: {}", e)))?;
-        if removed > 0 {
-            info!("Purged {} note(s) older than {}d", removed, retention_days);
-        }
         Ok(removed)
     }
 
@@ -1073,42 +1051,6 @@ mod tests {
         assert_eq!(active.len(), 1);
         assert_eq!(active[0].id, "active");
         assert!(state.list_trash().unwrap().is_empty());
-    }
-
-    #[test]
-    fn test_purge_old_trashed_30_days() {
-        // Verify the startup-cleanup helper respects the retention window.
-        let state = test_state();
-        let now = now_millis();
-        let one_day_ms = 86_400_000;
-        raw_insert(
-            &state,
-            "old",
-            "old",
-            "",
-            0,
-            now,
-            Some(now - 31 * one_day_ms),
-            false,
-        );
-        raw_insert(
-            &state,
-            "fresh",
-            "fresh",
-            "",
-            0,
-            now,
-            Some(now - 5 * one_day_ms),
-            false,
-        );
-        raw_insert(&state, "active", "active", "", 0, now, None, false);
-
-        let removed = state.purge_old_trashed(30).unwrap();
-        assert_eq!(removed, 1);
-
-        let trash = state.list_trash().unwrap();
-        assert_eq!(trash.len(), 1);
-        assert_eq!(trash[0].id, "fresh");
     }
 
     #[test]

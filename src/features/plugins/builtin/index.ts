@@ -1,13 +1,13 @@
-export { AiChatPlugin, AiChatView, QuickAiView } from './ai-chat';
-export { CalculatorPlugin, CalculatorView } from './calculator';
+export { AiChatPlugin } from './ai-chat';
+export { CalculatorPlugin } from './calculator';
 export { DeveloperCommandsPlugin } from './developer';
 export { DeveloperToolsPlugin } from './developer-tools';
 export { WebSearchPlugin } from './websearch';
 export { SystemCommandsPlugin } from './systemcommands';
-export { TimerPlugin, TimerDisplay, TimerView, useTimers, timerStore, tasksStore } from './timer';
+export { TimerPlugin, TimerDisplay, useTimers, timerStore, tasksStore } from './timer';
 export { SystemMonitorPlugin } from './systemmonitor';
-export { GamesPlugin, GameView } from './games';
-export { EmojiPickerPlugin, EmojiPickerView } from './emoji-picker';
+export { GamesPlugin } from './games';
+export { EmojiPickerPlugin } from './emoji-picker';
 export { QuicklinksPlugin } from './quicklinks';
 export { NotesPlugin } from './notes';
 export { WindowManagementPlugin } from './window-management';

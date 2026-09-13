@@ -125,6 +125,7 @@ describe('useAppLifecycle file watcher', () => {
   let settings: Settings;
 
   beforeEach(() => {
+    localStorage.clear();
     registrations = [];
     settings = {
       ...DEFAULT_SETTINGS,
@@ -185,7 +186,9 @@ describe('useAppLifecycle file watcher', () => {
     });
 
     await waitFor(() => {
-      expect(mockInvoke.mock.calls.filter(([command]) => command === 'start_file_watcher')).toHaveLength(1);
+      expect(
+        mockInvoke.mock.calls.filter(([command]) => command === 'start_file_watcher')
+      ).toHaveLength(1);
     });
 
     const settingsListener = registrations.find((entry) => entry.event === 'settings-changed');
@@ -198,23 +201,33 @@ describe('useAppLifecycle file watcher', () => {
     });
 
     await waitFor(() => {
-      expect(mockInvoke.mock.calls.filter(([command]) => command === 'stop_file_watcher')).toHaveLength(1);
-      expect(mockInvoke.mock.calls.filter(([command]) => command === 'start_indexing')).toHaveLength(2);
+      expect(
+        mockInvoke.mock.calls.filter(([command]) => command === 'stop_file_watcher')
+      ).toHaveLength(1);
+      expect(
+        mockInvoke.mock.calls.filter(([command]) => command === 'start_indexing')
+      ).toHaveLength(2);
     });
 
-    const restartedProgress = registrations.filter((entry) => entry.event === 'indexing-progress').at(-1);
+    const restartedProgress = registrations
+      .filter((entry) => entry.event === 'indexing-progress')
+      .at(-1);
     act(() => {
       emit(restartedProgress, { phase: 'complete', indexedFiles: 4 });
     });
 
     await waitFor(() => {
-      expect(mockInvoke.mock.calls.filter(([command]) => command === 'start_file_watcher')).toHaveLength(2);
+      expect(
+        mockInvoke.mock.calls.filter(([command]) => command === 'start_file_watcher')
+      ).toHaveLength(2);
     });
 
     unmount();
 
     await waitFor(() => {
-      expect(mockInvoke.mock.calls.filter(([command]) => command === 'stop_file_watcher')).toHaveLength(2);
+      expect(
+        mockInvoke.mock.calls.filter(([command]) => command === 'stop_file_watcher')
+      ).toHaveLength(2);
     });
     expect(mockInvoke.mock.calls.map(([command]) => command)).toEqual([
       'start_indexing',
@@ -260,5 +273,89 @@ describe('useAppLifecycle file watcher', () => {
     await waitFor(() => expect(lateUnlisten).toHaveBeenCalled());
     expect(mockInvoke).not.toHaveBeenCalledWith('start_indexing', expect.any(Object));
     expect(mockInvoke).not.toHaveBeenCalledWith('start_file_watcher');
+  });
+
+  it.each([{ excludedPaths: ['private'] }, { deepSearch: !DEFAULT_SETTINGS.indexing.deepSearch }])(
+    'rebuilds the index when its filtering changes: %j',
+    async (change) => {
+      renderHook(() => useAppLifecycle());
+      await waitFor(() =>
+        expect(mockInvoke).toHaveBeenCalledWith('start_indexing', expect.any(Object))
+      );
+      act(() => {
+        emit(
+          registrations.find((entry) => entry.event === 'settings-changed'),
+          {
+            ...settings,
+            indexing: { ...settings.indexing, ...change },
+          }
+        );
+      });
+      await waitFor(() => {
+        expect(
+          mockInvoke.mock.calls.filter(([command]) => command === 'start_indexing')
+        ).toHaveLength(2);
+      });
+      expect(mockInvoke).toHaveBeenLastCalledWith(
+        'start_indexing',
+        expect.objectContaining({ ...change, force: true })
+      );
+    }
+  );
+
+  it('records a new configuration only after a completed scan', async () => {
+    localStorage.setItem('volt:lastIndexConfig', 'previous successful scan');
+    const first = renderHook(() => useAppLifecycle());
+    await waitFor(() =>
+      expect(mockInvoke).toHaveBeenCalledWith(
+        'start_indexing',
+        expect.objectContaining({ force: true })
+      )
+    );
+    act(() => {
+      emit(
+        registrations.find((entry) => entry.event === 'indexing-progress'),
+        { phase: 'error' }
+      );
+    });
+    expect(localStorage.getItem('volt:lastIndexConfig')).toBe('previous successful scan');
+    first.unmount();
+    renderHook(() => useAppLifecycle());
+    await waitFor(() => {
+      expect(
+        mockInvoke.mock.calls.filter(([command]) => command === 'start_indexing')
+      ).toHaveLength(2);
+    });
+    act(() => {
+      emit(registrations.filter((entry) => entry.event === 'indexing-progress').at(-1), {
+        phase: 'complete',
+        indexedFiles: 1,
+      });
+    });
+    expect(JSON.parse(localStorage.getItem('volt:lastIndexConfig')!)).toEqual({
+      folders: settings.indexing.folders,
+      ext: [...settings.indexing.fileExtensions].sort(),
+      excludedPaths: [...settings.indexing.excludedPaths].sort(),
+      deepSearch: settings.indexing.deepSearch,
+    });
+  });
+
+  it('disposes an appearance listener registered after unmount', async () => {
+    let resolveListener: ((unlisten: UnlistenFn) => void) | undefined;
+    const lateUnlisten = vi.fn();
+    mockListen.mockImplementation((event) => {
+      if (event === 'volt://appearance-preview')
+        return new Promise((resolve) => {
+          resolveListener = resolve;
+        });
+      return Promise.resolve(vi.fn());
+    });
+    const { unmount } = renderHook(() => useAppLifecycle());
+    unmount();
+    await act(async () => {
+      resolveListener?.(lateUnlisten);
+      await Promise.resolve();
+    });
+    expect(lateUnlisten).toHaveBeenCalledOnce();
   });
 });

@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Name=Volt
+GenericName=Application Launcher
+Comment=Launch applications, find files, and run commands
+Exec=volt %U
+TryExec=volt
+Icon=com.voltlaunchr.volt
+Terminal=false
+Categories=Utility;
+Keywords=launcher;search;applications;files;commands;
+MimeType=x-scheme-handler/volt;
+StartupNotify=false
+StartupWMClass=volt
