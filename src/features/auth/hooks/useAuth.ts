@@ -41,9 +41,20 @@ export function useAuth(): UseAuthReturn {
   });
 
   const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const authLoadIdRef = useRef(0);
+  const mountedRef = useRef(false);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      authLoadIdRef.current += 1;
+    };
+  }, []);
 
   /** Load session + profile from backend */
   const loadAuthState = useCallback(async () => {
+    const loadId = ++authLoadIdRef.current;
     try {
       const session = await authService.getSession();
       let profile: UserProfile | null = null;
@@ -52,12 +63,15 @@ export function useAuth(): UseAuthReturn {
         profile = await authService.getProfile();
       }
 
+      if (!mountedRef.current || loadId !== authLoadIdRef.current) return null;
       setState({ session, profile, isLoading: false, error: null });
       return session;
     } catch (err) {
       const msg = extractErrorMessage(err);
       logger.error('[useAuth] Failed to load auth state:', msg);
-      setState((prev) => ({ ...prev, isLoading: false, error: msg }));
+      if (mountedRef.current && loadId === authLoadIdRef.current) {
+        setState((prev) => ({ ...prev, isLoading: false, error: msg }));
+      }
       return null;
     }
   }, []);
@@ -98,33 +112,36 @@ export function useAuth(): UseAuthReturn {
 
   // Initial load
   useEffect(() => {
-    void loadAuthState().then((session) => {
-      if (session) {
-        scheduleRefresh(session);
-      }
-    });
-  }, [loadAuthState, scheduleRefresh]);
+    void loadAuthState();
+  }, [loadAuthState]);
+
+  // Every new session expiry arms the next refresh. The previous code only
+  // scheduled once on mount, so a successful refresh was never followed by
+  // another scheduled refresh.
+  useEffect(() => {
+    if (state.session) scheduleRefresh(state.session);
+  }, [state.session, scheduleRefresh]);
 
   // Listen for deep link callback event from Rust backend
   useEffect(() => {
     let unlisten: UnlistenFn | undefined;
+    let cancelled = false;
 
     void listen<AuthSession>('auth:session-updated', () => {
       void (async () => {
         logger.info('[useAuth] Session updated via deep link');
-        const session = await loadAuthState();
-        if (session) {
-          scheduleRefresh(session);
-        }
+        await loadAuthState();
       })();
     }).then((fn) => {
-      unlisten = fn;
+      if (cancelled) fn();
+      else unlisten = fn;
     });
 
     return () => {
+      cancelled = true;
       unlisten?.();
     };
-  }, [loadAuthState, scheduleRefresh]);
+  }, [loadAuthState]);
 
   // Refetch on window focus. Defence-in-depth for the multi-window case:
   // if the deep-link event somehow doesn't reach this webview (e.g. the
@@ -133,24 +150,24 @@ export function useAuth(): UseAuthReturn {
   // re-read the stored session and update the UI.
   useEffect(() => {
     let unlisten: UnlistenFn | undefined;
+    let cancelled = false;
 
     void getCurrentWindow()
       .listen('tauri://focus', () => {
         void (async () => {
-          const session = await loadAuthState();
-          if (session) {
-            scheduleRefresh(session);
-          }
+          await loadAuthState();
         })();
       })
       .then((fn) => {
-        unlisten = fn;
+        if (cancelled) fn();
+        else unlisten = fn;
       });
 
     return () => {
+      cancelled = true;
       unlisten?.();
     };
-  }, [loadAuthState, scheduleRefresh]);
+  }, [loadAuthState]);
 
   // Cleanup refresh timer on unmount
   useEffect(() => {
@@ -172,8 +189,13 @@ export function useAuth(): UseAuthReturn {
   }, []);
 
   const logout = useCallback(async () => {
+    // Invalidate reads that started before logout.
+    authLoadIdRef.current += 1;
     try {
       await authService.logout();
+      // Also invalidate focus/deep-link reads that started while logout was
+      // waiting on the backend session-operation lock.
+      authLoadIdRef.current += 1;
       setState({ session: null, profile: null, isLoading: false, error: null });
       if (refreshTimerRef.current) {
         clearTimeout(refreshTimerRef.current);
@@ -187,15 +209,12 @@ export function useAuth(): UseAuthReturn {
   const refresh = useCallback(async () => {
     try {
       await authService.refreshToken();
-      const session = await loadAuthState();
-      if (session) {
-        scheduleRefresh(session);
-      }
+      await loadAuthState();
     } catch (err) {
       const msg = extractErrorMessage(err);
       setState((prev) => ({ ...prev, error: msg }));
     }
-  }, [loadAuthState, scheduleRefresh]);
+  }, [loadAuthState]);
 
   return {
     session: state.session,

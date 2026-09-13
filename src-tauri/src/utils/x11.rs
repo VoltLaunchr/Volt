@@ -46,6 +46,53 @@ pub(crate) fn active_window(x: &X11) -> Result<Window, String> {
         .ok_or_else(|| "No active window found".to_string())
 }
 
+/// Simulate Ctrl+V through XTEST. This works for X11/XWayland targets; native
+/// Wayland intentionally returns an error because compositors do not expose a
+/// global synthetic-key API to unprivileged applications.
+pub(crate) fn simulate_ctrl_v() -> Result<(), String> {
+    const XK_CONTROL_L: u32 = 0xffe3;
+    const XK_V_LOWER: u32 = 0x0076;
+    const KEY_PRESS: u8 = 2;
+    const KEY_RELEASE: u8 = 3;
+
+    let x = connect()?;
+    let control = keycode_for_keysym(&x, XK_CONTROL_L)?;
+    let v = keycode_for_keysym(&x, XK_V_LOWER)?;
+
+    for (event_type, keycode) in [
+        (KEY_PRESS, control),
+        (KEY_PRESS, v),
+        (KEY_RELEASE, v),
+        (KEY_RELEASE, control),
+    ] {
+        x11rb::protocol::xtest::fake_input(&x.conn, event_type, keycode, 0, x.root, 0, 0, 0)
+            .map_err(|e| format!("XTEST fake input failed: {e}"))?;
+    }
+    x.conn
+        .flush()
+        .map_err(|e| format!("X11 flush failed: {e}"))?;
+    Ok(())
+}
+
+fn keycode_for_keysym(x: &X11, keysym: u32) -> Result<u8, String> {
+    let setup = x.conn.setup();
+    let min = setup.min_keycode;
+    let count = setup.max_keycode.saturating_sub(min).saturating_add(1);
+    let mapping = x
+        .conn
+        .get_keyboard_mapping(min, count)
+        .map_err(|e| e.to_string())?
+        .reply()
+        .map_err(|e| e.to_string())?;
+    let width = usize::from(mapping.keysyms_per_keycode);
+    mapping
+        .keysyms
+        .chunks(width.max(1))
+        .position(|symbols| symbols.contains(&keysym))
+        .and_then(|offset| min.checked_add(u8::try_from(offset).ok()?))
+        .ok_or_else(|| format!("No X11 keycode for keysym 0x{keysym:x}"))
+}
+
 /// The `WM_CLASS` "class" component (the second NUL-separated string; falls
 /// back to the first/"instance" component if the class is empty) of
 /// `window` — the conventional per-application identifier (e.g. "firefox",

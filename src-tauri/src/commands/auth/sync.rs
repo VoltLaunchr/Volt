@@ -38,6 +38,7 @@ pub struct SyncStatus {
 pub struct SyncState {
     pub last_synced_at: Mutex<Option<i64>>,
     pub client: reqwest::Client,
+    pub operation_lock: tokio::sync::Mutex<()>,
 }
 
 impl Default for SyncState {
@@ -45,6 +46,7 @@ impl Default for SyncState {
         Self {
             last_synced_at: Mutex::new(None),
             client: reqwest::Client::new(),
+            operation_lock: tokio::sync::Mutex::new(()),
         }
     }
 }
@@ -242,6 +244,7 @@ pub async fn sync_push(
     snippet_state: State<'_, SnippetState>,
     quicklink_state: State<'_, QuicklinkState>,
 ) -> Result<SyncStatus, String> {
+    let _operation = sync_state.operation_lock.lock().await;
     let session = require_premium().await?;
     let now = chrono::Utc::now().timestamp();
     let client = sync_state.client.clone();
@@ -278,6 +281,7 @@ pub async fn sync_pull(
     snippet_state: State<'_, SnippetState>,
     quicklink_state: State<'_, QuicklinkState>,
 ) -> Result<SyncStatus, String> {
+    let _operation = sync_state.operation_lock.lock().await;
     let session = require_premium().await?;
     let now = chrono::Utc::now().timestamp();
     let client = sync_state.client.clone();
@@ -287,7 +291,7 @@ pub async fn sync_pull(
         let remote: Vec<Snippet> =
             serde_json::from_value(data).map_err(|e| format!("parse remote snippets: {}", e))?;
 
-        let local = snippet_state.get_all()?;
+        let (local, snippet_revision) = snippet_state.snapshot()?;
         let mut merged: HashMap<String, Snippet> =
             local.into_iter().map(|s| (s.id.clone(), s)).collect();
 
@@ -317,10 +321,13 @@ pub async fn sync_pull(
             snip_accepted, snip_rejected
         );
 
-        snippet_state.replace_all(merged)?;
+        if !snippet_state.replace_all_if_revision(merged, snippet_revision)? {
+            return Err("local_data_changed_retry".to_string());
+        }
     }
 
     // Quicklinks: full replace (no timestamps on quicklinks)
+    let quicklink_revision = quicklink_state.revision();
     if let Some(data) = fetch(&client, &session, "quicklinks").await? {
         let remote: Vec<Quicklink> =
             serde_json::from_value(data).map_err(|e| format!("parse remote quicklinks: {}", e))?;
@@ -344,7 +351,9 @@ pub async fn sync_pull(
             "sync_pull quicklinks: accepted={} rejected={}",
             ql_accepted, ql_rejected
         );
-        quicklink_state.replace_all(map)?;
+        if !quicklink_state.replace_all_if_revision(map, quicklink_revision)? {
+            return Err("local_data_changed_retry".to_string());
+        }
     }
 
     {
