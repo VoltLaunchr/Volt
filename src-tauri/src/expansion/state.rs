@@ -167,7 +167,10 @@ fn run_processor_loop(
 ) {
     use crate::expansion::keyboard_layout::resolve_to_chars;
     use crate::expansion::trigger_buffer::TriggerBuffer;
-    use winapi::um::winuser::VK_BACK;
+    use winapi::um::winuser::{
+        GetForegroundWindow, VK_BACK, VK_DELETE, VK_DOWN, VK_END, VK_ESCAPE, VK_HOME, VK_LEFT,
+        VK_NEXT, VK_PRIOR, VK_RETURN, VK_RIGHT, VK_TAB, VK_UP,
+    };
 
     let mut buffer = TriggerBuffer::new(max_trigger_len.max(1));
     let own_exe_stem = std::env::current_exe()
@@ -187,6 +190,30 @@ fn run_processor_loop(
             time = event.time,
             "snippet expansion: raw key event"
         );
+
+        // Discard queued keystrokes belonging to a window that has since
+        // lost focus. Never combine text entered in different windows.
+        // SAFETY: GetForegroundWindow has no pointer arguments; its handle
+        // is compared as an opaque identity, never dereferenced.
+        let foreground_window = unsafe { GetForegroundWindow() } as usize;
+        if event.foreground_window == 0 || event.foreground_window != foreground_window {
+            buffer.clear();
+            continue;
+        }
+        buffer.set_context(event.foreground_window);
+
+        // Navigation or focus changes invalidate the assumed contiguous
+        // text immediately before the caret, even within the same window.
+        if [
+            VK_DELETE, VK_DOWN, VK_END, VK_ESCAPE, VK_HOME, VK_LEFT, VK_NEXT, VK_PRIOR, VK_RETURN,
+            VK_RIGHT, VK_TAB, VK_UP,
+        ]
+        .iter()
+        .any(|key| event.vk_code == *key as u32)
+        {
+            buffer.clear();
+            continue;
+        }
 
         if event.vk_code == VK_BACK as u32 {
             buffer.push_backspace();
@@ -251,6 +278,7 @@ fn run_processor_loop(
         };
 
         if is_excluded {
+            buffer.clear();
             continue;
         }
 
@@ -265,6 +293,14 @@ fn run_processor_loop(
 
         let resolved = crate::expansion::injector::resolve_snippet_content(&snippet.content);
         let backspaces = crate::expansion::injector::count_backspaces_for_trigger(&matched.trigger);
+
+        // Clipboard/variable resolution can take time; revalidate the
+        // target immediately before injecting into the foreground window.
+        // SAFETY: same opaque-handle comparison as above.
+        if unsafe { GetForegroundWindow() } as usize != event.foreground_window {
+            buffer.clear();
+            continue;
+        }
 
         if let Err(e) = crate::expansion::injector::send_input_sequence(backspaces, &resolved) {
             tracing::warn!("snippet expansion: failed to inject expansion: {e}");

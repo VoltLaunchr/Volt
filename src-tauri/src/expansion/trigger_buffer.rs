@@ -2,13 +2,7 @@
 //! expansion. No Win32 calls here — this module is exercised by unit tests
 //! on every OS.
 //!
-//! Compiled unconditionally (not gated behind `windows`) so its tests run in
-//! CI on every OS regardless of the `snippet-global-expansion` feature. With
-//! the feature off, nothing in `expansion::state` references this module's
-//! public API outside of its own `#[cfg(test)]` block, so the production
-//! (non-test) compile would otherwise flag it as dead code — silence that
-//! specifically for the feature-off case rather than masking real dead code.
-#![cfg_attr(not(feature = "snippet-global-expansion"), allow(dead_code))]
+//! Compiled for tests on every OS and for the Windows expansion feature.
 
 use std::collections::VecDeque;
 
@@ -24,11 +18,12 @@ use std::collections::VecDeque;
 pub struct TriggerBuffer {
     buf: VecDeque<char>,
     capacity: usize,
+    // Preserve the word boundary when a trigger fills the entire ring.
+    preceding_char: Option<char>,
+    context: Option<usize>,
 }
 
-/// A successful trigger match: which trigger matched and how many UTF-16
-/// code units it occupies (the caller backspaces that many units before
-/// injecting the expanded content).
+/// A successful trigger match identifying the trigger to expand.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TriggerMatch {
     pub trigger: String,
@@ -43,6 +38,8 @@ impl TriggerBuffer {
         Self {
             buf: VecDeque::with_capacity(capacity),
             capacity,
+            preceding_char: None,
+            context: None,
         }
     }
 
@@ -50,7 +47,7 @@ impl TriggerBuffer {
     /// is at capacity.
     pub fn push_char(&mut self, c: char) {
         if self.buf.len() == self.capacity {
-            self.buf.pop_front();
+            self.preceding_char = self.buf.pop_front();
         }
         self.buf.push_back(c);
     }
@@ -65,6 +62,16 @@ impl TriggerBuffer {
     /// the foreground app changes, to avoid spurious cross-app matches).
     pub fn clear(&mut self) {
         self.buf.clear();
+        self.preceding_char = None;
+    }
+
+    /// Start processing input from an opaque foreground-window identity.
+    /// A different window must never inherit a partially typed trigger.
+    pub fn set_context(&mut self, context: usize) {
+        if self.context != Some(context) || context == 0 {
+            self.clear();
+        }
+        self.context = Some(context);
     }
 
     /// Return the current buffer contents as a `String`, oldest-first.
@@ -77,10 +84,7 @@ impl TriggerBuffer {
     /// 2. the buffer ends with (i.e. was just typed in full), and
     /// 3. is preceded by a word boundary (start of buffer, or a character
     ///    that is whitespace / punctuation-like, never alphanumeric or `_`)
-    ///    so that `;sig` does not fire inside `foo;sigbar`-style noise — wait,
-    ///    actually the boundary check is on the character *before* the
-    ///    trigger, e.g. typing `x;sig` after a letter `x` with no separator
-    ///    should NOT match if `;sig`'s preceding char `x` is alphanumeric.
+    ///    so that typing `x;sig` without a separator does not match `;sig`.
     ///
     /// Among all matching triggers, the longest one wins (so `;sig` beats
     /// `;si` if both are enabled and the buffer ends with `;sig`).
@@ -106,8 +110,12 @@ impl TriggerBuffer {
 
             // Word-boundary check: the character immediately before the
             // trigger (if any) must not be alphanumeric/underscore.
-            if start > 0 {
-                let prev = chars[start - 1];
+            let previous = if start > 0 {
+                Some(chars[start - 1])
+            } else {
+                self.preceding_char
+            };
+            if let Some(prev) = previous {
                 let is_boundary = prev.is_whitespace() || (!prev.is_alphanumeric() && prev != '_');
                 if !is_boundary {
                     continue;
@@ -148,6 +156,71 @@ mod tests {
         buf.push_char('x');
         buf.push_char('y');
         assert_eq!(buf.as_string(), "y");
+    }
+
+    #[test]
+    fn full_capacity_trigger_preserves_evicted_word_boundary() {
+        for prefix in ['x', '_', 'é'] {
+            let mut buf = TriggerBuffer::new(4);
+            for c in format!("{prefix};sig").chars() {
+                buf.push_char(c);
+            }
+            assert_eq!(buf.try_match(&[(";sig", true)]), None);
+        }
+    }
+
+    #[test]
+    fn full_capacity_trigger_accepts_evicted_separator() {
+        for prefix in [' ', '('] {
+            let mut buf = TriggerBuffer::new(4);
+            for c in format!("{prefix};sig").chars() {
+                buf.push_char(c);
+            }
+            assert_eq!(
+                buf.try_match(&[(";sig", true)]),
+                Some(TriggerMatch {
+                    trigger: ";sig".to_string(),
+                })
+            );
+        }
+    }
+
+    #[test]
+    fn clear_resets_evicted_word_boundary() {
+        let mut buf = TriggerBuffer::new(4);
+        for c in "x;sig".chars() {
+            buf.push_char(c);
+        }
+        buf.clear();
+        for c in ";sig".chars() {
+            buf.push_char(c);
+        }
+        assert!(buf.try_match(&[(";sig", true)]).is_some());
+    }
+
+    #[test]
+    fn foreground_change_cannot_complete_another_windows_trigger() {
+        let mut buf = TriggerBuffer::new(4);
+        buf.set_context(1);
+        for c in ";si".chars() {
+            buf.push_char(c);
+        }
+        buf.set_context(2);
+        buf.push_char('g');
+        assert_eq!(buf.try_match(&[(";sig", true)]), None);
+        buf.set_context(1);
+        buf.push_char('g');
+        assert_eq!(buf.try_match(&[(";sig", true)]), None);
+    }
+
+    #[test]
+    fn same_foreground_preserves_partial_trigger() {
+        let mut buf = TriggerBuffer::new(4);
+        for c in ";sig".chars() {
+            buf.set_context(1);
+            buf.push_char(c);
+        }
+        assert!(buf.try_match(&[(";sig", true)]).is_some());
     }
 
     #[test]

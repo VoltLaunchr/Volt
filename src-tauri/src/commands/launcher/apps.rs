@@ -15,6 +15,7 @@ use ts_rs::TS;
 use crate::commands::launcher::{LaunchHistoryState, execute_launch};
 use crate::core::error::{VoltError, VoltResult};
 use crate::utils::icon::extract_icon;
+#[cfg(any(target_os = "windows", test))]
 use crate::utils::path::find_main_executable;
 use tauri::State;
 
@@ -1420,8 +1421,8 @@ pub async fn launch_application(
 // Helper Functions
 // ============================================================================
 
-/// Recursively scans a directory for applications up to a given depth
-#[allow(dead_code)]
+/// Recursively scans a directory for applications up to a given depth.
+#[cfg(any(target_os = "windows", test))]
 fn scan_directory_recursive(
     dir_path: &str,
     current_depth: usize,
@@ -1498,7 +1499,7 @@ fn scan_directory_recursive(
     Ok(apps)
 }
 
-#[allow(dead_code)]
+#[cfg(target_os = "windows")]
 fn scan_shortcuts(dir_path: &str) -> Result<Vec<AppInfo>, String> {
     let mut apps = Vec::new();
 

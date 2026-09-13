@@ -244,6 +244,7 @@ export function useAppLifecycle(): UseAppLifecycleResult {
   // Sync appearance preview from the settings window (material + opacity)
   useEffect(() => {
     let unlistenFn: (() => void) | undefined;
+    let cancelled = false;
 
     void listen<Pick<Settings['appearance'], 'windowEffect' | 'transparency'>>(
       'volt://appearance-preview',
@@ -253,10 +254,12 @@ export function useAppLifecycle(): UseAppLifecycleResult {
         applyWindowOpacity(transparency, windowEffect);
       }
     ).then((fn) => {
-      unlistenFn = fn;
+      if (cancelled) fn();
+      else unlistenFn = fn;
     });
 
     return () => {
+      cancelled = true;
       unlistenFn?.();
     };
   }, []);
@@ -343,7 +346,14 @@ export function useAppLifecycle(): UseAppLifecycleResult {
         JSON.stringify(newSettings.indexing.fileExtensions) !==
           JSON.stringify(currentSettings.indexing.fileExtensions);
 
-      if (foldersChanged || extensionsChanged) {
+      const exclusionsChanged =
+        currentSettings == null ||
+        JSON.stringify(newSettings.indexing.excludedPaths) !==
+          JSON.stringify(currentSettings.indexing.excludedPaths);
+      const deepSearchChanged =
+        currentSettings?.indexing.deepSearch !== newSettings.indexing.deepSearch;
+
+      if (foldersChanged || extensionsChanged || exclusionsChanged || deepSearchChanged) {
         const indexingRunId = ++indexingRunIdRef.current;
         indexingUnlistenRef.current?.();
         indexingUnlistenRef.current = null;
@@ -479,12 +489,11 @@ export function useAppLifecycle(): UseAppLifecycleResult {
       const currentConfigSig = JSON.stringify({
         folders: [...foldersToIndex].sort(),
         ext: [...currentSettings.indexing.fileExtensions].sort(),
+        excludedPaths: [...currentSettings.indexing.excludedPaths].sort(),
+        deepSearch: currentSettings.indexing.deepSearch,
       });
       const lastConfigSig = localStorage.getItem(INDEX_CONFIG_KEY);
       const forceRescan = lastConfigSig !== currentConfigSig;
-      if (forceRescan) {
-        localStorage.setItem(INDEX_CONFIG_KEY, currentConfigSig);
-      }
 
       try {
         setIsIndexing(true);
@@ -505,6 +514,7 @@ export function useAppLifecycle(): UseAppLifecycleResult {
           const { phase, indexedFiles } = event.payload;
 
           if (phase === 'complete') {
+            localStorage.setItem(INDEX_CONFIG_KEY, currentConfigSig);
             setIsIndexing(false);
             void notifyNative({
               title: 'Volt indexing complete',

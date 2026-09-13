@@ -1,5 +1,5 @@
 import { invoke, Channel } from '@tauri-apps/api/core';
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { pluginRegistry } from '../../features/plugins/core';
 import { PluginResult as PluginResultData, PluginResultType } from '../../features/plugins/types';
 import {
@@ -67,6 +67,20 @@ interface UseSearchPipelineOptions {
   suspended?: boolean;
 }
 
+const SYSTEM_EXECUTABLE_PATH_SEGMENTS = [
+  'program files',
+  'program files (x86)',
+  'windows',
+  'programdata',
+  'common files',
+  'clicktorun',
+  'installer',
+  'servicehub',
+  'windows kits',
+  'microsoft shared',
+  'nvidia corporation',
+] as const;
+
 // ---- Conversion helpers (used by streaming callbacks + final merge) ----
 
 const convertApps = (
@@ -106,20 +120,9 @@ const convertFiles = (files: FileSearchResultCompact[]): SearchResult[] => {
     .filter((file) => {
       const path = file.path.toLowerCase();
       if (file.name.toLowerCase().endsWith('.exe')) {
-        const systemDirs = [
-          'program files',
-          'program files (x86)',
-          'windows',
-          'programdata',
-          'common files',
-          'clicktorun',
-          'installer',
-          'servicehub',
-          'windows kits',
-          'microsoft shared',
-          'nvidia corporation',
-        ];
-        if (systemDirs.some((d) => path.includes(d))) return false;
+        if (SYSTEM_EXECUTABLE_PATH_SEGMENTS.some((segment) => path.includes(segment))) {
+          return false;
+        }
       }
       return true;
     })
@@ -302,6 +305,24 @@ export function useSearchPipeline({
   const activeChannelRef = useRef<Channel<SearchBatch> | null>(null);
   const activeWebSearchRef = useRef<AbortController | null>(null);
 
+  // The application catalog changes only after a scan. Building this lookup on
+  // every debounced keystroke needlessly walked the complete catalog each time.
+  const iconByPath = useMemo(() => {
+    const icons = new Map<string, string>();
+    for (const app of allApps) {
+      if (app.icon) icons.set(app.path.toLowerCase(), app.icon);
+    }
+    return icons;
+  }, [allApps]);
+
+  const enabledFallbackCommands = useMemo(
+    () =>
+      (fallbackCommands ?? [])
+        .filter((command) => command.enabled)
+        .sort((a, b) => a.order - b.order),
+    [fallbackCommands]
+  );
+
   const finishSearch = useCallback((searchId: number) => {
     if (searchId === latestSearchId.current) {
       useSearchStore.getState().setIsSearching(false);
@@ -316,11 +337,6 @@ export function useSearchPipeline({
       const { isLoading: currentIsLoading } = useAppStore.getState();
       // If apps aren't loaded yet, still allow plugin-only search
       const appsReady = !currentIsLoading && allApps.length > 0;
-      const iconByPath = new Map(
-        allApps
-          .filter((app): app is AppInfo & { icon: string } => Boolean(app.icon))
-          .map((app) => [app.path.toLowerCase(), app.icon])
-      );
       webSearchHistory.setEnabled(rememberWebSearchHistory);
 
       if (!query.trim()) {
@@ -508,15 +524,11 @@ export function useSearchPipeline({
         // A secondary-field app match or unrelated fuzzy file must not hide the
         // user's web/AI fallbacks.
         if (shouldShowWebFallbacks(allResults, effectiveQuery)) {
-          const enabled = (fallbackCommands ?? [])
-            .filter((cmd) => cmd.enabled)
-            .sort((a, b) => a.order - b.order);
-
           const encoded = encodeURIComponent(effectiveQuery);
           const substitute = (tpl: string): string =>
             tpl.replace(/\{query\}/g, encoded).replace(/\{rawQuery\}/g, effectiveQuery);
 
-          enabled.forEach((cmd, idx) => {
+          enabledFallbackCommands.forEach((cmd, idx) => {
             // Resolved URL/command after placeholder substitution.
             const resolvedTarget = substitute(cmd.target);
             const resolvedLabel = substitute(cmd.label);
@@ -615,6 +627,7 @@ export function useSearchPipeline({
             });
         }
       } catch (err) {
+        if (searchId !== latestSearchId.current) return;
         const errorMessage = extractErrorMessage(err);
         logger.error('Search failed:', errorMessage);
         setResults([]);
@@ -626,8 +639,9 @@ export function useSearchPipeline({
     [
       allApps,
       appShortcuts,
-      fallbackCommands,
+      enabledFallbackCommands,
       finishSearch,
+      iconByPath,
       maxResults,
       rememberWebSearchHistory,
       searchSensitivity,
@@ -681,15 +695,18 @@ export function useSearchPipeline({
       void performSearch(searchQuery, searchId);
     }, debounceMs);
 
-    return () => clearTimeout(timeoutId);
-  }, [
-    searchQuery,
-    performSearch,
-    setResults,
-    setSelectedIndex,
-    setShowSnowEffect,
-    suspended,
-  ]);
+    return () => {
+      clearTimeout(timeoutId);
+      latestSearchId.current += 1;
+      if (activeChannelRef.current) {
+        activeChannelRef.current.onmessage = () => {};
+        activeChannelRef.current = null;
+      }
+      activeWebSearchRef.current?.abort();
+      activeWebSearchRef.current = null;
+      useSearchStore.getState().setIsSearching(false);
+    };
+  }, [searchQuery, performSearch, setResults, setSelectedIndex, setShowSnowEffect, suspended]);
 
   // Keep selected index in range when results change
   useEffect(() => {

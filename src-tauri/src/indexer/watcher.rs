@@ -169,6 +169,35 @@ mod tests {
     }
 
     #[test]
+    fn watcher_indexes_created_and_renamed_directories() {
+        for kind in [
+            EventKind::Create(CreateKind::Folder),
+            EventKind::Modify(ModifyKind::Name(RenameMode::To)),
+        ] {
+            let root = tempfile::tempdir().unwrap();
+            let folder = root.path().join("games");
+            fs::create_dir(&folder).unwrap();
+            let db = FileIndexDb::open(root.path().join("index.db")).unwrap();
+            let cache = Arc::new(Mutex::new(Arc::new(Vec::new())));
+            let lookup = Arc::new(Mutex::new(Arc::new(HashMap::new())));
+            let filter = WatchFilter::new(&IndexConfig {
+                folders: vec![root.path().to_string_lossy().into_owned()],
+                excluded_paths: Vec::new(),
+                file_extensions: vec!["txt".to_string()],
+                max_depth: 10,
+                max_file_size: 0,
+            });
+            let events = HashMap::from([(folder.clone(), kind)]);
+            flush_test_events(&db, &cache, &lookup, &filter, &events);
+            let expected =
+                create_directory_info_pub(&folder, &fs::metadata(&folder).unwrap()).unwrap();
+            assert_eq!(db.get_all_files().unwrap()[0].path, expected.path);
+            assert_eq!(cache.lock().unwrap()[0].path, expected.path);
+            assert_eq!(lookup.lock().unwrap().get(&expected.path), Some(&0));
+        }
+    }
+
+    #[test]
     fn watcher_removes_file_that_becomes_ineligible() {
         let root = tempfile::tempdir().expect("watch root");
         let file = root.path().join("notes.txt");
@@ -521,7 +550,6 @@ fn remove_indexed_path(db: &FileIndexDb, path: &Path, removals: &mut HashSet<Str
     }
 }
 
-#[allow(clippy::collapsible_if)]
 fn flush_events(
     db: &FileIndexDb,
     in_memory: Option<&SharedFileCache>,
@@ -545,6 +573,7 @@ fn flush_events(
         match kind {
             // File created or modified – upsert.
             EventKind::Create(CreateKind::File)
+            | EventKind::Create(CreateKind::Folder)
             | EventKind::Create(CreateKind::Any)
             | EventKind::Modify(ModifyKind::Data(_))
             | EventKind::Modify(ModifyKind::Any) => {
@@ -566,17 +595,15 @@ fn flush_events(
                         }
                         Err(e) => warn!("Watcher: metadata error for {:?}: {}", path, e),
                     }
-                } else if path.is_dir() {
-                    if let Ok(meta) = std::fs::metadata(path) {
-                        if filter.should_index_directory(path)
-                            && let Some(dir_info) = create_directory_info_pub(path, &meta)
-                        {
-                            if let Err(e) = db.upsert_file(&dir_info) {
-                                error!("Watcher upsert (dir) failed for {:?}: {}", path, e);
-                            } else {
-                                upserts.push(dir_info);
-                            }
-                        }
+                } else if path.is_dir()
+                    && let Ok(meta) = std::fs::metadata(path)
+                    && filter.should_index_directory(path)
+                    && let Some(dir_info) = create_directory_info_pub(path, &meta)
+                {
+                    if let Err(e) = db.upsert_file(&dir_info) {
+                        error!("Watcher upsert (dir) failed for {:?}: {}", path, e);
+                    } else {
+                        upserts.push(dir_info);
                     }
                 }
             }
@@ -607,7 +634,7 @@ fn flush_events(
                             }
                         }
                     }
-                    RenameMode::Both => {
+                    RenameMode::To | RenameMode::Both => {
                         // For Both, we get both paths in pending but don't know
                         // which is old/new from the key alone. Check disk existence.
                         if path.exists() {
@@ -670,43 +697,42 @@ fn flush_events(
     }
 
     // Apply collected changes to the in-memory cache in one lock acquisition.
-    if let Some(files_mutex) = in_memory {
-        if !upserts.is_empty() || !removals.is_empty() {
-            if let Ok(mut guard) = files_mutex.lock() {
-                let mut new_files: Vec<FileInfo> = (**guard).clone();
+    if let Some(files_mutex) = in_memory
+        && (!upserts.is_empty() || !removals.is_empty())
+        && let Ok(mut guard) = files_mutex.lock()
+    {
+        let mut new_files: Vec<FileInfo> = (**guard).clone();
 
-                // Apply removals
-                if !removals.is_empty() {
-                    let removal_set: std::collections::HashSet<&str> =
-                        removals.iter().map(|s| s.as_str()).collect();
-                    new_files.retain(|f| !removal_set.contains(f.path.as_str()));
-                }
+        // Apply removals
+        if !removals.is_empty() {
+            let removal_set: std::collections::HashSet<&str> =
+                removals.iter().map(|s| s.as_str()).collect();
+            new_files.retain(|f| !removal_set.contains(f.path.as_str()));
+        }
 
-                // Apply upserts (update existing or insert new)
-                for upsert in upserts {
-                    if let Some(existing) = new_files.iter_mut().find(|f| f.path == upsert.path) {
-                        *existing = upsert;
-                    } else {
-                        new_files.push(upsert);
-                    }
-                }
-
-                let new_lookup = Arc::new(
-                    new_files
-                        .iter()
-                        .enumerate()
-                        .map(|(index, file)| (file.path.clone(), index))
-                        .collect(),
-                );
-                if let Some(lookup_mutex) = in_memory_lookup
-                    && let Ok(mut lookup_guard) = lookup_mutex.lock()
-                {
-                    *guard = Arc::new(new_files);
-                    *lookup_guard = new_lookup;
-                } else if in_memory_lookup.is_none() {
-                    *guard = Arc::new(new_files);
-                }
+        // Apply upserts (update existing or insert new)
+        for upsert in upserts {
+            if let Some(existing) = new_files.iter_mut().find(|f| f.path == upsert.path) {
+                *existing = upsert;
+            } else {
+                new_files.push(upsert);
             }
+        }
+
+        let new_lookup = Arc::new(
+            new_files
+                .iter()
+                .enumerate()
+                .map(|(index, file)| (file.path.clone(), index))
+                .collect(),
+        );
+        if let Some(lookup_mutex) = in_memory_lookup
+            && let Ok(mut lookup_guard) = lookup_mutex.lock()
+        {
+            *guard = Arc::new(new_files);
+            *lookup_guard = new_lookup;
+        } else if in_memory_lookup.is_none() {
+            *guard = Arc::new(new_files);
         }
     }
 }

@@ -461,7 +461,6 @@ mod linux_impl {
 /// so a Z-order neighbor or a focus change after hide cannot become the target.
 /// On failure Volt is shown again.
 #[tauri::command]
-#[allow(clippy::needless_return, clippy::collapsible_if)]
 pub async fn snap_window(app: tauri::AppHandle, position: String) -> Result<(), String> {
     // Validate early to avoid hiding for bad input
     const VALID: &[&str] = &[
@@ -483,27 +482,21 @@ pub async fn snap_window(app: tauri::AppHandle, position: String) -> Result<(), 
         return Err(format!("Unknown position: {}", position));
     }
 
-    #[cfg(target_os = "windows")]
+    #[cfg(any(target_os = "windows", target_os = "linux"))]
     {
+        #[cfg(target_os = "windows")]
         let res = windows_impl::snap_window_impl(&app, &position);
-        if res.is_err() {
-            if let Some(w) = app.get_webview_window("main") {
-                let _ = w.show();
-                let _ = w.set_focus();
-            }
-        }
-        return res;
-    }
-    #[cfg(target_os = "linux")]
-    {
+        #[cfg(target_os = "linux")]
         let res = linux_impl::snap_window_impl(&app, &position);
-        if res.is_err() {
-            if let Some(w) = app.get_webview_window("main") {
-                let _ = w.show();
-                let _ = w.set_focus();
-            }
+
+        if res.is_err()
+            && let Some(window) = app.get_webview_window("main")
+        {
+            let _ = window.show();
+            let _ = window.set_focus();
         }
-        return res;
+
+        res
     }
     #[cfg(not(any(target_os = "windows", target_os = "linux")))]
     {
