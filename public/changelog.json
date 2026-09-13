@@ -1,6 +1,174 @@
 {
   "versions": [
     {
+      "version": "0.4.0",
+      "date": "2026-07-19",
+      "title": "Expand search and extension runtime & more",
+      "description": "Volt v0.4.0 brings 18 new features, 56 bug fixes, security improvements, performance optimizations.",
+      "sections": [
+        {
+          "type": "features",
+          "title": "New Features",
+          "icon": "sparkles",
+          "items": [
+            "Expand search and extension runtime",
+            "Native notifications for indexing, app dedup, shortcut icons in settings",
+            "Ship pnpm toolchain, AI chat, snippets and indexer follow-ups (#123)",
+            "Add quick-action shortcuts",
+            "AI chat overhaul — multi-turn, tools, structured outputs, reasoning, local models",
+            "Offline catch-up follow-up (Vague 3.2 continued)",
+            "Global snippet expansion engine (Pilier E1)",
+            "Native window materials — Mica/Acrylic transparency",
+            "Searching-state indicator + named icon fallbacks",
+            "Offline catch-up reconcile for stale file index (Vague 3.2)",
+            "Land unprivileged USN reader + enumeration bench (D3 NO-GO on data)",
+            "Add IPC codegen+timings (F1/F2) + blueprints & scaffolds for Piliers C/D (#118)",
+            "Redesign extension icons + fix SignInRequired layout",
+            "Wire note icons + create extension management icons",
+            "Developer portal, extension storage/OAuth/system APIs",
+            "AI chat, profile, quick actions, custom emojis, local embeddings",
+            "Tiptap-based notes app with SQLite/FTS5 backend",
+            "V0.1.2 — Cloud Sync preview, onboarding, system monitor, UI migration"
+          ]
+        },
+        {
+          "type": "security",
+          "title": "Security",
+          "icon": "shield",
+          "items": [
+            "Security hardening and improvements"
+          ]
+        },
+        {
+          "type": "fixes",
+          "title": "Bug Fixes",
+          "icon": "shield",
+          "items": [
+            "Keep generated bindings reproducible",
+            "Preserve Linux launcher error contracts",
+            "Update release dependencies and restore CI",
+            "Resolve merge conflicts with main + fix clippy warnings",
+            "Misc small fixes and test updates",
+            "Restore Mica/Acrylic CSS dropped during commit split",
+            "MacOS clippy + Windows vitest CRLF regressions",
+            "Gate test-module super import to Windows",
+            "Icon GDI guards, steam W-API, system_monitor sleep, paste race",
+            "Repair generation chain, clipboard copy + image display",
+            "Move legacy --spacing-* tokens out of @theme to restore Tailwind max-w-* scale",
+            "Column-of-words bug in empty states (recurrent pattern)",
+            "Use /v1/predictions for community model (Replicate 404)",
+            "Use emojis_icon.svg for Emoji & Symbols sidebar entry",
+            "Wire note + extension icons into default suggestions and settings nav",
+            "Drop debug-only allow-embeddings-test, wire extension prefs/secrets/oauth in settings window",
+            "Drop eslint-disable suppressions, fix hook deps and render purity",
+            "FTS5 triggers skip 'delete' for already-trashed rows",
+            "Clippy 1.95 errors + cargo fmt drift + download timeout",
+            "Increase Worker match() timeout to 8s for network extensions",
+            "Create parent dirs before unpacking tar entries",
+            "Follow HTTP redirects when downloading",
+            "Add missing use import to fuzzy_match doctest",
+            "Unify all launch paths with as_admin support and history recording",
+            "Offload blocking sysinfo calls to spawn_blocking",
+            "RAII IndexingGuard prevents is_indexing stuck on abort",
+            "Align AppCategory Rust→TS — lowercase strings, extended enum, cross-validate test",
+            "Cleanup indexing listener on settings-changed effect unmount",
+            "Gate setShowSnowEffect inside stale-id guard in isAppBrowseQuery path",
+            "Collapse nested if-let in invalidate_index",
+            "Add ignoreRestSiblings + first-session Rust fallback",
+            "Eliminate transparent-window flash on hot-toggle and cold-start",
+            "M1/M3/M5 — blocking I/O in async, polling loop, HMAC domain separation",
+            "Fix C1 blocking sleep + H1 missing AbortHandle (audit follow-up)",
+            "Full security, correctness, and performance audit",
+            "Drop unreachable File branch in ResultItem icon fallback",
+            "Hide main window at cold start until ready",
+            "Grant settings window index/scan permissions",
+            "Gate UWP regex behind target_os = \"windows\"",
+            "Rustfmt + clippy compliance + e2e tests aligned to v0.1.2 UI",
+            "Vitest @ alias + drop runtime-version targets from sync-version",
+            "Point GitHub/Notion init at new /start route on the website",
+            "Clear -D warnings on launcher/windows_search/lib",
+            "Rate-limit + log forensic trail on single-instance forwards (H9)",
+            "HMAC integrity tag on keyring entries (M10)",
+            "Harden execution surface (H6, H7, M5, M6, M7)",
+            "Fail-closed on signature mismatch + permission allowlist",
+            "Block redirect SSRF in worker fetch proxy",
+            "Reject numeric IPv4/IPv6-mapped hosts in isUrlSafe",
+            "Clear pending map on worker timeout",
+            "Demote state log to debug, host check on deep-link",
+            "Cap windows_search query length",
+            "Cap import JSON size and snippet count",
+            "Reject UNC and .lnk in open_file_with_dialog",
+            "Refuse executable types in open_path",
+            "Tighten UWP regex, apply LOLBIN check before split"
+          ]
+        },
+        {
+          "type": "performance",
+          "title": "Performance",
+          "icon": "zap",
+          "items": [
+            "Hot-path scanner, matcher buf reuse, top-K BinaryHeap, regex Lazy",
+            "Eliminate hot-path allocations (P1, P3, P4, P9)"
+          ]
+        },
+        {
+          "type": "refactor",
+          "title": "Under the Hood",
+          "icon": "cpu",
+          "items": [
+            "Manifest-driven single-source-of-truth activation",
+            "Sprint 1 quick-wins + refonte vague 1 (frecency, clipboard, IPC codegen, typed events) (#117)",
+            "Lint compliance + extension i18n bridge + typed IPC"
+          ]
+        },
+        {
+          "type": "ci",
+          "title": "CI & Build",
+          "icon": "settings",
+          "items": [
+            "Bump Node to 22 for pnpm 11.7 toolchain"
+          ]
+        },
+        {
+          "type": "testing",
+          "title": "Testing",
+          "icon": "shield",
+          "items": [
+            "Make page navigation assertion result-aware",
+            "Align search e2e fixtures with current settings",
+            "Expect refresh_index_if_stale in useAppLifecycle invoke sequence",
+            "Add Rust↔TS contract tests for FileInfo/FileSearchResult/PluginResultData"
+          ]
+        },
+        {
+          "type": "docs",
+          "title": "Documentation",
+          "icon": "package",
+          "items": [
+            "Add TODO for Volt 2026 refonte with detailed task tracking and milestones",
+            "Replace bun commands with pnpm in living docs",
+            "Reorganize — archive historical material, group active refonte",
+            "Mark Vague 3.2 catch-up done; record 80%-already-built finding",
+            "Refresh top-level docs to reflect v0.2.0 codebase",
+            "Agent memory snapshots, dev portal architecture, release checklist",
+            "Mark M1/M3/M5 as fixed in audit doc",
+            "Sync audit statuses for all fixes from 792b1c3",
+            "Mark C1 and H1 as fixed in audit doc",
+            "Lint guardrails in CLAUDE.md, README polish, updater key custody, audit notes"
+          ]
+        }
+      ],
+      "footer": {
+        "gettingStarted": "Press Ctrl+Space to open Volt anytime. Check out what's new in v0.4.0!",
+        "feedback": "Have feedback or found a bug? Visit our GitHub repository to report issues or request features.",
+        "links": {
+          "github": "https://github.com/VoltLaunchr/Volt",
+          "releases": "https://github.com/VoltLaunchr/Volt/releases",
+          "docs": "https://voltlaunchr.com/docs"
+        }
+      }
+    },
+    {
       "version": "0.3.0",
       "date": "2026-06-13",
       "title": "Refine search and built-in workflows & more",
