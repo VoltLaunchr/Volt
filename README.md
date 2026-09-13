@@ -93,7 +93,7 @@ Download the newest build from [GitHub Releases](https://github.com/VoltLaunchr/
 | Platform          | Release assets                    |
 | ----------------- | --------------------------------- |
 | **Windows 10/11** | NSIS `.exe` or MSI `.msi`         |
-| **macOS**         | `.dmg` for Apple Silicon or Intel |
+| **macOS**         | `.dmg` for Apple Silicon          |
 | **Linux**         | `.deb`, `.rpm`, or `.AppImage`    |
 
 Code-signing and notarization status can vary while Volt is in beta. Review the notes for the specific release and verify published checksums when available.
