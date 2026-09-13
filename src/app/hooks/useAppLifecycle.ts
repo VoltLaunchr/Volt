@@ -84,6 +84,7 @@ export function useAppLifecycle(): UseAppLifecycleResult {
   // (settings-changed restart + start-indexing-on-mount) can tear it down.
   // Declared at the top so both effects see the same ref instance.
   const indexingUnlistenRef = useRef<(() => void) | null>(null);
+  const extensionOperationsRef = useRef(new Map<string, Promise<void>>());
 
   // Sync app data into store (single effect to avoid cascading re-renders)
   useEffect(() => {
@@ -124,10 +125,13 @@ export function useAppLifecycle(): UseAppLifecycleResult {
           pluginRegistry.register(new ShellCommandPlugin());
           pluginRegistry.register(new DeveloperToolsPlugin());
 
+          // Claim initialization before the first await. React StrictMode can
+          // run this effect twice; marking at the end allowed both async runs
+          // to load the same extensions concurrently.
+          pluginRegistry.markInitialized();
+
           // Start clipboard monitoring
           await ClipboardPlugin.startMonitoring();
-
-          pluginRegistry.markInitialized();
 
           logger.info(
             '✓ Built-in plugins initialized:',
@@ -302,7 +306,19 @@ export function useAppLifecycle(): UseAppLifecycleResult {
             logger.error(`Failed to ${action} extension ${extensionId}:`, err);
           }
         };
-        void run();
+        // Preserve event order per extension. Without this queue, two rapid
+        // reload/unload events can both load workers and orphan the instance
+        // that loses the registry/loadedExtensions race.
+        const previous = extensionOperationsRef.current.get(extensionId) ?? Promise.resolve();
+        const next = previous
+          .catch(() => {})
+          .then(run)
+          .finally(() => {
+            if (extensionOperationsRef.current.get(extensionId) === next) {
+              extensionOperationsRef.current.delete(extensionId);
+            }
+          });
+        extensionOperationsRef.current.set(extensionId, next);
       }
     ).then((fn) => {
       // If the component already unmounted while the Promise was pending,

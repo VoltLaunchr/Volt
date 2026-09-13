@@ -49,6 +49,12 @@ impl Drop for PendingAuthFlow {
 static AUTH_STATE: LazyLock<Mutex<HashMap<String, PendingAuthFlow>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
+/// Serializes session-changing operations. Supabase refresh tokens rotate, so
+/// concurrent refreshes must not reuse the same token; logout must also wait
+/// for an older refresh and then remain the final writer.
+static AUTH_SESSION_OP_LOCK: LazyLock<tokio::sync::Mutex<()>> =
+    LazyLock::new(|| tokio::sync::Mutex::new(()));
+
 /// Lifetime of a pending login flow (5 minutes — same as the website's
 /// auth-code TTL so the desktop never keeps state past what the server
 /// will accept).
@@ -355,6 +361,7 @@ pub async fn auth_get_profile() -> Result<Option<UserProfile>, String> {
 /// Returns only session status (no tokens) to the renderer.
 #[tauri::command]
 pub async fn auth_refresh_token() -> Result<SessionStatus, String> {
+    let _session_operation = AUTH_SESSION_OP_LOCK.lock().await;
     let config = supabase_config().await?;
     info!("Refreshing Supabase auth token");
 
@@ -454,6 +461,7 @@ pub async fn auth_refresh_token() -> Result<SessionStatus, String> {
 /// Logout — clear stored auth tokens.
 #[tauri::command]
 pub async fn auth_logout() -> Result<(), String> {
+    let _session_operation = AUTH_SESSION_OP_LOCK.lock().await;
     info!("Logging out — clearing auth session");
     delete_auth_session()
 }

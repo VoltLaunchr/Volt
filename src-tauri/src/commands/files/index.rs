@@ -10,6 +10,7 @@ use std::collections::HashMap;
 #[cfg(feature = "tantivy-search")]
 use std::path::Path;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter, State};
 use tracing::{error, info, warn};
@@ -73,6 +74,15 @@ pub struct FileIndexState {
     /// Handle to the currently running background scan, so `invalidate_index`
     /// can abort an in-progress scan before kicking off a new one.
     pub scan_task: Mutex<Option<tokio::task::AbortHandle>>,
+    /// Serializes scan lifecycle transitions (claim/cancel/store handle).
+    pub scan_control: tokio::sync::Mutex<()>,
+    /// Identifies the scan that currently owns `is_indexing`. An obsolete
+    /// task must never clear the flag belonging to its replacement.
+    pub scan_generation: Arc<AtomicU64>,
+    /// Serializes full-snapshot replacement with incremental watcher flushes.
+    /// The watcher keeps receiving OS events while waiting, then applies them
+    /// after the new snapshot so no event is lost at the scan/commit boundary.
+    pub mutation_gate: Arc<tokio::sync::Mutex<()>>,
 }
 
 /// State for the active file-system watcher.  Stored separately so the
@@ -112,6 +122,9 @@ impl Default for FileIndexState {
             fulltext: None,
             config: Arc::new(Mutex::new(IndexConfig::default())),
             scan_task: Mutex::new(None),
+            scan_control: tokio::sync::Mutex::new(()),
+            scan_generation: Arc::new(AtomicU64::new(0)),
+            mutation_gate: Arc::new(tokio::sync::Mutex::new(())),
         }
     }
 }
@@ -150,6 +163,9 @@ impl FileIndexState {
             fulltext,
             config: Arc::new(Mutex::new(IndexConfig::default())),
             scan_task: Mutex::new(None),
+            scan_control: tokio::sync::Mutex::new(()),
+            scan_generation: Arc::new(AtomicU64::new(0)),
+            mutation_gate: Arc::new(tokio::sync::Mutex::new(())),
         }
     }
 }
@@ -330,17 +346,25 @@ struct IndexingProgress {
 /// panic, or normal completion — so the flag is always released.
 struct IndexingGuard {
     status: Arc<Mutex<IndexStatus>>,
+    generation: Arc<AtomicU64>,
+    owner: u64,
 }
 
 impl IndexingGuard {
-    fn new(status: Arc<Mutex<IndexStatus>>) -> Self {
-        Self { status }
+    fn new(status: Arc<Mutex<IndexStatus>>, generation: Arc<AtomicU64>, owner: u64) -> Self {
+        Self {
+            status,
+            generation,
+            owner,
+        }
     }
 }
 
 impl Drop for IndexingGuard {
     fn drop(&mut self) {
-        if let Ok(mut s) = self.status.lock() {
+        if self.generation.load(Ordering::Acquire) == self.owner
+            && let Ok(mut s) = self.status.lock()
+        {
             s.is_indexing = false;
         }
     }
@@ -365,6 +389,9 @@ struct ReconcileParams {
     /// `true` only for `refresh_index_if_stale`: bumps the offline catch-up
     /// telemetry counter (Vague 3.2 — feeds the D3/USN reconsideration gate).
     record_catchup_telemetry: bool,
+    mutation_gate: Arc<tokio::sync::Mutex<()>>,
+    generation: Arc<AtomicU64>,
+    owner: u64,
 }
 
 /// Re-walk the filesystem, persist to SQLite, rebuild the Tantivy index, swap
@@ -393,12 +420,26 @@ async fn reconcile(params: ReconcileParams) {
         app_handle,
         label,
         record_catchup_telemetry,
+        mutation_gate,
+        generation,
+        owner,
     } = params;
+
+    // Watcher flushes wait behind this guard. notify continues queueing raw
+    // events, so they are applied after the replacement snapshot is committed.
+    let _mutation_guard = mutation_gate.lock().await;
 
     // `scan_files` is a synchronous, deeply recursive filesystem walk that can
     // take tens of seconds on large drives. Offload to the blocking pool so it
     // never starves the async runtime (IPC / hotkey / UI events).
     let scan_result = tokio::task::spawn_blocking(move || scan_files(&config)).await;
+
+    // An invalidate/restart may have superseded this scan while the blocking
+    // filesystem walk was finishing. Never let an obsolete snapshot commit.
+    if generation.load(Ordering::Acquire) != owner {
+        info!("{}: discarded obsolete scan generation {}", label, owner);
+        return;
+    }
 
     match scan_result {
         Ok(Ok(scanned_files)) => {
@@ -503,6 +544,8 @@ pub async fn start_indexing(
     force: Option<bool>,
     deep_search: Option<bool>,
 ) -> VoltResult<()> {
+    let _control = state.scan_control.lock().await;
+
     // Atomically check-and-set `is_indexing` in a single lock acquisition to
     // prevent a TOCTOU race where two concurrent calls both pass the check
     // before either sets the flag.
@@ -520,6 +563,7 @@ pub async fn start_indexing(
         status.indexed_files = 0;
         status.total_files = 0;
     }
+    let owner = state.scan_generation.fetch_add(1, Ordering::AcqRel) + 1;
 
     // Persist config so `invalidate_index` can re-use it.
     {
@@ -549,10 +593,12 @@ pub async fn start_indexing(
     // Run indexing in background; store the AbortHandle so `invalidate_index`
     // can cancel a running scan before kicking off a new one.
     let guard_status = Arc::clone(&status_arc);
+    let generation = state.scan_generation.clone();
+    let mutation_gate = state.mutation_gate.clone();
     let join_handle = tokio::spawn(async move {
         // Owned by this future — its Drop clears `is_indexing` regardless of
         // whether the future completes normally, panics, or is aborted.
-        let _guard = IndexingGuard::new(guard_status);
+        let _guard = IndexingGuard::new(guard_status, generation.clone(), owner);
 
         let config = IndexConfig {
             folders,
@@ -645,6 +691,9 @@ pub async fn start_indexing(
             app_handle: Some(app_handle),
             label: "full scan",
             record_catchup_telemetry: false,
+            mutation_gate,
+            generation,
+            owner,
         })
         .await;
     });
@@ -1131,8 +1180,10 @@ pub struct IndexStats {
 #[tauri::command]
 pub async fn invalidate_index(
     state: State<'_, FileIndexState>,
-    watcher_state: State<'_, WatcherState>,
+    _watcher_state: State<'_, WatcherState>,
 ) -> VoltResult<()> {
+    let _control = state.scan_control.lock().await;
+
     // Abort any in-progress background scan before rebuilding.
     if let Ok(mut task) = state.scan_task.lock()
         && let Some(handle) = task.take()
@@ -1141,13 +1192,8 @@ pub async fn invalidate_index(
         info!("Aborted in-progress index scan for rebuild");
     }
 
-    // Stop the watcher while we rebuild.
-    if let Ok(mut handle) = watcher_state.handle.lock() {
-        if let Some(h) = handle.as_ref() {
-            h.stop();
-        }
-        *handle = None;
-    }
+    // Keep the watcher alive. Its flushes wait on `mutation_gate` while the
+    // replacement scan runs, then apply queued OS events to the new snapshot.
 
     // Keep the previous coherent snapshot searchable until the replacement
     // scan succeeds. A failed rebuild therefore cannot erase the usable index.
@@ -1161,18 +1207,14 @@ pub async fn invalidate_index(
         .map_err(|e| VoltError::Unknown(e.to_string()))?
         .clone();
 
-    // Kick off a new full scan (reuse start_indexing logic).
-    // Atomically check-and-set to guard against concurrent scans.
+    // Supersede the prior generation. Its RAII guard is generation-aware and
+    // therefore cannot clear the new scan's `is_indexing` flag when it drops.
+    let owner = state.scan_generation.fetch_add(1, Ordering::AcqRel) + 1;
     {
         let mut status = state
             .status
             .lock()
             .map_err(|e| VoltError::Unknown(e.to_string()))?;
-        if status.is_indexing {
-            return Err(VoltError::InvalidConfig(
-                "Indexing already in progress".to_string(),
-            ));
-        }
         status.is_indexing = true;
         status.indexed_files = 0;
         status.total_files = 0;
@@ -1186,10 +1228,12 @@ pub async fn invalidate_index(
     let fulltext_arc = state.fulltext.clone();
 
     let guard_status = Arc::clone(&status_arc);
+    let generation = state.scan_generation.clone();
+    let mutation_gate = state.mutation_gate.clone();
     let rebuild_handle = tokio::spawn(async move {
         // Owned by this future — its Drop clears `is_indexing` regardless of
         // whether the future completes normally, panics, or is aborted.
-        let _guard = IndexingGuard::new(guard_status);
+        let _guard = IndexingGuard::new(guard_status, generation.clone(), owner);
 
         reconcile(ReconcileParams {
             config,
@@ -1202,6 +1246,9 @@ pub async fn invalidate_index(
             app_handle: None,
             label: "rebuild",
             record_catchup_telemetry: false,
+            mutation_gate,
+            generation,
+            owner,
         })
         .await;
     });
@@ -1322,9 +1369,16 @@ pub async fn start_file_watcher(
         index_state.fulltext.clone(),
         in_memory_files,
         in_memory_lookup,
+        index_state.mutation_gate.clone(),
     );
     #[cfg(not(feature = "tantivy-search"))]
-    let watcher_result = start_watcher(config, db_arc, in_memory_files, in_memory_lookup);
+    let watcher_result = start_watcher(
+        config,
+        db_arc,
+        in_memory_files,
+        in_memory_lookup,
+        index_state.mutation_gate.clone(),
+    );
 
     match watcher_result {
         Ok(handle) => {
@@ -1377,6 +1431,8 @@ pub async fn refresh_index_if_stale(
     state: State<'_, FileIndexState>,
     stale_secs: i64,
 ) -> VoltResult<()> {
+    let _control = state.scan_control.lock().await;
+
     // The index age lives in the DB; without persistence there is nothing to
     // reconcile against (the in-memory cache is already authoritative).
     let last_full_scan = match state.db.as_ref() {
@@ -1422,6 +1478,7 @@ pub async fn refresh_index_if_stale(
         }
         status.is_indexing = true;
     }
+    let owner = state.scan_generation.fetch_add(1, Ordering::AcqRel) + 1;
 
     let files_arc = state.files.clone();
     let file_lookup_arc = state.file_lookup.clone();
@@ -1429,16 +1486,16 @@ pub async fn refresh_index_if_stale(
     let db_arc = state.db.clone();
     #[cfg(feature = "tantivy-search")]
     let fulltext_arc = state.fulltext.clone();
+    let generation = state.scan_generation.clone();
+    let mutation_gate = state.mutation_gate.clone();
 
     // Detached reconcile so the command returns immediately. The guard clears
     // `is_indexing` whatever happens (success, scan error, or task panic).
     //
-    // A live watcher may apply an upsert in the tiny window between this scan
-    // and the cache swap inside `reconcile`; that is acceptable — the scan
-    // reflects current disk truth and is authoritative, and any racing
-    // watcher event is re-applied on its next flush.
-    tokio::spawn(async move {
-        let _guard = IndexingGuard::new(status_arc.clone());
+    // The shared mutation gate makes watcher flushes wait for this snapshot
+    // commit. notify keeps queueing raw events and applies them afterwards.
+    let catchup_handle = tokio::spawn(async move {
+        let _guard = IndexingGuard::new(status_arc.clone(), generation.clone(), owner);
 
         reconcile(ReconcileParams {
             config,
@@ -1451,9 +1508,16 @@ pub async fn refresh_index_if_stale(
             app_handle: None,
             label: "stale catch-up",
             record_catchup_telemetry: true,
+            mutation_gate,
+            generation,
+            owner,
         })
         .await;
     });
+
+    if let Ok(mut task) = state.scan_task.lock() {
+        *task = Some(catchup_handle.abort_handle());
+    }
 
     Ok(())
 }
@@ -1575,8 +1639,9 @@ mod tests {
             indexed_files: 0,
             last_updated: 0,
         }));
+        let generation = Arc::new(AtomicU64::new(1));
         {
-            let _guard = IndexingGuard::new(Arc::clone(&status));
+            let _guard = IndexingGuard::new(Arc::clone(&status), generation, 1);
             // Simulate the spawn closure being aborted before reaching its
             // success/error arms — `_guard` still drops at scope exit.
         }
@@ -1598,7 +1663,25 @@ mod tests {
             indexed_files: 0,
             last_updated: 0,
         }));
-        drop(IndexingGuard::new(Arc::clone(&status)));
+        let generation = Arc::new(AtomicU64::new(1));
+        drop(IndexingGuard::new(Arc::clone(&status), generation, 1));
         assert!(!status.lock().unwrap().is_indexing);
+    }
+
+    #[test]
+    fn obsolete_indexing_guard_does_not_clear_replacement_flag() {
+        let status = Arc::new(Mutex::new(IndexStatus {
+            is_indexing: true,
+            total_files: 0,
+            indexed_files: 0,
+            last_updated: 0,
+        }));
+        let generation = Arc::new(AtomicU64::new(2));
+        drop(IndexingGuard::new(
+            Arc::clone(&status),
+            Arc::clone(&generation),
+            1,
+        ));
+        assert!(status.lock().unwrap().is_indexing);
     }
 }

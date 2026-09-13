@@ -306,6 +306,7 @@ pub fn start_watcher(
     #[cfg(feature = "tantivy-search")] fulltext_index: Option<Arc<FulltextIndex>>,
     in_memory_files: Option<SharedFileCache>,
     in_memory_lookup: Option<SharedFileLookup>,
+    mutation_gate: Arc<tokio::sync::Mutex<()>>,
 ) -> Result<WatcherHandle, String> {
     let directories = config.folders.clone();
     if directories.is_empty() {
@@ -343,6 +344,7 @@ pub fn start_watcher(
     let files_thread = in_memory_files;
     let lookup_thread = in_memory_lookup;
     let filter_thread = filter;
+    let mutation_gate_thread = mutation_gate;
     let worker = std::thread::spawn(move || {
         // pending_events: path → last-seen EventKind
         let mut pending: HashMap<PathBuf, EventKind> = HashMap::new();
@@ -384,6 +386,10 @@ pub fn start_watcher(
 
             // Flush if debounce window elapsed.
             if last_flush.elapsed() >= Duration::from_millis(DEBOUNCE_MS) && !pending.is_empty() {
+                // A full reconcile holds this gate from scan start through
+                // snapshot commit. Raw notify events remain queued meanwhile
+                // and are applied on top of the new snapshot after release.
+                let _mutation_guard = mutation_gate_thread.blocking_lock();
                 #[cfg(feature = "tantivy-search")]
                 flush_events(
                     &db_thread,
