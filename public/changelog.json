@@ -1,6 +1,42 @@
 {
   "versions": [
     {
+      "version": "0.5.0",
+      "date": "2026-09-13",
+      "title": "Add Linux window management (X11/Hyprland) and release hardening (#141) & more",
+      "description": "Volt v0.5.0 brings 1 new feature, 4 bug fixes.",
+      "sections": [
+        {
+          "type": "features",
+          "title": "New Features",
+          "icon": "sparkles",
+          "items": [
+            "Add Linux window management (X11/Hyprland) and release hardening (#141)"
+          ]
+        },
+        {
+          "type": "fixes",
+          "title": "Bug Fixes",
+          "icon": "shield",
+          "items": [
+            "Eliminate release-critical race conditions",
+            "Restore cross-platform CI checks",
+            "Harden release-critical flows",
+            "Linux runtime/stability batch + Arch packaging, auth/extensions follow-ups"
+          ]
+        }
+      ],
+      "footer": {
+        "gettingStarted": "Press Ctrl+Space to open Volt anytime. Check out what's new in v0.5.0!",
+        "feedback": "Have feedback or found a bug? Visit our GitHub repository to report issues or request features.",
+        "links": {
+          "github": "https://github.com/VoltLaunchr/Volt",
+          "releases": "https://github.com/VoltLaunchr/Volt/releases",
+          "docs": "https://voltlaunchr.com/docs"
+        }
+      }
+    },
+    {
       "version": "0.4.0",
       "date": "2026-07-19",
       "title": "Expand search and extension runtime & more",
