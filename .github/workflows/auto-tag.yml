@@ -74,7 +74,7 @@ jobs:
           echo "::notice::Pushed tag $TAG"
 
       - name: Trigger release workflow
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const tag = '${{ steps.tag.outputs.tag }}';
