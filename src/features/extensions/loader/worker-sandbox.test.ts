@@ -124,9 +124,11 @@ describe('WorkerPlugin extension runtime IPC parameters', () => {
     const worker = { postMessage: vi.fn() };
     (p as unknown as { worker: typeof worker }).worker = worker;
 
-    await (p as unknown as {
-      handleSystemRequest(requestId: number, payload: { op: 'getApplications' }): Promise<void>;
-    }).handleSystemRequest(11, { op: 'getApplications' });
+    await (
+      p as unknown as {
+        handleSystemRequest(requestId: number, payload: { op: 'getApplications' }): Promise<void>;
+      }
+    ).handleSystemRequest(11, { op: 'getApplications' });
 
     expect(invoke).toHaveBeenCalledWith('ext_get_applications', { extensionId: 'github' });
   });
@@ -137,9 +139,11 @@ describe('WorkerPlugin extension runtime IPC parameters', () => {
     const worker = { postMessage: vi.fn() };
     (p as unknown as { worker: typeof worker }).worker = worker;
 
-    await (p as unknown as {
-      handleSystemRequest(requestId: number, payload: { op: 'getApplications' }): Promise<void>;
-    }).handleSystemRequest(7, { op: 'getApplications' });
+    await (
+      p as unknown as {
+        handleSystemRequest(requestId: number, payload: { op: 'getApplications' }): Promise<void>;
+      }
+    ).handleSystemRequest(7, { op: 'getApplications' });
 
     expect(invoke).toHaveBeenCalledWith('ext_get_applications', { extensionId: 'test' });
     expect(worker.postMessage).toHaveBeenCalledWith({
@@ -153,9 +157,13 @@ describe('WorkerPlugin extension runtime IPC parameters', () => {
     vi.mocked(invoke).mockResolvedValue(undefined);
     const p = newPlugin(['system']);
 
-    await (p as unknown as {
-      executeActions(actions: Array<{ action: 'showInFolder' | 'moveToTrash'; path: string }>): Promise<void>;
-    }).executeActions([
+    await (
+      p as unknown as {
+        executeActions(
+          actions: Array<{ action: 'showInFolder' | 'moveToTrash'; path: string }>
+        ): Promise<void>;
+      }
+    ).executeActions([
       { action: 'showInFolder', path: 'C:\\Users\\Volt\\Desktop\\file.txt' },
       { action: 'moveToTrash', path: 'C:\\Users\\Volt\\Desktop\\old.txt' },
     ]);
@@ -173,13 +181,17 @@ describe('WorkerPlugin extension runtime IPC parameters', () => {
   it('blocks saveCredential without the oauth permission', async () => {
     const p = newPlugin([], { id: 'github', extensionId: 'github' });
 
-    await (p as unknown as {
-      executeActions(actions: Array<{
-        action: 'saveCredential';
-        service: string;
-        token: string;
-      }>): Promise<void>;
-    }).executeActions([{ action: 'saveCredential', service: 'github', token: 'secret' }]);
+    await (
+      p as unknown as {
+        executeActions(
+          actions: Array<{
+            action: 'saveCredential';
+            service: string;
+            token: string;
+          }>
+        ): Promise<void>;
+      }
+    ).executeActions([{ action: 'saveCredential', service: 'github', token: 'secret' }]);
 
     expect(invoke).not.toHaveBeenCalled();
   });
@@ -188,13 +200,17 @@ describe('WorkerPlugin extension runtime IPC parameters', () => {
     vi.mocked(invoke).mockResolvedValue(undefined);
     const p = newPlugin(['oauth'], { id: 'github:search', extensionId: 'github' });
 
-    await (p as unknown as {
-      executeActions(actions: Array<{
-        action: 'saveCredential';
-        service: string;
-        token: string;
-      }>): Promise<void>;
-    }).executeActions([{ action: 'saveCredential', service: 'github', token: 'secret' }]);
+    await (
+      p as unknown as {
+        executeActions(
+          actions: Array<{
+            action: 'saveCredential';
+            service: string;
+            token: string;
+          }>
+        ): Promise<void>;
+      }
+    ).executeActions([{ action: 'saveCredential', service: 'github', token: 'secret' }]);
 
     expect(invoke).toHaveBeenCalledWith('ext_save_credential', {
       extensionId: 'github',
@@ -222,12 +238,14 @@ describe('WorkerPlugin extension runtime IPC parameters', () => {
       images: [{ mediaType: 'image/png', data: 'iVBORw0KGgo=' }],
     };
 
-    await (p as unknown as {
-      handleAIRequest(
-        requestId: number,
-        payload: { prompt: string; options: typeof options }
-      ): Promise<void>;
-    }).handleAIRequest(9, {
+    await (
+      p as unknown as {
+        handleAIRequest(
+          requestId: number,
+          payload: { prompt: string; options: typeof options }
+        ): Promise<void>;
+      }
+    ).handleAIRequest(9, {
       prompt: 'describe this',
       options,
     });
@@ -241,5 +259,32 @@ describe('WorkerPlugin extension runtime IPC parameters', () => {
         channel: expect.anything() as unknown,
       })
     );
+  });
+
+  it('does not deliver an obsolete AI response to a replacement worker', async () => {
+    let rejectInvoke!: (reason: unknown) => void;
+    vi.mocked(invoke).mockImplementationOnce(
+      () =>
+        new Promise((_, reject) => {
+          rejectInvoke = reject;
+        })
+    );
+    const p = newPlugin(['ai']);
+    const oldWorker = { postMessage: vi.fn(), terminate: vi.fn() };
+    const newWorker = { postMessage: vi.fn(), terminate: vi.fn() };
+    (p as unknown as { worker: typeof oldWorker }).worker = oldWorker;
+
+    const request = (
+      p as unknown as {
+        handleAIRequest(requestId: number, payload: { prompt: string }): Promise<void>;
+      }
+    ).handleAIRequest(12, { prompt: 'slow request' });
+    await vi.waitFor(() => expect(rejectInvoke).toBeTypeOf('function'));
+    (p as unknown as { terminateWorker(): void }).terminateWorker();
+    (p as unknown as { worker: typeof newWorker }).worker = newWorker;
+    rejectInvoke(new Error('old request failed'));
+    await request;
+
+    expect(newWorker.postMessage).not.toHaveBeenCalled();
   });
 });

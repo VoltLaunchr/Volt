@@ -136,9 +136,11 @@ impl ClipboardManagerPlugin {
     /// Update the list of apps whose clipboard changes should not be recorded.
     /// `apps` contains executable basenames (e.g. "1password", "keepass"), case-insensitive.
     pub fn set_disabled_apps(&self, apps: Vec<String>) {
-        if let Ok(mut guard) = self.disabled_apps_filter.lock() {
-            *guard = apps.into_iter().map(|a| a.to_lowercase()).collect();
-        }
+        let mut guard = self.disabled_apps_filter.lock().unwrap_or_else(|poisoned| {
+            tracing::warn!("clipboard disabled-apps lock poisoned; recovering state");
+            poisoned.into_inner()
+        });
+        *guard = apps.into_iter().map(|a| a.to_lowercase()).collect();
     }
 
     /// Set the plugin API
@@ -648,7 +650,10 @@ impl ClipboardManagerPlugin {
                                         };
 
                                     if should_add {
-                                        // Skip if the source app is in the disabled list
+                                        // Skip if the source app is in the disabled list.
+                                        // Fail closed: when the foreground app cannot be identified
+                                        // and the exclusion list is non-empty, treat as blocked
+                                        // to avoid leaking clipboard data into a protected app.
                                         let blocked = if let Ok(disabled) =
                                             disabled_apps_filter.lock()
                                         {
@@ -657,10 +662,13 @@ impl ClipboardManagerPlugin {
                                             } else if let Some(app) = get_foreground_app_name() {
                                                 disabled.iter().any(|d| app.contains(d.as_str()))
                                             } else {
-                                                false
+                                                true
                                             }
                                         } else {
-                                            false
+                                            tracing::warn!(
+                                                "clipboard disabled-apps lock poisoned; blocking capture"
+                                            );
+                                            true
                                         };
                                         if !blocked {
                                             *last_hash_guard = Some(current_hash.clone());
@@ -734,17 +742,23 @@ impl ClipboardManagerPlugin {
                         };
 
                         if should_add {
-                            // Skip if the source app is in the disabled list
+                            // Skip if the source app is in the disabled list.
+                            // Fail closed: when the foreground app cannot be identified
+                            // and the exclusion list is non-empty, treat as blocked
+                            // to avoid leaking clipboard data into a protected app.
                             let blocked = if let Ok(disabled) = disabled_apps_filter.lock() {
                                 if disabled.is_empty() {
                                     false
                                 } else if let Some(app) = get_foreground_app_name() {
                                     disabled.iter().any(|d| app.contains(d.as_str()))
                                 } else {
-                                    false
+                                    true
                                 }
                             } else {
-                                false
+                                tracing::warn!(
+                                    "clipboard disabled-apps lock poisoned; blocking capture"
+                                );
+                                true
                             };
                             if blocked {
                                 continue;

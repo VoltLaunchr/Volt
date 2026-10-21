@@ -226,6 +226,9 @@ pub fn handle_oauth_callback(
     // Verify state parameter against pending requests
     {
         let mut oauth_state = lock_state()?;
+        // Expiry must be enforced when consuming the callback, even if no
+        // subsequent login has triggered cleanup since this flow started.
+        oauth_state.prune_stale();
 
         let pending_request = oauth_state.pending_requests.remove(&state).ok_or_else(|| {
             // Avoid logging the raw state at warn — leaked log files
@@ -386,6 +389,30 @@ mod tests {
         );
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("Invalid or expired"));
+    }
+
+    #[test]
+    fn test_expired_callback_is_rejected_before_storing_token() {
+        let state = uuid::Uuid::new_v4().to_string();
+        lock_state().unwrap().pending_requests.insert(
+            state.clone(),
+            OAuthRequest {
+                service: "github".to_string(),
+                initiated_at: (chrono::Local::now() - chrono::Duration::minutes(16)).to_rfc3339(),
+            },
+        );
+
+        // Deliberately invalid token: expiry must win over token validation
+        // and the OS keyring must never be reached by this callback.
+        let error = handle_oauth_callback(
+            "github".to_string(),
+            "nonempty-token".to_string(),
+            state.clone(),
+            None,
+        )
+        .unwrap_err();
+        assert!(error.contains("Invalid or expired"), "{error}");
+        assert!(!lock_state().unwrap().pending_requests.contains_key(&state));
     }
 
     #[test]

@@ -1,4 +1,9 @@
-@import "tailwindcss";
+/* Keep Tailwind's scanner on the sources that can actually contain Volt
+   utilities. The repository also contains packaging files, docs and local
+   worktrees that must not participate in CSS generation. */
+@import "tailwindcss" source(none);
+@source "../";
+@source "../../index.html";
 @import "./theme.css";
 @import "./variables.css";
 

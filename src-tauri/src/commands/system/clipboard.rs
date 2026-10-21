@@ -276,6 +276,14 @@ pub async fn set_clipboard_disabled_apps(
 pub async fn paste_text(text: String, paste_state: State<'_, PasteState>) -> VoltResult<()> {
     use arboard::Clipboard;
 
+    #[cfg(target_os = "linux")]
+    crate::utils::x11::connect().map_err(VoltError::Unknown)?;
+    if cfg!(not(any(windows, target_os = "linux"))) {
+        return Err(VoltError::InvalidConfig(
+            "Direct paste is not supported on this platform".into(),
+        ));
+    }
+
     let mut cb =
         Clipboard::new().map_err(|e| crate::core::error::VoltError::Unknown(e.to_string()))?;
     cb.set_text(&text)
@@ -311,6 +319,10 @@ pub async fn paste_text(text: String, paste_state: State<'_, PasteState>) -> Vol
                 simulate_ctrl_v_windows();
             }
         }
+        #[cfg(target_os = "linux")]
+        if let Err(error) = crate::utils::x11::simulate_ctrl_v() {
+            tracing::warn!("paste_text: {error}");
+        }
     });
 
     replace_paste_handle(&paste_state, handle.abort_handle());
@@ -328,6 +340,14 @@ pub async fn paste_sequentially(
     paste_state: State<'_, PasteState>,
 ) -> VoltResult<()> {
     use arboard::Clipboard;
+
+    #[cfg(target_os = "linux")]
+    crate::utils::x11::connect().map_err(VoltError::Unknown)?;
+    if cfg!(not(any(windows, target_os = "linux"))) {
+        return Err(VoltError::InvalidConfig(
+            "Sequential paste is not supported on this platform".into(),
+        ));
+    }
 
     if texts.is_empty() {
         return Ok(());
@@ -357,6 +377,11 @@ pub async fn paste_sequentially(
                     unsafe {
                         simulate_ctrl_v_windows();
                     }
+                }
+                #[cfg(target_os = "linux")]
+                if let Err(error) = crate::utils::x11::simulate_ctrl_v() {
+                    tracing::warn!("paste_sequentially: {error}");
+                    break;
                 }
                 // Gap between pastes so the target app can process each one.
                 tokio::time::sleep(tokio::time::Duration::from_millis(600)).await;

@@ -26,7 +26,10 @@ if [[ ! -d "$macos_dir" ]]; then
   exit 1
 fi
 
-mapfile -t bundle_apps < <(find "$macos_dir" -maxdepth 1 -type d -name "*.app" | sort)
+bundle_apps=()
+while IFS= read -r bundle_path; do
+  bundle_apps[${#bundle_apps[@]}]="$bundle_path"
+done < <(find "$macos_dir" -maxdepth 1 -type d -name "*.app" | sort)
 if [[ "${#bundle_apps[@]}" -ne 1 ]]; then
   echo "::error::Expected exactly one .app bundle in ${macos_dir}, found ${#bundle_apps[@]}"
   printf '%s\n' "${bundle_apps[@]:-}"
@@ -79,7 +82,10 @@ if [[ ! -d "$dmg_dir" ]]; then
   exit 1
 fi
 
-mapfile -t dmgs < <(find "$dmg_dir" -maxdepth 1 -type f -name "*.dmg" | sort)
+dmgs=()
+while IFS= read -r dmg_path; do
+  dmgs[${#dmgs[@]}]="$dmg_path"
+done < <(find "$dmg_dir" -maxdepth 1 -type f -name "*.dmg" | sort)
 if [[ "${#dmgs[@]}" -ne 1 ]]; then
   echo "::error::Expected exactly one .dmg in ${dmg_dir}, found ${#dmgs[@]}"
   printf '%s\n' "${dmgs[@]:-}"
@@ -107,7 +113,10 @@ trap cleanup EXIT
 hdiutil attach "$dmg" -readonly -nobrowse -mountpoint "$mount_point" -quiet
 attached="true"
 
-mapfile -t mounted_apps < <(find "$mount_point" -maxdepth 1 -type d -name "*.app" | sort)
+mounted_apps=()
+while IFS= read -r mounted_path; do
+  mounted_apps[${#mounted_apps[@]}]="$mounted_path"
+done < <(find "$mount_point" -maxdepth 1 -type d -name "*.app" | sort)
 if [[ "${#mounted_apps[@]}" -ne 1 ]]; then
   echo "::error::Expected exactly one .app bundle in mounted DMG, found ${#mounted_apps[@]}"
   printf '%s\n' "${mounted_apps[@]:-}"
