@@ -1,5 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import {
+  lazy,
+  Suspense,
   useCallback,
   useEffect,
   useMemo,
@@ -35,11 +37,7 @@ import {
   respondToolApproval,
   subscribeToolApprovals,
 } from '../lib/aiToolApproval';
-import {
-  Reasoning,
-  ReasoningContent,
-  ReasoningTrigger,
-} from '@/components/ai-elements/reasoning';
+import { Reasoning, ReasoningContent, ReasoningTrigger } from '@/components/ai-elements/reasoning';
 import {
   Tool,
   ToolContent,
@@ -57,11 +55,7 @@ import {
   ConversationEmptyState,
   ConversationScrollButton,
 } from '@/components/ai-elements/conversation';
-import {
-  Message,
-  MessageContent,
-  MessageResponse,
-} from '@/components/ai-elements/message';
+import { Message, MessageContent } from '@/components/ai-elements/message';
 import {
   PromptInput,
   PromptInputBody,
@@ -73,6 +67,15 @@ import {
 } from '@/components/ai-elements/prompt-input';
 import { Suggestion } from '@/components/ai-elements/suggestion';
 import type { ChatStatus, FileUIPart } from 'ai';
+
+// Markdown, syntax highlighting, math and Mermaid are the heaviest part of
+// the chat renderer. Keep them out of the initial AI view and fetch them only
+// when an assistant text response is actually rendered.
+const MessageResponse = lazy(() =>
+  import('@/components/ai-elements/message-response').then((module) => ({
+    default: module.MessageResponse,
+  }))
+);
 
 interface ProviderStatus {
   provider: string;
@@ -594,7 +597,11 @@ function ToolPartView({ part }: { part: Extract<ChatPart, { kind: 'tool' }>['par
 function AssistantPart({ part, streaming }: { part: ChatPart; streaming?: boolean }) {
   if (part.kind === 'text') {
     if (!part.text) return null;
-    return <MessageResponse>{part.text}</MessageResponse>;
+    return (
+      <Suspense fallback={<span className="whitespace-pre-wrap break-words">{part.text}</span>}>
+        <MessageResponse>{part.text}</MessageResponse>
+      </Suspense>
+    );
   }
   if (part.kind === 'reasoning') {
     return (
@@ -611,9 +618,7 @@ function ChatMessageView({ msg }: { msg: ChatMessage }) {
   if (msg.role === 'error') {
     return (
       <Message from="assistant">
-        <MessageContent
-          className="border border-red-500/25 bg-red-500/10 text-red-400"
-        >
+        <MessageContent className="border border-red-500/25 bg-red-500/10 text-red-400">
           <span className="mb-1 flex items-center gap-1.5 text-xs font-semibold">
             <AlertCircle size={13} />
             Error
@@ -649,9 +654,7 @@ function ChatMessageView({ msg }: { msg: ChatMessage }) {
         {!hasRenderable && msg.isStreaming ? (
           <span className="volt-shimmer-text text-xs italic">Thinking…</span>
         ) : (
-          parts.map((part, i) => (
-            <AssistantPart key={i} part={part} streaming={msg.isStreaming} />
-          ))
+          parts.map((part, i) => <AssistantPart key={i} part={part} streaming={msg.isStreaming} />)
         )}
       </MessageContent>
     </Message>
@@ -846,12 +849,15 @@ export function AiChatView({ onClose, initialQuery, systemPrompt }: AiChatViewPr
 
   // "No usable provider": cloud status loaded with zero keys AND no local config.
   const noKeys = providers.length > 0 && availableProviders.length === 0;
-  const models: ModelOption[] =
-    provider === LOCAL_PROVIDER_ID
-      ? localConfig
-        ? [{ id: localConfig.model, label: localConfig.model }]
-        : []
-      : (PROVIDER_MODELS[provider] ?? []);
+  const models = useMemo<ModelOption[]>(
+    () =>
+      provider === LOCAL_PROVIDER_ID
+        ? localConfig
+          ? [{ id: localConfig.model, label: localConfig.model }]
+          : []
+        : (PROVIDER_MODELS[provider] ?? []),
+    [localConfig, provider]
+  );
   const selectableCount = useMemo(() => selectableModels(models).length, [models]);
   const activePreset = useMemo(
     () => AI_PRESETS.find((p) => p.system === activeSystemPrompt),
@@ -944,7 +950,9 @@ export function AiChatView({ onClose, initialQuery, systemPrompt }: AiChatViewPr
                 style={{
                   borderRadius: 3,
                   objectFit: 'contain',
-                  filter: MONOCHROME_LOGO_RE.test(PROVIDER_LOGOS[provider]) ? 'invert(1)' : undefined,
+                  filter: MONOCHROME_LOGO_RE.test(PROVIDER_LOGOS[provider])
+                    ? 'invert(1)'
+                    : undefined,
                 }}
               />
             ) : (
@@ -996,9 +1004,7 @@ export function AiChatView({ onClose, initialQuery, systemPrompt }: AiChatViewPr
             gap: 8,
           }}
         >
-          {activePreset && (
-            <QuickActionIcon name={activePreset.icon} size={13} strokeWidth={2} />
-          )}
+          {activePreset && <QuickActionIcon name={activePreset.icon} size={13} strokeWidth={2} />}
           <span style={{ flex: 1 }}>
             Preset active:{' '}
             <strong style={{ fontWeight: 600 }}>{activePreset?.label ?? 'Custom'}</strong>

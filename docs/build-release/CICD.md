@@ -43,8 +43,8 @@ Triggered on push of any tag matching `v*` (e.g. `v0.2.0`). Tags are normally cr
 
 **Matrix build**:
 - `windows-latest` → `.msi` + `.exe` (NSIS) + Tauri sig
-- `macos-latest` (`aarch64-apple-darwin` + `x86_64-apple-darwin`) → `.dmg` + sig
-- `ubuntu-22.04` → `.deb` + `.rpm` + `.AppImage` + sig
+- `macos-latest` (`aarch64-apple-darwin`) → `.dmg` + sig. Intel builds are paused because upstream ONNX Runtime no longer publishes `x86_64-apple-darwin` binaries.
+- `ubuntu-24.04` → `.deb` + `.rpm` + `.AppImage` + sig (required by the prebuilt ONNX Runtime glibc baseline)
 
 After each macOS build, `scripts/macos-smoke.sh` validates the produced `.app` and `.dmg`. Without Apple Developer credentials this is a packaging and ad-hoc code-signing gate; with `APPLE_CERTIFICATE` configured it also requires Developer ID signing and a passing Gatekeeper assessment. See [`MACOS_STABILITY.md`](./MACOS_STABILITY.md).
 

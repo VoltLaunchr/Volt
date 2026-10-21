@@ -15,9 +15,6 @@ import { formatNumber, formatWithUnit } from './utils/formatting';
 import { addToHistory } from './utils/history';
 import type { SpecificQuery } from './types';
 
-// Export the view component
-export { CalculatorView } from './components/CalculatorView';
-
 // Keywords that trigger the calculator shortcut
 const CALCULATOR_KEYWORDS = ['calc', 'calculatrice', 'calculer', 'calculator', 'math'];
 

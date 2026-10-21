@@ -49,6 +49,7 @@ pub fn setup_global_hotkey(app: &AppHandle) -> Result<(), Box<dyn std::error::Er
                 if window.is_visible().unwrap_or(false) {
                     let _ = window.hide();
                 } else {
+                    crate::commands::window_management::remember_foreground_target(&handle_clone);
                     // Position on the correct monitor before showing
                     if let Some(state) = handle_clone.try_state::<ShowOnScreenState>()
                         && let Ok(val) = state.value.lock()
@@ -124,6 +125,7 @@ pub fn set_global_hotkey(
                     if window.is_visible().unwrap_or(false) {
                         let _ = window.hide();
                     } else {
+                        crate::commands::window_management::remember_foreground_target(&app_handle);
                         // Position on the correct monitor before showing
                         if let Some(state) = app_handle.try_state::<ShowOnScreenState>()
                             && let Ok(val) = state.value.lock()

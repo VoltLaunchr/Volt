@@ -10,10 +10,10 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
-import { listen } from '@tauri-apps/api/event';
 import { notesService } from '../services/notesService';
 import type { Note, NotePatch } from '../types/notes.types';
 import { logger } from '../../../shared/utils/logger';
+import { useTauriEvent } from '../../../app/hooks/tauriEvent';
 
 export interface UseNotesResult {
   notes: Note[];
@@ -52,27 +52,15 @@ export function useNotes(): UseNotesResult {
     }
   }, []);
 
-  // Initial load + cross-window sync listener. The listener fires on every
-  // mutation from any Volt window (main launcher quick-edit, sticky pop-out,
-  // etc.) so the dedicated Notes window stays consistent without polling.
+  // Initial load. Cross-window sync is handled by useTauriEvent below so an
+  // async subscription that resolves after unmount is immediately disposed.
   useEffect(() => {
     void refresh();
-
-    let unlisten: (() => void) | undefined;
-    void listen(SYNC_EVENT, () => {
-      void refresh();
-    })
-      .then((fn) => {
-        unlisten = fn;
-      })
-      .catch((err: unknown) => {
-        logger.warn('useNotes: failed to subscribe to sync event:', err);
-      });
-
-    return () => {
-      if (unlisten) unlisten();
-    };
   }, [refresh]);
+
+  useTauriEvent(SYNC_EVENT, () => {
+    void refresh();
+  });
 
   const createNote = useCallback(
     async (input?: { title?: string; content?: string; tags?: string[] }): Promise<Note> => {
