@@ -10,6 +10,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use ts_rs::TS;
 
+use crate::utils::serialized_file_writer::SerializedFileWriter;
+
 /// Credit (in ms) added to an item's `frecency_date` on each launch.
 ///
 /// One day per use: a single launch keeps an app boosted for roughly a day,
@@ -144,6 +146,10 @@ pub struct LaunchHistory {
 
     /// Whether auto-save is enabled
     auto_save: bool,
+
+    /// Orders disk snapshots so an older blocking task can never overwrite a
+    /// newer mutation.
+    writer: SerializedFileWriter,
 }
 
 impl LaunchHistory {
@@ -154,11 +160,13 @@ impl LaunchHistory {
     pub fn new(data_dir: PathBuf) -> Self {
         let history_file = data_dir.join("launch_history.json");
         let records = Self::load_from_file(&history_file).unwrap_or_default();
+        let writer = SerializedFileWriter::new(history_file.clone());
 
         Self {
             records: Mutex::new(records),
             history_file,
             auto_save: true,
+            writer,
         }
     }
 
@@ -168,6 +176,7 @@ impl LaunchHistory {
             records: Mutex::new(HashMap::new()),
             history_file: PathBuf::new(),
             auto_save: false,
+            writer: SerializedFileWriter::new(PathBuf::new()),
         }
     }
 
@@ -192,17 +201,14 @@ impl LaunchHistory {
             return Ok(()); // In-memory mode, nothing to save
         }
 
-        let records = self.records.lock().map_err(|e| e.to_string())?;
+        let (generation, json) = {
+            let records = self.records.lock().map_err(|e| e.to_string())?;
+            let generation = self.writer.reserve();
+            let json = serde_json::to_string_pretty(&*records).map_err(|e| e.to_string())?;
+            (generation, json)
+        };
 
-        // Ensure parent directory exists
-        if let Some(parent) = self.history_file.parent() {
-            fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-        }
-
-        let json = serde_json::to_string_pretty(&*records).map_err(|e| e.to_string())?;
-        fs::write(&self.history_file, json).map_err(|e| e.to_string())?;
-
-        Ok(())
+        self.writer.write_blocking(generation, json)
     }
 
     /// Record an application launch.
@@ -212,7 +218,7 @@ impl LaunchHistory {
     /// never blocked on `fs::write`. Outside a runtime (tests, init) we fall
     /// back to a synchronous save.
     pub fn record_launch(&self, path: &str, name: &str) -> Result<(), String> {
-        {
+        let pending_write = {
             let mut records = self.records.lock().map_err(|e| e.to_string())?;
 
             if let Some(record) = records.get_mut(path) {
@@ -220,54 +226,23 @@ impl LaunchHistory {
             } else {
                 records.insert(path.to_string(), LaunchRecord::new(path, name));
             }
-        }
 
-        if self.auto_save {
-            if tokio::runtime::Handle::try_current().is_ok() {
-                self.save_async();
+            if self.auto_save {
+                let generation = self.writer.reserve();
+                let json = serde_json::to_string_pretty(&*records).map_err(|e| e.to_string())?;
+                Some((generation, json))
             } else {
-                self.save()?;
+                None
             }
+        };
+
+        if let Some((generation, json)) = pending_write {
+            self.writer.spawn_write(generation, json);
         }
 
         Ok(())
     }
 
-    /// Fire-and-forget async persist used by hot mutators (record_launch).
-    /// Errors are logged but not returned — the in-memory state is already
-    /// updated, and a transient disk write failure must not block a launch.
-    fn save_async(&self) {
-        if self.history_file.as_os_str().is_empty() {
-            return;
-        }
-        // Snapshot under the mutex; release before spawning so the blocking
-        // thread doesn't contend with the next launch.
-        let json = match self.records.lock() {
-            Ok(records) => match serde_json::to_string_pretty(&*records) {
-                Ok(j) => j,
-                Err(e) => {
-                    log::warn!("launch history: serialize failed: {}", e);
-                    return;
-                }
-            },
-            Err(e) => {
-                log::warn!("launch history: mutex poisoned: {:?}", e);
-                return;
-            }
-        };
-        let history_file = self.history_file.clone();
-        tokio::task::spawn_blocking(move || {
-            if let Some(parent) = history_file.parent()
-                && let Err(e) = fs::create_dir_all(parent)
-            {
-                log::warn!("launch history: create_dir_all failed: {}", e);
-                return;
-            }
-            if let Err(e) = fs::write(&history_file, json) {
-                log::warn!("launch history: fs::write failed: {}", e);
-            }
-        });
-    }
     /// Get a launch record by path
     pub fn get(&self, path: &str) -> Option<LaunchRecord> {
         let records = self.records.lock().unwrap_or_else(|poisoned| {

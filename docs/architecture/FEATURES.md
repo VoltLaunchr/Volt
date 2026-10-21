@@ -148,7 +148,7 @@ Parsed by `queryParser.ts`, forwarded to `search_files_advanced`:
 - `launch_steam_game`, `rescan_all_games`, dedicated `GameView`.
 
 ### 🪟 Window Management
-- Snap commands (`snap_window`) for left/right/top/bottom/maximize on Windows.
+- Snap commands (`snap_window`) for half/quarter/center/maximize/minimize/restore/fullscreen on Windows (Win32) and Linux (X11/EWMH via `x11rb`).
 
 ### 🔧 System Commands
 - `settings` · `preferences` · `reload` · `refresh` · `quit` · `exit` · `about` · `info` · `account`.

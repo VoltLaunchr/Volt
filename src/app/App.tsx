@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import Snowfall from 'react-snowfall';
 import { useTranslation } from 'react-i18next';
 import { invoke } from '@tauri-apps/api/core';
-import { emit, listen } from '@tauri-apps/api/event';
+import { emit } from '@tauri-apps/api/event';
 import { getCurrentWindow, LogicalSize } from '@tauri-apps/api/window';
 import { useToastStore } from '../shared/components/ui/toast-store';
 import { TimerDisplay } from '../features/plugins/builtin';
@@ -22,6 +22,7 @@ import { useAppLifecycle } from './hooks/useAppLifecycle';
 import { useGlobalHotkey } from './hooks/useGlobalHotkey';
 import { useResultActions } from './hooks/useResultActions';
 import { useSearchPipeline } from './hooks/useSearchPipeline';
+import { useTauriEvent } from './hooks/tauriEvent';
 import { openSettingsWindow } from './windows';
 import { installPendingUpdate, hasPendingUpdate } from '../features/settings/services/updateService';
 import { resolvePlaceholders } from '../features/ai-quick-actions';
@@ -86,21 +87,13 @@ function App() {
 
   const closeOnLaunch = settings?.general.closeOnLaunch !== false;
 
-  useEffect(() => {
-    let unlisten: (() => void) | undefined;
-    void listen<{ language: string }>('volt://language-changed', ({ payload }) => {
-      void i18n.changeLanguage(payload.language);
-    }).then((fn) => { unlisten = fn; });
-    return () => { unlisten?.(); };
-  }, []);
+  useTauriEvent<{ language: string }>('volt://language-changed', ({ language }) => {
+    void i18n.changeLanguage(language);
+  });
 
-  useEffect(() => {
-    let unlisten: (() => void) | undefined;
-    void listen('volt://restart-onboarding', () => {
-      useAppStore.getState().updateGeneralSettings({ hasSeenOnboarding: false });
-    }).then((fn) => { unlisten = fn; });
-    return () => { unlisten?.(); };
-  }, []);
+  useTauriEvent('volt://restart-onboarding', () => {
+    useAppStore.getState().updateGeneralSettings({ hasSeenOnboarding: false });
+  });
 
   // Open the dedicated onboarding window for first-time users (or after restart-onboarding).
   // We emit an event instead of calling show() directly: the onboarding window's
@@ -153,13 +146,9 @@ function App() {
   }, []);
 
   // When the onboarding window closes, mark onboarding as done in this window's store.
-  useEffect(() => {
-    let unlisten: (() => void) | undefined;
-    void listen('volt://onboarding-complete', () => {
-      useAppStore.getState().updateGeneralSettings({ hasSeenOnboarding: true });
-    }).then((fn) => { unlisten = fn; });
-    return () => { unlisten?.(); };
-  }, []);
+  useTauriEvent('volt://onboarding-complete', () => {
+    useAppStore.getState().updateGeneralSettings({ hasSeenOnboarding: true });
+  });
 
   const { handleLaunch, handleSuggestionActivate } = useResultActions({
     closeOnLaunch,
@@ -230,41 +219,39 @@ function App() {
   // The Rust handler emits `volt://ai-quick-action` with the action payload;
   // we read the clipboard and open the AI Chat view with the system prompt
   // pre-applied. The chat view auto-sends the clipboard text as the user message.
-  useEffect(() => {
-    let unlisten: (() => void) | undefined;
-    void listen<{ actionId: string; label: string; systemPrompt: string; provider?: string | null }>(
-      'volt://ai-quick-action',
-      ({ payload }) => {
-        void (async () => {
-          try {
-            const clipboardText = await invoke<string>('ai_quick_actions_read_clipboard');
-            if (!clipboardText?.trim()) {
-              useToastStore
-                .getState()
-                .addToast(
-                  `Quick Action "${payload.label}" — clipboard is empty. Copy some text first.`,
-                  'error',
-                  4000
-                );
-              return;
-            }
-            const trimmedClipboard = clipboardText.trim();
-            const resolvedSystemPrompt = resolvePlaceholders(payload.systemPrompt, {
-              clipboard: trimmedClipboard,
-              lang: navigator.language,
-              now: new Date(),
-            });
-            handleOpenAiChatView(trimmedClipboard, resolvedSystemPrompt);
-          } catch (err) {
-            useToastStore
-              .getState()
-              .addToast(`Quick Action failed: ${String(err)}`, 'error', 4000);
-          }
-        })();
+  useTauriEvent<{
+    actionId: string;
+    label: string;
+    systemPrompt: string;
+    provider?: string | null;
+  }>('volt://ai-quick-action', (payload) => {
+    void (async () => {
+      try {
+        const clipboardText = await invoke<string>('ai_quick_actions_read_clipboard');
+        if (!clipboardText?.trim()) {
+          useToastStore
+            .getState()
+            .addToast(
+              `Quick Action "${payload.label}" — clipboard is empty. Copy some text first.`,
+              'error',
+              4000
+            );
+          return;
+        }
+        const trimmedClipboard = clipboardText.trim();
+        const resolvedSystemPrompt = resolvePlaceholders(payload.systemPrompt, {
+          clipboard: trimmedClipboard,
+          lang: navigator.language,
+          now: new Date(),
+        });
+        handleOpenAiChatView(trimmedClipboard, resolvedSystemPrompt);
+      } catch (err) {
+        useToastStore
+          .getState()
+          .addToast(`Quick Action failed: ${String(err)}`, 'error', 4000);
       }
-    ).then((fn) => { unlisten = fn; });
-    return () => { unlisten?.(); };
-  }, [handleOpenAiChatView]);
+    })();
+  });
 
   // Bridge volt:toast and legacy volt:notification events to the toast store.
   // Extensions dispatch these from the Worker sandbox via VoltAPI.showToast / VoltAPI.notify.

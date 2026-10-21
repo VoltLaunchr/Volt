@@ -436,67 +436,6 @@ impl FileIndexDb {
         Ok(files)
     }
 
-    /// Fuzzy-ish search directly in SQLite using a `LIKE` filter.
-    /// Not on the hot path (we use in-memory nucleo ranking); kept as a utility.
-    #[allow(dead_code)]
-    pub fn search_files(&self, query: &str, limit: usize) -> Result<Vec<FileInfo>, String> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|e| format!("DB lock poisoned: {}", e))?;
-
-        let pattern = format!("%{}%", query.replace('%', "\\%").replace('_', "\\_"));
-
-        let mut stmt = conn
-            .prepare(
-                "SELECT path, name, extension, size, modified_at, category
-                 FROM files
-                 WHERE name LIKE ?1 ESCAPE '\\'
-                 ORDER BY name
-                 LIMIT ?2",
-            )
-            .map_err(|e| format!("Failed to prepare search: {}", e))?;
-
-        let files = stmt
-            .query_map(params![pattern, limit as i64], |row| {
-                let path: String = row.get(0)?;
-                let name: String = row.get(1)?;
-                let extension: String = row.get::<_, Option<String>>(2)?.unwrap_or_default();
-                let size: i64 = row.get::<_, Option<i64>>(3)?.unwrap_or(0);
-                let modified: i64 = row.get::<_, Option<i64>>(4)?.unwrap_or(0);
-                let category_str: String = row.get::<_, Option<String>>(5)?.unwrap_or_default();
-
-                Ok((path, name, extension, size, modified, category_str))
-            })
-            .map_err(|e| format!("Failed to execute search: {}", e))?
-            .filter_map(|r| match r {
-                Ok(v) => Some(v),
-                Err(e) => {
-                    warn!("Skipping corrupted DB row: {}", e);
-                    None
-                }
-            })
-            .map(|(path, name, extension, size, modified, category_str)| {
-                let category = parse_category(&category_str);
-                let id = crate::utils::hash_id(&path);
-                FileInfo {
-                    id,
-                    name,
-                    path,
-                    extension,
-                    size: size as u64,
-                    modified,
-                    created: None,
-                    accessed: None,
-                    icon: None,
-                    category,
-                }
-            })
-            .collect();
-
-        Ok(files)
-    }
-
     /// How many files are in the index.
     pub fn count(&self) -> Result<usize, String> {
         let conn = self
@@ -788,23 +727,6 @@ mod tests {
         assert_eq!(all.len(), 1);
         assert_eq!(all[0].name, "notes.txt");
         assert_eq!(all[0].path, "/home/user/notes.txt");
-    }
-
-    #[test]
-    fn test_search_files_like() {
-        let dir = tempdir().unwrap();
-        let db = FileIndexDb::open(dir.path().join("t.db")).unwrap();
-
-        db.upsert_files(&[
-            make_file("report.pdf", "/docs/report.pdf"),
-            make_file("invoice.pdf", "/docs/invoice.pdf"),
-            make_file("photo.jpg", "/pics/photo.jpg"),
-        ])
-        .unwrap();
-
-        let results = db.search_files("report", 10).unwrap();
-        assert_eq!(results.len(), 1);
-        assert_eq!(results[0].name, "report.pdf");
     }
 
     #[test]

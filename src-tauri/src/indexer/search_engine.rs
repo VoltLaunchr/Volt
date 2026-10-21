@@ -94,9 +94,24 @@ impl SearchEngine {
 
         // Single buffer reused across all files — eliminates one Vec<u32> allocation per file.
         let mut buf: Vec<char> = Vec::new();
-        let mut results: Vec<SearchResult> = Vec::new();
+        // Keep lightweight references while ranking. Cloning every matching
+        // FileInfo before the result limit is applied is costly on broad
+        // queries over a large index.
+        let mut ranked: Vec<(usize, u32)> = Vec::new();
+        let expanded_dir = options.dir_filter.as_deref().map(|dir| {
+            if let Some(rest) = dir.strip_prefix("~/") {
+                dirs::home_dir()
+                    .map(|home| home.join(rest).to_string_lossy().into_owned())
+                    .unwrap_or_else(|| dir.to_string())
+            } else {
+                dir.to_string()
+            }
+        });
+        let recency_now = options
+            .recency_boost
+            .map(|_| chrono::Utc::now().timestamp());
 
-        for file in files {
+        for (file_index, file) in files.iter().enumerate() {
             // Category filter
             if let Some(ref categories) = options.categories
                 && !categories.contains(&file.category)
@@ -117,22 +132,10 @@ impl SearchEngine {
             }
 
             // Directory filter (e.g., in:~/Documents)
-            if let Some(ref dir) = options.dir_filter {
-                // Expand ~/... to the user's home directory before comparing.
-                // Use strip_prefix("~/") so that bare `~` or multi-byte chars
-                // at index 1 never cause a panic or wrong byte-boundary slice.
-                let expanded = if let Some(rest) = dir.strip_prefix("~/") {
-                    if let Some(home) = dirs::home_dir() {
-                        home.join(rest).to_string_lossy().into_owned()
-                    } else {
-                        dir.clone()
-                    }
-                } else {
-                    dir.clone()
-                };
-                if !file.path.starts_with(expanded.as_str()) {
-                    continue;
-                }
+            if let Some(ref expanded) = expanded_dir
+                && !file.path.starts_with(expanded.as_str())
+            {
+                continue;
             }
 
             // Size filters
@@ -181,11 +184,12 @@ impl SearchEngine {
             let category_boost = self.get_category_boost(&file.category);
 
             // Apply recency boost if configured
-            let recency_multiplier = if let Some(boost) = options.recency_boost {
-                self.calculate_recency_boost(file.modified, boost)
-            } else {
-                1.0
-            };
+            let recency_multiplier =
+                if let (Some(boost), Some(now)) = (options.recency_boost, recency_now) {
+                    Self::calculate_recency_boost(file.modified, boost, now)
+                } else {
+                    1.0
+                };
 
             // Apply frequency boost for executables and applications
             let frequency_multiplier = if options.frequency_boost.is_some()
@@ -210,25 +214,21 @@ impl SearchEngine {
                 continue;
             }
 
-            results.push(SearchResult {
-                file: file.clone(),
-                score: final_score,
-                matched_indices: Vec::new(),
-            });
+            ranked.push((file_index, final_score));
         }
 
-        // Sort by score (descending), then by name (ascending) for ties
-        results.sort_by(|a, b| match b.score.cmp(&a.score) {
-            Ordering::Equal => a.file.name.cmp(&b.file.name),
-            other => other,
+        sort_and_limit(&mut ranked, options.limit, |a, b| {
+            compare_ranked_files(a.0, a.1, b.0, b.1, files)
         });
 
-        // Apply limit
-        if let Some(limit) = options.limit {
-            results.truncate(limit);
-        }
-
-        results
+        ranked
+            .into_iter()
+            .map(|(file_index, score)| SearchResult {
+                file: files[file_index].clone(),
+                score,
+                matched_indices: Vec::new(),
+            })
+            .collect()
     }
 
     /// Search with matched indices for highlighting
@@ -238,66 +238,27 @@ impl SearchEngine {
         files: &[FileInfo],
         options: &SearchOptions,
     ) -> Vec<SearchResult> {
-        if query.trim().is_empty() {
-            return Vec::new();
-        }
-
+        // Reuse the canonical search path so highlighting cannot silently
+        // change filters, boosts, ordering, or limits. The old duplicate loop
+        // ignored operator filters and recency/frequency boosts.
+        let mut results = self.search(query, files, options);
         let pattern = Pattern::parse(query, CaseMatching::Smart, Normalization::Smart);
-
         let mut buf: Vec<char> = Vec::new();
-        let mut results: Vec<SearchResult> = Vec::new();
-
-        for file in files {
-            if let Some(ref categories) = options.categories
-                && !categories.contains(&file.category)
-            {
-                continue;
-            }
-            if !options.include_hidden && file.name.starts_with('.') {
-                continue;
-            }
-
+        for result in &mut results {
             let haystack = if options.filename_only {
-                &file.name
+                &result.file.name
             } else {
-                &file.path
+                &result.file.path
             };
-
-            // Reuse buf across iterations — Utf32Str::new clears and refills it in place.
             let haystack_str = Utf32Str::new(haystack, &mut buf);
-
-            // Get score with indices — discard Some(0) weak subsequence matches.
             let mut indices = Vec::new();
-            let base_score = match pattern.indices(haystack_str, &mut self.matcher, &mut indices) {
-                Some(s) if s > 0 => s,
-                _ => continue,
-            };
-
-            let category_boost = self.get_category_boost(&file.category);
-            let final_score = ((base_score as f32) * category_boost) as u32;
-
-            if let Some(min_score) = options.min_score
-                && final_score < min_score
+            if pattern
+                .indices(haystack_str, &mut self.matcher, &mut indices)
+                .is_some()
             {
-                continue;
+                result.matched_indices = indices;
             }
-
-            results.push(SearchResult {
-                file: file.clone(),
-                score: final_score,
-                matched_indices: indices,
-            });
         }
-
-        results.sort_by(|a, b| match b.score.cmp(&a.score) {
-            Ordering::Equal => a.file.name.cmp(&b.file.name),
-            other => other,
-        });
-
-        if let Some(limit) = options.limit {
-            results.truncate(limit);
-        }
-
         results
     }
 
@@ -323,8 +284,7 @@ impl SearchEngine {
     }
 
     /// Calculate recency boost based on modification time
-    fn calculate_recency_boost(&self, modified: i64, boost_factor: f32) -> f32 {
-        let now = chrono::Utc::now().timestamp();
+    fn calculate_recency_boost(modified: i64, boost_factor: f32, now: i64) -> f32 {
         let age_seconds = (now - modified).max(0);
         let age_days = age_seconds as f32 / 86400.0;
 
@@ -335,25 +295,36 @@ impl SearchEngine {
     }
 }
 
-/// Quick search function for backwards compatibility
-#[allow(dead_code)]
-pub fn search_files_advanced(
-    query: &str,
+fn compare_ranked_files(
+    a_index: usize,
+    a_score: u32,
+    b_index: usize,
+    b_score: u32,
     files: &[FileInfo],
-    limit: Option<usize>,
-) -> Vec<FileInfo> {
-    let mut engine = SearchEngine::new();
-    let options = SearchOptions {
-        limit,
-        include_hidden: false,
-        ..Default::default()
-    };
+) -> Ordering {
+    b_score
+        .cmp(&a_score)
+        .then_with(|| files[a_index].name.cmp(&files[b_index].name))
+        // Preserve the old stable-sort behavior for duplicate names.
+        .then_with(|| a_index.cmp(&b_index))
+}
 
-    engine
-        .search(query, files, &options)
-        .into_iter()
-        .map(|r| r.file)
-        .collect()
+fn sort_and_limit<T>(
+    items: &mut Vec<T>,
+    limit: Option<usize>,
+    mut compare: impl FnMut(&T, &T) -> Ordering,
+) {
+    if let Some(limit) = limit {
+        if limit == 0 {
+            items.clear();
+            return;
+        }
+        if items.len() > limit {
+            items.select_nth_unstable_by(limit, &mut compare);
+            items.truncate(limit);
+        }
+    }
+    items.sort_unstable_by(compare);
 }
 
 #[cfg(test)]
@@ -489,7 +460,6 @@ mod tests {
 
     #[test]
     fn test_limit_truncates_results() {
-        let mut engine = SearchEngine::new();
         let files: Vec<FileInfo> = (0..50)
             .map(|i| {
                 create_test_file(
@@ -500,12 +470,40 @@ mod tests {
             })
             .collect();
 
+        let mut engine = SearchEngine::new();
+        let all_results = engine.search("test", &files, &SearchOptions::default());
         let options = SearchOptions {
             limit: Some(5),
             ..Default::default()
         };
-        let results = engine.search("test", &files, &options);
-        assert!(results.len() <= 5);
+        let limited_results = engine.search("test", &files, &options);
+
+        assert_eq!(limited_results.len(), 5);
+        let limited_order: Vec<_> = limited_results
+            .iter()
+            .map(|result| (&result.file.id, result.score))
+            .collect();
+        let expected_order: Vec<_> = all_results[..5]
+            .iter()
+            .map(|result| (&result.file.id, result.score))
+            .collect();
+        assert_eq!(limited_order, expected_order);
+    }
+
+    #[test]
+    fn test_zero_limit_returns_no_results() {
+        let files = vec![create_test_file(
+            "test.txt",
+            "/tmp/test.txt",
+            FileCategory::Document,
+        )];
+        let mut engine = SearchEngine::new();
+        let options = SearchOptions {
+            limit: Some(0),
+            ..Default::default()
+        };
+
+        assert!(engine.search("test", &files, &options).is_empty());
     }
 
     #[test]
@@ -623,13 +621,34 @@ mod tests {
     }
 
     #[test]
-    fn test_search_files_advanced_helper() {
+    fn test_search_with_indices_preserves_canonical_filters_and_scores() {
         let files = vec![
-            create_test_file("foo", "/tmp/foo", FileCategory::Document),
-            create_test_file("bar", "/tmp/bar", FileCategory::Document),
+            create_test_file("report.txt", "/allowed/report.txt", FileCategory::Document),
+            create_test_file("report.pdf", "/allowed/report.pdf", FileCategory::Document),
+            create_test_file("report.txt", "/other/report.txt", FileCategory::Document),
         ];
-        let results = search_files_advanced("foo", &files, Some(10));
-        assert_eq!(results.len(), 1);
-        assert_eq!(results[0].name, "foo");
+        let options = SearchOptions {
+            limit: Some(5),
+            ext_filter: Some("txt".to_string()),
+            dir_filter: Some("/allowed".to_string()),
+            recency_boost: Some(1.3),
+            frequency_boost: Some(1.2),
+            ..Default::default()
+        };
+
+        let expected = SearchEngine::new().search("report", &files, &options);
+        let highlighted = SearchEngine::new().search_with_indices("report", &files, &options);
+        let expected_identity: Vec<_> = expected
+            .iter()
+            .map(|result| (&result.file.id, result.score))
+            .collect();
+        let highlighted_identity: Vec<_> = highlighted
+            .iter()
+            .map(|result| (&result.file.id, result.score))
+            .collect();
+
+        assert_eq!(highlighted_identity, expected_identity);
+        assert_eq!(highlighted.len(), 1);
+        assert!(!highlighted[0].matched_indices.is_empty());
     }
 }

@@ -194,5 +194,3 @@ export class GamesPlugin implements Plugin {
 }
 
 export default GamesPlugin;
-
-export { GameView } from './components';

@@ -10,6 +10,4 @@
 
 mod plugin;
 
-// ClipboardType is part of the public API (used in ClipboardItem.content_type)
-#[allow(unused_imports)]
-pub use plugin::{ClipboardItem, ClipboardManagerPlugin, ClipboardType};
+pub use plugin::{ClipboardItem, ClipboardManagerPlugin};

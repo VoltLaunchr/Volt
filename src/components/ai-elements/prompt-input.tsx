@@ -40,6 +40,7 @@ import {
   TooltipTrigger,
 } from "@/shared/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+import { logger } from "@/shared/utils/logger";
 import type { ChatStatus, FileUIPart, SourceDocumentUIPart } from "ai";
 import {
   CornerDownLeftIcon,
@@ -56,7 +57,6 @@ import type {
   ClipboardEventHandler,
   ComponentProps,
   FormEvent,
-  FormEventHandler,
   HTMLAttributes,
   KeyboardEventHandler,
   PropsWithChildren,
@@ -430,7 +430,12 @@ export const PromptInputActionAddAttachments = ({
   );
 
   return (
-    <DropdownMenuItem {...props} onClick={handleClick}>
+    <DropdownMenuItem
+      {...props}
+      onClick={(event) => {
+        void handleClick(event);
+      }}
+    >
       <ImageIcon className="mr-2 size-4" /> {label}
     </DropdownMenuItem>
   );
@@ -475,14 +480,19 @@ export const PromptInputActionAddScreenshot = ({
         ) {
           return;
         }
-        throw error;
+        logger.error("[PromptInput] Screenshot capture failed:", error);
       }
     },
     [onClick, attachments]
   );
 
   return (
-    <DropdownMenuItem {...props} onClick={handleClick}>
+    <DropdownMenuItem
+      {...props}
+      onClick={(event) => {
+        void handleClick(event);
+      }}
+    >
       <Monitor className="mr-2 size-4" />
       {label}
     </DropdownMenuItem>
@@ -849,8 +859,8 @@ export const PromptInput = ({
     [referencedSources, clearReferencedSources]
   );
 
-  const handleSubmit: FormEventHandler<HTMLFormElement> = useCallback(
-    async (event) => {
+  const handleSubmit = useCallback(
+    async (event: FormEvent<HTMLFormElement>): Promise<void> => {
       event.preventDefault();
 
       const form = event.currentTarget;
@@ -925,7 +935,9 @@ export const PromptInput = ({
       />
       <form
         className={cn("w-full", className)}
-        onSubmit={handleSubmit}
+        onSubmit={(event) => {
+          void handleSubmit(event);
+        }}
         ref={formRef}
         {...props}
       >
@@ -1186,7 +1198,11 @@ export const PromptInputActionMenuTrigger = ({
   children,
   ...props
 }: PromptInputActionMenuTriggerProps) => (
-  <DropdownMenuTrigger render={<PromptInputButton className={className} {...props} />}>{children ?? <PlusIcon className="size-4" />}</DropdownMenuTrigger>
+  <DropdownMenuTrigger
+    render={<PromptInputButton className={className} {...props} />}
+  >
+    {children ?? <PlusIcon className="size-4" />}
+  </DropdownMenuTrigger>
 );
 
 export type PromptInputActionMenuContentProps = ComponentProps<
