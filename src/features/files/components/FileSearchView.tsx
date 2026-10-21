@@ -3,7 +3,7 @@ import { listen } from '@tauri-apps/api/event';
 import React, { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/utils';
-import { applicationService } from '../../applications';
+import { openFilePath } from '../services/fileOpenService';
 import { FileInfo, FileSearchResult } from '../../../shared/types/common.types';
 import { logger } from '../../../shared/utils';
 
@@ -129,18 +129,11 @@ export function FileSearchView({ onClose }: FileSearchViewProps): React.JSX.Elem
     }
   }, [typeFilter, searchQuery, performSearch]);
 
-  // Handle file opening — routes through `applicationService` so the launch
-  // is recorded in history (frecency stays accurate) and error handling
-  // matches the rest of the app.
+  // Handle file opening via the OS default handler, then update recents.
   const handleOpenFile = useCallback(
     async (file: FileInfo) => {
       try {
-        const result = await applicationService.launchApplication(file.path);
-        if (!result.success) {
-          throw new Error(result.error || 'Launch failed');
-        }
-        // Track file access for recent files
-        await invoke<void>('track_file_access', { path: file.path, name: file.name });
+        await openFilePath(file);
         // Reload recent files for next time
         void loadRecentFiles();
         onClose();

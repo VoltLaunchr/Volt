@@ -81,6 +81,7 @@ See the [Extensions](./architecture/FEATURES.md#-extension-ecosystem) section in
 | [CI/CD Pipeline](./build-release/CICD.md) | GitHub Actions workflows (`check`, `release`, `auto-tag`, `changelog`, `e2e`, `pr-title`, `version-bump`) |
 | [Distribution](./build-release/DISTRIBUTION.md) | Multi-platform packaging, installers, code signing, auto-updates |
 | [Signing Setup](./build-release/SIGNING_SETUP.md) | Windows Authenticode + macOS notarization — certs, `.pfx`/`.p12` export, GitHub secrets |
+| [macOS Stability](./build-release/MACOS_STABILITY.md) | macOS release gates, smoke test coverage, and beta checklist without local Mac hardware |
 | [Roadmap](./build-release/ROADMAP.md) | Release phases & milestones |
 | [Implementation Plan (history)](../archive/plans/IMPLEMENTATION_PLAN.md) | Journal of past milestones (archived) |
 

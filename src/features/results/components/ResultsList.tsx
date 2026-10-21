@@ -1,9 +1,9 @@
 import { Fragment, useEffect, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { SearchResult, SearchResultType } from '../../../shared/types/common.types';
+import { SearchX } from 'lucide-react';
+import { SearchResult } from '../../../shared/types/common.types';
 import { ResultItem } from './ResultItem';
-import { cn } from '@/lib/utils';
-import { getSectionOrder } from '../resultSections';
+import { getResultSectionKey } from '../resultSections';
 
 interface ResultsListProps {
   results: SearchResult[];
@@ -18,35 +18,7 @@ interface ResultSection {
   results: { result: SearchResult; globalIndex: number }[];
 }
 
-/** Map result type → section key for grouping */
-function getSectionKey(type: SearchResultType): string {
-  switch (type) {
-    case SearchResultType.Application:
-      return 'applications';
-    case SearchResultType.Game:
-      return 'games';
-    case SearchResultType.SystemCommand:
-      return 'commands';
-    case SearchResultType.File:
-      return 'files';
-    case SearchResultType.ShellCommand:
-      return 'shell';
-    case SearchResultType.SystemMonitor:
-      // System monitor rows are direct answers ("CPU 42%"), not a list to
-      // scan — surface them before the app list so they are visible without
-      // scrolling when the user types a monitoring keyword.
-      return 'system';
-    default:
-      return 'results';
-  }
-}
-
-export function ResultsList({
-  results,
-  selectedIndex,
-  onSelect,
-  onLaunch,
-}: ResultsListProps) {
+export function ResultsList({ results, selectedIndex, onSelect, onLaunch }: ResultsListProps) {
   const { t } = useTranslation('results');
   const selectedRef = useRef<HTMLDivElement>(null);
 
@@ -60,53 +32,44 @@ export function ResultsList({
     }
   }, [selectedIndex]);
 
-  // Group results by section, preserving score order within each section
+  // Build contiguous section runs without changing the canonical result order.
+  // Keyboard navigation and Alt+number operate on `results[index]`, so merging
+  // non-contiguous rows into one section would make visual and command order
+  // disagree.
   const sections = useMemo(() => {
-    const grouped = new Map<string, { result: SearchResult; globalIndex: number }[]>();
+    // Only show section headers if there are multiple sections
+    const sectionCount = new Set(results.map(getResultSectionKey)).size;
+    const ordered: ResultSection[] = [];
 
     results.forEach((result, globalIndex) => {
-      const key = getSectionKey(result.type);
-      if (!grouped.has(key)) grouped.set(key, []);
-      grouped.get(key)!.push({ result, globalIndex });
-    });
-
-    // Only show section headers if there are multiple sections
-    const sectionCount = grouped.size;
-
-    const sectionOrder = getSectionOrder(grouped);
-    const ordered: ResultSection[] = [];
-    for (const key of sectionOrder) {
-      const items = grouped.get(key);
-      if (items && items.length > 0) {
+      const key = getResultSectionKey(result);
+      const previous = ordered.at(-1);
+      if (previous?.key === key) {
+        previous.results.push({ result, globalIndex });
+      } else {
         ordered.push({
           key,
           label: sectionCount > 1 ? t(`sections.${key}`, { defaultValue: key }) : '',
-          results: items,
+          results: [{ result, globalIndex }],
         });
       }
-    }
+    });
 
     return ordered;
   }, [results, t]);
 
   if (results.length === 0) {
     return (
-      <div className={cn('flex items-center justify-center h-16 text-sm text-ash')}>
-        <svg
-          width="48"
-          height="48"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.5"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          aria-hidden="true"
-        >
-          <circle cx="11" cy="11" r="8" />
-          <path d="m21 21-4.35-4.35" />
-        </svg>
-        <p className="text-secondary">{t('empty')}</p>
+      <div className="flex flex-1 items-center justify-center px-6 py-12 text-center">
+        <div className="flex max-w-[320px] flex-col items-center gap-3">
+          <div className="flex h-11 w-11 items-center justify-center rounded-lg border border-hairline bg-surface/70 text-mute shadow-[inset_0_1px_0_rgb(255_255_255/0.04)]">
+            <SearchX size={20} strokeWidth={1.8} aria-hidden="true" />
+          </div>
+          <div className="space-y-1">
+            <p className="m-0 text-sm font-medium text-ink">{t('empty')}</p>
+            <p className="m-0 text-xs leading-relaxed text-mute">{t('emptyHint')}</p>
+          </div>
+        </div>
       </div>
     );
   }
@@ -117,10 +80,10 @@ export function ResultsList({
       : undefined;
 
   return (
-    <div className="flex-1 overflow-y-auto min-h-0">
+    <div className="flex-1 overflow-y-auto min-h-0 px-1 py-1">
       <div
         id="results-listbox"
-        className="py-1"
+        className="space-y-0.5"
         role="listbox"
         aria-label="Search results"
         aria-activedescendant={selectedItemId}
@@ -136,7 +99,10 @@ export function ResultsList({
                 className="px-3 pt-3 pb-1 text-[11px] font-medium text-stone uppercase tracking-wider"
                 aria-hidden="true"
               >
-                {section.label}
+                <span className="inline-flex items-center gap-2">
+                  <span>{section.label}</span>
+                  <span className="h-px w-6 bg-hairline" />
+                </span>
               </div>
             )}
             {/* Grid sections: all items in this section use layout='grid' */}
@@ -160,7 +126,11 @@ export function ResultsList({
                       }
                     }}
                   >
-                    <ResultItem result={result} isSelected={globalIndex === selectedIndex} globalIndex={globalIndex} />
+                    <ResultItem
+                      result={result}
+                      isSelected={globalIndex === selectedIndex}
+                      globalIndex={globalIndex}
+                    />
                   </div>
                 ))}
               </div>
@@ -196,7 +166,11 @@ export function ResultsList({
                         }
                       }}
                     >
-                      <ResultItem result={result} isSelected={globalIndex === selectedIndex} globalIndex={globalIndex} />
+                      <ResultItem
+                        result={result}
+                        isSelected={globalIndex === selectedIndex}
+                        globalIndex={globalIndex}
+                      />
                     </div>
                   </Fragment>
                 );

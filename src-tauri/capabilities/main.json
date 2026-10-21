@@ -80,12 +80,16 @@
     "allow-load-settings",
     "allow-save-settings",
     "allow-update-general-settings",
+    "allow-update-web-search-settings",
     "allow-update-appearance-settings",
     "allow-update-hotkey-settings",
     "allow-update-indexing-settings",
     "allow-update-plugin-settings",
     "allow-update-shortcuts-settings",
     "allow-update-shell-settings",
+    "allow-list-detected-browsers",
+    "allow-open-web-url",
+    "allow-web-search-brave",
     "allow-get-theme",
     "allow-set-theme",
     "allow-get-app-shortcuts",
@@ -173,6 +177,7 @@
     "allow-get-extension-secret",
     "allow-set-extension-secret",
     "allow-delete-extension-secret",
+    "allow-ext-save-credential",
     "allow-extension-authenticated-fetch",
 
     "allow-ext-storage-get",
@@ -182,6 +187,7 @@
 
     "allow-ext-oauth-start",
     "allow-ext-oauth-get-token",
+    "allow-ext-oauth-has-token",
     "allow-ext-oauth-revoke-token",
 
     "allow-ext-get-applications",
@@ -215,6 +221,7 @@
     "allow-clear-oauth-pending",
 
     "allow-get-log-file-path",
+    "allow-send-native-notification",
 
     "allow-get-file-preview",
 

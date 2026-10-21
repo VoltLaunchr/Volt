@@ -44,11 +44,11 @@ export function SearchBar({
   return (
     <div
       className={cn(
-        'search-bar relative flex items-center h-[60px] px-4 gap-3 border-b border-hairline shrink-0',
+        'search-bar relative flex items-center h-[60px] px-4 gap-3 border-b border-hairline shrink-0 bg-canvas/35'
       )}
       data-searching={isSearching ? 'true' : 'false'}
     >
-      <div className="search-bar__icon text-mute shrink-0">
+      <div className="search-bar__icon flex h-8 w-8 items-center justify-center rounded-md border border-hairline-soft bg-surface/50 text-mute shrink-0">
         <Search size={20} strokeWidth={2} />
       </div>
       <input
@@ -74,9 +74,17 @@ export function SearchBar({
             : undefined
         }
       />
+      {value.trim() && resultCount !== undefined && !isSearching && (
+        <span
+          className="shrink-0 rounded-xs border border-hairline bg-surface/70 px-1.5 py-1 text-[11px] font-medium leading-none text-ash tabular-nums"
+          aria-hidden="true"
+        >
+          {resultCount}
+        </span>
+      )}
       {value && (
         <button
-          className="shrink-0 text-ash hover:text-on-dark transition-colors p-1 rounded-xs cursor-pointer"
+          className="shrink-0 text-ash hover:text-on-dark hover:bg-surface-elevated transition-colors p-1.5 rounded-xs cursor-pointer"
           onClick={() => onChange('')}
           aria-label={t('search.clearSearch')}
         >

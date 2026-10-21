@@ -19,11 +19,7 @@ pub mod clipboard_manager;
 pub mod game_scanner;
 pub mod system_monitor;
 
-// ClipboardManagerPlugin is used in commands/clipboard.rs
-#[allow(unused_imports)]
-pub use clipboard_manager::ClipboardManagerPlugin;
 // GameScannerPlugin is used via game_scanner module in commands/games.rs
-#[allow(unused_imports)]
 pub use game_scanner::GameScannerPlugin;
 pub use system_monitor::SystemMonitorPlugin;
 

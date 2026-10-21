@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { PluginResultAccessory } from '../../../shared/types/common.types';
 import {
   AppWindow,
+  Check,
+  CircleAlert,
   Copy,
   Equal,
   FolderOpen,
@@ -11,8 +13,10 @@ import {
   PlayCircle,
   Shield,
   Sparkles,
+  TimerReset,
   type LucideIcon,
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 // Maps `result.icon` values that are plain identifiers (not image paths/URLs)
 // to a recognizable Lucide glyph. Used by fallback commands and other
@@ -114,6 +118,28 @@ interface ResultItemProps {
   globalIndex?: number;
 }
 
+function ShellStatus({
+  tone,
+  children,
+}: {
+  tone: 'success' | 'warning' | 'danger' | 'neutral';
+  children: React.ReactNode;
+}) {
+  return (
+    <span
+      className={cn(
+        'inline-flex h-5 items-center gap-1 rounded-full border px-2 text-[10px] font-medium leading-none',
+        tone === 'success' && 'border-emerald-400/20 bg-emerald-400/10 text-emerald-300',
+        tone === 'warning' && 'border-amber-400/20 bg-amber-400/10 text-amber-300',
+        tone === 'danger' && 'border-red-400/20 bg-red-400/10 text-red-300',
+        tone === 'neutral' && 'border-hairline bg-surface/70 text-mute'
+      )}
+    >
+      {children}
+    </span>
+  );
+}
+
 /** Single Raycast-style accessory chip */
 function AccessoryChip({ acc }: { acc: PluginResultAccessory }) {
   if (acc.tag) {
@@ -143,11 +169,7 @@ function AccessoryChip({ acc }: { acc: PluginResultAccessory }) {
 }
 
 /** Render a title string with highlighted matching characters */
-function HighlightedText({
-  segments,
-}: {
-  segments: HighlightSegment[];
-}) {
+function HighlightedText({ segments }: { segments: HighlightSegment[] }) {
   return (
     <>
       {segments.map((seg, i) =>
@@ -157,13 +179,14 @@ function HighlightedText({
           </span>
         ) : (
           <span key={i}>{seg.text}</span>
-        ),
+        )
       )}
     </>
   );
 }
 
 export function ResultItem({ result, isSelected, globalIndex }: ResultItemProps) {
+  const { t } = useTranslation('common');
   const searchQuery = useSearchStore((s) => s.searchQuery);
 
   // Alt+1..9 quick-launches the first nine results (see useGlobalHotkey). Surface
@@ -173,7 +196,7 @@ export function ResultItem({ result, isSelected, globalIndex }: ResultItemProps)
 
   const titleSegments = useMemo(
     () => highlightMatch(result.title, searchQuery),
-    [result.title, searchQuery],
+    [result.title, searchQuery]
   );
 
   // Render a named icon (e.g. 'globe', 'youtube') as a Lucide glyph
@@ -255,9 +278,8 @@ export function ResultItem({ result, isSelected, globalIndex }: ResultItemProps)
     navigator.clipboard.writeText(text).catch(() => {});
   }, []);
 
-  const calcData = result.type === SearchResultType.Calculator
-    ? getCalculatorData(result.data)
-    : null;
+  const calcData =
+    result.type === SearchResultType.Calculator ? getCalculatorData(result.data) : null;
 
   const renderCalculatorContent = () => {
     if (!calcData || !calcData.expression || !calcData.formatted) {
@@ -275,14 +297,19 @@ export function ResultItem({ result, isSelected, globalIndex }: ResultItemProps)
       <div className="flex flex-col min-w-0 flex-1">
         <div className="flex items-center gap-3 mt-0.5">
           <div className="flex flex-col">
-            <HighlightedExpression expression={calcData.expression} className="text-sm tabular-nums" />
+            <HighlightedExpression
+              expression={calcData.expression}
+              className="text-sm tabular-nums"
+            />
             <span className="text-[10px] text-ash uppercase tracking-[0.5px]">Expression</span>
           </div>
           <div className="text-mute shrink-0">
             <Equal size={14} strokeWidth={2} />
           </div>
           <div className="flex flex-col">
-            <span className="text-sm text-primary tabular-nums font-semibold">{calcData.formatted}</span>
+            <span className="text-sm text-primary tabular-nums font-semibold">
+              {calcData.formatted}
+            </span>
             <span className="text-[10px] text-ash uppercase tracking-[0.5px]">Result</span>
           </div>
         </div>
@@ -296,12 +323,13 @@ export function ResultItem({ result, isSelected, globalIndex }: ResultItemProps)
 
     if (data.status === 'pending') {
       return (
-        <div className="flex flex-col min-w-0 flex-1">
-          <div className="text-sm text-on-dark leading-tight">
-            {data.command ? `> ${data.command}` : 'Shell Command Mode'}
+        <div className="flex min-w-0 flex-1 flex-col gap-1.5 py-0.5">
+          <div className="flex min-w-0 items-center gap-2 font-mono text-[13px] leading-tight text-on-dark">
+            <span className="select-none text-primary">›</span>
+            <span className="truncate">{data.command || t('shell.mode')}</span>
           </div>
-          <div className="text-xs text-mute truncate leading-tight mt-0.5">
-            {data.command ? 'Press Enter to run' : 'Type a command after > (e.g. >git status)'}
+          <div className="text-[11px] leading-tight text-mute">
+            {data.command ? t('shell.pressEnterToRun') : t('shell.typeHint')}
           </div>
         </div>
       );
@@ -312,28 +340,47 @@ export function ResultItem({ result, isSelected, globalIndex }: ResultItemProps)
       const partialStderr = data.stderr?.trim();
       const hasPartialOutput = partialStdout || partialStderr;
       return (
-        <div className="flex flex-col min-w-0 flex-1">
-          <div className="text-sm text-on-dark leading-tight">{`> ${data.command}`}</div>
-          <div className="flex items-center gap-1.5 mt-0.5 text-xs text-mute">
-            <Loader2 size={12} className="animate-spin shrink-0" />
-            <span>Running... (Ctrl+C to cancel)</span>
+        <div className="flex min-w-0 flex-1 flex-col gap-2 py-0.5">
+          <div className="flex min-w-0 items-center justify-between gap-3">
+            <div className="flex min-w-0 items-center gap-2 font-mono text-[13px] text-on-dark">
+              <span className="select-none text-primary">›</span>
+              <span className="truncate">{data.command}</span>
+            </div>
+            <ShellStatus tone="neutral">
+              <Loader2 size={11} className="animate-spin" />
+              {t('shell.running')}
+            </ShellStatus>
           </div>
           {hasPartialOutput && (
-            <pre className="mt-0.5 text-xs font-mono bg-surface p-1.5 overflow-auto max-h-20 text-body whitespace-pre-wrap break-all">
+            <pre className="max-h-32 overflow-auto rounded-md border border-hairline-soft bg-black/20 px-3 py-2 font-mono text-[11px] leading-[1.55] text-body whitespace-pre-wrap break-words shadow-inner">
               {partialStdout && <AnsiText text={partialStdout} />}
-              {partialStderr && <span className="text-[#ef4444]"><AnsiText text={partialStderr} /></span>}
+              {partialStderr && (
+                <span className="text-[#ef4444]">
+                  <AnsiText text={partialStderr} />
+                </span>
+              )}
             </pre>
           )}
+          <span className="text-[10px] text-ash">{t('shell.ctrlCCancel')}</span>
         </div>
       );
     }
 
     if (data.status === 'error') {
       return (
-        <div className="flex flex-col min-w-0 flex-1">
-          <div className="text-sm text-on-dark leading-tight">{`> ${data.command}`}</div>
-          <div className="mt-0.5 text-xs text-[#ef4444]">
-            {data.errorMessage || 'Command failed'}
+        <div className="flex min-w-0 flex-1 flex-col gap-2 py-0.5">
+          <div className="flex min-w-0 items-center justify-between gap-3">
+            <div className="flex min-w-0 items-center gap-2 font-mono text-[13px] text-on-dark">
+              <span className="select-none text-red-300">›</span>
+              <span className="truncate">{data.command}</span>
+            </div>
+            <ShellStatus tone="danger">
+              <CircleAlert size={11} />
+              {t('shell.failed')}
+            </ShellStatus>
+          </div>
+          <div className="rounded-md border border-red-400/15 bg-red-400/[0.06] px-3 py-2 font-mono text-[11px] leading-relaxed text-red-300">
+            {data.errorMessage || t('shell.commandFailed')}
           </div>
         </div>
       );
@@ -345,38 +392,57 @@ export function ResultItem({ result, isSelected, globalIndex }: ResultItemProps)
     const hasOutput = output.trim() || stderr.trim();
 
     return (
-      <div className="flex flex-col min-w-0 flex-1">
-        <div className="flex items-center justify-between gap-2">
-          <span className="text-sm text-on-dark leading-tight">{`> ${data.command}`}</span>
-          <span className="flex items-center gap-1.5 shrink-0">
-            {data.timedOut && <span className="text-[#f59e0b] text-[10px]">timed out</span>}
-            {data.exitCode !== undefined && data.exitCode !== 0 && (
-              <span className="text-[#ef4444] text-[10px] tabular-nums">exit {data.exitCode}</span>
+      <div className="flex min-w-0 flex-1 flex-col gap-2 py-0.5">
+        <div className="flex min-w-0 items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-2 font-mono text-[13px] text-on-dark">
+            <span className="select-none text-primary">›</span>
+            <span className="truncate">{data.command}</span>
+          </div>
+          <span className="flex shrink-0 items-center gap-1.5">
+            {data.timedOut ? (
+              <ShellStatus tone="warning">
+                <TimerReset size={11} />
+                {t('shell.timedOut')}
+              </ShellStatus>
+            ) : data.exitCode !== undefined && data.exitCode !== 0 ? (
+              <ShellStatus tone="danger">{t('shell.exitCode', { code: data.exitCode })}</ShellStatus>
+            ) : (
+              <ShellStatus tone="success">
+                <Check size={11} />
+                {t('shell.completed')}
+              </ShellStatus>
             )}
             {data.executionTimeMs !== undefined && (
-              <span className="text-ash text-[10px] tabular-nums">{data.executionTimeMs}ms</span>
-            )}
-            {hasOutput && (
-              <button
-                className="p-0.5 text-ash hover:text-on-dark cursor-pointer bg-transparent border-0 transition-colors"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleCopyOutput(stripAnsi(output || stderr));
-                }}
-                title="Copy output"
-              >
-                <Copy size={12} />
-              </button>
+              <span className="text-[10px] tabular-nums text-ash">{data.executionTimeMs} ms</span>
             )}
           </span>
         </div>
         {hasOutput ? (
-          <pre className="mt-0.5 text-xs font-mono bg-surface p-1.5 overflow-auto max-h-20 text-body whitespace-pre-wrap break-all">
-            {output.trim() && <AnsiText text={output.trim()} />}
-            {stderr.trim() && <span className="text-[#ef4444]"><AnsiText text={stderr.trim()} /></span>}
-          </pre>
+          <div className="group/output relative min-w-0">
+            <pre className="max-h-32 overflow-auto rounded-md border border-hairline-soft bg-black/20 px-3 py-2 pr-10 font-mono text-[11px] leading-[1.55] text-body whitespace-pre-wrap break-words shadow-inner">
+              {output.trim() && <AnsiText text={output.trim()} />}
+              {stderr.trim() && (
+                <span className="text-red-300">
+                  <AnsiText text={stderr.trim()} />
+                </span>
+              )}
+            </pre>
+            <button
+              className="absolute right-2 top-2 inline-flex h-6 w-6 items-center justify-center rounded border border-hairline bg-surface/90 text-ash opacity-70 transition-[color,background,opacity] hover:bg-surface-elevated hover:text-on-dark focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 group-hover/output:opacity-100"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleCopyOutput(stripAnsi(output || stderr));
+              }}
+              title={t('shell.copyOutput')}
+              aria-label={t('shell.copyOutput')}
+            >
+              <Copy size={12} />
+            </button>
+          </div>
         ) : (
-          <div className="mt-0.5 text-xs text-ash">No output</div>
+          <div className="rounded-md border border-dashed border-hairline-soft px-3 py-2 text-[11px] text-ash">
+            {t('shell.noOutput')}
+          </div>
         )}
       </div>
     );
@@ -387,10 +453,10 @@ export function ResultItem({ result, isSelected, globalIndex }: ResultItemProps)
     return (
       <div
         className={cn(
-          'flex flex-col items-center gap-1.5 p-2 rounded-lg cursor-pointer transition-colors outline-none border',
+          'flex flex-col items-center gap-1.5 p-2 rounded-md cursor-pointer transition-[background,border-color,box-shadow,transform] outline-none border',
           isSelected
-            ? 'bg-surface-elevated border-primary/60'
-            : 'hover:bg-surface-elevated border-transparent',
+            ? 'bg-primary/12 border-primary/50 shadow-[0_0_0_1px_rgb(99_102_241/0.14),0_8px_20px_rgb(0_0_0/0.18)]'
+            : 'hover:bg-surface-elevated border-transparent'
         )}
       >
         {result.icon ? (
@@ -401,9 +467,13 @@ export function ResultItem({ result, isSelected, globalIndex }: ResultItemProps)
           </div>
         )}
         <div className="text-center w-full">
-          <div className="text-xs text-on-dark truncate leading-tight font-medium">{result.title}</div>
+          <div className="text-xs text-on-dark truncate leading-tight font-medium">
+            {result.title}
+          </div>
           {result.subtitle && (
-            <div className="text-[10px] text-mute truncate leading-none mt-0.5">{result.subtitle}</div>
+            <div className="text-[10px] text-mute truncate leading-none mt-0.5">
+              {result.subtitle}
+            </div>
           )}
         </div>
       </div>
@@ -413,11 +483,11 @@ export function ResultItem({ result, isSelected, globalIndex }: ResultItemProps)
   return (
     <div
       className={cn(
-        'flex items-center gap-3 px-3 py-2 cursor-pointer transition-colors outline-none border-l-[2px]',
+        'group relative mx-1 flex items-center gap-3 rounded-md border border-transparent px-3 py-2 outline-none cursor-pointer transition-[background,border-color,box-shadow,transform]',
         isSelected
-          ? 'bg-surface-elevated border-l-primary'
-          : 'hover:bg-surface-elevated border-l-transparent',
-        isShellCommand && shellData?.status && shellData.status !== 'pending' && 'items-start pt-2',
+          ? 'bg-primary/12 border-primary/25 shadow-[0_1px_0_rgb(255_255_255/0.04)]'
+          : 'hover:bg-surface-elevated/80 hover:border-hairline-soft',
+        isShellCommand && shellData?.status && shellData.status !== 'pending' && 'items-start pt-2'
       )}
     >
       {/* Left icon area (32×32px) */}
@@ -425,6 +495,13 @@ export function ResultItem({ result, isSelected, globalIndex }: ResultItemProps)
         <img src={APP_ICON.shell} alt="" className="w-8 h-8 object-contain shrink-0 rounded-md" />
       ) : result.type === SearchResultType.SystemMonitor ? (
         renderSystemMonitorIcon()
+      ) : result.type === SearchResultType.Application && result.icon ? (
+        <img
+          src={result.icon}
+          alt=""
+          className="w-8 h-8 object-contain shrink-0 rounded-md"
+          decoding="async"
+        />
       ) : result.icon && isImageIcon(result.icon) ? (
         <img src={result.icon} alt="" className="w-8 h-8 object-contain shrink-0" />
       ) : result.icon && NAMED_ICON_MAP[result.icon] ? (
@@ -434,7 +511,11 @@ export function ResultItem({ result, isSelected, globalIndex }: ResultItemProps)
           {result.icon}
         </div>
       ) : result.type === SearchResultType.File ? (
-        <img src={APP_ICON.fileSearch} alt="" className="w-8 h-8 object-contain shrink-0 rounded-md" />
+        <img
+          src={APP_ICON.fileSearch}
+          alt=""
+          className="w-8 h-8 object-contain shrink-0 rounded-md"
+        />
       ) : result.type === SearchResultType.Game ? (
         <img src={APP_ICON.games} alt="" className="w-8 h-8 object-contain shrink-0 rounded-md" />
       ) : result.type === SearchResultType.Calculator ? (
@@ -446,9 +527,17 @@ export function ResultItem({ result, isSelected, globalIndex }: ResultItemProps)
       ) : result.type === SearchResultType.AiChat ? (
         <img src={APP_ICON.ai} alt="" className="w-8 h-8 object-contain shrink-0 rounded-md" />
       ) : result.type === SearchResultType.WebSearch ? (
-        <img src={APP_ICON.webSearch} alt="" className="w-8 h-8 object-contain shrink-0 rounded-md" />
+        <img
+          src={APP_ICON.webSearch}
+          alt=""
+          className="w-8 h-8 object-contain shrink-0 rounded-md"
+        />
       ) : result.type === SearchResultType.SystemCommand ? (
-        <img src={APP_ICON.systemCommand} alt="" className="w-8 h-8 object-contain shrink-0 rounded-md" />
+        <img
+          src={APP_ICON.systemCommand}
+          alt=""
+          className="w-8 h-8 object-contain shrink-0 rounded-md"
+        />
       ) : result.type === SearchResultType.Timer ? (
         <img src={APP_ICON.timer} alt="" className="w-8 h-8 object-contain shrink-0 rounded-md" />
       ) : (
@@ -509,12 +598,13 @@ export function ResultItem({ result, isSelected, globalIndex }: ResultItemProps)
         {altNumber !== null && (
           <kbd
             className={cn(
-              'inline-flex items-center justify-center rounded px-1 py-0.5 text-[10px] font-medium leading-none tabular-nums border border-hairline',
-              isSelected ? 'text-on-dark bg-surface' : 'text-ash bg-surface/60',
+              'inline-flex items-center justify-center gap-0.5 rounded px-1 py-0.5 text-[10px] font-medium leading-none tabular-nums border border-hairline',
+              isSelected ? 'text-on-dark bg-surface' : 'text-ash bg-surface/60'
             )}
             aria-hidden="true"
           >
-            ⌥{altNumber}
+            <span>Alt</span>
+            <span>{altNumber}</span>
           </kbd>
         )}
       </div>

@@ -1,55 +1,19 @@
 import { test as base, expect } from '@playwright/test';
+import { DEFAULT_SETTINGS } from '../../src/features/settings/types/settings.types';
 
 /**
  * Mock Settings matching the real Settings type from settings.types.ts
  */
 export const MOCK_SETTINGS = {
+  ...DEFAULT_SETTINGS,
   general: {
-    startWithWindows: false,
-    maxResults: 8,
-    closeOnLaunch: true,
+    ...DEFAULT_SETTINGS.general,
     hasSeenOnboarding: true,
     language: 'en',
-    featurePreview: false,
-    searchSensitivity: 'medium',
-    showOnScreen: 'cursor',
-  },
-  appearance: {
-    theme: 'dark',
-    windowEffect: 'volt-glass',
-    transparency: 0.85,
-    windowPosition: 'center',
-  },
-  hotkeys: {
-    toggleWindow: 'Ctrl+Space',
-    openSettings: 'Ctrl+,',
   },
   indexing: {
-    folders: [],
-    excludedPaths: [],
-    fileExtensions: [],
+    ...DEFAULT_SETTINGS.indexing,
     indexOnStartup: false,
-  },
-  plugins: {
-    enabledPlugins: [
-      'calculator',
-      'web-search',
-      'system-commands',
-      'timer',
-      'system-monitor',
-      'steam-games',
-      'clipboard-manager',
-      'quicklinks',
-      'window-management',
-    ],
-    clipboardMonitoring: false,
-  },
-  shortcuts: {
-    appShortcuts: [],
-  },
-  integrations: {
-    github: { token: '', enabled: false },
-    notion: { token: '', enabled: false },
   },
 };
 
@@ -75,7 +39,7 @@ export const mockApps = (count = 5) =>
  */
 export async function injectTauriMock(
   page: import('@playwright/test').Page,
-  searchApps: Array<Record<string, unknown>> = [],
+  searchApps: Array<Record<string, unknown>> = []
 ) {
   await page.addInitScript(
     ({ settings, apps }) => {
@@ -117,47 +81,47 @@ export async function injectTauriMock(
 
           // Standard command handlers
           const handlers: Record<string, any> = {
-            'load_settings': settings,
-            'save_settings': null,
-            'update_general_settings': settings,
-            'update_appearance_settings': settings,
-            'update_hotkey_settings': settings,
-            'update_indexing_settings': settings,
-            'update_plugin_settings': settings,
-            'get_theme': 'dark',
-            'set_theme': null,
-            'scan_applications': apps,
-            'search_applications': apps,
-            'search_applications_frecency': apps,
-            'get_app_icon': null,
-            'search_files': [],
-            'get_launch_history': [],
-            'get_pinned_apps': [],
-            'get_frecency_scores': {},
-            'get_frecency_suggestions': [],
-            'launch_application': null,
-            'record_launch': null,
-            'record_search_selection': null,
-            'track_file_access': null,
-            'start_indexing': null,
-            'stop_indexing': null,
-            'get_default_index_folders': [],
-            'get_indexing_status': { isIndexing: false, filesIndexed: 0 },
-            'get_clipboard_history': [],
-            'start_clipboard_monitoring': null,
-            'stop_clipboard_monitoring': null,
-            'get_quick_links': [],
-            'get_quicklinks': [],
-            'get_snippets': [],
-            'log_from_frontend': null,
-            'hide_window': null,
-            'show_window': null,
-            'resize_window': null,
-            'set_window_size': null,
-            'get_window_position': { x: 0, y: 0 },
-            'get_system_info': { cpu: 0, memory: 0, disk: 0 },
-            'get_enabled_extensions_sources': [],
-            'get_steam_games': [],
+            load_settings: settings,
+            save_settings: null,
+            update_general_settings: settings,
+            update_appearance_settings: settings,
+            update_hotkey_settings: settings,
+            update_indexing_settings: settings,
+            update_plugin_settings: settings,
+            get_theme: 'dark',
+            set_theme: null,
+            scan_applications: apps,
+            search_applications: apps,
+            search_applications_frecency: apps,
+            get_app_icon: null,
+            search_files: [],
+            get_launch_history: [],
+            get_pinned_apps: [],
+            get_frecency_scores: {},
+            get_frecency_suggestions: [],
+            launch_application: null,
+            record_launch: null,
+            record_search_selection: null,
+            track_file_access: null,
+            start_indexing: null,
+            stop_indexing: null,
+            get_default_index_folders: [],
+            get_indexing_status: { isIndexing: false, filesIndexed: 0 },
+            get_clipboard_history: [],
+            start_clipboard_monitoring: null,
+            stop_clipboard_monitoring: null,
+            get_quick_links: [],
+            get_quicklinks: [],
+            get_snippets: [],
+            log_from_frontend: null,
+            hide_window: null,
+            show_window: null,
+            resize_window: null,
+            set_window_size: null,
+            get_window_position: { x: 0, y: 0 },
+            get_system_info: { cpu: 0, memory: 0, disk: 0 },
+            get_enabled_extensions_sources: [],
+            get_steam_games: [],
           };
 
           if (cmd in handlers) return handlers[cmd];
@@ -187,7 +151,7 @@ export async function injectTauriMock(
         },
       };
     },
-    { settings: MOCK_SETTINGS, apps: searchApps },
+    { settings: MOCK_SETTINGS, apps: searchApps }
   );
 }
 

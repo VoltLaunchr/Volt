@@ -1,4 +1,10 @@
 {
   "searchOn": "Rechercher \"{{query}}\" sur {{engine}}",
-  "pressEnter": "Appuyez sur Entrée pour rechercher"
+  "pressEnter": "Appuyez sur Entrée pour rechercher",
+  "searchAgainOn": "Rechercher à nouveau sur {{engine}}",
+  "historyBadge": "Historique",
+  "sections": {
+    "search": "Recherche",
+    "recent": "Recherches récentes"
+  }
 }

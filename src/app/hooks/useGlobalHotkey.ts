@@ -2,6 +2,7 @@ import { invoke } from '@tauri-apps/api/core';
 import type React from 'react';
 import { useCallback, useEffect } from 'react';
 import { applicationService } from '../../features/applications/services/applicationService';
+import { openFilePath } from '../../features/files/services/fileOpenService';
 import { defaultSuggestions } from '../../shared/constants/suggestions';
 import { KEYS } from '../../shared/constants/keys';
 import { AppInfo, FileInfo, SearchResult, SearchResultType } from '../../shared/types/common.types';
@@ -59,7 +60,8 @@ export function useGlobalHotkey({
   onOpenActionsMenu,
 }: UseGlobalHotkeyOptions): UseGlobalHotkeyResult {
   const { setSelectedIndex, setQuery: setSearchQuery, setResults } = useSearchStore.getState();
-  // Setup global keyboard shortcuts (F1 / ? for help)
+  // Setup the global help shortcut. Printable characters must stay available
+  // to the search input because plugins and extensions use prefix triggers.
   useEffect(() => {
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'F1') {
@@ -143,8 +145,8 @@ export function useGlobalHotkey({
         return;
       }
 
-      // --- F1 / ?: Show help dialog ---
-      if (e.key === 'F1' || (e.key === '?' && !e.ctrlKey && !e.altKey && !searchQuery.trim())) {
+      // --- F1: Show help dialog ---
+      if (e.key === 'F1') {
         e.preventDefault();
         onOpenHelp();
         return;
@@ -246,18 +248,12 @@ export function useGlobalHotkey({
         return;
       }
 
-      // --- Shift+Enter: Execute as administrator ---
+      // --- Shift+Enter: Execute application as administrator ---
       if (e.key === 'Enter' && e.shiftKey && !e.ctrlKey && !e.altKey && selectedResult) {
         e.preventDefault();
         // Launch as admin (Windows-specific via Tauri command)
-        if (
-          selectedResult.type === SearchResultType.Application ||
-          selectedResult.type === SearchResultType.File
-        ) {
-          const path =
-            selectedResult.type === SearchResultType.File
-              ? (selectedResult.data as FileInfo).path
-              : (selectedResult.data as AppInfo).path;
+        if (selectedResult.type === SearchResultType.Application) {
+          const path = (selectedResult.data as AppInfo).path;
           applicationService
             .launchApplication(path, true)
             .then((result) => {
@@ -287,9 +283,7 @@ export function useGlobalHotkey({
           );
         } else if (selectedResult.type === SearchResultType.File) {
           const fileData = selectedResult.data as FileInfo;
-          applicationService.launchApplication(fileData.path).catch((err: unknown) =>
-            logger.error('launchApplication failed:', err),
-          );
+          openFilePath(fileData).catch((err: unknown) => logger.error('open_path failed:', err));
         }
         // Don't hide window, just clear search
         setSearchQuery('');

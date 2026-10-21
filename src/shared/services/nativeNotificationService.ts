@@ -1,4 +1,5 @@
 import { logger } from '../utils/logger';
+import { invoke } from '@tauri-apps/api/core';
 
 export interface NativeNotificationOptions {
   title: string;
@@ -33,6 +34,13 @@ export async function notifyNative({ title, body }: NativeNotificationOptions): 
   try {
     if (!(await ensurePermission())) {
       return false;
+    }
+
+    try {
+      await invoke('send_native_notification', { payload: { title, body } });
+      return true;
+    } catch (err) {
+      logger.warn('Volt native notification command failed, falling back to plugin:', err);
     }
 
     const { sendNotification } = await import('@tauri-apps/plugin-notification');
