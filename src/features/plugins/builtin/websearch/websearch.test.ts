@@ -1,11 +1,16 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import i18n from 'i18next';
 import { WebSearchPlugin } from './index';
 import { PluginResultType } from '../../types';
+import { WEB_BRAND_ICONS } from '../../../../shared/constants/webBrandIcons';
+import { useAppStore } from '../../../../stores/appStore';
+import { DEFAULT_SETTINGS } from '../../../settings/types/settings.types';
 
 describe('WebSearchPlugin', () => {
   let plugin: WebSearchPlugin;
 
   beforeEach(() => {
+    useAppStore.setState({ settings: DEFAULT_SETTINGS });
     plugin = new WebSearchPlugin();
   });
 
@@ -49,26 +54,44 @@ describe('WebSearchPlugin', () => {
       const results = plugin.match({ query: '?tauri docs' });
       expect(results).not.toBeNull();
       expect(results![0].data?.engine).toBe('google');
-      expect((results![0].data?.url as string)).toContain('google.com/search');
-      expect((results![0].data?.url as string)).toContain(encodeURIComponent('tauri docs'));
+      expect(results![0].icon).toBe(WEB_BRAND_ICONS.google);
+      expect(results![0].data?.url as string).toContain('google.com/search');
+      expect(results![0].data?.url as string).toContain(encodeURIComponent('tauri docs'));
     });
 
     it('uses bing for "bing " prefix', () => {
       const results = plugin.match({ query: 'bing rust book' });
       expect(results![0].data?.engine).toBe('bing');
-      expect((results![0].data?.url as string)).toContain('bing.com/search');
+      expect(results![0].data?.url as string).toContain('bing.com/search');
     });
 
     it('uses duckduckgo for "ddg " prefix', () => {
       const results = plugin.match({ query: 'ddg privacy' });
       expect(results![0].data?.engine).toBe('duckduckgo');
-      expect((results![0].data?.url as string)).toContain('duckduckgo.com');
+      expect(results![0].icon).toBe(WEB_BRAND_ICONS.duckduckgo);
+      expect(results![0].data?.url as string).toContain('duckduckgo.com');
+    });
+
+    it('uses the configured engine for a generic prefix', () => {
+      useAppStore.setState({
+        settings: {
+          ...DEFAULT_SETTINGS,
+          webSearch: { ...DEFAULT_SETTINGS.webSearch, defaultEngine: 'duckduckgo' },
+        },
+      });
+
+      const results = plugin.match({ query: '?privacy' });
+      expect(results![0].data?.engine).toBe('duckduckgo');
+      expect(results![0].data?.url as string).toContain('duckduckgo.com');
     });
 
     it('strips the prefix from the search term', () => {
       const results = plugin.match({ query: 'google hello world' });
       expect(results![0].data?.query).toBe('hello world');
-      expect(results![0].title).toContain('hello world');
+      expect(i18n.t).toHaveBeenCalledWith(
+        'searchOn',
+        expect.objectContaining({ query: 'hello world' })
+      );
     });
 
     it('returns null when the query is only the trigger', () => {

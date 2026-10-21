@@ -4,6 +4,9 @@
     "launchAdmin": "Lancer en administrateur",
     "openFolder": "Ouvrir l'emplacement du fichier",
     "copyPath": "Copier le chemin",
+    "openInBrowser": "Ouvrir dans le navigateur",
+    "copyUrl": "Copier l’URL",
+    "copyQuery": "Copier la recherche",
     "properties": "Propriétés",
     "removeHistory": "Supprimer de l'historique"
   },
@@ -38,9 +41,12 @@
     "games": "Jeux",
     "results": "Résultats",
     "shell": "Shell",
-    "files": "Fichiers"
+    "files": "Fichiers",
+    "web": "Web",
+    "fallbacks": "Recherches alternatives"
   },
   "empty": "Aucun résultat",
+  "emptyHint": "Essayez une requête plus courte ou ouvrez une commande depuis les suggestions.",
   "loading": "Recherche en cours...",
   "shortcuts": {
     "enter": "Entrée"

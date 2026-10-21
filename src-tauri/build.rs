@@ -1,9 +1,7 @@
 /// Tauri build script.
 ///
 /// Two responsibilities:
-/// 1. Wire `.env` (Supabase URL + anon key) into compile-time `env!()` so
-///    `auth.rs` / `sync.rs` don't need a runtime config file.
-/// 2. Register every IPC command with Tauri's ACL via
+/// Register every IPC command with Tauri's ACL via
 ///    `AppManifest::commands(...)` so per-window capability files actually
 ///    gate them. Without this opt-in, custom app commands are implicitly
 ///    callable from any window with `core:default` — defeating the point of
@@ -15,27 +13,6 @@
 /// files reference these as plain `allow-<cmd>` (no plugin prefix — the app
 /// itself owns these permissions).
 fn main() {
-    // Load .env from project root (one level up from src-tauri/).
-    // Silently ignored if .env doesn't exist (CI uses real env vars).
-    let _ = dotenvy::from_path("../.env");
-
-    // Re-run build.rs whenever .env changes so env!() macros pick up edits.
-    println!("cargo:rerun-if-changed=../.env");
-    println!("cargo:rerun-if-env-changed=SUPABASE_URL");
-    println!("cargo:rerun-if-env-changed=SUPABASE_ANON_KEY");
-
-    // Pass Supabase config as compile-time env vars.
-    // Values come from .env (gitignored) or CI secrets.
-    // If not set, defaults to empty strings — auth features will be disabled at runtime.
-    println!(
-        "cargo:rustc-env=SUPABASE_URL={}",
-        std::env::var("SUPABASE_URL").unwrap_or_default()
-    );
-    println!(
-        "cargo:rustc-env=SUPABASE_ANON_KEY={}",
-        std::env::var("SUPABASE_ANON_KEY").unwrap_or_default()
-    );
-
     // ---------------------------------------------------------------------
     // ACL: per-window command gating
     // ---------------------------------------------------------------------
@@ -105,12 +82,16 @@ fn main() {
         "load_settings",
         "save_settings",
         "update_general_settings",
+        "update_web_search_settings",
         "update_appearance_settings",
         "update_hotkey_settings",
         "update_indexing_settings",
         "update_plugin_settings",
         "update_shortcuts_settings",
         "update_shell_settings",
+        "list_detected_browsers",
+        "open_web_url",
+        "web_search_brave",
         "get_theme",
         "set_theme",
         "get_app_shortcuts",
@@ -206,9 +187,11 @@ fn main() {
         "get_extension_secret",
         "set_extension_secret",
         "delete_extension_secret",
+        "ext_save_credential",
         // Extension OAuth API
         "ext_oauth_start",
         "ext_oauth_get_token",
+        "ext_oauth_has_token",
         "ext_oauth_revoke_token",
         // Extension System API
         "ext_get_applications",
@@ -244,6 +227,8 @@ fn main() {
         "clear_oauth_pending",
         // Logging commands
         "get_log_file_path",
+        // Notification commands
+        "send_native_notification",
         // Preview panel commands
         "get_file_preview",
         // Quicklink commands
@@ -263,6 +248,7 @@ fn main() {
         "expand_snippet",
         "import_snippets",
         "export_snippets",
+        "set_snippet_expansion_enabled",
         // Notes commands
         "get_notes",
         "get_note",

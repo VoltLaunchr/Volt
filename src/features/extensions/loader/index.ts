@@ -9,16 +9,22 @@
  */
 
 import { invoke } from '@tauri-apps/api/core';
+import { getVersion } from '@tauri-apps/api/app';
 import { transform } from 'sucrase';
 import { logger } from '../../../shared/utils/logger';
 import { pluginRegistry } from '../../plugins/core';
-import { Plugin } from '../../plugins/types';
+import type { Plugin } from '../../plugins/types';
 import {
   isExtensionPermission,
   type ExtensionManifest,
   type ExtensionPermission,
 } from '../types/extension.types';
 import { WorkerPlugin } from './worker-sandbox';
+import { isVersionAtLeast } from '../utils/version';
+
+function currentAppVersion(): Promise<string> {
+  return getVersion();
+}
 
 /**
  * Filter an arbitrary permission list down to known `ExtensionPermission`
@@ -49,10 +55,7 @@ function sanitizePermissions(
     }
   }
   if (unknown.length > 0) {
-    logger.warn(
-      `[ExtensionLoader] ${context} — dropping unknown permission(s):`,
-      unknown
-    );
+    logger.warn(`[ExtensionLoader] ${context} — dropping unknown permission(s):`, unknown);
   }
   return valid;
 }
@@ -137,9 +140,11 @@ export class ExtensionLoader {
       logger.debug(`[ExtensionLoader] Found ${sources.length} enabled extensions`);
 
       if (sources.length === 0) {
-        logger.debug('[ExtensionLoader] No extensions found. Make sure extensions are installed and enabled.');
+        logger.debug(
+          '[ExtensionLoader] No extensions found. Make sure extensions are installed and enabled.'
+        );
       } else {
-        logger.debug('[ExtensionLoader] Extensions to load:', sources.map(s => s.id).join(', '));
+        logger.debug('[ExtensionLoader] Extensions to load:', sources.map((s) => s.id).join(', '));
       }
 
       const loaded: LoadedExtension[] = [];
@@ -175,10 +180,7 @@ export class ExtensionLoader {
         'get_installed_extensions'
       );
       const ext = installed.find((e) => e.manifest.id === extensionId);
-      return sanitizePermissions(
-        ext?.grantedPermissions,
-        `granted permissions for ${extensionId}`
-      );
+      return sanitizePermissions(ext?.grantedPermissions, `granted permissions for ${extensionId}`);
     } catch {
       return [];
     }
@@ -207,15 +209,9 @@ export class ExtensionLoader {
 
     // Ask user for consent
     if (this.permissionRequestHandler) {
-      const rawGranted = await this.permissionRequestHandler(
-        extensionName,
-        requiredPermissions
-      );
+      const rawGranted = await this.permissionRequestHandler(extensionName, requiredPermissions);
       // Defensive: handler is typed but lives outside this module — re-sanitize.
-      const granted = sanitizePermissions(
-        rawGranted,
-        `consent response for ${extensionId}`
-      );
+      const granted = sanitizePermissions(rawGranted, `consent response for ${extensionId}`);
       if (granted.length > 0) {
         // Persist granted permissions. For dev extensions the Rust side has no
         // matching installed record, so this is an intentional no-op (the IPC
@@ -246,8 +242,25 @@ export class ExtensionLoader {
     logger.debug(`[ExtensionLoader] Files available:`, Object.keys(source.files));
 
     try {
+      if (manifest.minVoltVersion) {
+        const appVersion = await currentAppVersion();
+        if (!isVersionAtLeast(appVersion, manifest.minVoltVersion)) {
+          if (import.meta.env.DEV) {
+            logger.warn(
+              `[ExtensionLoader] Development build ${appVersion} is below ${manifest.minVoltVersion}; allowing the extension for pre-release testing`
+            );
+          } else {
+            logger.warn(
+              `[ExtensionLoader] Extension ${id} requires Volt ${manifest.minVoltVersion}+; current version is ${appVersion}`
+            );
+            return null;
+          }
+        }
+      }
+
       const hasKeywords = manifest.keywords && manifest.keywords.length > 0;
       const hasPrefix = !!manifest.prefix;
+      const hasCommands = manifest.commands && manifest.commands.length > 0;
 
       // Resolve permissions before loading. Sanitize the manifest first so
       // that fictitious permission strings can neither reach the consent
@@ -268,15 +281,15 @@ export class ExtensionLoader {
         return null;
       }
 
-      if (hasKeywords || hasPrefix) {
+      if (hasKeywords || hasPrefix || hasCommands) {
         return this.loadInWorker(source, grantedPermissions);
       } else {
-        // Extensions without keywords/prefix cannot be loaded safely in the Worker sandbox.
+        // Extensions without keywords/prefix/commands cannot be loaded safely in the Worker sandbox.
         // Inline execution (legacy mode) is disabled for security — it would run untrusted
         // code in the main renderer with full access to the DOM and Tauri IPC.
         logger.warn(
-          `[ExtensionLoader] Extension ${id} has no keywords/prefix — cannot load safely. ` +
-          `Add "keywords" or "prefix" to the extension manifest to enable Worker sandbox loading.`
+          `[ExtensionLoader] Extension ${id} has no keywords/prefix/commands — cannot load safely. ` +
+            `Add "keywords", "prefix", or "commands" to the extension manifest to enable Worker sandbox loading.`
         );
         return null;
       }
@@ -308,6 +321,7 @@ export class ExtensionLoader {
 
     const hasCommands = manifest.commands && manifest.commands.length > 0;
     const commandPluginIds: string[] = [];
+    const commandPlugins: WorkerPlugin[] = [];
 
     if (hasCommands) {
       // Register one WorkerPlugin per command
@@ -324,9 +338,10 @@ export class ExtensionLoader {
 
         const cmdPlugin = new WorkerPlugin({
           id: cmdId,
+          extensionId: id,
           name: cmd.title,
           description: cmd.description ?? manifest.description ?? '',
-          keywords: cmd.keywords ?? (cmd.prefix ? [] : manifest.keywords ?? []),
+          keywords: cmd.keywords ?? (cmd.prefix ? [] : (manifest.keywords ?? [])),
           prefix: cmd.prefix ?? null,
           bundledModuleCode: cmdModuleCode,
           entryPoint: cmdEntryPoint,
@@ -335,6 +350,7 @@ export class ExtensionLoader {
 
         pluginRegistry.register(cmdPlugin);
         commandPluginIds.push(cmdId);
+        commandPlugins.push(cmdPlugin);
         logger.debug(`[ExtensionLoader] Registered command plugin: ${cmdId}`);
       }
     }
@@ -343,6 +359,7 @@ export class ExtensionLoader {
     // OR acts as the single entry when there are no sub-commands)
     const plugin = new WorkerPlugin({
       id,
+      extensionId: id,
       name: manifest.name,
       description: manifest.description || '',
       keywords: hasCommands ? [] : (manifest.keywords ?? []),
@@ -354,7 +371,9 @@ export class ExtensionLoader {
 
     // Only register the root plugin in the search results if it has its own trigger
     // (no commands, or it has its own top-level keywords/prefix alongside commands)
-    if (!hasCommands || manifest.keywords?.length || manifest.prefix) {
+    const rootPluginRegistered =
+      !hasCommands || Boolean(manifest.keywords?.length || manifest.prefix);
+    if (rootPluginRegistered) {
       pluginRegistry.register(plugin);
     }
 
@@ -365,9 +384,12 @@ export class ExtensionLoader {
     if (manifest.backgroundRefresh?.interval) {
       const intervalMs = parseRefreshInterval(manifest.backgroundRefresh.interval);
       if (intervalMs > 0) {
-        plugin.startBackgroundRefresh(intervalMs);
+        const refreshTargets = rootPluginRegistered ? [plugin] : commandPlugins;
+        for (const refreshTarget of refreshTargets) {
+          refreshTarget.startBackgroundRefresh(intervalMs);
+        }
         logger.debug(
-          `[ExtensionLoader] Background refresh started for ${id} every ${manifest.backgroundRefresh.interval}`
+          `[ExtensionLoader] Background refresh started for ${id} every ${manifest.backgroundRefresh.interval} on ${refreshTargets.length} worker(s)`
         );
       }
     }
@@ -455,10 +477,7 @@ export class ExtensionLoader {
    * any additional text-level rewriting.
    */
   private transformModuleCode(code: string, filePath: string): string {
-    logger.debug(
-      `[ExtensionLoader] [${filePath}] Original code:`,
-      code.substring(0, 500)
-    );
+    logger.debug(`[ExtensionLoader] [${filePath}] Original code:`, code.substring(0, 500));
 
     try {
       const result = transform(code, {
@@ -466,16 +485,10 @@ export class ExtensionLoader {
         // filePath helps Sucrase produce better error messages.
         filePath,
       });
-      logger.debug(
-        `[ExtensionLoader] [${filePath}] After Sucrase:`,
-        result.code.substring(0, 500)
-      );
+      logger.debug(`[ExtensionLoader] [${filePath}] After Sucrase:`, result.code.substring(0, 500));
       return result.code;
     } catch (error) {
-      logger.error(
-        `[ExtensionLoader] [${filePath}] Sucrase transform failed:`,
-        error
-      );
+      logger.error(`[ExtensionLoader] [${filePath}] Sucrase transform failed:`, error);
       // Fall back to original source — almost certainly broken, but better
       // than silently producing a bundle with half the module stripped.
       return code;
@@ -669,9 +682,8 @@ function __voltRequire__(requestPath, fromPath) {
     }
 
     // Add entry point execution
-    const normalizedEntry = entryPoint.endsWith('.ts') || entryPoint.endsWith('.js')
-      ? entryPoint
-      : entryPoint + '.ts';
+    const normalizedEntry =
+      entryPoint.endsWith('.ts') || entryPoint.endsWith('.js') ? entryPoint : entryPoint + '.ts';
 
     bundle += `
 // Entry point
@@ -718,9 +730,8 @@ return __defaultExport__;
     };
 
     // Visit all modules starting from entry point
-    const normalizedEntry = entryPoint.endsWith('.ts') || entryPoint.endsWith('.js')
-      ? entryPoint
-      : entryPoint + '.ts';
+    const normalizedEntry =
+      entryPoint.endsWith('.ts') || entryPoint.endsWith('.js') ? entryPoint : entryPoint + '.ts';
     visit(normalizedEntry);
 
     // Also visit any unvisited modules

@@ -11,7 +11,7 @@ Ce fichier complète `.github/copilot-instructions.md` avec des règles plus dé
   - `src/app/hooks/useResultActions.ts` — launch + suggestion handling
   - `src/app/components/ViewRouter.tsx` — view switching
   - `src/app/components/ResultContextMenu.tsx` — context menu actions
-- Accès OS (scan apps, hotkeys globales, fichiers, window management): Rust/Tauri via `#[tauri::command]` dans [src-tauri/src/commands](src-tauri/src/commands).
+- Accès OS (scan apps, hotkeys globales, fichiers, window management): Rust/Tauri via `#[tauri::command]` dans [src-tauri/src/commands](src-tauri/src/commands). Le snap de fenêtre (`snap_window`) et la détection d'application au premier plan sont pris en charge sous Windows (Win32) et Linux (X11/EWMH via `x11rb` + Hyprland via `hyprctl`).
 - Les commandes Tauri retournent `VoltResult<T>` (alias de `Result<T, VoltError>`). Le type `VoltError` est défini dans `core/error.rs` et sérialisé en discriminated union pour le frontend.
 - Les commandes Tauri sont appelées depuis le frontend via `invoke('snake_case_command', {...})` (`@tauri-apps/api/core`).
 
@@ -72,4 +72,4 @@ Ce fichier complète `.github/copilot-instructions.md` avec des règles plus dé
 - Éviter de casser la recherche: conserver le debounce 150ms + protection anti-réponses obsolètes (`latestSearchId`) dans `useSearchPipeline.ts`.
 - Si vous ajoutez une commande Tauri: ajouter `#[tauri::command]` → exporter dans [src-tauri/src/commands/mod.rs](src-tauri/src/commands/mod.rs) → enregistrer dans [src-tauri/src/lib.rs](src-tauri/src/lib.rs) → appeler via `invoke()`.
 - Synchronisation types Rust/TS: TS est en `camelCase`, Rust en `snake_case`; utiliser `serde(rename_all = "camelCase")` quand une structure traverse la frontière.
-- Tests: vérifier avant de merger. État validé le 12 juin 2026: 345 tests Vitest, 303 tests Rust par défaut, 321 avec `tantivy-search`, 15 tests ciblés SQLCipher. Exécuter aussi les deux matrices Clippy strictes documentées dans le README.
+- Tests: vérifier avant de merger. État validé fin août 2026: 449 tests Vitest (49 suites), 357 tests Rust par défaut, 381 avec `tantivy-search`. Exécuter aussi les deux matrices Clippy strictes documentées dans le README.

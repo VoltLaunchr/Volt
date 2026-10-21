@@ -13,6 +13,8 @@ export type { AppInfo } from '../../../shared/types/common.types';
 export interface AppSearchOptions {
   /** Search query string */
   query: string;
+  /** Application list to search through (forwarded to backend) */
+  apps?: import('../../../shared/types/common.types').AppInfo[];
   /** Maximum number of results to return */
   limit?: number;
   /** Sort results by specific field */

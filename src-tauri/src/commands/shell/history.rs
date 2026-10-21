@@ -20,6 +20,7 @@
 
 use crate::commands::shell::{ShellExecutionState, redact_command};
 use crate::core::error::VoltError;
+use crate::utils::serialized_file_writer::SerializedFileWriter;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
@@ -55,14 +56,14 @@ pub struct ShellHistoryRecord {
 /// to spawned tasks without cloning the underlying HashMap.
 pub struct ShellHistoryState {
     history: Arc<Mutex<HashMap<String, ShellHistoryRecord>>>,
-    data_dir: Arc<PathBuf>,
+    writer: SerializedFileWriter,
 }
 
 impl Clone for ShellHistoryState {
     fn clone(&self) -> Self {
         Self {
             history: self.history.clone(),
-            data_dir: self.data_dir.clone(),
+            writer: self.writer.clone(),
         }
     }
 }
@@ -85,7 +86,7 @@ impl ShellHistoryState {
 
         Self {
             history: Arc::new(Mutex::new(history_map)),
-            data_dir: Arc::new(data_dir),
+            writer: SerializedFileWriter::new(history_file),
         }
     }
 }
@@ -100,25 +101,6 @@ fn truncate_for_log(s: &str, max_len: usize) -> String {
         .map(|(i, _)| i)
         .unwrap_or(s.len());
     format!("{}… [truncated]", &s[..cutoff])
-}
-
-/// Write a pre-serialized JSON snapshot to disk on a blocking thread.
-/// Callers must serialize inside the Mutex guard (before dropping it) and
-/// pass the resulting `String` here, so the guard is never held across the
-/// async boundary and the expensive allocation happens outside `spawn_blocking`.
-fn spawn_persist(data_dir: Arc<PathBuf>, json: String) {
-    tokio::task::spawn_blocking(move || {
-        let path = data_dir.join("shell_history.json");
-        if let Some(parent) = path.parent()
-            && let Err(e) = fs::create_dir_all(parent)
-        {
-            warn!("shell_history: create_dir_all failed: {}", e);
-            return;
-        }
-        if let Err(e) = fs::write(&path, json) {
-            warn!("shell_history: fs::write failed: {}", e);
-        }
-    });
 }
 
 /// Synchronous blocking persist — used outside async contexts (e.g. during
@@ -194,7 +176,7 @@ pub fn record_internal(
         return;
     }
 
-    let json = {
+    let (generation, json) = {
         let mut history = match state.history.lock() {
             Ok(g) => g,
             Err(poisoned) => {
@@ -225,13 +207,15 @@ pub fn record_internal(
         }
 
         evict_if_needed(&mut history);
-        match serde_json::to_string_pretty(&*history) {
+        let generation = state.writer.reserve();
+        let json = match serde_json::to_string_pretty(&*history) {
             Ok(s) => s,
             Err(e) => {
                 warn!("shell_history: serialize failed: {}", e);
                 return;
             }
-        }
+        };
+        (generation, json)
     }; // MutexGuard dropped before I/O
 
     debug!(
@@ -239,7 +223,7 @@ pub fn record_internal(
         truncate_for_log(&redacted, LOG_COMMAND_MAX_LEN)
     );
 
-    spawn_persist(Arc::clone(&state.data_dir), json);
+    state.writer.spawn_write(generation, json);
 }
 
 // ---------------------------------------------------------------------------
@@ -364,7 +348,7 @@ pub async fn pin_shell_command(
     command: String,
     state: tauri::State<'_, ShellHistoryState>,
 ) -> Result<(), VoltError> {
-    let json = {
+    let (generation, json) = {
         let mut history = state
             .history
             .lock()
@@ -385,10 +369,16 @@ pub async fn pin_shell_command(
                 )));
             }
         }
-        serde_json::to_string_pretty(&*history)
-            .map_err(|e| VoltError::Serialization(e.to_string()))?
+        let generation = state.writer.reserve();
+        let json = serde_json::to_string_pretty(&*history)
+            .map_err(|e| VoltError::Serialization(e.to_string()))?;
+        (generation, json)
     };
-    spawn_persist(Arc::clone(&state.data_dir), json);
+    state
+        .writer
+        .write_async(generation, json)
+        .await
+        .map_err(VoltError::FileSystem)?;
     Ok(())
 }
 
@@ -397,16 +387,22 @@ pub async fn pin_shell_command(
 pub async fn clear_shell_history(
     state: tauri::State<'_, ShellHistoryState>,
 ) -> Result<(), VoltError> {
-    let json = {
+    let (generation, json) = {
         let mut history = state
             .history
             .lock()
             .map_err(|e| VoltError::Unknown(e.to_string()))?;
         history.clear();
-        serde_json::to_string_pretty(&*history)
-            .map_err(|e| VoltError::Serialization(e.to_string()))?
+        let generation = state.writer.reserve();
+        let json = serde_json::to_string_pretty(&*history)
+            .map_err(|e| VoltError::Serialization(e.to_string()))?;
+        (generation, json)
     };
-    spawn_persist(Arc::clone(&state.data_dir), json);
+    state
+        .writer
+        .write_async(generation, json)
+        .await
+        .map_err(VoltError::FileSystem)?;
     info!("Shell history cleared");
     Ok(())
 }
@@ -417,7 +413,7 @@ pub async fn remove_shell_command(
     command: String,
     state: tauri::State<'_, ShellHistoryState>,
 ) -> Result<(), VoltError> {
-    let json = {
+    let (generation, json) = {
         let mut history = state
             .history
             .lock()
@@ -428,10 +424,16 @@ pub async fn remove_shell_command(
                 truncate_for_log(&redact_command(&command), LOG_COMMAND_MAX_LEN)
             )));
         }
-        serde_json::to_string_pretty(&*history)
-            .map_err(|e| VoltError::Serialization(e.to_string()))?
+        let generation = state.writer.reserve();
+        let json = serde_json::to_string_pretty(&*history)
+            .map_err(|e| VoltError::Serialization(e.to_string()))?;
+        (generation, json)
     };
-    spawn_persist(Arc::clone(&state.data_dir), json);
+    state
+        .writer
+        .write_async(generation, json)
+        .await
+        .map_err(VoltError::FileSystem)?;
     info!(
         "Removed shell command from history: {}",
         truncate_for_log(&redact_command(&command), LOG_COMMAND_MAX_LEN)

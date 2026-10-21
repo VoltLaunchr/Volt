@@ -30,13 +30,15 @@ export const applicationService = {
   },
 
   /**
-   * Search through applications based on query
+   * Search through applications based on query.
+   *
+   * The backend reads the app catalog from its own cache, so the full
+   * `AppInfo[]` (icons included) doesn't need to cross IPC on every search.
    * @param options - Search options including query and filters
-   * @param apps - Array of applications to search through
    * @returns Promise resolving to filtered and sorted applications
    */
-  async searchApplications(options: AppSearchOptions, apps: AppInfo[]): Promise<AppInfo[]> {
-    const { query, limit, sortBy = 'score', sortDirection = 'desc' } = options;
+  async searchApplications(options: AppSearchOptions): Promise<AppInfo[]> {
+    const { query, apps = [], limit, sortBy = 'score', sortDirection = 'desc' } = options;
 
     if (!query.trim()) {
       return [];

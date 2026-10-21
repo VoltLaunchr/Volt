@@ -2,7 +2,10 @@ import { invoke } from '@tauri-apps/api/core';
 import { useCallback } from 'react';
 import { consumePendingHud } from '../../features/extensions/loader/hud-queue';
 import { applicationService } from '../../features/applications/services/applicationService';
+import { openFilePath } from '../../features/files/services/fileOpenService';
 import { pluginRegistry } from '../../features/plugins/core';
+import { webSearchHistory } from '../../features/web-search';
+import { getWebResultDetails, isWebResult } from '../../features/results/resultSections';
 import { PluginResult as PluginResultData } from '../../features/plugins/types';
 import { defaultSuggestions } from '../../shared/constants/suggestions';
 import { FileInfo, SearchResult, SearchResultType } from '../../shared/types/common.types';
@@ -11,6 +14,7 @@ import { logger } from '../../shared/utils/logger';
 import { isPluginResultData } from '../../shared/utils/typeGuards';
 import { VOLT_EVENTS, emitVoltEvent } from '../../shared/events';
 import { openSystemMonitorWindow } from '../windows';
+import { useAppStore } from '../../stores/appStore';
 import { useSearchStore } from '../../stores/searchStore';
 import { useUiStore } from '../../stores/uiStore';
 import type { ActiveView } from '../../stores/uiStore';
@@ -53,9 +57,7 @@ export function useResultActions({
           await applicationService.launchApplication(appData.path);
         } else if (result.type === SearchResultType.File) {
           const fileData = result.data as FileInfo;
-          await applicationService.launchApplication(fileData.path);
-          // Track file access for recent files
-          await invoke('track_file_access', { path: fileData.path, name: fileData.name });
+          await openFilePath(fileData);
         } else if (result.type === SearchResultType.SystemCommand) {
           const pluginResult = result.data as PluginResultData;
           if (!isPluginResultData(pluginResult)) {
@@ -95,7 +97,7 @@ export function useResultActions({
           const pluginData = result.data as PluginResultData;
           const url = (pluginData?.data as Record<string, unknown>)?.url as string | undefined;
           if (url) {
-            const { openUrl } = await import('@tauri-apps/plugin-opener');
+            const { openUrl } = await import('../../features/plugins/utils/helpers');
             await openUrl(url);
           }
         } else if (result.type === SearchResultType.SystemMonitor) {
@@ -136,7 +138,18 @@ export function useResultActions({
 
         // Record query→result binding for learning (fire-and-forget)
         const currentQuery = useSearchStore.getState().searchQuery;
-        if (currentQuery.trim()) {
+        const isPrivateWebResult = isWebResult(result);
+        if (result.type === SearchResultType.WebSearch) {
+          const rememberHistory =
+            useAppStore.getState().settings?.fallbacks?.rememberWebSearchHistory ?? false;
+          webSearchHistory.setEnabled(rememberHistory);
+          const webQuery = getWebResultDetails(result).query;
+          if (webQuery) webSearchHistory.record(webQuery);
+        }
+        // Web queries and typed URLs are private by default. They use the
+        // dedicated opt-in history above and never enter the launcher's generic
+        // query bindings, logs, or query_bindings.json persistence.
+        if (currentQuery.trim() && !isPrivateWebResult) {
           const resultId =
             result.type === SearchResultType.Application
               ? (result.data as { path: string }).path
@@ -152,7 +165,9 @@ export function useResultActions({
         const hudMessage = consumePendingHud();
         if (hudMessage) {
           emitVoltEvent(VOLT_EVENTS.HUD_SHOW, { message: hudMessage });
-          await new Promise<void>((resolve) => { setTimeout(resolve, 1500); });
+          await new Promise<void>((resolve) => {
+            setTimeout(resolve, 1500);
+          });
         }
 
         // Hide window after launching if closeOnLaunch is enabled and action allows it
@@ -171,7 +186,15 @@ export function useResultActions({
         setSearchError(`Failed to launch: ${errorMessage}`);
       }
     },
-    [closeOnLaunch, hideWindow, openSettingsWindow, setActiveView, setSearchQuery, setResults, setSearchError]
+    [
+      closeOnLaunch,
+      hideWindow,
+      openSettingsWindow,
+      setActiveView,
+      setSearchQuery,
+      setResults,
+      setSearchError,
+    ]
   );
 
   const handleSuggestionActivate = useCallback(

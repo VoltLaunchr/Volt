@@ -143,7 +143,7 @@ NEXT_PUBLIC_NOTION_REDIRECT_URI=https://voltlaunchr.com/api/oauth/notion
 
 ### 3. Deploy
 
-- Tauri frontend changes are compiled automatically with `bun tauri build`
+- Tauri frontend changes are compiled automatically with `pnpm run tauri -- build`
 - Next.js backend is deployed to production environment
 - Credentials are stored locally on user's machine
 

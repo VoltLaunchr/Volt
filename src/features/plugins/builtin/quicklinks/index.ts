@@ -159,6 +159,13 @@ export class QuicklinksPlugin implements Plugin {
         const icon = ql.icon || TYPE_ICONS[ql.type];
         const score = searchTerm === '' ? 80 : bestScore;
 
+        // A user typing their own quicklink's exact shortcut (or a prefix of
+        // it) is as deliberate a trigger as typing a keyword — without this,
+        // the flat APPLICATION base score (200) always buries an unboosted
+        // quicklink match (PLUGIN_BASE 100) under incidental app fuzzy
+        // matches, so saved shortcuts would never surface by name alone.
+        const isDeliberateShortcutMatch = shortcutScore >= 90;
+
         results.push({
           id: `quicklink-${ql.id}`,
           type: PluginResultType.Info,
@@ -166,6 +173,7 @@ export class QuicklinksPlugin implements Plugin {
           subtitle: `${ql.type === 'command' ? 'Run' : 'Open'}: ${ql.target}`,
           badge: ql.type.charAt(0).toUpperCase() + ql.type.slice(1),
           score: isKeywordTriggered ? score : Math.max(score - 10, 0),
+          matchKind: isKeywordTriggered || isDeliberateShortcutMatch ? 'keyword' : undefined,
           data: {
             quicklink: ql,
             action: 'open',

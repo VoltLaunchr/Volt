@@ -63,7 +63,11 @@ export function SuggestionsView({
   }, [selectedIndex]);
 
   return (
-    <div className="flex-1 overflow-y-auto py-3">
+    <div
+      className="flex-1 overflow-y-auto px-2 py-3"
+      role="listbox"
+      aria-label={t('suggestionsHeaders.suggestions')}
+    >
       {suggestions.map((category, categoryIndex) => {
         // Translate category header
         const headerKey = CATEGORY_HEADER_KEYS[category.title];
@@ -71,18 +75,23 @@ export function SuggestionsView({
 
         return (
           <div key={category.title} className="mb-4 last:mb-0">
-            <div className="px-5 mb-1">
+            <div className="px-3 mb-1">
               <h3 className="text-xs font-semibold text-mute uppercase tracking-[0.5px] m-0">
-                {categoryTitle}
+                <span className="inline-flex items-center gap-2">
+                  <span>{categoryTitle}</span>
+                  <span className="h-px w-6 bg-hairline" />
+                </span>
               </h3>
             </div>
-            <div className="flex flex-col gap-0.5">
+            <div className="flex flex-col gap-1">
               {category.items.map((item, itemIndex) => {
                 const currentIndex = globalIndex++;
                 const isSelected = currentIndex === selectedIndex;
 
                 // Translate title and subtitle from common.suggestions.{id}
-                const translatedTitle = t(`suggestions.${item.id}.title`, { defaultValue: item.title });
+                const translatedTitle = t(`suggestions.${item.id}.title`, {
+                  defaultValue: item.title,
+                });
                 const translatedSubtitle = t(`suggestions.${item.id}.subtitle`, {
                   defaultValue: item.subtitle,
                   version: appVersion,
@@ -97,11 +106,13 @@ export function SuggestionsView({
                     key={item.id}
                     ref={isSelected ? selectedRef : null}
                     className={cn(
-                      'flex items-center gap-3 px-5 py-2.5 cursor-pointer transition-all relative',
+                      'group relative flex items-center gap-3 rounded-md border border-transparent px-3 py-2.5 outline-none cursor-pointer transition-[background,border-color,box-shadow]',
                       isSelected
-                        ? 'bg-accent-blue/20 text-on-dark'
-                        : 'hover:bg-surface-elevated'
+                        ? 'bg-primary/12 border-primary/25 text-on-dark shadow-[0_1px_0_rgb(255_255_255/0.04)]'
+                        : 'hover:bg-surface-elevated/80 hover:border-hairline-soft'
                     )}
+                    role="option"
+                    aria-selected={isSelected}
                     onClick={() => onActivate(categoryIndex, itemIndex)}
                     onMouseEnter={() => onSelect(categoryIndex, itemIndex)}
                   >
@@ -109,18 +120,23 @@ export function SuggestionsView({
                       <img
                         src={item.iconSrc}
                         alt=""
-                        className="w-10 h-10 shrink-0 rounded-md object-contain"
+                        className={cn(
+                          'w-9 h-9 shrink-0 rounded-md border object-contain transition-[background,border-color]',
+                          isSelected
+                            ? 'bg-white/12 border-primary/25'
+                            : 'bg-surface/80 border-hairline-soft'
+                        )}
                       />
                     ) : (
                       <div
                         className={cn(
-                          'w-10 h-10 flex items-center justify-center shrink-0 rounded-md transition-all',
+                          'w-9 h-9 flex items-center justify-center shrink-0 rounded-md border transition-all',
                           isSelected
-                            ? 'bg-white/15 text-on-dark'
-                            : 'bg-surface text-mute hover:text-accent-blue'
+                            ? 'bg-white/12 border-primary/25 text-on-dark'
+                            : 'bg-surface/80 border-hairline-soft text-mute group-hover:text-accent-blue'
                         )}
                       >
-                        <item.icon size={20} strokeWidth={2} />
+                        <item.icon size={18} strokeWidth={2} />
                       </div>
                     )}
                     <div className="flex-1 min-w-0">
@@ -133,10 +149,7 @@ export function SuggestionsView({
                         {translatedTitle}
                       </div>
                       <div
-                        className={cn(
-                          'text-xs',
-                          isSelected ? 'text-on-dark' : 'text-mute'
-                        )}
+                        className={cn('text-xs', isSelected ? 'text-on-dark-mute' : 'text-mute')}
                       >
                         {translatedSubtitle}
                       </div>
@@ -144,10 +157,10 @@ export function SuggestionsView({
                     {translatedBadge && (
                       <div
                         className={cn(
-                          'text-xs px-2 py-1 rounded-sm font-medium shrink-0',
+                          'text-[11px] px-1.5 py-1 rounded-xs font-medium shrink-0 border',
                           isSelected
-                            ? 'bg-white/20 text-on-dark'
-                            : 'bg-surface text-mute'
+                            ? 'bg-white/12 border-primary/25 text-on-dark'
+                            : 'bg-surface/80 border-hairline-soft text-mute'
                         )}
                       >
                         {translatedBadge}
@@ -156,10 +169,10 @@ export function SuggestionsView({
                     {!item.shortcut && item.category === 'command' && (
                       <div
                         className={cn(
-                          'text-xs px-2 py-1 rounded-sm font-medium shrink-0',
+                          'text-[11px] px-1.5 py-1 rounded-xs font-medium shrink-0 border',
                           isSelected
-                            ? 'bg-white/20 text-on-dark'
-                            : 'bg-surface text-mute'
+                            ? 'bg-white/12 border-primary/25 text-on-dark'
+                            : 'bg-surface/80 border-hairline-soft text-mute'
                         )}
                       >
                         {t('suggestionsBadge.command')}

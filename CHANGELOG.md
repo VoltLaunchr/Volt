@@ -78,7 +78,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Tracing-based logging** - Rotating daily log files on the backend
 - **Help dialog** - Press F1 to view keyboard shortcuts and help
 - **CSP security policy** - Content Security Policy added in `tauri.conf.json`
-- **Version sync script** - Run `bun run sync-version` to keep versions aligned
+- **Version sync script** - Run `pnpm run sync-version` to keep versions aligned
 
 ### 🧪 Testing
 

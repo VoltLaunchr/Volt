@@ -8,8 +8,9 @@ import type { PluginSettings } from "./PluginSettings";
 import type { ShellSettings } from "./ShellSettings";
 import type { ShortcutsSettings } from "./ShortcutsSettings";
 import type { SnippetExpansionSettings } from "./SnippetExpansionSettings";
+import type { WebSearchSettings } from "./WebSearchSettings";
 
 /**
  * Complete application settings
  */
-export type Settings = { general: GeneralSettings, appearance: AppearanceSettings, hotkeys: HotkeySettings, indexing: IndexingSettings, plugins: PluginSettings, shortcuts: ShortcutsSettings, shell: ShellSettings, fallbacks: FallbacksSettings, snippetExpansion: SnippetExpansionSettings, };
+export type Settings = { general: GeneralSettings, webSearch: WebSearchSettings, appearance: AppearanceSettings, hotkeys: HotkeySettings, indexing: IndexingSettings, plugins: PluginSettings, shortcuts: ShortcutsSettings, shell: ShellSettings, fallbacks: FallbacksSettings, snippetExpansion: SnippetExpansionSettings, };

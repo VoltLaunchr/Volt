@@ -141,7 +141,7 @@ interface ExtensionPermissions {
 
 ```bash
 # Frontend
-bun audit                    # Vulnerabilites npm
+pnpm audit                    # Vulnerabilites npm
 
 # Backend
 cd src-tauri && cargo audit  # Vulnerabilites Rust (installer cargo-audit)

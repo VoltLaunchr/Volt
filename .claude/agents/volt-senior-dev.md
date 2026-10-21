@@ -88,9 +88,9 @@ const handler = useCallback(() => { ... }, [deps]);
 ```bash
 cd src-tauri && cargo check     # Compilation Rust
 cd src-tauri && cargo clippy     # Lint Rust
-bun run build                    # TypeScript + Vite
-bun run lint                     # ESLint
-bun run test                     # Tests
+pnpm run build                    # TypeScript + Vite
+pnpm run lint                     # ESLint
+pnpm run test                     # Tests
 ```
 
 ## Conventions Volt

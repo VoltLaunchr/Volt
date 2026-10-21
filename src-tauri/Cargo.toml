@@ -1,6 +1,6 @@
 [package]
 name = "volt"
-version = "0.3.0"
+version = "0.5.0"
 description = "Lightning-fast keyboard-driven launcher for Windows, macOS, and Linux"
 authors = ["VoltLaunchr Contributors"]
 license = "Apache-2.0"
@@ -19,7 +19,6 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
-dotenvy = "0.15"
 
 [dependencies]
 # Tauri features intentionally empty: devtools is gated to debug builds via the
@@ -27,8 +26,6 @@ dotenvy = "0.15"
 tauri = { version = "2", features = ["protocol-asset"] }
 tauri-plugin-opener = "2"
 tauri-plugin-global-shortcut = "2"
-tauri-plugin-shell = "2"
-tauri-plugin-fs = "2"
 tauri-plugin-autostart = "2"
 tauri-plugin-deep-link = "2"
 tauri-plugin-dialog = "2"
@@ -87,19 +84,21 @@ sha2 = "0.10"
 rand = "0.9"
 hex = "0.4"
 unicode-normalization = "0.1"
-jsonwebtoken = { version = "10", features = ["rust_crypto"] }
+jsonwebtoken = { version = "10", features = ["aws_lc_rs"] }
 trash = "5.2.6"
 thiserror = "2"
+shlex = "1.3"
 # Local embeddings for "Ask my notes" RAG. fastembed wraps ort + ONNX Runtime
 # and ships pure-Rust tokenizers; the model itself is downloaded on first use
 # to `app_data_dir/embeddings/` (NOT bundled into the binary). Uses native-tls
 # by default — matches our existing reqwest config.
-fastembed = "5"
+fastembed = { version = "5", default-features = false, features = ["hf-hub-native-tls", "image-models"] }
 # Pilier D Track 1: full-text/relevance file index. Pure-Rust, builds on
 # Windows/macOS/Linux. OPTIONAL and OFF by default — only compiled when the
 # `tantivy-search` feature is enabled, so the default build is unaffected.
 # See REFONTE-PILIER-D-SEARCH.md.
 tantivy = { version = "0.26", optional = true }
+tauri-plugin-notification = "2"
 
 [target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
 tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
@@ -108,23 +107,34 @@ tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
 # `ioapiset` (DeviceIoControl) + `errhandlingapi` (GetLastError) are required by
 # the unprivileged USN change-journal reader (indexer::usn, feature
 # `usn-incremental`). They are cheap and harmless when that feature is off.
-winapi = { version = "0.3", features = ["shellapi", "winuser", "wingdi", "winnt", "winreg", "fileapi", "psapi", "processthreadsapi", "handleapi", "ioapiset", "errhandlingapi"] }
+winapi = { version = "0.3", features = ["shellapi", "winuser", "wingdi", "winnt", "winreg", "fileapi", "winbase", "psapi", "processthreadsapi", "handleapi", "ioapiset", "errhandlingapi"] }
 winreg = "0.55"
-lnk = "0.6"
+notify-rust = "4.18"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 icns = "0.1"
 plist = "1.7"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+# EWMH/ICCCM window control (snap/maximize/minimize/fullscreen the foreground
+# window, foreground-app resolution, simulated Ctrl+V via XTEST) on X11 and
+# XWayland. Pure-Rust connection, no libxcb link required.
+x11rb = { version = "0.13", features = ["randr", "xtest"] }
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-positioner = "2"
 
 [features]
 # Default keeps plain bundled SQLite — today's behavior, no new build deps.
-default = ["bundled-sqlite"]
+default = ["bundled-sqlite", "bundled-onnxruntime"]
 # Plain bundled SQLite (current behavior). Kept as an explicit feature so the
 # bundling flavor is selected here rather than on the rusqlite dep line.
 bundled-sqlite = ["rusqlite/bundled"]
+# Upstream installers keep fastembed's verified prebuilt ONNX Runtime download.
+# Native distribution packages can instead select `system-onnxruntime` and use
+# the runtime shipped by the distribution without network access in build().
+bundled-onnxruntime = ["fastembed/ort-download-binaries-native-tls"]
+system-onnxruntime = ["fastembed/ort-load-dynamic"]
 # Pilier C — encrypted data-at-rest. Replaces plain SQLite with bundled
 # SQLCipher + vendored OpenSSL (no system OpenSSL required, best for Windows).
 # Implies `rusqlite/bundled-sqlcipher`. NOT in `default`: keeps the everyday

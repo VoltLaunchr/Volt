@@ -17,6 +17,8 @@
     "dialog:default",
     "os:default",
 
+    "allow-load-settings",
+
     "allow-get-notes",
     "allow-get-note",
     "allow-get-trash",

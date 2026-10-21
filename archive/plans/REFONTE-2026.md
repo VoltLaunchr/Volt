@@ -2,7 +2,7 @@
 
 > **Cible** : Volt (Tauri v2 + React + TypeScript).
 > **Date** : 2026-06-06.
-> **Statut** : plan historique daté du 6 juin 2026. Pour l'état opérationnel actuel, les décisions prises et les validations restantes, voir `TODO-REFONTE.md`.
+> **Statut** : plan historique daté du 6 juin 2026. Pour l'état opérationnel actuel, les décisions prises et les validations restantes, voir `../../docs/refonte/TODO-REFONTE.md`.
 
 Ce document conserve la proposition initiale de modernisation du **cœur** de Volt (recherche, données, frecency, clipboard, input). Ses constats et formulations « Volt aujourd'hui » décrivent l'état vérifié le 6 juin 2026 et ne constituent plus le suivi courant.
 
@@ -51,7 +51,7 @@ Légende : ✅ Volt OK/aligné · 🟡 fonctionnalité produit absente (optionne
 
 1. **Pas de refonte architecturale.** Tauri = cœur Rust + webview, c'est le bon socle. On importe des **algorithmes**, pas une topologie de process.
 2. **Importer en priorité ce qui est mesurablement différenciant** (perf frappe→résultat, pertinence) avant le confort produit (hyperkey).
-3. **Chaque chantier doit converger avec `AUDIT-2026.md`**, pas le contredire. Là où les deux docs pointent le même endroit (frecency, IPC typé), on fait d'une pierre deux coups.
+3. **Chaque chantier doit converger avec `../audits/AUDIT-2026.md`**, pas le contredire. Là où les deux docs pointent le même endroit (frecency, IPC typé), on fait d'une pierre deux coups.
 4. **Le code privilégié (hook clavier global / injection) est radioactif** : à isoler dans un helper minimal, signé, avec canal de contrôle chiffré et authentifié (un launcher est une cible de choix).
 5. **Pas de régression sécurité.** Le hardening existant de Volt (SSRF, JWT, keyring HMAC, CSP, fail-closed extensions) est de qualité pro (cf. audit §« à ne pas casser ») — toute refonte data/input doit le préserver.
 6. **Feature-flag Cargo** pour les gros sous-systèmes natifs (`ntfs-scan`, `tantivy`, `uiaccess`) → build opt-in, surface réduite, rollback trivial.
@@ -220,7 +220,7 @@ E2 ── BLOQUÉ tant que signature de code absente
 ## 7. Ce que Volt fait DÉJÀ bien (ne pas « refondre »)
 
 - **Architecture Tauri** : cœur Rust cross-platform + UI web, sans le poids d'un backend supervisé séparé.
-- **Hardening sécurité** (SSRF multi-forme, JWT alg-confusion, keyring HMAC, CSP stricte, fail-closed extensions, launch validation LOLBIN) — de qualité pro, **à préserver intégralement** lors des refontes data/input (cf. `AUDIT-2026.md` §« à ne pas casser »).
+- **Hardening sécurité** (SSRF multi-forme, JWT alg-confusion, keyring HMAC, CSP stricte, fail-closed extensions, launch validation LOLBIN) — de qualité pro, **à préserver intégralement** lors des refontes data/input (cf. `../audits/AUDIT-2026.md` §« à ne pas casser »).
 - **Hotkeys** via `tauri-plugin-global-shortcut` = équivalent fonctionnel du toggle global.
 - **Pipeline de scoring nucleo** : correct comme matcher d'apps (liste bornée) ; le remplacement Tantivy ne concerne que **l'index fichiers** (grand volume), pas la recherche d'apps.
 
@@ -240,8 +240,8 @@ E2 ── BLOQUÉ tant que signature de code absente
 
 ## 9. Références
 
-- Audit Volt : `AUDIT-2026.md` (findings `rust-history-clone-01`, `ts-02`, `ts-08`, `arch-10`).
+- Audit Volt : `../audits/AUDIT-2026.md` (findings `rust-history-clone-01`, `ts-02`, `ts-08`, `arch-10`).
 - Code Volt clé : `src-tauri/src/search/mod.rs`, `launcher/history.rs`, `indexer/{scanner,windows_search,database}.rs`, `plugins/builtin/clipboard_manager/plugin.rs`.
 - Techniques de référence : Mozilla frecency (modèle de classement), Everything (énumération MFT NTFS), Lucene/Tantivy (index inversé BM25).
-- TODO opérationnel : `TODO-REFONTE.md`.
+- TODO opérationnel : `../../docs/refonte/TODO-REFONTE.md`.
 </content>

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-set-snippet-expansion-enabled"
+description = "Enables the set_snippet_expansion_enabled command without any pre-configured scope."
+commands.allow = ["set_snippet_expansion_enabled"]
+
+[[permission]]
+identifier = "deny-set-snippet-expansion-enabled"
+description = "Denies the set_snippet_expansion_enabled command without any pre-configured scope."
+commands.deny = ["set_snippet_expansion_enabled"]

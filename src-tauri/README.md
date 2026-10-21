@@ -113,7 +113,7 @@ cargo check
 ### Run with Tauri
 
 ```bash
-bun tauri dev
+pnpm run tauri -- dev
 ```
 
 ## 📖 Documentation

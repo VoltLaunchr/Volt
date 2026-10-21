@@ -23,6 +23,8 @@ pub struct RawKeyEvent {
     pub scan_code: u32,
     pub flags: u32,
     pub time: u32,
+    /// HWND at capture time, stored as an integer so the event is Send.
+    pub foreground_window: usize,
 }
 
 /// Resolve a raw key event to the Unicode character(s) it produces under the
@@ -38,7 +40,7 @@ pub fn resolve_to_chars(event: &RawKeyEvent) -> Vec<char> {
     // `ToUnicodeEx` writes into a stack buffer we own and bound-check.
     unsafe {
         let hwnd = GetForegroundWindow();
-        if hwnd.is_null() {
+        if hwnd.is_null() || hwnd as usize != event.foreground_window {
             return Vec::new();
         }
 
