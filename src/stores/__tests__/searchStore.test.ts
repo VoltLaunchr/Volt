@@ -24,6 +24,7 @@ describe('searchStore', () => {
     expect(state.selectedIndex).toBe(0);
     expect(state.searchError).toBeNull();
     expect(state.showSnowEffect).toBe(false);
+    expect(state.isSearching).toBe(false);
   });
 
   it('setQuery updates searchQuery', () => {
@@ -61,5 +62,6 @@ describe('searchStore', () => {
     expect(useSearchStore.getState().searchQuery).toBe('');
     expect(useSearchStore.getState().results).toEqual([]);
     expect(useSearchStore.getState().showSnowEffect).toBe(false);
+    expect(useSearchStore.getState().isSearching).toBe(false);
   });
 });

@@ -12,7 +12,8 @@ use tracing::warn;
 
 /// Shows the main window and sets focus
 #[tauri::command]
-pub fn show_window(window: Window) -> Result<(), String> {
+pub fn show_window(app: AppHandle, window: Window) -> Result<(), String> {
+    crate::commands::window_management::remember_foreground_target(&app);
     window.show().map_err(|e| e.to_string())?;
     window.set_focus().map_err(|e| e.to_string())?;
     Ok(())
@@ -36,6 +37,7 @@ pub fn toggle_window(app: AppHandle) -> Result<(), String> {
     if window.is_visible().map_err(|e| e.to_string())? {
         window.hide().map_err(|e| e.to_string())?;
     } else {
+        crate::commands::window_management::remember_foreground_target(&app);
         window.show().map_err(|e| e.to_string())?;
         window.set_focus().map_err(|e| e.to_string())?;
     }

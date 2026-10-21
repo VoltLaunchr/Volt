@@ -2,6 +2,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, Copy, MessageSquare, RotateCw, Sparkles, AlertCircle, Check } from 'lucide-react';
 import { useAiChat } from '../hooks/useAiChat';
+import { VOLT_EVENTS, emitVoltEvent } from '../../../../../shared/events';
 
 interface ProviderStatus {
   provider: string;
@@ -141,14 +142,10 @@ export function QuickAiView({ onClose, initialQuery, systemPrompt }: QuickAiView
   }, [pendingRegen, messages.length, send]);
 
   const handleOpenInChat = useCallback(() => {
-    window.dispatchEvent(
-      new CustomEvent('volt:open-ai-chat', {
-        detail: {
-          query: lastQueryRef.current,
-          systemPrompt: lastSystemRef.current,
-        },
-      })
-    );
+    emitVoltEvent(VOLT_EVENTS.OPEN_AI_CHAT, {
+      query: lastQueryRef.current,
+      systemPrompt: lastSystemRef.current,
+    });
   }, []);
 
   // Keyboard shortcuts
@@ -255,8 +252,8 @@ export function QuickAiView({ onClose, initialQuery, systemPrompt }: QuickAiView
         <div
           style={{
             padding: '10px 16px',
-            background: 'rgba(168,85,247,0.08)',
-            borderBottom: '1px solid rgba(168,85,247,0.15)',
+            background: 'rgba(99,102,241,0.08)',
+            borderBottom: '1px solid rgba(99,102,241,0.15)',
             fontSize: 12,
             color: 'var(--color-mute)',
             display: 'flex',
@@ -329,7 +326,9 @@ export function QuickAiView({ onClose, initialQuery, systemPrompt }: QuickAiView
             {aiMessage.content}
             {aiMessage.isStreaming && <StreamingCursor />}
             {aiMessage.isStreaming && !aiMessage.content && (
-              <span style={{ opacity: 0.5, fontStyle: 'italic', fontSize: 12 }}>Thinking…</span>
+              <span className="volt-shimmer-text" style={{ fontStyle: 'italic', fontSize: 12 }}>
+                Thinking…
+              </span>
             )}
           </div>
         )}

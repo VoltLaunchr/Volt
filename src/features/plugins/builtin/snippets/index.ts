@@ -6,10 +6,11 @@
  */
 
 import { invoke } from '@tauri-apps/api/core';
-import type { Plugin, PluginContext, PluginResult } from '../../types';
+import type { Plugin, PluginActivation, PluginContext, PluginResult } from '../../types';
 import { PluginResultType } from '../../types';
+import { resolveActivation } from '../../core/activation';
 
-interface Snippet {
+export interface Snippet {
   id: string;
   trigger: string;
   content: string;
@@ -24,12 +25,19 @@ export class SnippetsPlugin implements Plugin {
   description = 'Text expansion snippets';
   enabled = true;
 
+  // `;` prefix or the `snippet`/`snippets` keyword. (`Snippets` name auto-adds itself.)
+  activation: PluginActivation = {
+    prefixes: [';'],
+    keywords: ['snippet', 'snippets'],
+  };
+
   canHandle(context: PluginContext): boolean {
-    return context.query.startsWith(';');
+    return resolveActivation(this, context).matched;
   }
 
   async match(context: PluginContext): Promise<PluginResult[]> {
-    const query = context.query.substring(1).toLowerCase(); // strip `;`
+    // `stripped` is the residual search term after the `;` prefix or `snippet(s)` keyword.
+    const query = resolveActivation(this, context).stripped.toLowerCase();
 
     let snippets: Snippet[];
     try {

@@ -7,6 +7,8 @@ use std::process::Command;
 use std::time::Instant;
 
 use super::types::{LaunchError, LaunchOptions, LaunchResult, LaunchableFileType};
+#[cfg(unix)]
+use crate::utils::process::reap_in_background;
 
 /// Launch an application with default options
 ///
@@ -44,8 +46,18 @@ pub fn launch_with_options(
     path: &str,
     options: LaunchOptions,
 ) -> Result<LaunchResult, LaunchError> {
+    #[cfg(target_os = "windows")]
+    if is_windows_uwp_aumid(path) {
+        return launch_windows_uwp_aumid(path, &options);
+    }
+
     // Validate path exists
     let path_obj = Path::new(path);
+    #[cfg(target_os = "linux")]
+    if !path_obj.exists() {
+        return launch_linux_desktop_exec(path, &options);
+    }
+
     if !path_obj.exists() {
         return Err(LaunchError::NotFound {
             path: path.to_string(),
@@ -70,6 +82,111 @@ pub fn launch_with_options(
     {
         launch_linux(path, &options, file_type)
     }
+}
+
+#[cfg(target_os = "linux")]
+fn launch_linux_desktop_exec(
+    exec_line: &str,
+    options: &LaunchOptions,
+) -> Result<LaunchResult, LaunchError> {
+    let mut parts = shlex::split(exec_line).ok_or_else(|| LaunchError::SpawnFailed {
+        path: exec_line.to_string(),
+        message: "Invalid Linux desktop Exec command quoting".to_string(),
+    })?;
+    if parts.is_empty() {
+        return Err(LaunchError::NotFound {
+            path: exec_line.to_string(),
+        });
+    }
+
+    let program = parts.remove(0);
+    let mut command = Command::new(&program);
+    command.args(parts);
+
+    if let Some(ref cwd) = options.working_dir {
+        command.current_dir(cwd);
+    }
+
+    if let Some(ref args) = options.args {
+        command.args(args);
+    }
+
+    if let Some(ref env_vars) = options.env {
+        for (key, value) in env_vars {
+            command.env(key, value);
+        }
+    }
+
+    let child = command.spawn().map_err(|error| {
+        if error.kind() == std::io::ErrorKind::NotFound {
+            LaunchError::NotFound {
+                path: exec_line.to_string(),
+            }
+        } else {
+            LaunchError::SpawnFailed {
+                path: exec_line.to_string(),
+                message: error.to_string(),
+            }
+        }
+    })?;
+    let pid = child.id();
+    reap_in_background(child);
+
+    Ok(LaunchResult::new(exec_line).with_pid(pid))
+}
+
+#[cfg(target_os = "windows")]
+fn is_windows_uwp_aumid(path: &str) -> bool {
+    if path.contains('\\') || path.contains('/') {
+        return false;
+    }
+
+    let Some((package_family, app_id)) = path.split_once('!') else {
+        return false;
+    };
+    if package_family.is_empty() || app_id.is_empty() {
+        return false;
+    }
+    if !app_id
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-')
+    {
+        return false;
+    }
+
+    let Some((package_name, publisher_hash)) = package_family.rsplit_once('_') else {
+        return false;
+    };
+    !package_name.is_empty()
+        && publisher_hash.len() >= 8
+        && package_name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-')
+        && publisher_hash.chars().all(|c| c.is_ascii_alphanumeric())
+}
+
+#[cfg(target_os = "windows")]
+fn launch_windows_uwp_aumid(
+    aumid: &str,
+    options: &LaunchOptions,
+) -> Result<LaunchResult, LaunchError> {
+    if options.elevated {
+        return Err(LaunchError::PermissionDenied {
+            path: aumid.to_string(),
+            message: "Windows Store apps cannot be launched elevated".to_string(),
+        });
+    }
+
+    let shell_target = format!(r"shell:AppsFolder\{}", aumid);
+    let child = Command::new("explorer.exe")
+        .arg(&shell_target)
+        .spawn()
+        .map_err(|e| LaunchError::SpawnFailed {
+            path: aumid.to_string(),
+            message: e.to_string(),
+        })?;
+
+    Ok(LaunchResult::new(aumid).with_pid(child.id()))
 }
 
 /// Launch URL in default browser
@@ -122,24 +239,28 @@ pub fn launch_url(url: &str) -> Result<LaunchResult, LaunchError> {
 
     #[cfg(target_os = "macos")]
     {
-        Command::new("open")
-            .arg(url)
-            .spawn()
-            .map_err(|e| LaunchError::SpawnFailed {
-                path: url.to_string(),
-                message: e.to_string(),
-            })?;
+        let child =
+            Command::new("open")
+                .arg(url)
+                .spawn()
+                .map_err(|e| LaunchError::SpawnFailed {
+                    path: url.to_string(),
+                    message: e.to_string(),
+                })?;
+        reap_in_background(child);
     }
 
     #[cfg(target_os = "linux")]
     {
-        Command::new("xdg-open")
-            .arg(url)
-            .spawn()
-            .map_err(|e| LaunchError::SpawnFailed {
-                path: url.to_string(),
-                message: e.to_string(),
-            })?;
+        let child =
+            Command::new("xdg-open")
+                .arg(url)
+                .spawn()
+                .map_err(|e| LaunchError::SpawnFailed {
+                    path: url.to_string(),
+                    message: e.to_string(),
+                })?;
+        reap_in_background(child);
     }
 
     Ok(LaunchResult::new(url))
@@ -506,8 +627,10 @@ fn launch_macos(
             path: path.to_string(),
             message: e.to_string(),
         })?;
+        let pid = child.id();
+        reap_in_background(child);
 
-        Ok(LaunchResult::new(path).with_pid(child.id()))
+        Ok(LaunchResult::new(path).with_pid(pid))
     }
 }
 
@@ -575,8 +698,10 @@ fn launch_linux(
             path: path.to_string(),
             message: e.to_string(),
         })?;
+        let pid = child.id();
+        reap_in_background(child);
 
-        Ok(LaunchResult::new(path).with_pid(child.id()))
+        Ok(LaunchResult::new(path).with_pid(pid))
     }
 }
 
@@ -588,6 +713,56 @@ mod tests {
     fn test_launch_nonexistent_file() {
         let result = launch("C:\\nonexistent\\path\\app.exe");
         assert!(matches!(result, Err(LaunchError::NotFound { .. })));
+    }
+
+    /// Regression test for the zombie-process leak: every fire-and-forget
+    /// launch used to skip `wait()`, so a short-lived child sat as
+    /// `<defunct>` in the process table for as long as Volt kept running.
+    /// `reap_in_background` must clear the zombie shortly after the child
+    /// exits, without the caller having to wait on it itself.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn test_reap_in_background_clears_zombie() {
+        let child = Command::new("true").spawn().expect("spawn `true`");
+        let pid = child.id();
+        reap_in_background(child);
+
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        loop {
+            match std::fs::read_to_string(format!("/proc/{pid}/status")) {
+                // Process table entry is gone entirely — reaped.
+                Err(_) => return,
+                // Still present but not a zombie (hasn't exited yet) — keep polling.
+                Ok(status) if !status.contains("State:\tZ") => {
+                    if std::time::Instant::now() >= deadline {
+                        return;
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(20));
+                }
+                Ok(_zombie) => {
+                    if std::time::Instant::now() >= deadline {
+                        panic!(
+                            "pid {pid} is still a zombie after 5s — reap_in_background failed to wait() it"
+                        );
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(20));
+                }
+            }
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_windows_uwp_aumid_detection() {
+        assert!(is_windows_uwp_aumid(
+            "Microsoft.WindowsCalculator_8wekyb3d8bbwe!App"
+        ));
+        assert!(is_windows_uwp_aumid("Spotify.Music_zpdnekdrzrea0!Spotify"));
+        assert!(!is_windows_uwp_aumid("cmd.exe!whatever"));
+        assert!(!is_windows_uwp_aumid("Foo!Bar"));
+        assert!(!is_windows_uwp_aumid(
+            "Microsoft.WindowsCalculator_8wekyb3d8bbwe\\App"
+        ));
     }
 
     #[cfg(target_os = "windows")]

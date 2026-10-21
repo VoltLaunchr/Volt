@@ -1,6 +1,7 @@
 pub mod commands;
 mod core;
 pub mod embeddings;
+mod expansion;
 mod hotkey;
 mod indexer;
 pub mod launcher;
@@ -8,6 +9,32 @@ mod plugins;
 pub mod search;
 pub mod utils;
 mod window;
+
+/// Narrow public surface used by Criterion benches without exposing the
+/// complete internal indexer module as application API.
+#[cfg(feature = "tantivy-search")]
+#[doc(hidden)]
+pub mod benchmark_api {
+    pub use crate::indexer::fulltext::FulltextIndex;
+    pub use crate::indexer::{FileCategory, FileInfo, SearchEngine, SearchOptions};
+}
+
+/// Public surface for the no-admin USN change-journal reader (Pilier D, Track 2).
+/// Re-exported so the reviewed primitive is reachable as crate API ahead of its
+/// lifecycle wiring (the documented D3 follow-up) — mirroring `benchmark_api`,
+/// and keeping the internal `indexer` module otherwise crate-private.
+#[cfg(feature = "usn-incremental")]
+#[doc(hidden)]
+pub mod usn_api {
+    pub use crate::indexer::usn::{
+        PathResolver, RecordChange, UsnCursor, UsnDelta, UsnError, UsnIndexer, UsnJournal,
+        UsnRecord, is_indexable, parse_usn_buffer, strip_extended_prefix,
+    };
+    // The directory-walk baseline enumeration — re-exported so the cold
+    // enumeration benchmark (`examples/enum_bench.rs`) can compare the walk
+    // against the USN delta feed apples-to-apples.
+    pub use crate::indexer::{IndexConfig, scan_files};
+}
 
 use commands::clipboard::ClipboardManagerState;
 use commands::files::{FileHistoryState, FileIndexState, WatcherState};
@@ -18,11 +45,10 @@ use commands::sync::SyncState;
 use commands::system_monitor::SystemMonitorState;
 use commands::*;
 use hotkey::HotkeyState;
-use once_cell::sync::Lazy;
 use plugins::api::VoltPluginAPI;
 use plugins::registry::PluginRegistry;
 use std::collections::VecDeque;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, LazyLock, Mutex};
 use std::time::{Duration, Instant};
 use tauri::{Emitter, Listener, Manager};
 use tracing::{debug, error, info, warn};
@@ -50,8 +76,8 @@ use window::*;
 const DEEPLINK_BURST_LIMIT: usize = 5;
 const DEEPLINK_WINDOW: Duration = Duration::from_secs(60);
 
-static DEEPLINK_TIMES: Lazy<Mutex<VecDeque<Instant>>> =
-    Lazy::new(|| Mutex::new(VecDeque::with_capacity(DEEPLINK_BURST_LIMIT + 1)));
+static DEEPLINK_TIMES: LazyLock<Mutex<VecDeque<Instant>>> =
+    LazyLock::new(|| Mutex::new(VecDeque::with_capacity(DEEPLINK_BURST_LIMIT + 1)));
 
 /// Returns `true` if this deep-link should be dropped due to rate limiting.
 /// Side effect: records the arrival time and logs once when transitioning
@@ -117,11 +143,13 @@ pub struct ShowOnScreenState {
 /// Holds the background worker guard for the rotating file log appender.
 /// Dropping the guard flushes and closes the log file, so we keep it in
 /// Tauri's managed state for the lifetime of the application.
-pub struct LogGuard(#[allow(dead_code)] pub WorkerGuard);
+pub struct LogGuard {
+    _guard: WorkerGuard,
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let mut builder = tauri::Builder::default();
+    let mut builder = tauri::Builder::default().plugin(tauri_plugin_notification::init());
 
     // Single-instance MUST be registered before any other plugin so that
     // subsequent `volt://` launches forward the URL to the running instance
@@ -149,6 +177,7 @@ pub fn run() {
                 }
             }
             if let Some(window) = app.get_webview_window("main") {
+                commands::window_management::remember_foreground_target(app);
                 let _ = window.show();
                 let _ = window.unminimize();
                 let _ = window.set_focus();
@@ -160,11 +189,10 @@ pub fn run() {
         .plugin(tauri_plugin_positioner::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
-        .plugin(tauri_plugin_shell::init())
-        .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
@@ -226,13 +254,17 @@ pub fn run() {
             };
 
             if let Some(guard) = log_guard {
-                app.manage(LogGuard(guard));
+                app.manage(LogGuard { _guard: guard });
             }
 
             // Initialize hotkey state
             app.manage(HotkeyState {
                 current: std::sync::Mutex::new(None),
             });
+
+            // Remember the explicit external focus target used by window-snap
+            // commands; Z-order is not a reliable focus history.
+            app.manage(commands::window_management::SnapTargetState::default());
 
             // Initialize AI quick-action hotkey state
             app.manage(commands::ai_quick_actions::QuickActionHotkeyState::default());
@@ -340,8 +372,14 @@ pub fn run() {
                         } else {
                             "volt://onboarding-complete"
                         };
+                        // Dev mode serves the frontend unbundled via Vite (per-module HTTP
+                        // transforms + cold esbuild dep pre-bundling on first request), which
+                        // routinely exceeds 5s — that's not present in production, where the
+                        // bundle is prebuilt and loads from disk almost instantly. Give dev
+                        // builds a much longer leash so the fallback only fires on a genuine
+                        // frontend hang, not on Vite's cold-start latency.
                         let fallback_secs = if settings.general.has_seen_onboarding {
-                            5u64
+                            if cfg!(debug_assertions) { 20u64 } else { 5u64 }
                         } else {
                             30
                         };
@@ -371,7 +409,7 @@ pub fn run() {
 
                             // For first-time users, give App.tsx's double-rAF a head start
                             // so the OS doesn't reveal an empty webview.
-                            if fallback_secs > 5 {
+                            if event_name == "volt://onboarding-complete" {
                                 tokio::time::sleep(std::time::Duration::from_millis(300)).await;
                             }
 
@@ -384,6 +422,14 @@ pub fn run() {
                                         Ok(Ok(_)) => info!(
                                             "Main window revealed on frontend ready signal ({})",
                                             event_name
+                                        ),
+                                        // In debug builds this is expected Vite cold-start
+                                        // latency, not a sign of a broken frontend — keep it
+                                        // at info. In release, the bundle is prebuilt and
+                                        // should always signal in time, so a warn is warranted.
+                                        _ if cfg!(debug_assertions) => info!(
+                                            "Main window revealed via {}s fallback (frontend never signaled via {}) — expected in dev mode",
+                                            fallback_secs, event_name
                                         ),
                                         _ => warn!(
                                             "Main window revealed via {}s fallback (frontend never signaled via {})",
@@ -475,6 +521,49 @@ pub fn run() {
 
             // Initialize snippet state
             app.manage(SnippetState::new(data_dir.clone()));
+
+            // Initialize global snippet expansion state (Pilier E1). The
+            // hook itself is only actually started below, once settings are
+            // loaded and `settings.snippet_expansion.enabled` is checked —
+            // this just registers the (initially idle) Tauri-managed handle.
+            app.manage(expansion::SnippetExpansionState::new());
+
+            // Start the global snippet-expansion hook if the user has opted
+            // in. Spawned independently from the earlier settings-apply
+            // block (which runs concurrently with `setup()` and races
+            // against `SnippetState`/`SnippetExpansionState` being managed
+            // below it) so this can safely rely on both already being
+            // present via `try_state`.
+            let expansion_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                match commands::settings::load_settings(expansion_handle.clone()).await {
+                    Ok(settings) if settings.snippet_expansion.enabled => {
+                        let snippet_state = expansion_handle.try_state::<SnippetState>();
+                        let expansion_state =
+                            expansion_handle.try_state::<expansion::SnippetExpansionState>();
+                        if let (Some(snippet_state), Some(expansion_state)) =
+                            (snippet_state, expansion_state)
+                        {
+                            let excluded_apps = Arc::new(Mutex::new(
+                                settings.snippet_expansion.excluded_apps.clone(),
+                            ));
+                            match expansion_state.start(
+                                snippet_state.shared_map(),
+                                excluded_apps,
+                                settings.snippet_expansion.max_trigger_len,
+                            ) {
+                                Ok(()) => info!("Global snippet expansion enabled"),
+                                Err(e) => warn!("Could not start global snippet expansion: {}", e),
+                            }
+                        }
+                    }
+                    Ok(_) => {}
+                    Err(e) => warn!(
+                        "Could not load settings for global snippet expansion: {}",
+                        e
+                    ),
+                }
+            });
 
             // Initialize shell history state
             app.manage(ShellHistoryState::new(data_dir.clone()));
@@ -613,8 +702,17 @@ pub fn run() {
             // Register deep link handler for volt:// URLs
             // On Windows/Linux in dev mode, the OS scheme registration normally done
             // by the installer doesn't happen — we must register it at runtime so
-            // the browser knows which app to launch for volt:// URLs.
-            #[cfg(any(target_os = "linux", all(debug_assertions, target_os = "windows")))]
+            // the browser knows which app to launch for volt:// URLs. In release
+            // builds the installer/package (NSIS, deb/rpm/AppImage, the Arch
+            // PKGBUILD's packaged .desktop, ...) already owns this association, so
+            // this must stay dev-only on both platforms — doing it unconditionally
+            // on Linux release builds re-registers the scheme on every single
+            // startup, shelling out to `xdg-mime`/`update-desktop-database` (which
+            // fails loudly if `desktop-file-utils` isn't installed) and rewriting
+            // `~/.local/share/applications/<identifier>-handler.desktop` to point
+            // at whatever binary happens to be running, silently overriding the
+            // properly packaged desktop entry.
+            #[cfg(all(debug_assertions, any(target_os = "linux", target_os = "windows")))]
             {
                 use tauri_plugin_deep_link::DeepLinkExt;
                 if let Err(e) = app.deep_link().register_all() {
@@ -797,16 +895,21 @@ pub fn run() {
             get_db_index_stats,
             start_file_watcher,
             stop_file_watcher,
+            refresh_index_if_stale,
             // Settings commands
             load_settings,
             save_settings,
             update_general_settings,
+            update_web_search_settings,
             update_appearance_settings,
             update_hotkey_settings,
             update_indexing_settings,
             update_plugin_settings,
             update_shortcuts_settings,
             update_shell_settings,
+            list_detected_browsers,
+            open_web_url,
+            web_search_brave,
             get_theme,
             set_theme,
             get_app_shortcuts,
@@ -900,9 +1003,11 @@ pub fn run() {
             get_extension_secret,
             set_extension_secret,
             delete_extension_secret,
+            ext_save_credential,
             // Extension OAuth API
             ext_oauth_start,
             ext_oauth_get_token,
+            ext_oauth_has_token,
             ext_oauth_revoke_token,
             // Extension AI API
             ext_ai_ask_stream,
@@ -913,6 +1018,8 @@ pub fn run() {
             ai_verify_key,
             // Built-in AI Chat
             ai_ask_builtin_stream,
+            // Built-in AI Chat — transparent IPC proxy for the Vercel AI SDK (A3)
+            commands::ai::proxy::ai_proxy_stream,
             // AI Profile (personalization prefix for AI Chat)
             commands::ai_profile::ai_profile_get,
             commands::ai_profile::ai_profile_set,
@@ -968,6 +1075,8 @@ pub fn run() {
             clear_oauth_pending,
             // Logging commands
             get_log_file_path,
+            // Notification commands
+            send_native_notification,
             // Preview panel commands
             get_file_preview,
             // Quicklink commands
@@ -987,6 +1096,7 @@ pub fn run() {
             expand_snippet,
             import_snippets,
             export_snippets,
+            set_snippet_expansion_enabled,
             // Notes commands
             notes::get_notes,
             notes::get_note,

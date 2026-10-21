@@ -1,0 +1,3 @@
+# ts-rs generated IPC bindings: force LF so the CI drift check (which runs on
+# ubuntu) never trips over CRLF/LF differences between contributor platforms.
+src/shared/types/generated/** text eol=lf

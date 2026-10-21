@@ -1,8 +1,10 @@
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 /// File category for intelligent filtering and scoring
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default, TS)]
 #[serde(rename_all = "lowercase")]
+#[ts(export, export_to = "FileCategory.ts")]
 pub enum FileCategory {
     /// Executable applications (.exe, .app, .msi)
     Application,
@@ -128,19 +130,30 @@ impl FileCategory {
 }
 
 /// Represents a file in the index
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "FileInfo.ts")]
 pub struct FileInfo {
     pub id: String,
     pub name: String,
     pub path: String,
     pub extension: String,
+    // `#[ts(type = "number")]`: u64/i64 serialise as JSON numbers over the wire;
+    // ts-rs would otherwise emit `bigint`, which Tauri's invoke never produces.
+    #[ts(type = "number")]
     pub size: u64,
+    #[ts(type = "number")]
     pub modified: i64,
+    #[ts(optional, type = "number")]
     pub created: Option<i64>,
+    #[ts(optional, type = "number")]
     pub accessed: Option<i64>,
+    #[ts(optional)]
     pub icon: Option<String>,
-    /// File category for filtering and scoring
+    /// File category for filtering and scoring. `#[serde(default)]` means it is
+    /// always present on the wire (defaults to `other`), so it is a required
+    /// field in the generated binding — not optional. References the generated
+    /// `FileCategory.ts` automatically.
     #[serde(default)]
     pub category: FileCategory,
 }

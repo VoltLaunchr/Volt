@@ -16,8 +16,8 @@
  *     runtime; we don't pin a number into the locale string
  *
  * Usage:
- *   bun run sync-version          patch all files
- *   bun run sync-version --check  exit non-zero if anything is out of sync (CI)
+ *   pnpm run sync-version          patch all files
+ *   pnpm run sync-version --check  exit non-zero if anything is out of sync (CI)
  */
 import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -29,7 +29,10 @@ const checkMode = process.argv.includes('--check');
 const drifts = [];
 
 function rel(p) {
-  return p.replace(ROOT + '/', '').replace(ROOT + '\\', '').replace(/\\/g, '/');
+  return p
+    .replace(ROOT + '/', '')
+    .replace(ROOT + '\\', '')
+    .replace(/\\/g, '/');
 }
 
 function readPackageVersion() {
@@ -136,7 +139,7 @@ if (!latest) {
   console.warn('! public/changelog.json has no versions[] entries');
   if (checkMode) drifts.push('public/changelog.json: no entries');
 } else if (latest.version !== target) {
-  const msg = `public/changelog.json: latest entry is ${latest.version} (expected ${target} — run \`bun run generate-changelog\`)`;
+  const msg = `public/changelog.json: latest entry is ${latest.version} (expected ${target} — run \`pnpm run generate-changelog\`)`;
   if (checkMode) {
     drifts.push(msg);
   } else {
@@ -152,7 +155,7 @@ if (!latest) {
 if (checkMode && drifts.length > 0) {
   console.error('\nVersion drift detected:');
   for (const d of drifts) console.error('  - ' + d);
-  console.error('\nRun `bun run sync-version` to fix.');
+  console.error('\nRun `pnpm run sync-version` to fix.');
   process.exit(1);
 }
 

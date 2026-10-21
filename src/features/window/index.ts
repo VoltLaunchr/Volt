@@ -19,6 +19,7 @@ export { INITIAL_WINDOW_STATE } from './types';
 
 // Services
 export { windowService } from './services/windowService';
+export { applyWindowEffect, previewAppearanceOnMain } from './services/windowEffectService';
 
 // Hooks
 export { useWindowState } from './hooks';

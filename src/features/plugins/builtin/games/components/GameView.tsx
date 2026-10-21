@@ -2,6 +2,7 @@ import { invoke } from '@tauri-apps/api/core';
 import React, { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/utils';
+import { SearchX } from 'lucide-react';
 import { logger } from '../../../../../shared/utils/logger';
 import { GameInfo, PlatformInfo } from '../index';
 
@@ -9,26 +10,29 @@ import { GameInfo, PlatformInfo } from '../index';
 function GameControllerIcon({
   size = 24,
   className,
-}: { size?: number; className?: string }): React.JSX.Element {
+}: {
+  size?: number;
+  className?: string;
+}): React.JSX.Element {
   return (
-  <svg
-    xmlns="http://www.w3.org/2000/svg"
-    viewBox="0 0 24 24"
-    width={size}
-    height={size}
-    className={className}
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="1.5"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-  >
-    <path d="M2.00825 15.8092C2.23114 12.3161 2.88737 9.7599 3.44345 8.27511C3.72419 7.5255 4.32818 6.96728 5.10145 6.78021C9.40147 5.73993 14.5986 5.73993 18.8986 6.78021C19.6719 6.96728 20.2759 7.5255 20.5566 8.27511C21.1127 9.7599 21.7689 12.3161 21.9918 15.8092C22.1251 17.8989 20.6148 19.0503 18.9429 19.8925C17.878 20.4289 17.0591 18.8457 16.5155 17.6203C16.2185 16.9508 15.5667 16.5356 14.8281 16.5356H9.17196C8.43331 16.5356 7.78158 16.9508 7.48456 17.6203C6.94089 18.8457 6.122 20.4289 5.05711 19.8925C3.40215 19.0588 1.87384 17.9157 2.00825 15.8092Z" />
-    <path d="M5 4.5L6.96285 4M19 4.5L17 4" />
-    <path d="M9 13L7.5 11.5M7.5 11.5L6 10M7.5 11.5L6 13M7.5 11.5L9 10" />
-    <path d="M15.9881 10H15.9971" />
-    <path d="M17.9881 13H17.9971" />
-  </svg>
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      width={size}
+      height={size}
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M2.00825 15.8092C2.23114 12.3161 2.88737 9.7599 3.44345 8.27511C3.72419 7.5255 4.32818 6.96728 5.10145 6.78021C9.40147 5.73993 14.5986 5.73993 18.8986 6.78021C19.6719 6.96728 20.2759 7.5255 20.5566 8.27511C21.1127 9.7599 21.7689 12.3161 21.9918 15.8092C22.1251 17.8989 20.6148 19.0503 18.9429 19.8925C17.878 20.4289 17.0591 18.8457 16.5155 17.6203C16.2185 16.9508 15.5667 16.5356 14.8281 16.5356H9.17196C8.43331 16.5356 7.78158 16.9508 7.48456 17.6203C6.94089 18.8457 6.122 20.4289 5.05711 19.8925C3.40215 19.0588 1.87384 17.9157 2.00825 15.8092Z" />
+      <path d="M5 4.5L6.96285 4M19 4.5L17 4" />
+      <path d="M9 13L7.5 11.5M7.5 11.5L6 10M7.5 11.5L6 13M7.5 11.5L9 10" />
+      <path d="M15.9881 10H15.9971" />
+      <path d="M17.9881 13H17.9971" />
+    </svg>
   );
 }
 
@@ -37,6 +41,62 @@ interface GameViewProps {
 }
 
 type PlatformFilter = string;
+
+interface PlatformVisual {
+  iconPath: string;
+  color: string;
+}
+
+const PLATFORM_VISUALS: Record<string, PlatformVisual> = {
+  steam: { iconPath: '/icons/platforms/steam.svg', color: '#9aa4b2' },
+  epicgames: { iconPath: '/icons/platforms/epic-games.svg', color: '#e5e7eb' },
+  goggalaxy: { iconPath: '/icons/platforms/gog-galaxy.svg', color: '#b56cff' },
+  ubisoftconnect: { iconPath: '/icons/platforms/ubisoft-connect.svg', color: '#7dd3fc' },
+  eaapp: { iconPath: '/icons/platforms/ea-app.svg', color: '#60a5fa' },
+  xbox: { iconPath: '/icons/platforms/xbox.svg', color: '#63d471' },
+  riotgames: { iconPath: '/icons/platforms/riot-games.svg', color: '#ff5364' },
+  battlenet: { iconPath: '/icons/platforms/battle-net.svg', color: '#6bbcff' },
+  amazongames: { iconPath: '/icons/platforms/amazon-games.svg', color: '#f59e0b' },
+  rockstargames: { iconPath: '/icons/platforms/rockstar-games.svg', color: '#facc15' },
+};
+
+function normalizePlatformName(platform: string): string {
+  return platform.toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+function getPlatformVisual(platform: string): PlatformVisual | null {
+  return PLATFORM_VISUALS[normalizePlatformName(platform)] ?? null;
+}
+
+function PlatformLogo({
+  platform,
+  size = 20,
+  className,
+}: {
+  platform: string;
+  size?: number;
+  className?: string;
+}): React.JSX.Element {
+  const visual = getPlatformVisual(platform);
+
+  if (!visual) {
+    return (
+      <GameControllerIcon size={size} className={cn('inline-block align-middle', className)} />
+    );
+  }
+
+  const style: React.CSSProperties = {
+    width: size,
+    height: size,
+    backgroundColor: visual.color,
+    WebkitMask: `url("${visual.iconPath}") center / contain no-repeat`,
+    mask: `url("${visual.iconPath}") center / contain no-repeat`,
+  };
+
+  return (
+    <span aria-hidden="true" className={cn('inline-block shrink-0', className)} style={style} />
+  );
+}
 
 export function GameView({ onClose }: GameViewProps): React.JSX.Element {
   const { t } = useTranslation('games');
@@ -102,6 +162,19 @@ export function GameView({ onClose }: GameViewProps): React.JSX.Element {
     }
   }, [games, filterQuery, platformFilter]);
 
+  // Launch game
+  const handleLaunchGame = useCallback(
+    async (game: GameInfo) => {
+      try {
+        await invoke<void>('launch_game', { gameId: game.id });
+        onClose();
+      } catch (error) {
+        logger.error('Failed to launch game:', error);
+      }
+    },
+    [onClose]
+  );
+
   // Handle keyboard navigation
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -140,19 +213,8 @@ export function GameView({ onClose }: GameViewProps): React.JSX.Element {
           break;
       }
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [selectedIndex, filteredGames, selectedGame, onClose]
+    [selectedIndex, filteredGames, selectedGame, onClose, handleLaunchGame]
   );
-
-  // Launch game
-  const handleLaunchGame = async (game: GameInfo) => {
-    try {
-      await invoke<void>('launch_game', { gameId: game.id });
-      onClose();
-    } catch (error) {
-      logger.error('Failed to launch game:', error);
-    }
-  };
 
   // Rescan games
   const handleRescan = async () => {
@@ -168,8 +230,8 @@ export function GameView({ onClose }: GameViewProps): React.JSX.Element {
   };
 
   // Get platform icon as JSX element
-  const getPlatformIcon = (_platform: string, size: number = 20): React.ReactNode => {
-    return <GameControllerIcon size={size} className="inline-block align-middle text-current" />;
+  const getPlatformIcon = (platform: string, size: number = 20): React.ReactNode => {
+    return <PlatformLogo platform={platform} size={size} className="align-middle" />;
   };
 
   // Group games by platform
@@ -243,7 +305,7 @@ export function GameView({ onClose }: GameViewProps): React.JSX.Element {
         {/* Platform filter dropdown */}
         <div className="relative">
           <button
-            className="flex items-center gap-2 px-3 py-2 bg-canvas border border-hairline rounded-md text-ink text-sm cursor-pointer transition-all whitespace-nowrap hover:bg-surface-elevated hover:border-hairline-strong"
+            className="flex h-10 items-center gap-2 px-3 bg-canvas border border-hairline rounded-md text-ink text-sm cursor-pointer transition-all whitespace-nowrap hover:bg-surface-elevated hover:border-hairline-strong"
             onClick={() => setShowPlatformDropdown(!showPlatformDropdown)}
           >
             <svg
@@ -257,6 +319,7 @@ export function GameView({ onClose }: GameViewProps): React.JSX.Element {
             >
               <path d="M22 3H2l8 9.46V19l4 2v-8.54L22 3z" />
             </svg>
+            {platformFilter !== 'all' && getPlatformIcon(platformFilter, 16)}
             <span>{platformFilter === 'all' ? t('view.allPlatforms') : platformFilter}</span>
             <svg
               width="12"
@@ -272,33 +335,42 @@ export function GameView({ onClose }: GameViewProps): React.JSX.Element {
           </button>
 
           {showPlatformDropdown && (
-            <div className="absolute top-[calc(100%+4px)] right-0 min-w-[200px] bg-surface border border-hairline rounded-md shadow-[0_4px_12px_rgba(0,0,0,0.15)] overflow-hidden z-[100]">
+            <div className="absolute top-[calc(100%+6px)] right-0 min-w-[260px] bg-surface-elevated border border-hairline rounded-lg shadow-[0_16px_40px_rgba(0,0,0,0.35)] overflow-hidden z-[100] p-1.5">
               <button
                 className={cn(
-                  'flex items-center gap-2 w-full px-3.5 py-2.5 text-left text-sm text-ink bg-transparent cursor-pointer transition-colors border-0 hover:bg-surface-elevated',
-                  platformFilter === 'all' && 'bg-accent-blue-soft text-on-dark'
+                  'flex items-center gap-3 w-full h-10 px-3 text-left text-sm text-ink bg-transparent cursor-pointer transition-colors border-0 rounded-md hover:bg-surface',
+                  platformFilter === 'all' &&
+                    'bg-accent-blue-soft text-on-dark hover:bg-accent-blue-soft'
                 )}
                 onClick={() => {
                   setPlatformFilter('all');
                   setShowPlatformDropdown(false);
                 }}
               >
-                {t('view.allPlatforms')} ({games.length})
+                <span className="flex size-6 items-center justify-center rounded-md bg-canvas text-mute">
+                  <GameControllerIcon size={15} />
+                </span>
+                <span className="flex-1 truncate font-medium">{t('view.allPlatforms')}</span>
+                <span className="text-xs text-current/70 tabular-nums">{games.length}</span>
               </button>
               {platforms.map((platform) => (
                 <button
                   key={platform.id}
                   className={cn(
-                    'flex items-center gap-2 w-full px-3.5 py-2.5 text-left text-sm text-ink bg-transparent cursor-pointer transition-colors border-0 hover:bg-surface-elevated',
-                    platformFilter === platform.name && 'bg-accent-blue-soft text-on-dark'
+                    'flex items-center gap-3 w-full h-10 px-3 text-left text-sm text-ink bg-transparent cursor-pointer transition-colors border-0 rounded-md hover:bg-surface',
+                    platformFilter === platform.name &&
+                      'bg-accent-blue-soft text-on-dark hover:bg-accent-blue-soft'
                   )}
                   onClick={() => {
                     setPlatformFilter(platform.name);
                     setShowPlatformDropdown(false);
                   }}
                 >
-                  <span className="text-base">{platform.icon}</span>
-                  {platform.name} ({platform.gameCount})
+                  <span className="flex size-6 items-center justify-center rounded-md bg-canvas/80">
+                    {getPlatformIcon(platform.name, 17)}
+                  </span>
+                  <span className="flex-1 truncate font-medium">{platform.name}</span>
+                  <span className="text-xs text-current/70 tabular-nums">{platform.gameCount}</span>
                 </button>
               ))}
             </div>
@@ -349,7 +421,7 @@ export function GameView({ onClose }: GameViewProps): React.JSX.Element {
                 </>
               ) : (
                 <>
-                  <span className="text-4xl opacity-50">🔍</span>
+                  <SearchX size={34} className="opacity-50" />
                   <span>{t('view.noMatchingGames')}</span>
                 </>
               )}
@@ -361,7 +433,9 @@ export function GameView({ onClose }: GameViewProps): React.JSX.Element {
                 <div className="flex items-center gap-2 px-4 py-2 text-xs font-semibold text-ash uppercase tracking-[0.5px] bg-surface sticky top-0 z-[1]">
                   <span className="text-sm opacity-70">{getPlatformIcon(platform, 14)}</span>
                   <span>{platform}</span>
-                  <span className="ml-auto px-2 py-0.5 text-xs bg-canvas rounded-sm">{platformGames.length}</span>
+                  <span className="ml-auto px-2 py-0.5 text-xs bg-canvas rounded-sm">
+                    {platformGames.length}
+                  </span>
                 </div>
                 {platformGames.map((game) => {
                   const globalIndex = filteredGames.indexOf(game);
@@ -372,7 +446,9 @@ export function GameView({ onClose }: GameViewProps): React.JSX.Element {
                       key={game.id}
                       className={cn(
                         'flex items-center gap-3 px-4 py-2.5 cursor-pointer transition-colors',
-                        isSelected ? 'bg-accent-blue-soft text-on-dark' : 'hover:bg-surface-elevated'
+                        isSelected
+                          ? 'bg-accent-blue-soft text-on-dark'
+                          : 'hover:bg-surface-elevated'
                       )}
                       onClick={() => {
                         setSelectedIndex(globalIndex);
@@ -384,9 +460,18 @@ export function GameView({ onClose }: GameViewProps): React.JSX.Element {
                     >
                       <div className="w-10 h-10 rounded-md overflow-hidden shrink-0 bg-surface flex items-center justify-center">
                         {game.iconPath ? (
-                          <img src={game.iconPath} alt={game.name} className="w-full h-full object-cover" />
+                          <img
+                            src={game.iconPath}
+                            alt={game.name}
+                            className="w-full h-full object-cover"
+                          />
                         ) : (
-                          <span className={cn('flex items-center justify-center', isSelected ? 'text-white/90' : 'text-ash')}>
+                          <span
+                            className={cn(
+                              'flex items-center justify-center',
+                              isSelected ? 'text-white/90' : 'text-ash'
+                            )}
+                          >
                             {getPlatformIcon(game.platform, 24)}
                           </span>
                         )}
@@ -426,9 +511,18 @@ export function GameView({ onClose }: GameViewProps): React.JSX.Element {
                 >
                   <div className="w-10 h-10 rounded-md overflow-hidden shrink-0 bg-surface flex items-center justify-center">
                     {game.iconPath ? (
-                      <img src={game.iconPath} alt={game.name} className="w-full h-full object-cover" />
+                      <img
+                        src={game.iconPath}
+                        alt={game.name}
+                        className="w-full h-full object-cover"
+                      />
                     ) : (
-                      <span className={cn('flex items-center justify-center', isSelected ? 'text-white/90' : 'text-ash')}>
+                      <span
+                        className={cn(
+                          'flex items-center justify-center',
+                          isSelected ? 'text-white/90' : 'text-ash'
+                        )}
+                      >
                         {getPlatformIcon(game.platform, 24)}
                       </span>
                     )}
@@ -455,7 +549,11 @@ export function GameView({ onClose }: GameViewProps): React.JSX.Element {
               <div className="flex items-center gap-4 mb-4 pb-4 border-b border-hairline">
                 <div className="w-20 h-20 rounded-lg overflow-hidden bg-canvas flex items-center justify-center shrink-0">
                   {selectedGame.iconPath ? (
-                    <img src={selectedGame.iconPath} alt={selectedGame.name} className="w-full h-full object-cover" />
+                    <img
+                      src={selectedGame.iconPath}
+                      alt={selectedGame.name}
+                      className="w-full h-full object-cover"
+                    />
                   ) : (
                     <span className="flex items-center justify-center text-ash">
                       {getPlatformIcon(selectedGame.platform, 40)}
@@ -479,7 +577,9 @@ export function GameView({ onClose }: GameViewProps): React.JSX.Element {
 
                   <div className="flex justify-between items-center py-2 border-b border-hairline">
                     <span className="text-sm text-mute">{t('view.platform')}</span>
-                    <span className="text-sm text-ink font-medium text-right max-w-[60%]">{selectedGame.platform}</span>
+                    <span className="text-sm text-ink font-medium text-right max-w-[60%]">
+                      {selectedGame.platform}
+                    </span>
                   </div>
 
                   <div className="flex justify-between items-center py-2 border-b border-hairline">
@@ -562,22 +662,29 @@ export function GameView({ onClose }: GameViewProps): React.JSX.Element {
           </span>
           <span>{t('view.gamesLibrary')}</span>
           <span className="text-ash font-normal">
-            {filteredGames.length}{' '}
-            {filteredGames.length === 1 ? t('view.game') : t('view.games')}
+            {filteredGames.length} {filteredGames.length === 1 ? t('view.game') : t('view.games')}
           </span>
         </div>
         <div className="text-ash">
           <span className="flex items-center gap-2">
-            <kbd className="px-1.5 py-0.5 text-xs font-mono bg-canvas border border-hairline rounded-sm text-mute">↑</kbd>
-            <kbd className="px-1.5 py-0.5 text-xs font-mono bg-canvas border border-hairline rounded-sm text-mute">↓</kbd>
+            <kbd className="px-1.5 py-0.5 text-xs font-mono bg-canvas border border-hairline rounded-sm text-mute">
+              ↑
+            </kbd>
+            <kbd className="px-1.5 py-0.5 text-xs font-mono bg-canvas border border-hairline rounded-sm text-mute">
+              ↓
+            </kbd>
             {t('view.footer.navigate')}
-            <kbd className="px-1.5 py-0.5 text-xs font-mono bg-canvas border border-hairline rounded-sm text-mute">Enter</kbd>
+            <kbd className="px-1.5 py-0.5 text-xs font-mono bg-canvas border border-hairline rounded-sm text-mute">
+              Enter
+            </kbd>
             {t('view.footer.play')}
-            <kbd className="px-1.5 py-0.5 text-xs font-mono bg-canvas border border-hairline rounded-sm text-mute">Esc</kbd>
+            <kbd className="px-1.5 py-0.5 text-xs font-mono bg-canvas border border-hairline rounded-sm text-mute">
+              Esc
+            </kbd>
             {t('view.footer.close')}
           </span>
         </div>
       </div>
     </div>
   );
-};
+}

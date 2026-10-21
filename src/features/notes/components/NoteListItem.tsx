@@ -1,5 +1,6 @@
 import { memo, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Pin } from 'lucide-react';
 import type { Note } from '../types/notes.types';
 
 /**
@@ -58,7 +59,7 @@ function NoteListItemImpl({ note, selected, now, onSelect }: NoteListItemProps):
         onSelect(note.id);
       }
     },
-    [note.id, onSelect],
+    [note.id, onSelect]
   );
 
   return (
@@ -74,7 +75,7 @@ function NoteListItemImpl({ note, selected, now, onSelect }: NoteListItemProps):
         <span className="notes-list-item__title">{title}</span>
         {note.pinned && (
           <span className="notes-list-item__pin" aria-label={t('pinned')}>
-            ★
+            <Pin size={12} fill="currentColor" />
           </span>
         )}
       </div>

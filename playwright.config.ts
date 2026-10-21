@@ -22,7 +22,7 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: `bun vite --port ${E2E_PORT}`,
+    command: `pnpm exec vite --port ${E2E_PORT}`,
     url: `http://localhost:${E2E_PORT}`,
     reuseExistingServer: !process.env.CI,
     timeout: 30000,

@@ -12,11 +12,19 @@ docs/
 ├── user-guide/        End-user shortcuts and guides
 ├── plugins/           Plugin / extension development & publishing
 ├── build-release/     CI/CD · distribution · signing · release roadmap
+├── release/           Cross-platform QA and launch gates
+├── benchmarks/        Reproducible performance measurement plans
+├── marketing/         Product readiness · claims · scorecard · issue backlog
 ├── changelog/         Version history
-├── security/          Audits, accepted risks, key custody
+├── security/          Privacy, accepted risks, key custody
 ├── roadmap/           Product roadmap, competitive analysis, ecosystem plan
-└── superpowers/       Internal specs & plans (work-in-progress)
+└── refonte/           Active 2026 core-refactor tracking + pillar blueprints
 ```
+
+> **Historical / completed docs** (point-in-time audits, finished implementation
+> plans, frozen status reports, executed superpowers specs) live in
+> [`../archive/`](../archive/) and are no longer maintained — see
+> [`archive/README.md`](../archive/README.md).
 
 ---
 
@@ -60,7 +68,7 @@ Additional backend reference:
 
 **Plugin vs Extension**
 - **Plugin** = in-repo (`src/features/plugins/builtin/`). Registered in `useAppLifecycle.ts`. Communicates via `volt:*` DOM events and Tauri commands.
-- **Extension** = third-party, dynamic. Dual-source registry (GitHub legacy + Supabase via the **voltlaunchr.com/developer** portal). Loaded with Sucrase, sandboxed in a Web Worker, network proxied through Rust.
+- **Extension** = third-party, dynamic. Dual-source registry (GitHub legacy + Supabase via the **voltlaunchr.com/developer** portal). Loaded with Sucrase, isolated in a Web Worker when supported, network proxied through Rust.
 
 See the [Extensions](./architecture/FEATURES.md#-extension-ecosystem) section in FEATURES.md for the full security model.
 
@@ -73,18 +81,32 @@ See the [Extensions](./architecture/FEATURES.md#-extension-ecosystem) section in
 | [CI/CD Pipeline](./build-release/CICD.md) | GitHub Actions workflows (`check`, `release`, `auto-tag`, `changelog`, `e2e`, `pr-title`, `version-bump`) |
 | [Distribution](./build-release/DISTRIBUTION.md) | Multi-platform packaging, installers, code signing, auto-updates |
 | [Signing Setup](./build-release/SIGNING_SETUP.md) | Windows Authenticode + macOS notarization — certs, `.pfx`/`.p12` export, GitHub secrets |
+| [macOS Stability](./build-release/MACOS_STABILITY.md) | macOS release gates, smoke test coverage, and beta checklist without local Mac hardware |
 | [Roadmap](./build-release/ROADMAP.md) | Release phases & milestones |
-| [Implementation Plan (history)](./build-release/IMPLEMENTATION_PLAN.md) | Journal of past milestones |
+| [Implementation Plan (history)](../archive/plans/IMPLEMENTATION_PLAN.md) | Journal of past milestones (archived) |
 
 > The **mandatory release checklist** (branch naming, cycle scan, smoke test, post-merge verification) lives in [`CLAUDE.md`](../CLAUDE.md) at the repo root — don't skip it.
+
+### Pre-marketing release readiness
+
+| Document | Purpose |
+|---|---|
+| [Product Readiness Review](./marketing/PRODUCT_READINESS_REVIEW.md) | Master Developer Preview / Public v1 go-no-go audit |
+| [Claims Evidence](./marketing/CLAIMS_EVIDENCE.md) | Evidence and confidence for every public product claim |
+| [Marketing Readiness Scorecard](./marketing/MARKETING_READINESS_SCORECARD.md) | 0–40 launch-readiness score |
+| [Pre-Marketing Issues](./marketing/PRE_MARKETING_ISSUES.md) | Prioritized GitHub issue backlog |
+| [QA Matrix](./release/QA_MATRIX.md) | Windows, macOS and Linux release validation |
+| [Bug Bash Plan](../archive/plans/BUG_BASH_PLAN.md) | Platform, feature, security and accessibility sessions (archived) |
+| [Performance Baseline](./benchmarks/PERFORMANCE_BASELINE.md) | Benchmark protocol; no invented results |
+| [Privacy & Telemetry Review](./security/PRIVACY_AND_TELEMETRY_REVIEW.md) | Local data, opt-in network features and user-facing privacy copy |
 
 ---
 
 ## 🔐 Security
 
 - [Accepted Risks](./security/ACCEPTED_RISKS.md)
-- [Rust Code Review 2025](./security/RUST_CODE_REVIEW_2025.md)
 - [Updater Key Custody](./security/updater-key-custody.md)
+- [Rust Code Review 2025](../archive/audits/RUST_CODE_REVIEW_2025.md) — archived (May 2025 snapshot)
 
 Operational security details (auth CSRF, JWT validation, keyring HMAC, extension sandbox, SSRF prevention, LOLBIN denylist, deep-link rate-limit) are described in [`ARCHITECTURE.md`](./architecture/ARCHITECTURE.md) §7–§8.
 
@@ -93,8 +115,8 @@ Operational security details (auth CSRF, JWT validation, keyring HMAC, extension
 ## 📋 Changelog
 
 - [Changelog](./changelog/CHANGELOG.md) — full version history
-- [Updates 2025-01](./changelog/UPDATES_2025-01.md)
 - [In-app changelog feed](../public/changelog.json) — source for the "See what's new" suggestion (see [`src/features/changelog/README.md`](../src/features/changelog/README.md))
+- [Updates 2025-01](../archive/reports/UPDATES_2025-01.md) — archived early-2025 summary
 
 ---
 
@@ -104,6 +126,15 @@ Operational security details (auth CSRF, JWT validation, keyring HMAC, extension
 - [Competitive Analysis](./roadmap/COMPETITIVE_ANALYSIS.md)
 - [Extension Ecosystem Plan](./roadmap/EXTENSION_ECOSYSTEM_PLAN.md)
 - [Roadmap README](./roadmap/README.md)
+
+### 🛠️ Core refactor (2026)
+
+Active modernization tracking — see [`refonte/`](./refonte/):
+- [TODO — Refonte](./refonte/TODO-REFONTE.md) — current operational status of the 6 pillars
+- [Pillar C — SQLCipher](./refonte/REFONTE-PILIER-C-SQLCIPHER.md) — encrypted data-at-rest (feature-flagged)
+- [Pillar D — Search](./refonte/REFONTE-PILIER-D-SEARCH.md) — next-gen file search blueprint
+
+The original dated plan and the 2026 audits are archived in [`../archive/`](../archive/).
 
 ---
 
@@ -214,15 +245,15 @@ Volt/
 1. Read the [Plugin Development Guide](./plugins/DEVELOPMENT.md).
 2. Create `src/features/plugins/builtin/<your-plugin>/index.ts`.
 3. Register it in [`src/app/hooks/useAppLifecycle.ts`](../src/app/hooks/useAppLifecycle.ts).
-4. Test locally: `bun tauri dev`.
+4. Test locally: `pnpm run tauri -- dev`.
 5. Open a PR. Community extensions go in [`volt-extensions`](https://github.com/VoltLaunchr/volt-extensions) or through the **developer portal**.
 
 ### Validate before committing
 ```bash
-bun run lint               # 0 errors, 0 disabled rules
-bun run build              # tsc + Vite bundle
+pnpm run lint               # 0 errors, 0 disabled rules
+pnpm run build              # tsc + Vite bundle
 cd src-tauri && cargo check && cargo clippy -- -D warnings
-bun run test
+pnpm run test
 ```
 
 See the **Lint & Code Quality** section of [`CLAUDE.md`](../CLAUDE.md) — no `eslint-disable`, no `@ts-ignore`, no `as any`. Fix the code, not the rule.
@@ -230,7 +261,7 @@ See the **Lint & Code Quality** section of [`CLAUDE.md`](../CLAUDE.md) — no `e
 ### Editing docs
 1. Keep paths relative and verify links.
 2. Date updates with `_Last updated: YYYY-MM-DD_` when the file is feature-current.
-3. Run `bun prettier --write docs/` before submitting.
+3. Run `pnpm exec prettier --write docs/` before submitting.
 
 ---
 
@@ -246,4 +277,4 @@ See the **Lint & Code Quality** section of [`CLAUDE.md`](../CLAUDE.md) — no `e
 
 Volt is open-source under Apache-2.0 — see [LICENSE](../LICENSE).
 
-_Last updated: 2026-05-18 (v0.2.0)_
+_Last updated: 2026-06-28 — docs reorganized; historical material moved to `../archive/`._

@@ -1,27 +1,29 @@
-# Volt — Analyse Concurrentielle
+# Volt — Analyse concurrentielle
 
-> Positionnement de Volt par rapport aux principaux lanceurs d'applications. Derniere mise a jour : avril 2026.
+> Positionnement de Volt par rapport aux principaux lanceurs d'applications. Derniere mise a jour : 2026-06-13.
+>
+> Ce document est un outil de positionnement, pas une source de claims marketing. Pour le lancement public, utiliser d'abord le registre de preuves : [`../marketing/CLAIMS_EVIDENCE.md`](../marketing/CLAIMS_EVIDENCE.md).
 
 ---
 
 ## Comparatif des fonctionnalites
 
-| Fonctionnalite | Volt (v0.0.8) | Alfred (macOS) | Raycast (macOS) | PowerToys Run (Windows) | Ulauncher (Linux) |
+| Fonctionnalite | Volt (v0.2.0, workspace) | Alfred (macOS) | Raycast (macOS + Windows beta) | PowerToys Run (Windows) | Ulauncher (Linux) |
 |----------------|:---:|:---:|:---:|:---:|:---:|
-| **Cross-platform** | ✅ Win/Mac/Linux | ❌ macOS only | ❌ macOS only | ❌ Windows only | ❌ Linux only |
-| **Open source** | ✅ MIT | ❌ Proprietary | ❌ Proprietary | ✅ MIT | ✅ GPL |
+| **Cross-platform** | ⚠️ Win/Mac/Linux visés, QA release à compléter | ❌ macOS only | ⚠️ macOS + Windows beta | ❌ Windows only | ❌ Linux only |
+| **Open source** | ✅ Apache-2.0 | ❌ Proprietary | ❌ Proprietary | ✅ MIT | ✅ GPLv3 |
 | **Gratuit** | ✅ | ⚠️ Freemium (£34 Powerpack) | ⚠️ Freemium ($8/mo Pro) | ✅ | ✅ |
 | **Recherche apps** | ✅ | ✅ | ✅ | ✅ | ✅ |
-| **Recherche fichiers** | ✅ | ✅ | ✅ | ✅ | ⚠️ Via extension |
+| **Recherche fichiers** | ⚠️ Implémentée, baseline à mesurer | ✅ | ✅ | ✅ | ⚠️ Via extension |
 | **Recherche fuzzy** | ✅ nucleo-matcher | ✅ | ✅ | ✅ | ✅ |
 | **Calculatrice** | ✅ Builtin | ✅ | ✅ | ✅ | ⚠️ Via extension |
-| **Clipboard history** | ✅ Builtin | ✅ Powerpack | ✅ | ✅ | ❌ |
+| **Clipboard history** | ✅ Builtin, privacy copy à finaliser | ✅ Powerpack | ✅ | ✅ | ❌ |
 | **Snippets/text expansion** | ✅ Builtin | ✅ Powerpack | ✅ | ❌ | ❌ |
 | **Emojis** | ✅ Builtin | ❌ | ✅ | ✅ | ❌ |
 | **Web search** | ✅ Multi-moteurs | ✅ | ✅ | ✅ | ✅ |
 | **System commands** | ✅ | ✅ | ✅ | ✅ | ✅ |
 | **System monitor** | ✅ Builtin | ❌ | ❌ | ❌ | ❌ |
-| **Game scanner** | ✅ 10 plateformes | ❌ | ❌ | ❌ | ❌ |
+| **Game scanner** | ⚠️ Scanners multi-plateformes, QA à compléter | ❌ | ❌ | ❌ | ❌ |
 | **Timer/pomodoro** | ✅ Focus Timer (Pomodoro complet) | ❌ | ⚠️ Extension | ❌ | ❌ |
 | **Shell commands inline** | ✅ Streaming + ANSI + historique | ✅ Terminal | ✅ | ❌ | ❌ |
 | **Preview fichiers** | ✅ Texte/image/dossier/shell | ✅ Quick Look | ✅ | ❌ | ❌ |
@@ -29,14 +31,14 @@
 | **Themes custom** | ❌ Roadmap v2.x | ✅ | ✅ | ❌ | ✅ |
 | **Quicklinks** | ✅ URL/dossier/commande + validation | ✅ | ✅ | ❌ | ✅ |
 | **Window management** | ✅ Snap windows (6 zones) | ❌ | ✅ | ✅ FancyZones | ❌ |
-| **Plugins/extensions** | ✅ 13 builtin | ✅ Workflows | ✅ Store riche | ✅ Plugins | ✅ Extensions |
-| **Plugin marketplace** | ✅ Extension Store | ✅ | ✅ | ✅ | ✅ |
-| **Plugin externe (loader)** | ✅ Worker sandbox | ✅ | ✅ | ✅ | ✅ |
+| **Plugins/extensions** | ✅ Builtins + extensions | ✅ Workflows | ✅ Store riche | ✅ Plugins | ✅ Extensions |
+| **Plugin marketplace** | ⚠️ Extension Store, gouvernance à valider | ✅ | ✅ | ✅ | ✅ |
+| **Plugin externe (loader)** | ✅ Worker isolation + permissions | ✅ | ✅ | ✅ | ✅ |
 | **Hotkey configurable** | ✅ Live rebind | ✅ | ✅ | ✅ | ✅ |
-| **Auto-update** | ✅ | ✅ | ✅ | ✅ Via Microsoft Store | ✅ |
+| **Auto-update** | ⚠️ Configuré, update réel à valider | ✅ | ✅ | ✅ Via Microsoft Store | ✅ |
 | **Frecency scoring** | ✅ Apps + Shell | ✅ | ✅ | ❌ | ❌ |
 | **Code signe** | ❌ En attente certs | ✅ | ✅ | ✅ | N/A |
-| **Extension sandboxing** | ✅ HMAC + Worker isolé + SSRF block | N/A | ⚠️ | N/A | ⚠️ |
+| **Extension isolation** | ⚠️ HMAC + Worker + SSRF block, audit hostile à faire | N/A | ⚠️ | N/A | ⚠️ |
 | **Deep links** | ✅ volt:// protocol | ✅ | ✅ | ❌ | ❌ |
 | **Accessibilite (WCAG)** | ⚠️ Partiel | ⚠️ | ⚠️ | ✅ | ⚠️ |
 
@@ -48,19 +50,19 @@
 
 ### Cross-platform natif
 
-Volt est le **seul lanceur dans cette categorie a fonctionner sur Windows, macOS ET Linux** a partir d'une seule codebase. Alfred et Raycast sont bloques sur macOS, PowerToys Run sur Windows, Ulauncher sur Linux. Un utilisateur qui change d'OS n'a pas a reapprendre un nouvel outil.
+Volt vise une experience coherente sur Windows, macOS et Linux a partir d'une seule codebase Tauri. C'est un axe de differenciation important, mais la promesse publique doit rester conditionnee a la matrice QA release : Windows 10/11, macOS Intel, macOS Apple Silicon, Linux deb/rpm/AppImage et X11/Wayland.
 
 ### Open source + gratuit
 
-Contrairement a Alfred (Powerpack a £34) et Raycast (Pro a $8/mois), Volt est entierement gratuit et open source sous licence MIT. Aucune fonctionnalite n'est verrouilllee derriere un paywall.
+Contrairement aux produits proprietaires, Volt est open source sous licence Apache-2.0. Les comparaisons de prix doivent rester datees, car les offres concurrentes changent.
 
 ### Performance Rust
 
-Le backend Tauri v2 + Rust offre des performances natives : demarrage rapide, faible consommation memoire (~50-100 MB), et recherche fuzzy via `nucleo-matcher` (la meme librairie que le fuzzy finder `nushell`).
+Le backend Rust/Tauri donne une base technique favorable a la performance, avec recherche fuzzy via `nucleo-matcher` et index fichier local. Les claims publics de demarrage, latence, taille binaire et memoire doivent attendre les mesures de [`../benchmarks/PERFORMANCE_BASELINE.md`](../benchmarks/PERFORMANCE_BASELINE.md).
 
 ### Game scanner unique
 
-Aucun concurrent ne propose de detection et lancement de jeux integre. Volt scanne **10 plateformes** (Steam, Epic, GOG, EA, Ubisoft, Riot, Xbox, Amazon Games, Battle.net, Rockstar) automatiquement avec scan parallele et deduplication.
+Volt inclut des scanners pour plusieurs launchers de jeux (Steam, Epic, GOG, EA, Ubisoft, Riot, Xbox, Amazon Games, Battle.net, Rockstar). Avant de publier un claim chiffre, chaque combinaison launcher/OS doit etre validee dans [`../release/QA_MATRIX.md`](../release/QA_MATRIX.md).
 
 ### System monitor integre (v2)
 
@@ -68,11 +70,11 @@ Metriques CPU/RAM/disque en temps reel directement dans le lanceur, sans ouvrir 
 
 ### Extensible par design avec securite avancee
 
-Architecture plugin avec isolation (timeout 500ms, error boundaries), API documentee, et marketplace communautaire avec extension store integre. Securite renforcee : signatures HMAC-SHA256 sur l'etat des extensions, sandbox Worker avec blocage eval/WebSocket/SSRF, validation des manifests, et detection de tampering avec alertes UI.
+Architecture plugin avec API documentee, permissions explicites et execution Worker pour les extensions compatibles. Securite defense-in-depth : signatures HMAC-SHA256 sur l'etat des extensions, blocage de primitives dangereuses dans le Worker, proxy reseau avec protections SSRF, validation des manifests et detection de tampering avec alertes UI. Ne pas presenter ce modele comme un sandbox OS.
 
 ### Shell commands integre
 
-Volt propose l'execution de commandes shell directement dans le lanceur avec streaming temps reel de la sortie, historique avec frecency, rendu des couleurs ANSI, et annulation via Ctrl+C. Aucun concurrent ne propose le streaming ligne-par-ligne ni le rendu ANSI natif.
+Volt propose l'execution de commandes shell directement dans le lanceur avec streaming de la sortie, historique avec frecency, rendu ANSI et annulation via Ctrl+C. La blocklist et les redactions reduisent certains risques, mais l'execution shell reste une fonction avancee a presenter avec prudence.
 
 ---
 
@@ -129,7 +131,7 @@ Volt propose l'execution de commandes shell directement dans le lanceur avec str
                    Single-platform
 ```
 
-**Creneau de Volt :** le lanceur cross-platform, open source, performant (Rust), avec un ecosysteme de plugins en construction. Volt vise les utilisateurs qui :
+**Creneau de Volt :** le lanceur cross-platform, open source, local-first, avec un ecosysteme de plugins en construction. Volt vise les utilisateurs qui :
 
 1. **Travaillent sur plusieurs OS** et veulent un outil unifie
 2. **Preferent l'open source** et ne veulent pas payer d'abonnement
@@ -140,11 +142,13 @@ Volt propose l'execution de commandes shell directement dans le lanceur avec str
 
 ## Sources
 
-- Alfred : https://www.alfredapp.com
-- Raycast : https://www.raycast.com
+- Alfred Powerpack : https://www.alfredapp.com/shop/
+- Raycast Windows : https://www.raycast.com/windows
 - PowerToys Run : https://learn.microsoft.com/en-us/windows/powertoys/run
 - Ulauncher : https://ulauncher.io
+- Ulauncher license : https://github.com/Ulauncher/Ulauncher
+- Volt claims evidence : ../marketing/CLAIMS_EVIDENCE.md
 
 ---
 
-_Document vivant — a mettre a jour lors de chaque release majeure. **Derniere revision : 2026-04-18.**_
+_Document vivant — a mettre a jour lors de chaque release majeure. **Derniere revision : 2026-06-13.**_

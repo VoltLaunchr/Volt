@@ -4,6 +4,9 @@
     "launchAdmin": "Launch as Administrator",
     "openFolder": "Open File Location",
     "copyPath": "Copy Path",
+    "openInBrowser": "Open in Browser",
+    "copyUrl": "Copy URL",
+    "copyQuery": "Copy Search Query",
     "properties": "Properties",
     "removeHistory": "Remove from History"
   },
@@ -38,9 +41,12 @@
     "games": "Games",
     "results": "Results",
     "shell": "Shell",
-    "files": "Files"
+    "files": "Files",
+    "web": "Web",
+    "fallbacks": "Fallbacks"
   },
   "empty": "No results found",
+  "emptyHint": "Try a shorter query or open a command from suggestions.",
   "loading": "Searching...",
   "shortcuts": {
     "enter": "Enter"

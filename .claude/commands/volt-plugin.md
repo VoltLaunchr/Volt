@@ -77,8 +77,8 @@ Selon le type de plugin demandé :
 
 ### 4. Tests
 - Vérifie compilation Rust : `cd src-tauri && cargo check`
-- Vérifie types TS : `bun run build`
-- Teste le plugin avec `bun tauri dev` si possible
+- Vérifie types TS : `pnpm run build`
+- Teste le plugin avec `pnpm run tauri -- dev` si possible
 
 ## Extensions Externes
 - Repo séparé : https://github.com/VoltLaunchr/volt-extensions

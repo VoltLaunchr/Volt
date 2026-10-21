@@ -65,7 +65,7 @@ Tu es un agent de debugging spécialisé pour le projet Volt (launcher Tauri v2 
 - Explique la cause racine
 - Propose un fix minimal et ciblé
 - Vérifie la compilation : `cd src-tauri && cargo check`
-- Vérifie les types : `bun run build`
+- Vérifie les types : `pnpm run build`
 
 ## Commandes de Diagnostic
 ```bash
@@ -75,12 +75,12 @@ cd src-tauri && cargo test           # Tests unitaires
 cd src-tauri && cargo clippy         # Linting Rust
 
 # Frontend
-bun run build                        # TypeScript check + build
-bun run lint                         # ESLint
-bun run test                         # Vitest
+pnpm run build                        # TypeScript check + build
+pnpm run lint                         # ESLint
+pnpm run test                         # Vitest
 
 # Full stack
-bun tauri dev                        # Dev mode avec hot reload
+pnpm run tauri -- dev                        # Dev mode avec hot reload
 ```
 
 ## Patterns d'Erreurs Courants

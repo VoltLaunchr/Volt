@@ -1,4 +1,5 @@
 import { useTranslation } from 'react-i18next';
+import { Copy } from 'lucide-react';
 import { AppInfo, FileInfo, SearchResult, SearchResultType } from '../../types/common.types';
 import { Modal } from './Modal';
 
@@ -30,37 +31,119 @@ export function PropertiesDialog({ isOpen, onClose, result }: PropertiesDialogPr
       const app = result.data as AppInfo;
       return (
         <>
-          <PropertyRow label={t('properties.name')} value={app.name} copyLabel={t('properties.copyToClipboard')} />
-          <PropertyRow label={t('properties.path')} value={app.path} copyable copyLabel={t('properties.copyToClipboard')} />
-          <PropertyRow label={t('properties.id')} value={app.id} copyLabel={t('properties.copyToClipboard')} />
-          {app.description && <PropertyRow label={t('properties.description')} value={app.description} copyLabel={t('properties.copyToClipboard')} />}
-          {app.category && <PropertyRow label={t('properties.category')} value={app.category} copyLabel={t('properties.copyToClipboard')} />}
-          {app.keywords && app.keywords.length > 0 && (
-            <PropertyRow label={t('properties.keywords')} value={app.keywords.join(', ')} copyLabel={t('properties.copyToClipboard')} />
+          <PropertyRow
+            label={t('properties.name')}
+            value={app.name}
+            copyLabel={t('properties.copyToClipboard')}
+          />
+          <PropertyRow
+            label={t('properties.path')}
+            value={app.path}
+            copyable
+            copyLabel={t('properties.copyToClipboard')}
+          />
+          <PropertyRow
+            label={t('properties.id')}
+            value={app.id}
+            copyLabel={t('properties.copyToClipboard')}
+          />
+          {app.description && (
+            <PropertyRow
+              label={t('properties.description')}
+              value={app.description}
+              copyLabel={t('properties.copyToClipboard')}
+            />
           )}
-          <PropertyRow label={t('properties.usageCount')} value={app.usageCount.toString()} copyLabel={t('properties.copyToClipboard')} />
-          {app.lastUsed && <PropertyRow label={t('properties.lastUsed')} value={formatDate(app.lastUsed)} copyLabel={t('properties.copyToClipboard')} />}
+          {app.category && (
+            <PropertyRow
+              label={t('properties.category')}
+              value={app.category}
+              copyLabel={t('properties.copyToClipboard')}
+            />
+          )}
+          {app.keywords && app.keywords.length > 0 && (
+            <PropertyRow
+              label={t('properties.keywords')}
+              value={app.keywords.join(', ')}
+              copyLabel={t('properties.copyToClipboard')}
+            />
+          )}
+          <PropertyRow
+            label={t('properties.usageCount')}
+            value={app.usageCount.toString()}
+            copyLabel={t('properties.copyToClipboard')}
+          />
+          {app.lastUsed && (
+            <PropertyRow
+              label={t('properties.lastUsed')}
+              value={formatDate(app.lastUsed)}
+              copyLabel={t('properties.copyToClipboard')}
+            />
+          )}
         </>
       );
     } else if (result.type === SearchResultType.File) {
       const file = result.data as FileInfo;
       return (
         <>
-          <PropertyRow label={t('properties.name')} value={file.name} copyLabel={t('properties.copyToClipboard')} />
-          <PropertyRow label={t('properties.path')} value={file.path} copyable copyLabel={t('properties.copyToClipboard')} />
-          <PropertyRow label={t('properties.extension')} value={file.extension} copyLabel={t('properties.copyToClipboard')} />
-          <PropertyRow label={t('properties.size')} value={formatBytes(file.size)} copyLabel={t('properties.copyToClipboard')} />
-          <PropertyRow label={t('properties.modified')} value={formatDate(file.modified)} copyLabel={t('properties.copyToClipboard')} />
-          <PropertyRow label={t('properties.id')} value={file.id} copyLabel={t('properties.copyToClipboard')} />
+          <PropertyRow
+            label={t('properties.name')}
+            value={file.name}
+            copyLabel={t('properties.copyToClipboard')}
+          />
+          <PropertyRow
+            label={t('properties.path')}
+            value={file.path}
+            copyable
+            copyLabel={t('properties.copyToClipboard')}
+          />
+          <PropertyRow
+            label={t('properties.extension')}
+            value={file.extension}
+            copyLabel={t('properties.copyToClipboard')}
+          />
+          <PropertyRow
+            label={t('properties.size')}
+            value={formatBytes(file.size)}
+            copyLabel={t('properties.copyToClipboard')}
+          />
+          <PropertyRow
+            label={t('properties.modified')}
+            value={formatDate(file.modified)}
+            copyLabel={t('properties.copyToClipboard')}
+          />
+          <PropertyRow
+            label={t('properties.id')}
+            value={file.id}
+            copyLabel={t('properties.copyToClipboard')}
+          />
         </>
       );
     } else {
       return (
         <>
-          <PropertyRow label={t('properties.name')} value={result.title} copyLabel={t('properties.copyToClipboard')} />
-          {result.subtitle && <PropertyRow label={t('properties.subtitle')} value={result.subtitle} copyLabel={t('properties.copyToClipboard')} />}
-          <PropertyRow label={t('properties.type')} value={result.type} copyLabel={t('properties.copyToClipboard')} />
-          <PropertyRow label={t('properties.score')} value={result.score.toString()} copyLabel={t('properties.copyToClipboard')} />
+          <PropertyRow
+            label={t('properties.name')}
+            value={result.title}
+            copyLabel={t('properties.copyToClipboard')}
+          />
+          {result.subtitle && (
+            <PropertyRow
+              label={t('properties.subtitle')}
+              value={result.subtitle}
+              copyLabel={t('properties.copyToClipboard')}
+            />
+          )}
+          <PropertyRow
+            label={t('properties.type')}
+            value={result.type}
+            copyLabel={t('properties.copyToClipboard')}
+          />
+          <PropertyRow
+            label={t('properties.score')}
+            value={result.score.toString()}
+            copyLabel={t('properties.copyToClipboard')}
+          />
         </>
       );
     }
@@ -124,7 +207,7 @@ function PropertyRow({ label, value, copyable, copyLabel }: PropertyRowProps) {
               aria-label={copyLabel}
               title={copyLabel}
             >
-              📋
+              <Copy size={13} />
             </button>
           )}
         </div>

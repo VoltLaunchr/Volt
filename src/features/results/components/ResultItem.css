@@ -369,7 +369,7 @@
 .result-item.selected .calculator-card,
 .result-item:hover .calculator-card {
   border-color: rgba(99, 102, 241, 0.3);
-  background: rgba(30, 30, 50, 0.95);
+  background: var(--color-surface-elevated);
 }
 
 .calculator-card-expression,

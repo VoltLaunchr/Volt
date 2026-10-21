@@ -63,7 +63,7 @@ Chunks configures dans `vite.config.ts` :
 **Frontend — Bundle** :
 ```bash
 # Analyser la taille du bundle
-bun run build
+pnpm run build
 # Verifier les tailles dans dist/
 ls -lah dist/assets/
 
@@ -179,7 +179,7 @@ fn scan_with_progress(on_event: Channel<ScanEvent>) { ... }
 
 ```bash
 # Build release pour mesures fiables
-bun tauri build
+pnpm run tauri -- build
 
 # Comparer avant/apres
 # - Taille bundle (dist/assets/)

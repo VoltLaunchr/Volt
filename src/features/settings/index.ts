@@ -3,7 +3,17 @@
 export { SettingsApp } from './SettingsApp';
 
 // Services
-export { applyTheme, applyTransparency, settingsService, setupThemeListener } from './services/settingsService';
+export { applyTheme, settingsService, setupThemeListener } from './services/settingsService';
+export {
+  applyAppearance,
+  applyWindowOpacity,
+  clampTransparency,
+  TRANSPARENCY_DEFAULT,
+  TRANSPARENCY_MAX,
+  TRANSPARENCY_MIN,
+  TRANSPARENCY_STEP,
+} from './services/appearanceService';
+export { applyWindowEffect, previewAppearanceOnMain } from '../window/services/windowEffectService';
 
 // Types
 export type {

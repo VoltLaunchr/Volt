@@ -15,7 +15,7 @@ L'objectif immediat est d'atteindre la **v1.0** — une version installable par 
 | [Roadmap produit](./PRODUCT_ROADMAP.md) | Phases de developpement v1.0 → v2.x avec perspective utilisateur |
 | [Analyse concurrentielle](./COMPETITIVE_ANALYSIS.md) | Positionnement vs Alfred, Raycast, PowerToys Run, Ulauncher |
 | [Roadmap technique](../build-release/ROADMAP.md) | Milestones detailles avec fichiers modifies, criteres d'acceptation, estimations |
-| [Plan historique (M0-M5)](../build-release/IMPLEMENTATION_PLAN.md) | Journal des milestones fondateurs completes |
+| [Plan historique (M0-M5)](../../archive/plans/IMPLEMENTATION_PLAN.md) | Journal des milestones fondateurs completes (archive) |
 
 ## Principes de priorisation
 

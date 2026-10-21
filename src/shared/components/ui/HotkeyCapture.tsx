@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { cn } from '@/lib/utils';
+import { Pencil, X } from 'lucide-react';
 import { Keycap } from './Keycap';
 
 export interface HotkeyCaptureProps {
@@ -153,7 +154,11 @@ export function HotkeyCapture({
   };
 
   return (
-    <div className="inline-flex items-center gap-2" aria-labelledby={ariaLabelledBy} aria-describedby={ariaDescribedBy}>
+    <div
+      className="inline-flex items-center gap-2"
+      aria-labelledby={ariaLabelledBy}
+      aria-describedby={ariaDescribedBy}
+    >
       {isRecording ? (
         <div className="flex items-center gap-2 px-3 py-2 bg-accent-blue border-2 border-accent-blue rounded-md animate-pulse">
           <div className="flex items-center gap-1 min-w-[120px] text-white font-medium">
@@ -163,9 +168,7 @@ export function HotkeyCapture({
                   <kbd className="px-2 py-0.5 text-sm font-mono bg-white/20 border border-white/30 rounded-sm text-white font-bold">
                     {key}
                   </kbd>
-                  {index < pressedKeys.size - 1 && (
-                    <span className="text-white/80 text-xs">+</span>
-                  )}
+                  {index < pressedKeys.size - 1 && <span className="text-white/80 text-xs">+</span>}
                 </span>
               ))
             ) : (
@@ -178,7 +181,7 @@ export function HotkeyCapture({
             onClick={handleCancelRecording}
             aria-label="Cancel recording"
           >
-            ✕
+            <X size={14} />
           </button>
         </div>
       ) : (
@@ -187,7 +190,8 @@ export function HotkeyCapture({
           className={cn(
             'flex items-center gap-2 px-3 py-2 bg-surface-elevated border border-hairline rounded-md cursor-pointer transition-colors',
             'hover:border-hairline-strong disabled:opacity-50 disabled:cursor-not-allowed',
-            !value && 'border-dashed border-white/20 hover:border-accent-blue hover:bg-accent-blue/5'
+            !value &&
+              'border-dashed border-white/20 hover:border-accent-blue hover:bg-accent-blue/5'
           )}
           onClick={handleStartRecording}
           disabled={disabled}
@@ -195,7 +199,7 @@ export function HotkeyCapture({
           {value ? (
             <>
               <Keycap>{value}</Keycap>
-              <span className="text-sm opacity-60">✏️</span>
+              <Pencil size={13} className="text-mute" />
             </>
           ) : (
             <span className="text-xs text-ash">Record Hotkey</span>

@@ -12,6 +12,7 @@
     "core:window:allow-minimize",
     "core:window:allow-set-focus",
     "core:window:allow-start-dragging",
+    "core:window:allow-set-effects",
     "core:window:allow-create",
     "core:webview:allow-create-webview-window",
     "opener:default",
@@ -20,6 +21,8 @@
     "dialog:default",
     "updater:default",
     "deep-link:default",
+    "notification:default",
+    "os:default",
 
     "allow-show-window",
     "allow-hide-window",
@@ -70,18 +73,23 @@
 
     "allow-invalidate-index",
     "allow-get-db-index-stats",
+    "allow-refresh-index-if-stale",
     "allow-start-file-watcher",
     "allow-stop-file-watcher",
 
     "allow-load-settings",
     "allow-save-settings",
     "allow-update-general-settings",
+    "allow-update-web-search-settings",
     "allow-update-appearance-settings",
     "allow-update-hotkey-settings",
     "allow-update-indexing-settings",
     "allow-update-plugin-settings",
     "allow-update-shortcuts-settings",
     "allow-update-shell-settings",
+    "allow-list-detected-browsers",
+    "allow-open-web-url",
+    "allow-web-search-brave",
     "allow-get-theme",
     "allow-set-theme",
     "allow-get-app-shortcuts",
@@ -146,6 +154,8 @@
     "allow-start-clipboard-monitoring",
     "allow-stop-clipboard-monitoring",
     "allow-is-clipboard-monitoring",
+    "allow-paste-text",
+    "allow-paste-sequentially",
 
     "allow-fetch-extension-registry",
     "allow-get-installed-extensions",
@@ -167,6 +177,7 @@
     "allow-get-extension-secret",
     "allow-set-extension-secret",
     "allow-delete-extension-secret",
+    "allow-ext-save-credential",
     "allow-extension-authenticated-fetch",
 
     "allow-ext-storage-get",
@@ -176,6 +187,7 @@
 
     "allow-ext-oauth-start",
     "allow-ext-oauth-get-token",
+    "allow-ext-oauth-has-token",
     "allow-ext-oauth-revoke-token",
 
     "allow-ext-get-applications",
@@ -209,6 +221,7 @@
     "allow-clear-oauth-pending",
 
     "allow-get-log-file-path",
+    "allow-send-native-notification",
 
     "allow-get-file-preview",
 
@@ -251,6 +264,7 @@
 
     "allow-ext-ai-ask-stream",
     "allow-ai-ask-builtin-stream",
+    "allow-ai-proxy-stream",
     "allow-ai-get-providers-status",
     "allow-ai-set-global-key",
     "allow-ai-delete-global-key",

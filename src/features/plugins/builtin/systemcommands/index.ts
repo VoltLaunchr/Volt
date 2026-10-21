@@ -1,12 +1,24 @@
 
 import { logger } from '../../../../shared/utils/logger';
-import { Plugin, PluginContext, PluginResult, PluginResultType } from '../../types';
+import { Plugin, PluginActivation, PluginContext, PluginResult, PluginResultType } from '../../types';
+import { VOLT_EVENTS, emitVoltEvent } from '../../../../shared/events';
 
 export class SystemCommandsPlugin implements Plugin {
   id = 'systemcommands';
   name = 'System Commands';
   description = 'Execute system commands like reload, settings, quit';
   enabled = true;
+
+  // `mode: 'custom'` — canHandle does type-ahead matching against command
+  // triggers/aliases (typing "set" matches "settings"); these keywords drive
+  // only the scoring boost.
+  activation: PluginActivation = {
+    mode: 'custom',
+    keywords: [
+      'about', 'account', 'reload', 'settings', 'quit', 'exit',
+      'preferences', 'config', 'options', 'restart', 'refresh',
+    ],
+  };
 
   private commands = [
     {
@@ -145,7 +157,7 @@ export class SystemCommandsPlugin implements Plugin {
 
   private openSettings(): Promise<void> {
     // Trigger settings modal via custom event
-    window.dispatchEvent(new CustomEvent('volt:open-settings'));
+    emitVoltEvent(VOLT_EVENTS.OPEN_SETTINGS);
     return Promise.resolve();
   }
 

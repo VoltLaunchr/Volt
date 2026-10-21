@@ -40,7 +40,7 @@ Quand l'utilisateur demande de créer une nouvelle commande Tauri :
 
 ### 5. Vérification
 - Vérifie que la commande compile : `cd src-tauri && cargo check`
-- Vérifie les types TS : `bun run build` (tsc)
+- Vérifie les types TS : `pnpm run build` (tsc)
 
 ## Règles
 - Toujours lire les fichiers existants avant de modifier

@@ -11,9 +11,9 @@
  * improvements" bullet — never exposing what was fixed or where.
  *
  * Usage:
- *   bun run generate-changelog              # auto-detect version from package.json
- *   bun run generate-changelog --version 0.1.0
- *   bun run generate-changelog --dry-run    # print to stdout, don't write
+ *   pnpm run generate-changelog              # auto-detect version from package.json
+ *   pnpm run generate-changelog --version 0.1.0
+ *   pnpm run generate-changelog --dry-run    # print to stdout, don't write
  */
 import { execFileSync } from 'node:child_process';
 import { readFileSync, writeFileSync } from 'node:fs';
@@ -68,8 +68,10 @@ function getCommits(since) {
 // security-sensitive. Its message is NEVER surfaced in the public
 // changelog — only a generic "Security hardening and improvements" line.
 
-const SECURITY_SCOPES = /\b(security|auth|permission|cred|secret|token|xss|injection|cve|vuln|sandbox|capability)\b/i;
-const SECURITY_SUBJECTS = /\b(CVE-|XSS|CSRF|injection|credential|secret|token|auth.?bypass|priv.?escalation|sandbox.?escape|vulnerability|exploit)\b/i;
+const SECURITY_SCOPES =
+  /\b(security|auth|permission|cred|secret|token|xss|injection|cve|vuln|sandbox|capability)\b/i;
+const SECURITY_SUBJECTS =
+  /\b(CVE-|XSS|CSRF|injection|credential|secret|token|auth.?bypass|priv.?escalation|sandbox.?escape|vulnerability|exploit)\b/i;
 
 function isSensitive(scope, subject) {
   if (scope && SECURITY_SCOPES.test(scope)) return true;
@@ -98,14 +100,14 @@ function parseCommit(message) {
 // ── Section mapping ─────────────────────────────────────────────────────
 
 const SECTION_MAP = {
-  feat:     { title: 'New Features',           icon: 'sparkles', type: 'features' },
-  fix:      { title: 'Bug Fixes',              icon: 'shield',   type: 'fixes' },
-  perf:     { title: 'Performance',            icon: 'zap',      type: 'performance' },
-  refactor: { title: 'Under the Hood',         icon: 'cpu',      type: 'refactor' },
-  docs:     { title: 'Documentation',          icon: 'package',  type: 'docs' },
-  ci:       { title: 'CI & Build',             icon: 'settings', type: 'ci' },
-  build:    { title: 'CI & Build',             icon: 'settings', type: 'ci' },
-  test:     { title: 'Testing',               icon: 'shield',   type: 'testing' },
+  feat: { title: 'New Features', icon: 'sparkles', type: 'features' },
+  fix: { title: 'Bug Fixes', icon: 'shield', type: 'fixes' },
+  perf: { title: 'Performance', icon: 'zap', type: 'performance' },
+  refactor: { title: 'Under the Hood', icon: 'cpu', type: 'refactor' },
+  docs: { title: 'Documentation', icon: 'package', type: 'docs' },
+  ci: { title: 'CI & Build', icon: 'settings', type: 'ci' },
+  build: { title: 'CI & Build', icon: 'settings', type: 'ci' },
+  test: { title: 'Testing', icon: 'shield', type: 'testing' },
   // chore, style, revert → skip (noise for end users)
 };
 
@@ -168,12 +170,10 @@ if (hasSensitive) {
 
 // Build ordered sections array (features first, then the rest)
 const ORDER = ['features', 'security', 'fixes', 'performance', 'refactor', 'ci', 'testing', 'docs'];
-const orderedSections = ORDER
-  .filter((k) => sections.has(k))
-  .map((k) => {
-    const s = sections.get(k);
-    return { type: s.type, title: s.title, icon: s.icon, items: s.items };
-  });
+const orderedSections = ORDER.filter((k) => sections.has(k)).map((k) => {
+  const s = sections.get(k);
+  return { type: s.type, title: s.title, icon: s.icon, items: s.items };
+});
 
 if (orderedSections.length === 0) {
   console.log('No user-facing changes found. Skipping.');
@@ -194,9 +194,8 @@ const title = orderedSections[0]?.items[0]
   ? `${orderedSections[0].items[0]} & more`
   : `v${version} Release`;
 
-const description = parts.length > 0
-  ? `Volt v${version} brings ${parts.join(', ')}.`
-  : `Volt v${version} release.`;
+const description =
+  parts.length > 0 ? `Volt v${version} brings ${parts.join(', ')}.` : `Volt v${version} release.`;
 
 // ── Build entry ─────────────────────────────────────────────────────────
 
@@ -243,7 +242,9 @@ if (existingIdx !== -1) {
 
 writeFileSync(changelogPath, JSON.stringify(changelog, null, 2) + '\n');
 console.log(`✓ public/changelog.json updated with v${version}`);
-console.log(`  ${orderedSections.length} section(s), ${orderedSections.reduce((n, s) => n + s.items.length, 0)} item(s)`);
+console.log(
+  `  ${orderedSections.length} section(s), ${orderedSections.reduce((n, s) => n + s.items.length, 0)} item(s)`
+);
 if (hasSensitive) {
   console.log('  ⚠ Security-sensitive commits redacted (generic line only)');
 }

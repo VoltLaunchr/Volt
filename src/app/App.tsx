@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import Snowfall from 'react-snowfall';
 import { useTranslation } from 'react-i18next';
 import { invoke } from '@tauri-apps/api/core';
-import { emit, listen } from '@tauri-apps/api/event';
+import { emit } from '@tauri-apps/api/event';
 import { getCurrentWindow, LogicalSize } from '@tauri-apps/api/window';
 import { useToastStore } from '../shared/components/ui/toast-store';
 import { TimerDisplay } from '../features/plugins/builtin';
@@ -22,9 +22,11 @@ import { useAppLifecycle } from './hooks/useAppLifecycle';
 import { useGlobalHotkey } from './hooks/useGlobalHotkey';
 import { useResultActions } from './hooks/useResultActions';
 import { useSearchPipeline } from './hooks/useSearchPipeline';
+import { useTauriEvent } from './hooks/tauriEvent';
 import { openSettingsWindow } from './windows';
 import { installPendingUpdate, hasPendingUpdate } from '../features/settings/services/updateService';
 import { resolvePlaceholders } from '../features/ai-quick-actions';
+import { VOLT_EVENTS, onVoltEvent, type VoltHudDetail } from '../shared/events';
 import i18n from '../i18n';
 
 const WINDOW_WIDTH_DEFAULT = 800;
@@ -43,6 +45,7 @@ function App() {
   // Search store
   const searchQuery = useSearchStore((s) => s.searchQuery);
   const results = useSearchStore((s) => s.results);
+  const isSearching = useSearchStore((s) => s.isSearching);
   const showSnowEffect = useSearchStore((s) => s.showSnowEffect);
   const { setQuery, clearSearch } = useSearchStore.getState();
 
@@ -84,21 +87,13 @@ function App() {
 
   const closeOnLaunch = settings?.general.closeOnLaunch !== false;
 
-  useEffect(() => {
-    let unlisten: (() => void) | undefined;
-    void listen<{ language: string }>('volt://language-changed', ({ payload }) => {
-      void i18n.changeLanguage(payload.language);
-    }).then((fn) => { unlisten = fn; });
-    return () => { unlisten?.(); };
-  }, []);
+  useTauriEvent<{ language: string }>('volt://language-changed', ({ language }) => {
+    void i18n.changeLanguage(language);
+  });
 
-  useEffect(() => {
-    let unlisten: (() => void) | undefined;
-    void listen('volt://restart-onboarding', () => {
-      useAppStore.getState().updateGeneralSettings({ hasSeenOnboarding: false });
-    }).then((fn) => { unlisten = fn; });
-    return () => { unlisten?.(); };
-  }, []);
+  useTauriEvent('volt://restart-onboarding', () => {
+    useAppStore.getState().updateGeneralSettings({ hasSeenOnboarding: false });
+  });
 
   // Open the dedicated onboarding window for first-time users (or after restart-onboarding).
   // We emit an event instead of calling show() directly: the onboarding window's
@@ -151,13 +146,9 @@ function App() {
   }, []);
 
   // When the onboarding window closes, mark onboarding as done in this window's store.
-  useEffect(() => {
-    let unlisten: (() => void) | undefined;
-    void listen('volt://onboarding-complete', () => {
-      useAppStore.getState().updateGeneralSettings({ hasSeenOnboarding: true });
-    }).then((fn) => { unlisten = fn; });
-    return () => { unlisten?.(); };
-  }, []);
+  useTauriEvent('volt://onboarding-complete', () => {
+    useAppStore.getState().updateGeneralSettings({ hasSeenOnboarding: true });
+  });
 
   const { handleLaunch, handleSuggestionActivate } = useResultActions({
     closeOnLaunch,
@@ -192,9 +183,7 @@ function App() {
   }, [setActiveView, clearSearch]);
 
   useEffect(() => {
-    const openTimer = () => handleOpenTimerView();
-    window.addEventListener('volt:open-timer', openTimer);
-    return () => window.removeEventListener('volt:open-timer', openTimer);
+    return onVoltEvent(VOLT_EVENTS.OPEN_TIMER, () => handleOpenTimerView());
   }, [handleOpenTimerView]);
 
   const handleOpenAiChatView = useCallback(
@@ -206,12 +195,9 @@ function App() {
   );
 
   useEffect(() => {
-    const handler = (e: Event) => {
-      const { query, systemPrompt } = (e as CustomEvent<{ query: string; systemPrompt?: string }>).detail;
+    return onVoltEvent(VOLT_EVENTS.OPEN_AI_CHAT, ({ query, systemPrompt }) => {
       handleOpenAiChatView(query, systemPrompt);
-    };
-    window.addEventListener('volt:open-ai-chat', handler);
-    return () => window.removeEventListener('volt:open-ai-chat', handler);
+    });
   }, [handleOpenAiChatView]);
 
   const handleOpenQuickAiView = useCallback(
@@ -223,92 +209,74 @@ function App() {
   );
 
   useEffect(() => {
-    const handler = (e: Event) => {
-      const { query, systemPrompt } = (e as CustomEvent<{ query: string; systemPrompt?: string }>).detail;
+    return onVoltEvent(VOLT_EVENTS.OPEN_QUICK_AI, ({ query, systemPrompt }) => {
       if (!query?.trim()) return;
       handleOpenQuickAiView(query, systemPrompt);
-    };
-    window.addEventListener('volt:open-quick-ai', handler);
-    return () => window.removeEventListener('volt:open-quick-ai', handler);
+    });
   }, [handleOpenQuickAiView]);
 
   // AI Quick Action — triggered by a global hotkey registered in Rust.
   // The Rust handler emits `volt://ai-quick-action` with the action payload;
   // we read the clipboard and open the AI Chat view with the system prompt
   // pre-applied. The chat view auto-sends the clipboard text as the user message.
-  useEffect(() => {
-    let unlisten: (() => void) | undefined;
-    void listen<{ actionId: string; label: string; systemPrompt: string; provider?: string | null }>(
-      'volt://ai-quick-action',
-      async ({ payload }) => {
-        try {
-          const clipboardText = await invoke<string>('ai_quick_actions_read_clipboard');
-          if (!clipboardText?.trim()) {
-            useToastStore
-              .getState()
-              .addToast(
-                `Quick Action "${payload.label}" — clipboard is empty. Copy some text first.`,
-                'error',
-                4000
-              );
-            return;
-          }
-          const trimmedClipboard = clipboardText.trim();
-          const resolvedSystemPrompt = resolvePlaceholders(payload.systemPrompt, {
-            clipboard: trimmedClipboard,
-            lang: navigator.language,
-            now: new Date(),
-          });
-          handleOpenAiChatView(trimmedClipboard, resolvedSystemPrompt);
-        } catch (err) {
+  useTauriEvent<{
+    actionId: string;
+    label: string;
+    systemPrompt: string;
+    provider?: string | null;
+  }>('volt://ai-quick-action', (payload) => {
+    void (async () => {
+      try {
+        const clipboardText = await invoke<string>('ai_quick_actions_read_clipboard');
+        if (!clipboardText?.trim()) {
           useToastStore
             .getState()
-            .addToast(`Quick Action failed: ${String(err)}`, 'error', 4000);
+            .addToast(
+              `Quick Action "${payload.label}" — clipboard is empty. Copy some text first.`,
+              'error',
+              4000
+            );
+          return;
         }
+        const trimmedClipboard = clipboardText.trim();
+        const resolvedSystemPrompt = resolvePlaceholders(payload.systemPrompt, {
+          clipboard: trimmedClipboard,
+          lang: navigator.language,
+          now: new Date(),
+        });
+        handleOpenAiChatView(trimmedClipboard, resolvedSystemPrompt);
+      } catch (err) {
+        useToastStore
+          .getState()
+          .addToast(`Quick Action failed: ${String(err)}`, 'error', 4000);
       }
-    ).then((fn) => { unlisten = fn; });
-    return () => { unlisten?.(); };
-  }, [handleOpenAiChatView]);
+    })();
+  });
 
   // Bridge volt:toast and legacy volt:notification events to the toast store.
   // Extensions dispatch these from the Worker sandbox via VoltAPI.showToast / VoltAPI.notify.
   useEffect(() => {
     const { addToast } = useToastStore.getState();
-    const handleToast = (e: Event) => {
-      const { message, subtitle, style, duration } = (e as CustomEvent).detail as {
-        message: string;
-        subtitle?: string;
-        style?: 'info' | 'success' | 'error';
-        duration?: number;
-      };
+    const offToast = onVoltEvent(VOLT_EVENTS.TOAST, ({ message, subtitle, style, duration }) => {
       addToast(subtitle ? `${message} — ${subtitle}` : message, style ?? 'info', duration ?? 4000);
-    };
-    const handleNotification = (e: Event) => {
-      const { message, type } = (e as CustomEvent).detail as {
-        message: string;
-        type?: 'info' | 'success' | 'error';
-      };
+    });
+    const offNotification = onVoltEvent(VOLT_EVENTS.NOTIFICATION, ({ message, type }) => {
       addToast(message, type ?? 'info', 4000);
-    };
-    window.addEventListener('volt:toast', handleToast);
-    window.addEventListener('volt:notification', handleNotification);
+    });
     return () => {
-      window.removeEventListener('volt:toast', handleToast);
-      window.removeEventListener('volt:notification', handleNotification);
+      offToast();
+      offNotification();
     };
   }, []);
 
   // HUD overlay: shown by extensions via VoltAPI.showHUD() before window hides.
   useEffect(() => {
-    const handleHud = (e: Event) => {
-      const { message } = (e as CustomEvent<{ message: string }>).detail;
-      setHudMessage(message);
-    };
-    window.addEventListener('volt:hud', handleHud);
-    window.addEventListener('volt:hud-show', handleHud);
+    const handleHud = ({ message }: VoltHudDetail) => setHudMessage(message);
+    const offHud = onVoltEvent(VOLT_EVENTS.HUD, handleHud);
+    const offHudShow = onVoltEvent(VOLT_EVENTS.HUD_SHOW, handleHud);
     return () => {
-      window.removeEventListener('volt:hud', handleHud);
-      window.removeEventListener('volt:hud-show', handleHud);
+      offHud();
+      offHudShow();
     };
   }, []);
 
@@ -321,25 +289,16 @@ function App() {
 
   // updateCommandMetadata: update result title/subtitle in the search list
   useEffect(() => {
-    const handler = (e: Event) => {
-      const { pluginId, title, subtitle } = (e as CustomEvent).detail as {
-        pluginId: string;
-        title?: string;
-        subtitle?: string;
-      };
+    return onVoltEvent(VOLT_EVENTS.UPDATE_METADATA, ({ pluginId, title, subtitle }) => {
       useSearchStore.getState().updateResultMetadata(pluginId, { title, subtitle });
-    };
-    window.addEventListener('volt:update-metadata', handler);
-    return () => window.removeEventListener('volt:update-metadata', handler);
+    });
   }, []);
 
   // Bridge extension errors to the settings webview via Tauri event
   useEffect(() => {
-    const handler = (e: Event) => {
-      void emit('ext:error-captured', (e as CustomEvent).detail);
-    };
-    window.addEventListener('volt:extension-error', handler);
-    return () => window.removeEventListener('volt:extension-error', handler);
+    return onVoltEvent(VOLT_EVENTS.EXTENSION_ERROR, (detail) => {
+      void emit('ext:error-captured', detail);
+    });
   }, []);
 
   const handleOpenCreateExtension = useCallback(() => {
@@ -353,15 +312,11 @@ function App() {
   }, [setActiveView, clearSearch]);
 
   useEffect(() => {
-    const handler = () => handleOpenCreateExtension();
-    window.addEventListener('volt:open-create-extension', handler);
-    return () => window.removeEventListener('volt:open-create-extension', handler);
+    return onVoltEvent(VOLT_EVENTS.OPEN_CREATE_EXTENSION, () => handleOpenCreateExtension());
   }, [handleOpenCreateExtension]);
 
   useEffect(() => {
-    const handler = () => handleOpenManageExtensions();
-    window.addEventListener('volt:open-manage-extensions', handler);
-    return () => window.removeEventListener('volt:open-manage-extensions', handler);
+    return onVoltEvent(VOLT_EVENTS.OPEN_MANAGE_EXTENSIONS, () => handleOpenManageExtensions());
   }, [handleOpenManageExtensions]);
 
   const { handleKeyDown } = useGlobalHotkey({
@@ -407,6 +362,7 @@ function App() {
             placeholder={t('search.placeholder')}
             resultCount={results.length}
             selectedIndex={selectedIndex}
+            isSearching={isSearching}
           />
         </>
       )}

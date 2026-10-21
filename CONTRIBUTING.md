@@ -10,7 +10,7 @@ By participating in this project, you agree to abide by our [Code of Conduct](CO
 
 ### Prerequisites
 
-- [**Bun**](https://bun.sh) (latest) — JavaScript runtime and package manager
+- [**pnpm**](https://pnpm.io) (latest) — JavaScript package manager (we use `pnpm` for consistency)
 - [**Rust**](https://rustup.rs/) (stable toolchain) — backend language
 - **Tauri prerequisites** for your OS — see the [Tauri v2 prerequisites guide](https://tauri.app/start/prerequisites/)
   - Windows: WebView2 (pre-installed on Windows 10+), Visual Studio Build Tools
@@ -25,13 +25,13 @@ git clone https://github.com/VoltLaunchr/Volt.git
 cd Volt
 
 # Install frontend dependencies
-bun install
+pnpm install
 
 # Run the full app (frontend + Rust backend)
-bun tauri dev
+pnpm run tauri -- dev
 
 # Or run frontend only (faster iteration, no Rust rebuild)
-bun run dev
+pnpm run dev
 ```
 
 ## Project Structure
@@ -114,8 +114,8 @@ Run the full check suite:
 
 ```bash
 # Frontend
-bun run lint                    # Prettier + ESLint
-bun run test                    # 166+ vitest tests
+pnpm run lint                    # Prettier + ESLint
+pnpm run test                    # 166+ vitest tests
 
 # Backend
 cd src-tauri
@@ -138,7 +138,7 @@ All checks must pass. CI will run these automatically on your PR, but running lo
 
 ### Frontend (TypeScript / React)
 
-- **Prettier** enforces formatting (single quotes, 100 char line width, 2-space indent). Run `bun run lint` to check.
+-- **Prettier** enforces formatting (single quotes, 100 char line width, 2-space indent). Run `pnpm run lint` to check.
 - Functional components only (no class components).
 - Feature-based folder structure — keep related code together.
 - Use TypeScript strictly: avoid `any`, prefer explicit types.

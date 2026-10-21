@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-set-clipboard-disabled-apps"
+description = "Enables the set_clipboard_disabled_apps command without any pre-configured scope."
+commands.allow = ["set_clipboard_disabled_apps"]
+
+[[permission]]
+identifier = "deny-set-clipboard-disabled-apps"
+description = "Denies the set_clipboard_disabled_apps command without any pre-configured scope."
+commands.deny = ["set_clipboard_disabled_apps"]

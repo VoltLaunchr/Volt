@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-ai-proxy-stream"
+description = "Enables the ai_proxy_stream command without any pre-configured scope."
+commands.allow = ["ai_proxy_stream"]
+
+[[permission]]
+identifier = "deny-ai-proxy-stream"
+description = "Denies the ai_proxy_stream command without any pre-configured scope."
+commands.deny = ["ai_proxy_stream"]

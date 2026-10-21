@@ -1,6 +1,8 @@
 
-import { Plugin, PluginContext, PluginResult, PluginResultType } from '../../types';
+import { Plugin, PluginActivation, PluginContext, PluginResult, PluginResultType } from '../../types';
+import { resolveActivation } from '../../core/activation';
 import { timerStore } from './timerStore';
+import { VOLT_EVENTS, emitVoltEvent } from '../../../../shared/events';
 
 // ── Duration parsing ──────────────────────────────────────────────────────────
 
@@ -68,15 +70,13 @@ export class TimerPlugin implements Plugin {
   readonly description = 'Quick timers and Pomodoro countdowns with notifications';
   readonly enabled = true;
 
+  // `timer`/`countdown`/`pomodoro` keywords (match() parses the duration itself).
+  readonly activation: PluginActivation = {
+    keywords: ['timer', 'countdown', 'pomodoro'],
+  };
+
   canHandle(context: PluginContext): boolean {
-    const lower = context.query.toLowerCase().trim();
-    return (
-      lower.startsWith('timer ') ||
-      lower.startsWith('countdown ') ||
-      lower.startsWith('pomodoro') ||
-      lower === 'timer' ||
-      lower === 'countdown'
-    );
+    return resolveActivation(this, context).matched;
   }
 
   match(context: PluginContext): PluginResult[] {
@@ -96,7 +96,7 @@ export class TimerPlugin implements Plugin {
       results.push({
         id: `timer-${Date.now()}`,
         type: PluginResultType.Timer,
-        title: `⏱️ Start ${this.formatDuration(duration)} Timer`,
+        title: `Start ${this.formatDuration(duration)} Timer`,
         subtitle: `${label} - Press Enter to start`,
         score: 100,
         data: {
@@ -113,7 +113,7 @@ export class TimerPlugin implements Plugin {
         {
           id: 'pomodoro-open-view',
           type: PluginResultType.Timer,
-          title: '🍅 Open Focus Timer',
+          title: 'Open Focus Timer',
           subtitle: 'Full Pomodoro view with tasks, sessions & controls',
           score: 110,
           data: { action: 'open-view' },
@@ -122,7 +122,7 @@ export class TimerPlugin implements Plugin {
         {
           id: 'pomodoro-work',
           type: PluginResultType.Timer,
-          title: '🍅 Pomodoro Work (25 minutes)',
+          title: 'Pomodoro Work (25 minutes)',
           subtitle: 'Standard Pomodoro work session',
           score: 100,
           data: {
@@ -135,7 +135,7 @@ export class TimerPlugin implements Plugin {
         {
           id: 'pomodoro-break',
           type: PluginResultType.Timer,
-          title: '☕ Short Break (5 minutes)',
+          title: 'Short Break (5 minutes)',
           subtitle: 'Pomodoro short break',
           score: 95,
           data: {
@@ -148,7 +148,7 @@ export class TimerPlugin implements Plugin {
         {
           id: 'pomodoro-long-break',
           type: PluginResultType.Timer,
-          title: '🌴 Long Break (15 minutes)',
+          title: 'Long Break (15 minutes)',
           subtitle: 'Pomodoro long break',
           score: 90,
           data: {
@@ -157,7 +157,7 @@ export class TimerPlugin implements Plugin {
             label: 'Long Break',
           },
           pluginId: this.id,
-        }
+        },
       );
     }
     // Quick timer suggestions (also show active timers)
@@ -169,7 +169,7 @@ export class TimerPlugin implements Plugin {
         {
           id: 'timer-1m',
           type: PluginResultType.Timer,
-          title: '⏱️ 1 Minute Timer',
+          title: '1 Minute Timer',
           subtitle: 'Quick 60 second countdown',
           score: 80,
           data: { action: 'start', duration: 60 * 1000, label: '1 Minute' },
@@ -178,7 +178,7 @@ export class TimerPlugin implements Plugin {
         {
           id: 'timer-5m',
           type: PluginResultType.Timer,
-          title: '⏱️ 5 Minutes Timer',
+          title: '5 Minutes Timer',
           subtitle: 'Short break timer',
           score: 75,
           data: { action: 'start', duration: 5 * 60 * 1000, label: '5 Minutes' },
@@ -187,7 +187,7 @@ export class TimerPlugin implements Plugin {
         {
           id: 'timer-10m',
           type: PluginResultType.Timer,
-          title: '⏱️ 10 Minutes Timer',
+          title: '10 Minutes Timer',
           subtitle: 'Medium duration timer',
           score: 70,
           data: { action: 'start', duration: 10 * 60 * 1000, label: '10 Minutes' },
@@ -196,7 +196,7 @@ export class TimerPlugin implements Plugin {
         {
           id: 'timer-25m',
           type: PluginResultType.Timer,
-          title: '🍅 25 Minutes (Pomodoro)',
+          title: '25 Minutes (Pomodoro)',
           subtitle: 'Standard Pomodoro work session',
           score: 65,
           data: { action: 'start', duration: 25 * 60 * 1000, label: 'Pomodoro' },
@@ -212,7 +212,7 @@ export class TimerPlugin implements Plugin {
     const data = result.data as { action: string; duration?: number; label?: string; timerId?: string };
 
     if (data.action === 'open-view') {
-      window.dispatchEvent(new CustomEvent('volt:open-timer'));
+      emitVoltEvent(VOLT_EVENTS.OPEN_TIMER);
       return;
     }
 
@@ -260,7 +260,7 @@ export class TimerPlugin implements Plugin {
       results.push({
         id: `timer-active-${timer.id}`,
         type: PluginResultType.Timer,
-        title: `${timer.isPaused ? '⏸' : '⏱️'} ${timer.label} — ${timerStore.formatDuration(remaining)} left`,
+        title: `${timer.label} — ${timerStore.formatDuration(remaining)} left`,
         subtitle: 'Press Enter to cancel',
         score: 110 - i,
         data: { action: 'cancel', timerId: timer.id },
@@ -287,7 +287,6 @@ export class TimerPlugin implements Plugin {
 
 // Re-export components and hooks
 export { TimerDisplay } from './TimerDisplay';
-export { TimerView } from './TimerView';
 export { useTimers } from './useTimers';
 export { timerStore } from './timerStore';
 export { tasksStore } from './tasksStore';

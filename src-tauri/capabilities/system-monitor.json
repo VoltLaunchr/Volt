@@ -14,7 +14,9 @@
     "core:window:allow-set-focus",
     "core:window:allow-start-dragging",
     "core:webview:allow-create-webview-window",
+    "os:default",
 
+    "allow-load-settings",
     "allow-get-system-metrics-v2",
     "allow-kill-process-by-pid",
     "allow-open-task-manager"

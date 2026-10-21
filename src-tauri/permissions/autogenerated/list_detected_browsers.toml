@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-list-detected-browsers"
+description = "Enables the list_detected_browsers command without any pre-configured scope."
+commands.allow = ["list_detected_browsers"]
+
+[[permission]]
+identifier = "deny-list-detected-browsers"
+description = "Denies the list_detected_browsers command without any pre-configured scope."
+commands.deny = ["list_detected_browsers"]

@@ -22,7 +22,7 @@ export const windowService = {
       await invoke<void>('show_window');
     } catch (error) {
       logger.error('Failed to show window:', error);
-      throw new Error(`Failed to show window: ${errorMessage(error)}`);
+      throw new Error(`Failed to show window: ${errorMessage(error)}`, { cause: error });
     }
   },
 
@@ -34,7 +34,7 @@ export const windowService = {
       await invoke<void>('hide_window');
     } catch (error) {
       logger.error('Failed to hide window:', error);
-      throw new Error(`Failed to hide window: ${errorMessage(error)}`);
+      throw new Error(`Failed to hide window: ${errorMessage(error)}`, { cause: error });
     }
   },
 
@@ -46,7 +46,7 @@ export const windowService = {
       await invoke<void>('toggle_window');
     } catch (error) {
       logger.error('Failed to toggle window:', error);
-      throw new Error(`Failed to toggle window: ${errorMessage(error)}`);
+      throw new Error(`Failed to toggle window: ${errorMessage(error)}`, { cause: error });
     }
   },
 
@@ -58,7 +58,7 @@ export const windowService = {
       await invoke<void>('center_window');
     } catch (error) {
       logger.error('Failed to center window:', error);
-      throw new Error(`Failed to center window: ${errorMessage(error)}`);
+      throw new Error(`Failed to center window: ${errorMessage(error)}`, { cause: error });
     }
   },
 
@@ -77,7 +77,7 @@ export const windowService = {
       });
     } catch (error) {
       logger.error('Failed to set window position:', error);
-      throw new Error(`Failed to set window position: ${errorMessage(error)}`);
+      throw new Error(`Failed to set window position: ${errorMessage(error)}`, { cause: error });
     }
   },
 
@@ -147,7 +147,7 @@ export const windowService = {
       await window.setFocus();
     } catch (error) {
       logger.error('Failed to focus window:', error);
-      throw new Error(`Failed to focus window: ${errorMessage(error)}`);
+      throw new Error(`Failed to focus window: ${errorMessage(error)}`, { cause: error });
     }
   },
 
@@ -160,7 +160,7 @@ export const windowService = {
       await window.minimize();
     } catch (error) {
       logger.error('Failed to minimize window:', error);
-      throw new Error(`Failed to minimize window: ${errorMessage(error)}`);
+      throw new Error(`Failed to minimize window: ${errorMessage(error)}`, { cause: error });
     }
   },
 
@@ -173,7 +173,7 @@ export const windowService = {
       await window.close();
     } catch (error) {
       logger.error('Failed to close window:', error);
-      throw new Error(`Failed to close window: ${errorMessage(error)}`);
+      throw new Error(`Failed to close window: ${errorMessage(error)}`, { cause: error });
     }
   },
 };

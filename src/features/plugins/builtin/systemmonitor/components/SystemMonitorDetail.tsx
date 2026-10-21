@@ -9,8 +9,8 @@ import { LiveLine } from '../../../../../components/charts/live-line';
 import { useSystemMetricsV2 } from '../useSystemMetricsV2';
 import { useMetricsHistory, type MetricSample } from '../useMetricsHistory';
 import { exportMetricsCsv, formatBytesPerSec, formatUptime } from '../utils';
+import { VOLT_EVENTS, onVoltEvent } from '../../../../../shared/events';
 
-const OPEN_EVENT = 'volt:openSystemMonitor';
 const HIGH_CPU_THRESHOLD = 90;
 const HIGH_CPU_SECONDS = 30;
 
@@ -55,13 +55,11 @@ export function SystemMonitorDetail(): React.JSX.Element {
   const history = useMetricsHistory(isOpen ? metrics : null, 90);
 
   useEffect(() => {
-    const onOpen = () => {
+    return onVoltEvent(VOLT_EVENTS.OPEN_SYSTEM_MONITOR, () => {
       setIsOpen(true);
       setAlertDismissed(false);
       setKillError(null);
-    };
-    window.addEventListener(OPEN_EVENT, onOpen);
-    return () => window.removeEventListener(OPEN_EVENT, onOpen);
+    });
   }, []);
 
   const handleClose = useCallback(() => setIsOpen(false), []);

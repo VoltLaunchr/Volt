@@ -8,6 +8,7 @@ interface SearchState {
   selectedIndex: number;
   searchError: string | null;
   showSnowEffect: boolean;
+  isSearching: boolean;
 }
 
 interface SearchActions {
@@ -16,6 +17,7 @@ interface SearchActions {
   setSelectedIndex: (index: number | ((prev: number) => number)) => void;
   setSearchError: (error: string | null) => void;
   setShowSnowEffect: (show: boolean) => void;
+  setIsSearching: (isSearching: boolean) => void;
   clearSearch: () => void;
   updateResultMetadata: (pluginId: string, opts: { title?: string; subtitle?: string }) => void;
 }
@@ -26,6 +28,7 @@ export const useSearchStore = create<SearchState & SearchActions>()((set) => ({
   selectedIndex: 0,
   searchError: null,
   showSnowEffect: false,
+  isSearching: false,
 
   setQuery: (query) => {
     // Derive view transition synchronously from prefix so the emoji picker
@@ -45,8 +48,9 @@ export const useSearchStore = create<SearchState & SearchActions>()((set) => ({
     })),
   setSearchError: (error) => set({ searchError: error }),
   setShowSnowEffect: (show) => set({ showSnowEffect: show }),
+  setIsSearching: (isSearching) => set({ isSearching }),
   clearSearch: () =>
-    set({ searchQuery: '', results: [], selectedIndex: 0, showSnowEffect: false }),
+    set({ searchQuery: '', results: [], selectedIndex: 0, showSnowEffect: false, isSearching: false }),
   updateResultMetadata: (pluginId, opts) =>
     set((state) => ({
       results: state.results.map((r) => {

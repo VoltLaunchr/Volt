@@ -164,6 +164,7 @@ describe('TimerPlugin', () => {
       expect(results.length).toBeGreaterThanOrEqual(4);
       expect(results.some((r) => r.title.includes('1 Minute'))).toBe(true);
       expect(results.some((r) => r.title.includes('Pomodoro'))).toBe(true);
+      expect(results.every((r) => !/^\p{Extended_Pictographic}/u.test(r.title))).toBe(true);
     });
 
     it('shows pomodoro presets', () => {

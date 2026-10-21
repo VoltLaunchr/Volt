@@ -9,9 +9,14 @@
 
 import { Plugin, PluginContext, PluginResult } from '../../plugins/types';
 import { copyToClipboard, openUrl } from '../../plugins/utils/helpers';
-import { generateWorkerBootstrap, type ActionCommand, type WorkerResponse } from './worker-bootstrap';
+import {
+  generateWorkerBootstrap,
+  type ActionCommand,
+  type WorkerResponse,
+} from './worker-bootstrap';
 import { logger } from '../../../shared/utils/logger';
 import { useUiStore } from '../../../stores/uiStore';
+import { VOLT_EVENTS, emitVoltEvent } from '../../../shared/events';
 import { setPendingHud } from './hud-queue';
 
 interface OAuthRequestPayload {
@@ -32,6 +37,13 @@ interface AIRequestPayload {
     system?: string;
     creativity?: string | number;
     temperature?: number;
+    history?: Array<{
+      role: 'user' | 'assistant';
+      content: Array<
+        { type: 'text'; text: string } | { type: 'image'; mediaType: string; data: string }
+      >;
+    }>;
+    images?: Array<{ mediaType: string; data: string }>;
   };
 }
 
@@ -111,8 +123,10 @@ export class WorkerPlugin implements Plugin {
   name: string;
   description: string;
   enabled: boolean;
+  private extensionId: string;
 
   private worker: Worker | null = null;
+  private workerGeneration = 0;
   // Pending match/execute requests. Keyed by cryptographic random UUIDs
   // generated on the main thread (see sendRequest). A sequential counter
   // would let a compromised Worker guess the id of another in-flight
@@ -156,6 +170,7 @@ export class WorkerPlugin implements Plugin {
 
   constructor(options: {
     id: string;
+    extensionId?: string;
     name: string;
     description: string;
     keywords: string[];
@@ -165,6 +180,7 @@ export class WorkerPlugin implements Plugin {
     grantedPermissions: string[];
   }) {
     this.id = options.id;
+    this.extensionId = options.extensionId ?? options.id;
     this.name = options.name;
     this.description = options.description;
     this.enabled = true;
@@ -194,13 +210,11 @@ export class WorkerPlugin implements Plugin {
     }
 
     if (this.keywords.length > 0) {
-      return this.keywords.some(
-        (kw) => query.startsWith(kw) || query === kw
-      );
+      return this.keywords.some((kw) => query.startsWith(kw) || query === kw);
     }
 
-    // No keywords or prefix → generic extension, receives all queries
-    return true;
+    // No explicit trigger → never run extension code for arbitrary queries.
+    return false;
   }
 
   /**
@@ -292,9 +306,7 @@ export class WorkerPlugin implements Plugin {
         // alive past `terminateWorker()` is unsafe: their later timer firings
         // would call `terminateWorker()` again, killing whichever worker the
         // plugin has lazily recreated in the meantime. (M12)
-        this.cleanupPending(
-          `Worker reset due to timeout (after ${timeoutMs}ms on ${type})`
-        );
+        this.cleanupPending(`Worker reset due to timeout (after ${timeoutMs}ms on ${type})`);
         this.terminateWorker();
         reject(new Error(`Worker timeout after ${timeoutMs}ms for ${type}`));
       }, timeoutMs);
@@ -318,11 +330,11 @@ export class WorkerPlugin implements Plugin {
     const { type, id, payload } = event.data;
 
     // Ignore 'ready' signal
-    if (type === 'ready' as string) return;
+    if (type === ('ready' as string)) return;
 
     // Handle fetch requests from Worker. Fetch ids are generated inside the
     // worker in their own counter namespace and must not touch this.pending.
-    if (type === 'fetch-request' as string) {
+    if (type === ('fetch-request' as string)) {
       // Worker-generated fetch ids are numeric (see __fetchCounter__ in
       // worker-bootstrap); coerce for the handler signature.
       const fetchId = typeof id === 'number' ? id : Number(id);
@@ -330,46 +342,52 @@ export class WorkerPlugin implements Plugin {
       return;
     }
 
-    if (type === 'storage-request' as string) {
+    if (type === ('storage-request' as string)) {
       const storageId = typeof id === 'number' ? id : Number(id);
-      void this.handleStorageRequest(storageId, payload as { op: string; key?: string; value?: string });
+      void this.handleStorageRequest(
+        storageId,
+        payload as { op: string; key?: string; value?: string }
+      );
       return;
     }
 
-    if (type === 'prefs-request' as string) {
+    if (type === ('prefs-request' as string)) {
       const prefsId = typeof id === 'number' ? id : Number(id);
-      void this.handlePrefsRequest(prefsId, payload as { op: string; key: string; value?: string; default?: unknown });
+      void this.handlePrefsRequest(
+        prefsId,
+        payload as { op: string; key: string; value?: string; default?: unknown }
+      );
       return;
     }
 
     if (
-      type === 'oauth-request' as string ||
-      type === 'oauth-get-token' as string ||
-      type === 'oauth-revoke-token' as string
+      type === ('oauth-request' as string) ||
+      type === ('oauth-get-token' as string) ||
+      type === ('oauth-revoke-token' as string)
     ) {
       const oauthId = typeof id === 'number' ? id : Number(id);
       void this.handleOAuthRequest(oauthId, type, payload as OAuthRequestPayload);
       return;
     }
 
-    if (type === 'ai-request' as string) {
+    if (type === ('ai-request' as string)) {
       const aiId = typeof id === 'number' ? id : Number(id);
       void this.handleAIRequest(aiId, payload as AIRequestPayload);
       return;
     }
 
-    if (type === 'system-request' as string) {
+    if (type === ('system-request' as string)) {
       const sysId = typeof id === 'number' ? id : Number(id);
       void this.handleSystemRequest(sysId, payload as SystemRequestPayload);
       return;
     }
 
-    if (type === 'capture-exception' as string) {
+    if (type === ('capture-exception' as string)) {
       this.recordError(payload as CaptureExceptionPayload);
       return;
     }
 
-    if (type === 'alert-request' as string) {
+    if (type === ('alert-request' as string)) {
       const alertId = typeof id === 'number' ? id : Number(id);
       void this.handleAlertRequest(alertId, payload as { message: string });
       return;
@@ -429,11 +447,8 @@ export class WorkerPlugin implements Plugin {
    */
   private isPrivateIPv6(hostname: string): boolean {
     // Strip surrounding brackets used in URL form.
-    const h =
-      hostname.startsWith('[') && hostname.endsWith(']')
-        ? hostname.slice(1, -1)
-        : hostname;
-    if (h === '::1' || h === '::' ) return true;
+    const h = hostname.startsWith('[') && hostname.endsWith(']') ? hostname.slice(1, -1) : hostname;
+    if (h === '::1' || h === '::') return true;
     // IPv4-mapped IPv6 (::ffff:a.b.c.d) — apply IPv4 private rules to
     // the embedded address so the mapped form cannot bypass IPv4 blocks.
     const ipv4Mapped = h.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/i);
@@ -484,10 +499,7 @@ export class WorkerPlugin implements Plugin {
       //   * `http://0177.0.0.1/` → 127.0.0.1 (octal-prefixed dotted form)
       // Anything that isn't either a strict dotted-quad IPv4 or a host with
       // at least one alphabetic character (FQDN) is suspicious. (M2)
-      if (
-        hostname === '0' ||
-        /^(?:0x[0-9a-f]+|\d+)$/i.test(hostname)
-      ) {
+      if (hostname === '0' || /^(?:0x[0-9a-f]+|\d+)$/i.test(hostname)) {
         return false;
       }
 
@@ -538,9 +550,7 @@ export class WorkerPlugin implements Plugin {
   private isHexMappedIpv4Private(hostname: string): boolean {
     // Strip brackets and lowercase.
     const h = (
-      hostname.startsWith('[') && hostname.endsWith(']')
-        ? hostname.slice(1, -1)
-        : hostname
+      hostname.startsWith('[') && hostname.endsWith(']') ? hostname.slice(1, -1) : hostname
     ).toLowerCase();
     if (!h.includes(':')) return false;
     const parts = h.split(':');
@@ -590,9 +600,7 @@ export class WorkerPlugin implements Plugin {
         } catch {
           /* best-effort cancel */
         }
-        throw new Error(
-          `Response body exceeds ${MAX_FETCH_BODY_BYTES} bytes`
-        );
+        throw new Error(`Response body exceeds ${MAX_FETCH_BODY_BYTES} bytes`);
       }
       chunks.push(value);
     }
@@ -622,10 +630,7 @@ export class WorkerPlugin implements Plugin {
     let binary = '';
     for (let i = 0; i < bytes.length; i += CHUNK) {
       const slice = bytes.subarray(i, Math.min(i + CHUNK, bytes.length));
-      binary += String.fromCharCode.apply(
-        null,
-        slice as unknown as number[]
-      );
+      binary += String.fromCharCode.apply(null, slice as unknown as number[]);
     }
     return btoa(binary);
   }
@@ -747,9 +752,7 @@ export class WorkerPlugin implements Plugin {
     }
 
     if (!this.isUrlSafe(payload.url)) {
-      console.warn(
-        `[WorkerPlugin:${this.id}] Blocked fetch to unsafe URL: ${payload.url}`
-      );
+      console.warn(`[WorkerPlugin:${this.id}] Blocked fetch to unsafe URL: ${payload.url}`);
       worker.postMessage({
         type: 'fetch-response',
         id: requestId,
@@ -766,7 +769,7 @@ export class WorkerPlugin implements Plugin {
       // crosses the Worker or renderer boundary.
       try {
         const parsedUrl = new URL(payload.url);
-        const serviceHosts = SERVICE_API_HOSTS[this.id] ?? [];
+        const serviceHosts = SERVICE_API_HOSTS[this.extensionId] ?? [];
         if ((serviceHosts as string[]).includes(parsedUrl.hostname)) {
           await this.handleAuthenticatedFetch(requestId, payload.url, safeOptions);
           return;
@@ -810,9 +813,7 @@ export class WorkerPlugin implements Plugin {
             // than to silently let an SSRF attempt look like a normal
             // empty 0-status response.
             if (candidate.type === 'opaqueredirect') {
-              throw new Error(
-                'SSRF: blocked opaque redirect with unreadable Location header'
-              );
+              throw new Error('SSRF: blocked opaque redirect with unreadable Location header');
             }
             response = candidate;
             break;
@@ -893,9 +894,13 @@ export class WorkerPlugin implements Plugin {
       const headers: Record<string, string> = {};
       if (safeOptions.headers) {
         if (safeOptions.headers instanceof Headers) {
-          safeOptions.headers.forEach((v, k) => { headers[k] = v; });
+          safeOptions.headers.forEach((v, k) => {
+            headers[k] = v;
+          });
         } else if (Array.isArray(safeOptions.headers)) {
-          for (const [k, v] of safeOptions.headers) { headers[String(k)] = String(v); }
+          for (const [k, v] of safeOptions.headers) {
+            headers[String(k)] = String(v);
+          }
         } else if (typeof safeOptions.headers === 'object') {
           Object.assign(headers, safeOptions.headers);
         }
@@ -909,9 +914,9 @@ export class WorkerPlugin implements Plugin {
         body: string;
         bodyEncoding: string;
       }>('extension_authenticated_fetch', {
-        extensionId: this.id,
+        extensionId: this.extensionId,
         url,
-        method: (safeOptions.method as string) ?? 'GET',
+        method: safeOptions.method ?? 'GET',
         headers,
         body: typeof safeOptions.body === 'string' ? safeOptions.body : null,
       });
@@ -967,6 +972,7 @@ export class WorkerPlugin implements Plugin {
    * Terminate the Worker and clean up resources.
    */
   private terminateWorker(): void {
+    this.workerGeneration += 1;
     if (this.worker) {
       this.worker.terminate();
       this.worker = null;
@@ -985,60 +991,82 @@ export class WorkerPlugin implements Plugin {
       switch (action.action) {
         case 'copyToClipboard':
           if (!this.hasPermission('clipboard')) {
-            console.warn(`[WorkerPlugin:${this.id}] Blocked clipboard access — permission not granted`);
+            console.warn(
+              `[WorkerPlugin:${this.id}] Blocked clipboard access — permission not granted`
+            );
             break;
           }
           await copyToClipboard(action.text);
           break;
         case 'openUrl':
           if (!this.hasPermission('openUrl')) {
-            console.warn(
-              `[WorkerPlugin:${this.id}] Blocked openUrl — permission not granted`
-            );
+            console.warn(`[WorkerPlugin:${this.id}] Blocked openUrl — permission not granted`);
             break;
           }
           await openUrl(action.url);
           break;
         case 'fetch': {
           if (!this.hasPermission('network')) {
-            console.warn(`[WorkerPlugin:${this.id}] Blocked network access — permission not granted`);
+            console.warn(
+              `[WorkerPlugin:${this.id}] Blocked network access — permission not granted`
+            );
             break;
           }
           // Network fetch is handled in match/execute response flow, not here
           break;
         }
         case 'saveCredential': {
+          if (!this.hasPermission('oauth')) {
+            console.warn(
+              `[WorkerPlugin:${this.id}] Blocked saveCredential — oauth permission not granted`
+            );
+            break;
+          }
           // Extension may only save a credential for the service matching its own
           // ID. This prevents a compromised extension from overwriting credentials
           // belonging to a different service.
-          if (action.service !== this.id) {
+          if (action.service !== this.extensionId) {
             console.warn(
               `[WorkerPlugin:${this.id}] Blocked saveCredential for '${action.service}' — must match extension ID`
             );
             break;
           }
           const { invoke } = await import('@tauri-apps/api/core');
-          await invoke('save_credential', { service: action.service, token: action.token });
+          await invoke('ext_save_credential', {
+            extensionId: this.extensionId,
+            service: action.service,
+            token: action.token,
+          });
           break;
         }
         case 'showInFolder': {
           if (!this.hasPermission('system')) {
-            console.warn(`[WorkerPlugin:${this.id}] Blocked showInFolder — system permission not granted`);
+            console.warn(
+              `[WorkerPlugin:${this.id}] Blocked showInFolder — system permission not granted`
+            );
             break;
           }
           const { invoke: _inv1 } = await import('@tauri-apps/api/core');
-          await _inv1('ext_show_in_folder', { path: action.path }).catch((e: unknown) => {
+          await _inv1('ext_show_in_folder', {
+            extensionId: this.extensionId,
+            path: action.path,
+          }).catch((e: unknown) => {
             logger.error(`[WorkerPlugin:${this.id}] showInFolder failed:`, e);
           });
           break;
         }
         case 'moveToTrash': {
           if (!this.hasPermission('system')) {
-            console.warn(`[WorkerPlugin:${this.id}] Blocked moveToTrash — system permission not granted`);
+            console.warn(
+              `[WorkerPlugin:${this.id}] Blocked moveToTrash — system permission not granted`
+            );
             break;
           }
           const { invoke: _inv2 } = await import('@tauri-apps/api/core');
-          await _inv2('ext_move_to_trash', { path: action.path }).catch((e: unknown) => {
+          await _inv2('ext_move_to_trash', {
+            extensionId: this.extensionId,
+            path: action.path,
+          }).catch((e: unknown) => {
             logger.error(`[WorkerPlugin:${this.id}] moveToTrash failed:`, e);
           });
           break;
@@ -1048,42 +1076,37 @@ export class WorkerPlugin implements Plugin {
             console.warn(`[WorkerPlugin:${this.id}] Blocked notification — permission not granted`);
             break;
           }
-          window.dispatchEvent(
-            new CustomEvent('volt:notification', {
-              detail: { message: action.message, type: action.type || 'info' },
-            })
-          );
+          emitVoltEvent(VOLT_EVENTS.NOTIFICATION, {
+            message: action.message,
+            type: action.type || 'info',
+          });
           break;
         case 'toast':
-          window.dispatchEvent(
-            new CustomEvent('volt:toast', {
-              detail: {
-                message: action.message,
-                subtitle: action.subtitle,
-                style: action.style ?? 'info',
-                duration: action.duration,
-              },
-            })
-          );
+          emitVoltEvent(VOLT_EVENTS.TOAST, {
+            message: action.message,
+            subtitle: action.subtitle,
+            style: action.style ?? 'info',
+            duration: action.duration,
+          });
           break;
         case 'noop':
           break;
         case 'hud':
           setPendingHud(action.message);
-          window.dispatchEvent(
-            new CustomEvent('volt:hud', { detail: { message: action.message } })
-          );
+          emitVoltEvent(VOLT_EVENTS.HUD, { message: action.message });
           break;
         case 'updateMetadata':
-          window.dispatchEvent(
-            new CustomEvent('volt:update-metadata', {
-              detail: { pluginId: this.id, title: action.title, subtitle: action.subtitle },
-            })
-          );
+          emitVoltEvent(VOLT_EVENTS.UPDATE_METADATA, {
+            pluginId: this.id,
+            title: action.title,
+            subtitle: action.subtitle,
+          });
           break;
         case 'pasteText': {
           if (!this.hasPermission('clipboard')) {
-            console.warn(`[WorkerPlugin:${this.id}] Blocked pasteText — clipboard permission not granted`);
+            console.warn(
+              `[WorkerPlugin:${this.id}] Blocked pasteText — clipboard permission not granted`
+            );
             break;
           }
           try {
@@ -1110,6 +1133,8 @@ export class WorkerPlugin implements Plugin {
   ): Promise<void> {
     const worker = this.worker;
     if (!worker) return;
+    const generation = this.workerGeneration;
+    const isCurrent = () => this.worker === worker && this.workerGeneration === generation;
 
     if (!this.hasPermission('oauth')) {
       worker.postMessage({
@@ -1121,17 +1146,19 @@ export class WorkerPlugin implements Plugin {
     }
 
     const respond = (result: Record<string, unknown>) => {
-      if (this.worker) {
-        this.worker.postMessage({ type: 'oauth-response', id: requestId, payload: result });
+      if (this.worker === worker) {
+        worker.postMessage({ type: 'oauth-response', id: requestId, payload: result });
       }
     };
+
+    let finishFlow: ((result: Record<string, unknown>) => void) | null = null;
 
     try {
       const { invoke } = await import('@tauri-apps/api/core');
 
       if (msgType === 'oauth-get-token') {
         const token = await invoke<string | null>('ext_oauth_get_token', {
-          extensionId: this.id,
+          extensionId: this.extensionId,
           provider: payload.provider ?? '',
         });
         respond({ token });
@@ -1140,34 +1167,56 @@ export class WorkerPlugin implements Plugin {
 
       if (msgType === 'oauth-revoke-token') {
         await invoke<void>('ext_oauth_revoke_token', {
-          extensionId: this.id,
+          extensionId: this.extensionId,
           provider: payload.provider ?? '',
         });
         respond({ success: true });
         return;
       }
 
-      // oauth-request: full PKCE authorize flow.
-      // Register the listener BEFORE opening the browser to close the race where
-      // the callback URL arrives before listen() has resolved. The state nonce is
-      // applied as a post-registration filter so concurrent flows don't cross-resolve.
+      // Ask Rust to create the state nonce before registering the listener.
+      // No browser has opened yet, so a callback cannot race this IPC call.
+      const { authUrl, state } = await invoke<{ authUrl: string; state: string }>(
+        'ext_oauth_start',
+        {
+          extensionId: this.extensionId,
+          provider: payload.provider ?? '',
+          baseAuthUrl: payload.authUrl ?? '',
+          tokenUrl: payload.tokenUrl ?? '',
+          clientId: payload.clientId ?? '',
+          scopes: payload.scopes ?? [],
+        }
+      );
+
+      // The extension may have been unloaded while Rust was preparing PKCE.
+      // Do not attach a listener or open a browser for an obsolete worker.
+      if (!isCurrent()) return;
+
+      // Register the strictly state-bound listener BEFORE opening the browser.
       const { listen } = await import('@tauri-apps/api/event');
-      const eventName = `ext-oauth-${this.id}`;
+      if (!isCurrent()) return;
+      const eventName = `ext-oauth-${this.extensionId}`;
 
       let done = false;
       let unlistenFn: (() => void) | null = null;
       let timerId: ReturnType<typeof setTimeout> | null = null;
-      let pendingState: string | null = null;
 
       const finish = (result: Record<string, unknown>) => {
         if (done) return;
         done = true;
-        if (timerId !== null) { clearTimeout(timerId); timerId = null; }
-        if (unlistenFn !== null) { unlistenFn(); unlistenFn = null; }
+        if (timerId !== null) {
+          clearTimeout(timerId);
+          timerId = null;
+        }
+        if (unlistenFn !== null) {
+          unlistenFn();
+          unlistenFn = null;
+        }
         const idx = this.oauthUnlisteners.indexOf(cancelFn);
         if (idx >= 0) this.oauthUnlisteners.splice(idx, 1);
         respond(result);
       };
+      finishFlow = finish;
 
       const cancelFn = () => finish({ error: 'OAuth cancelled (extension unloaded)' });
       this.oauthUnlisteners.push(cancelFn);
@@ -1177,54 +1226,44 @@ export class WorkerPlugin implements Plugin {
         5 * 60 * 1000
       );
 
-      unlistenFn = await listen<{ error?: string; state?: string }>(
-        eventName,
-        (event) => {
-          // Accept all events until we have the state nonce; filter strictly after.
-          if (pendingState !== null && event.payload.state && event.payload.state !== pendingState) return;
-          if (event.payload.error) {
-            finish({ error: event.payload.error });
-          } else {
-            // Token is NOT in the event payload — the Rust side stores it in the
-            // OS keyring and emits only a success signal. Retrieve the token via
-            // ext_oauth_get_token so it never travels over the broadcast event
-            // channel where another extension could intercept it. (H2)
-            const provider = payload.provider ?? '';
-            import('@tauri-apps/api/core').then(({ invoke }) =>
+      unlistenFn = await listen<{ error?: string; state?: string }>(eventName, (event) => {
+        if (event.payload.state !== state) return;
+        if (event.payload.error) {
+          finish({ error: event.payload.error });
+        } else {
+          // Token is NOT in the event payload — the Rust side stores it in the
+          // OS keyring and emits only a success signal. Retrieve the token via
+          // ext_oauth_get_token so it never travels over the broadcast event
+          // channel where another extension could intercept it. (H2)
+          const provider = payload.provider ?? '';
+          import('@tauri-apps/api/core')
+            .then(({ invoke }) =>
               invoke<string | null>('ext_oauth_get_token', {
-                extensionId: this.id,
+                extensionId: this.extensionId,
                 provider,
               })
-            ).then((token) => {
+            )
+            .then((token) => {
               finish({ token });
-            }).catch((err: unknown) => {
+            })
+            .catch((err: unknown) => {
               finish({ error: `Failed to retrieve OAuth token: ${String(err)}` });
             });
-          }
         }
-      );
-
-      // If finish() fired (e.g. timeout elapsed during listen()), clean up and bail.
-      if (done) { unlistenFn(); return; }
-
-      // Rust builds the full auth URL with PKCE params and stores the pending entry.
-      const { authUrl, state } = await invoke<{ authUrl: string; state: string }>('ext_oauth_start', {
-        extensionId: this.id,
-        provider: payload.provider ?? '',
-        baseAuthUrl: payload.authUrl ?? '',
-        tokenUrl: payload.tokenUrl ?? '',
-        clientId: payload.clientId ?? '',
-        scopes: payload.scopes ?? [],
       });
 
-      // Enable strict state filtering now that we have the nonce.
-      pendingState = state;
+      // If finish() fired (e.g. timeout elapsed during listen()), clean up and bail.
+      if (done) {
+        unlistenFn();
+        return;
+      }
 
       // Open the authorization URL in the default browser.
       await openUrl(authUrl);
-
     } catch (err) {
-      respond({ error: String(err) });
+      const result = { error: String(err) };
+      if (finishFlow) finishFlow(result);
+      else respond(result);
     }
   }
 
@@ -1235,12 +1274,10 @@ export class WorkerPlugin implements Plugin {
    * then `ai-response` with the full text when the stream is done.
    * Times out after 60 s to avoid hanging the Worker indefinitely.
    */
-  private async handleAIRequest(
-    requestId: number,
-    payload: AIRequestPayload
-  ): Promise<void> {
+  private async handleAIRequest(requestId: number, payload: AIRequestPayload): Promise<void> {
     const worker = this.worker;
     if (!worker) return;
+    const generation = this.workerGeneration;
 
     if (!this.hasPermission('ai')) {
       worker.postMessage({
@@ -1252,6 +1289,7 @@ export class WorkerPlugin implements Plugin {
     }
 
     const AI_TIMEOUT_MS = 60_000;
+    let cleanup = () => {};
 
     try {
       const { invoke, Channel } = await import('@tauri-apps/api/core');
@@ -1262,48 +1300,67 @@ export class WorkerPlugin implements Plugin {
         | { type: 'error'; error: string };
 
       const channel = new Channel<AiStreamEvent>();
+      let settled = false;
+      let timeoutId: ReturnType<typeof setTimeout> | null = null;
+      const isCurrent = () => this.worker === worker && this.workerGeneration === generation;
+      const finish = () => {
+        settled = true;
+        if (timeoutId !== null) {
+          clearTimeout(timeoutId);
+          timeoutId = null;
+        }
+        channel.onmessage = () => {};
+      };
+      cleanup = finish;
 
       channel.onmessage = (event) => {
-        if (!this.worker) return;
+        if (settled || !isCurrent()) return;
         if (event.type === 'chunk') {
-          this.worker.postMessage({ type: 'ai-chunk', id: requestId, payload: { text: event.text } });
+          worker.postMessage({ type: 'ai-chunk', id: requestId, payload: { text: event.text } });
         } else if (event.type === 'done') {
-          this.worker.postMessage({
+          worker.postMessage({
             type: 'ai-response',
             id: requestId,
             payload: { text: event.fullText },
           });
+          finish();
         } else if (event.type === 'error') {
-          this.worker.postMessage({
+          worker.postMessage({
             type: 'ai-response',
             id: requestId,
             payload: { error: event.error },
           });
+          finish();
         }
       };
 
-      const timeoutPromise = new Promise<never>((_, reject) =>
-        setTimeout(
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        timeoutId = setTimeout(
           () => reject(new Error('AI request timed out (60s)')),
           AI_TIMEOUT_MS
-        )
-      );
+        );
+      });
 
       await Promise.race([
         invoke('ext_ai_ask_stream', {
-          extensionId: this.id,
+          extensionId: this.extensionId,
           prompt: payload.prompt,
           options: payload.options ?? {},
           channel,
         }),
         timeoutPromise,
       ]);
+      if (!settled) finish();
     } catch (err) {
-      worker.postMessage({
-        type: 'ai-response',
-        id: requestId,
-        payload: { error: String(err) },
-      });
+      if (this.worker === worker && this.workerGeneration === generation) {
+        worker.postMessage({
+          type: 'ai-response',
+          id: requestId,
+          payload: { error: String(err) },
+        });
+      }
+    } finally {
+      cleanup();
     }
   }
 
@@ -1330,13 +1387,23 @@ export class WorkerPlugin implements Plugin {
     try {
       const { invoke } = await import('@tauri-apps/api/core');
       if (payload.op === 'getApplications') {
-        const apps = await invoke<unknown[]>('ext_get_applications');
+        const apps = await invoke<unknown[]>('ext_get_applications', {
+          extensionId: this.extensionId,
+        });
         worker.postMessage({ type: 'system-response', id: requestId, payload: { value: apps } });
       } else {
-        worker.postMessage({ type: 'system-response', id: requestId, payload: { error: 'Unknown system op' } });
+        worker.postMessage({
+          type: 'system-response',
+          id: requestId,
+          payload: { error: 'Unknown system op' },
+        });
       }
     } catch (err) {
-      worker.postMessage({ type: 'system-response', id: requestId, payload: { error: String(err) } });
+      worker.postMessage({
+        type: 'system-response',
+        id: requestId,
+        payload: { error: String(err) },
+      });
     }
   }
 
@@ -1356,17 +1423,21 @@ export class WorkerPlugin implements Plugin {
 
     const existing = this.errorLog.find((e) => {
       const eFirst = e.stack?.split('\n').find((l) => l.trim()) ?? '';
-      return e.message === message && eFirst === firstStackLine && now - e.lastSeen < ERROR_DEDUP_WINDOW_MS;
+      return (
+        e.message === message &&
+        eFirst === firstStackLine &&
+        now - e.lastSeen < ERROR_DEDUP_WINDOW_MS
+      );
     });
     if (existing) {
       existing.count++;
       existing.lastSeen = now;
-      WorkerPlugin.globalLog.set(this.id, this.errorLog.slice());
+      WorkerPlugin.globalLog.set(this.extensionId, this.errorLog.slice());
       return;
     }
 
     const entry: ExtensionError = {
-      extensionId: this.id,
+      extensionId: this.extensionId,
       message,
       stack: payload.stack,
       context: payload.context,
@@ -1383,11 +1454,11 @@ export class WorkerPlugin implements Plugin {
       this.errorLog.shift();
     }
 
-    WorkerPlugin.globalLog.set(this.id, this.errorLog.slice());
+    WorkerPlugin.globalLog.set(this.extensionId, this.errorLog.slice());
 
     if (now - this.lastErrorEventAt > 1000) {
       this.lastErrorEventAt = now;
-      window.dispatchEvent(new CustomEvent('volt:extension-error', { detail: entry }));
+      emitVoltEvent(VOLT_EVENTS.EXTENSION_ERROR, entry);
     }
 
     logger.warn(`[WorkerPlugin:${this.id}] Extension error captured:`, entry.message);
@@ -1407,7 +1478,9 @@ export class WorkerPlugin implements Plugin {
     this.refreshIntervalMs = intervalMs;
     // Warm up immediately without blocking the current call
     void this.refreshCache();
-    this.refreshTimer = setInterval(() => { void this.refreshCache(); }, intervalMs);
+    this.refreshTimer = setInterval(() => {
+      void this.refreshCache();
+    }, intervalMs);
   }
 
   /** Stop background refresh and clear the cache. */
@@ -1451,7 +1524,7 @@ export class WorkerPlugin implements Plugin {
       let result: unknown = undefined;
       if (payload.op === 'get') {
         result = await invoke<string | null>('get_extension_preference', {
-          extensionId: this.id,
+          extensionId: this.extensionId,
           key: payload.key,
         });
         if (result === null || result === undefined) {
@@ -1459,31 +1532,35 @@ export class WorkerPlugin implements Plugin {
         }
       } else if (payload.op === 'set') {
         await invoke('set_extension_preference', {
-          extensionId: this.id,
+          extensionId: this.extensionId,
           key: payload.key,
           value: payload.value ?? '',
         });
       } else if (payload.op === 'get-secret') {
         result = await invoke<string | null>('get_extension_secret', {
-          extensionId: this.id,
+          extensionId: this.extensionId,
           key: payload.key,
         });
       } else if (payload.op === 'set-secret') {
         await invoke('set_extension_secret', {
-          extensionId: this.id,
+          extensionId: this.extensionId,
           key: payload.key,
           value: payload.value ?? '',
         });
       } else if (payload.op === 'delete-secret') {
         await invoke('delete_extension_secret', {
-          extensionId: this.id,
+          extensionId: this.extensionId,
           key: payload.key,
         });
       }
 
       worker.postMessage({ type: 'prefs-response', id: requestId, payload: { value: result } });
     } catch (err) {
-      worker.postMessage({ type: 'prefs-response', id: requestId, payload: { error: String(err) } });
+      worker.postMessage({
+        type: 'prefs-response',
+        id: requestId,
+        payload: { error: String(err) },
+      });
     }
   }
 
@@ -1500,7 +1577,7 @@ export class WorkerPlugin implements Plugin {
 
     try {
       const { invoke } = await import('@tauri-apps/api/core');
-      const extensionId = this.id;
+      const extensionId = this.extensionId;
 
       let result: unknown = undefined;
       switch (payload.op) {
@@ -1549,10 +1626,7 @@ export class WorkerPlugin implements Plugin {
    * Handle a confirm() dialog request from the Worker.
    * Opens the AlertDialog via uiStore and resolves/rejects the Worker promise.
    */
-  private async handleAlertRequest(
-    requestId: number,
-    payload: { message: string }
-  ): Promise<void> {
+  private async handleAlertRequest(requestId: number, payload: { message: string }): Promise<void> {
     const worker = this.worker;
     if (!worker) return;
 
@@ -1591,7 +1665,11 @@ export class WorkerPlugin implements Plugin {
 
     // Cancel all active OAuth event listeners and their timeouts
     for (const cancel of this.oauthUnlisteners) {
-      try { cancel(); } catch { /* best-effort */ }
+      try {
+        cancel();
+      } catch {
+        /* best-effort */
+      }
     }
     this.oauthUnlisteners = [];
 
@@ -1599,7 +1677,7 @@ export class WorkerPlugin implements Plugin {
     this.pendingAlertCleanup?.();
 
     // Remove from process-wide error log
-    WorkerPlugin.globalLog.delete(this.id);
+    WorkerPlugin.globalLog.delete(this.extensionId);
 
     // Reject all pending match/execute requests via the shared helper (see M12)
     this.cleanupPending('Plugin destroyed');

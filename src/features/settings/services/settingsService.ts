@@ -1,6 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { extractErrorMessage } from '../../../shared/utils/error';
 import { logger } from '../../../shared/utils/logger';
+import { normalizeEnabledPlugins } from '../../plugins/builtin/manifest';
 import {
   AppearanceSettings,
   DEFAULT_SETTINGS,
@@ -10,9 +11,29 @@ import {
   PluginSettings,
   Settings,
   Theme,
+  WebSearchSettings,
 } from '../types/settings.types';
 
 const errorMessage = extractErrorMessage;
+
+export interface DetectedBrowser {
+  id: string;
+  name: string;
+}
+
+/**
+ * Migrate persisted plugin ids to their canonical runtime ids. Legacy installs
+ * stored display ids (`web-search`, `steam-games`, …) that never matched the
+ * registry; this keeps every settings consumer (main window + Settings window)
+ * working with one canonical id set. Idempotent for already-canonical data.
+ */
+function normalizePluginIds(settings: Settings): Settings {
+  const enabledPlugins = normalizeEnabledPlugins(settings.plugins?.enabledPlugins);
+  return {
+    ...settings,
+    plugins: { ...settings.plugins, enabledPlugins },
+  };
+}
 
 /**
  * Settings service for interacting with the Tauri backend
@@ -24,7 +45,7 @@ export const settingsService = {
   async loadSettings(): Promise<Settings> {
     try {
       const settings = await invoke<Settings>('load_settings');
-      return settings;
+      return normalizePluginIds(settings);
     } catch (error) {
       logger.error('Failed to load settings:', error);
       return DEFAULT_SETTINGS;
@@ -39,7 +60,7 @@ export const settingsService = {
       await invoke<void>('save_settings', { settings });
     } catch (error) {
       logger.error('Failed to save settings:', error);
-      throw new Error(`Failed to save settings: ${errorMessage(error)}`);
+      throw new Error(`Failed to save settings: ${errorMessage(error)}`, { cause: error });
     }
   },
 
@@ -51,7 +72,31 @@ export const settingsService = {
       return await invoke<Settings>('update_general_settings', { general });
     } catch (error) {
       logger.error('Failed to update general settings:', error);
-      throw new Error(`Failed to update general settings: ${errorMessage(error)}`);
+      throw new Error(`Failed to update general settings: ${errorMessage(error)}`, {
+        cause: error,
+      });
+    }
+  },
+
+  async updateWebSearchSettings(webSearch: WebSearchSettings): Promise<Settings> {
+    try {
+      return await invoke<Settings>('update_web_search_settings', { webSearch });
+    } catch (error) {
+      logger.error('Failed to update web search settings:', error);
+      throw new Error(`Failed to update web search settings: ${errorMessage(error)}`, {
+        cause: error,
+      });
+    }
+  },
+
+  async listDetectedBrowsers(): Promise<DetectedBrowser[]> {
+    try {
+      return await invoke<DetectedBrowser[]>('list_detected_browsers');
+    } catch (error) {
+      logger.error('Failed to detect installed browsers:', error);
+      throw new Error(`Failed to detect installed browsers: ${errorMessage(error)}`, {
+        cause: error,
+      });
     }
   },
 
@@ -63,7 +108,9 @@ export const settingsService = {
       return await invoke<Settings>('update_appearance_settings', { appearance });
     } catch (error) {
       logger.error('Failed to update appearance settings:', error);
-      throw new Error(`Failed to update appearance settings: ${errorMessage(error)}`);
+      throw new Error(`Failed to update appearance settings: ${errorMessage(error)}`, {
+        cause: error,
+      });
     }
   },
 
@@ -75,7 +122,9 @@ export const settingsService = {
       return await invoke<Settings>('update_hotkey_settings', { hotkeys });
     } catch (error) {
       logger.error('Failed to update hotkey settings:', error);
-      throw new Error(`Failed to update hotkey settings: ${errorMessage(error)}`);
+      throw new Error(`Failed to update hotkey settings: ${errorMessage(error)}`, {
+        cause: error,
+      });
     }
   },
 
@@ -87,7 +136,9 @@ export const settingsService = {
       return await invoke<Settings>('update_indexing_settings', { indexing });
     } catch (error) {
       logger.error('Failed to update indexing settings:', error);
-      throw new Error(`Failed to update indexing settings: ${errorMessage(error)}`);
+      throw new Error(`Failed to update indexing settings: ${errorMessage(error)}`, {
+        cause: error,
+      });
     }
   },
 
@@ -99,7 +150,9 @@ export const settingsService = {
       return await invoke<Settings>('update_plugin_settings', { plugins });
     } catch (error) {
       logger.error('Failed to update plugin settings:', error);
-      throw new Error(`Failed to update plugin settings: ${errorMessage(error)}`);
+      throw new Error(`Failed to update plugin settings: ${errorMessage(error)}`, {
+        cause: error,
+      });
     }
   },
 
@@ -124,7 +177,7 @@ export const settingsService = {
       await invoke<void>('set_theme', { theme });
     } catch (error) {
       logger.error('Failed to set theme:', error);
-      throw new Error(`Failed to set theme: ${errorMessage(error)}`);
+      throw new Error(`Failed to set theme: ${errorMessage(error)}`, { cause: error });
     }
   },
 
@@ -136,7 +189,7 @@ export const settingsService = {
       return await invoke<string>('export_settings', { path });
     } catch (error) {
       logger.error('Failed to export settings:', error);
-      throw new Error(`Failed to export settings: ${errorMessage(error)}`);
+      throw new Error(`Failed to export settings: ${errorMessage(error)}`, { cause: error });
     }
   },
 
@@ -148,17 +201,10 @@ export const settingsService = {
       return await invoke<Settings>('import_settings', { path });
     } catch (error) {
       logger.error('Failed to import settings:', error);
-      throw new Error(`Failed to import settings: ${errorMessage(error)}`);
+      throw new Error(`Failed to import settings: ${errorMessage(error)}`, { cause: error });
     }
   },
 };
-
-/**
- * Apply window transparency by updating the --canvas-opacity CSS variable
- */
-export function applyTransparency(transparency: number): void {
-  document.documentElement.style.setProperty('--canvas-opacity', String(transparency));
-}
 
 /**
  * Apply theme to the document

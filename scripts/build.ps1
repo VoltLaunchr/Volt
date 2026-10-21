@@ -8,4 +8,4 @@ if (Test-Path $envFile) {
     }
 }
 
-bun tauri build @args
+pnpm run tauri -- build @args

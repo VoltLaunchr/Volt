@@ -6,7 +6,8 @@
     "resultCount_one": "{{count}} result found",
     "resultCount_other": "{{count}} results found",
     "clearSearch": "Clear search",
-    "label": "Search"
+    "label": "Search",
+    "searching": "Searching…"
   },
   "footer": {
     "openCommand": "Open Command",
@@ -98,10 +99,13 @@
   "shell": {
     "mode": "Shell Command Mode",
     "pressEnterToRun": "Press Enter to run",
+    "typeHint": "Type a command after >, for example >git status",
     "running": "Running...",
     "ctrlCCancel": "Ctrl+C to cancel",
     "noOutput": "No output",
     "commandFailed": "Command failed",
+    "failed": "Failed",
+    "completed": "Completed",
     "timedOut": "Timed out",
     "rerunLast": "Re-run last command",
     "noHistory": "No command history yet",

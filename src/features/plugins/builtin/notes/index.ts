@@ -1,9 +1,9 @@
 /**
  * Notes Plugin — builtin launcher integration for the Notes feature.
  *
- * Triggers:
- *   - `n` alone → show the most-recently-touched notes + "Open Notes" action
- *   - `n <query>` → full-text search via the backend (FTS5) + "Create" action
+ * Triggers (case-insensitive; `note`/`notes` are accepted as synonyms for `n`):
+ *   - `n` / `note` / `notes` alone → show the most-recently-touched notes + "Open Notes" action
+ *   - `n <query>` / `note <query>` / `notes <query>` → full-text search via the backend (FTS5) + "Create" action
  *
  * All results route to the dedicated Notes window via the `open_notes_window`
  * Tauri command. Creating a new note here calls `create_note` then opens the
@@ -11,8 +11,9 @@
  */
 
 import { invoke } from '@tauri-apps/api/core';
-import type { Plugin, PluginContext, PluginResult } from '../../types';
+import type { Plugin, PluginActivation, PluginContext, PluginResult } from '../../types';
 import { PluginResultType } from '../../types';
+import { resolveActivation } from '../../core/activation';
 import { logger } from '../../../../shared/utils/logger';
 
 // Mirrors `Note` from `src/features/notes/types/notes.types.ts`. Duplicated
@@ -41,7 +42,6 @@ interface NoteHit {
 
 const MAX_RESULTS = 6;
 const PLUGIN_ID = 'notes';
-const PREFIX_PATTERN = /^n[\s:]*(.*)$/i;
 
 const NOTE_ICON = '/icons/app/volt_note_icons.svg';
 const CREATE_NOTE_ICON = '/icons/app/create_note_icons.svg';
@@ -61,15 +61,17 @@ export class NotesPlugin implements Plugin {
   description = 'Search, open, and create markdown notes';
   enabled = true;
 
+  // `n`/`note`/`notes` (the name auto-adds `notes`) trigger note browsing/search.
+  activation: PluginActivation = {
+    keywords: ['n', 'note'],
+  };
+
   canHandle(context: PluginContext): boolean {
-    const q = context.query;
-    if (!q) return false;
-    // Exactly `n` (browsing) or starts with `n ` / `n:`.
-    return q === 'n' || q === 'N' || /^n[\s:]/i.test(q);
+    return resolveActivation(this, context).matched;
   }
 
   async match(context: PluginContext): Promise<PluginResult[]> {
-    const query = stripPrefix(context.query);
+    const query = resolveActivation(this, context).stripped;
     const results: PluginResult[] = [];
 
     if (query.length === 0) {
@@ -160,13 +162,6 @@ export class NotesPlugin implements Plugin {
         break;
     }
   }
-}
-
-function stripPrefix(raw: string): string {
-  // Accept `n`, `n `, `n:`, `n: ` and anything in between.
-  const m = raw.match(PREFIX_PATTERN);
-  if (!m) return raw.trim();
-  return m[1].trim();
 }
 
 function buildNoteResult(

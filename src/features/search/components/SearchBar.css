@@ -1,0 +1,175 @@
+/* ── Search beam — premium loading indicator ─────────────────────────────
+   Dual-layer sweep (sharp core + diffuse glow) clipped in a bottom track.
+   GPU transforms only; smooth opacity enter/exit on state change.
+   Travel distance is derived from --search-beam-fraction (no magic %). */
+
+.search-bar {
+  /* Width as a unitless fraction of the track; drives width + sweep distance */
+  --search-beam-fraction: 0.26;
+  --search-beam-width: calc(var(--search-beam-fraction) * 100%);
+  --search-beam-margin: 130%; /* entry/exit padding, relative to beam width */
+  --search-beam-travel-end: calc(100% / var(--search-beam-fraction) + var(--search-beam-margin));
+
+  --search-beam-core: var(--color-primary);
+  --search-beam-hot: color-mix(in srgb, var(--color-primary) 22%, var(--color-on-primary));
+  --search-beam-tail: color-mix(in srgb, var(--color-primary) 50%, transparent);
+  --search-beam-edge: color-mix(in srgb, var(--color-primary) 15%, transparent);
+  --search-beam-glow: color-mix(in srgb, var(--color-primary) 55%, transparent);
+  --search-beam-track: color-mix(in srgb, var(--color-primary) 12%, transparent);
+  --search-beam-duration: 2.35s;
+
+  position: relative;
+  isolation: isolate;
+  contain: layout style;
+}
+
+/* Ambient baseline — fades in when search starts */
+.search-bar__track {
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  height: 3px;
+  overflow: hidden;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 320ms var(--ease-default);
+}
+
+.search-bar[data-searching='true'] .search-bar__track {
+  opacity: 1;
+}
+
+.search-bar__track::before {
+  content: '';
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent 4%,
+    var(--search-beam-track) 50%,
+    transparent 96%
+  );
+}
+
+/* Shared sweep geometry */
+.search-bar__beam-core,
+.search-bar__beam-glow {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: var(--search-beam-width);
+  transform: translate3d(calc(-1 * var(--search-beam-margin)), -50%, 0);
+  pointer-events: none;
+}
+
+.search-bar[data-searching='true'] .search-bar__beam-core,
+.search-bar[data-searching='true'] .search-bar__beam-glow {
+  will-change: transform;
+  animation: volt-search-beam-sweep var(--search-beam-duration)
+    cubic-bezier(0.37, 0, 0.18, 1) infinite;
+}
+
+/* Sharp highlight — the visible "beam" */
+.search-bar__beam-core {
+  height: 2px;
+  margin-top: -1px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    var(--search-beam-edge) 14%,
+    var(--search-beam-hot) 46%,
+    var(--search-beam-core) 54%,
+    var(--search-beam-tail) 78%,
+    transparent 100%
+  );
+  border-radius: var(--radius-full);
+}
+
+/* Diffuse halo — adds depth without overpowering */
+.search-bar__beam-glow {
+  height: 6px;
+  margin-top: -3px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    var(--search-beam-glow) 42%,
+    var(--search-beam-glow) 58%,
+    transparent 100%
+  );
+  filter: blur(3px);
+  opacity: 0.7;
+}
+
+/* Icon — color + gentle breathe, synced to beam period */
+.search-bar__icon {
+  transition:
+    color 280ms var(--ease-default),
+    opacity 280ms var(--ease-default);
+}
+
+.search-bar[data-searching='true'] .search-bar__icon {
+  color: var(--color-primary);
+  animation: volt-search-icon-breathe var(--search-beam-duration) ease-in-out infinite;
+}
+
+.search-bar__input {
+  transition: caret-color 280ms var(--ease-default);
+}
+
+.search-bar[data-searching='true'] .search-bar__input {
+  caret-color: var(--color-primary);
+}
+
+@keyframes volt-search-beam-sweep {
+  0% {
+    transform: translate3d(calc(-1 * var(--search-beam-margin)), -50%, 0);
+    opacity: 0;
+  }
+  7% {
+    opacity: 1;
+  }
+  93% {
+    opacity: 1;
+  }
+  100% {
+    transform: translate3d(var(--search-beam-travel-end), -50%, 0);
+    opacity: 0;
+  }
+}
+
+@keyframes volt-search-icon-breathe {
+  0%,
+  100% {
+    opacity: 0.72;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .search-bar__track {
+    transition: none;
+  }
+
+  .search-bar[data-searching='true'] .search-bar__beam-core,
+  .search-bar[data-searching='true'] .search-bar__beam-glow {
+    animation: none;
+    will-change: auto;
+    left: 50%;
+    transform: translate3d(-50%, -50%, 0);
+    opacity: 0.55;
+  }
+
+  .search-bar[data-searching='true'] .search-bar__icon {
+    animation: none;
+    opacity: 0.85;
+  }
+}
+
+[data-theme='light'] .search-bar {
+  --search-beam-track: color-mix(in srgb, var(--color-primary) 20%, transparent);
+  --search-beam-glow: color-mix(in srgb, var(--color-primary) 45%, transparent);
+}

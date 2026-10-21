@@ -68,10 +68,10 @@ test.describe('Search Flow', () => {
     await expect(firstResult).toContainText('Calculator');
   });
 
-  test('websearch activates with ? prefix', async ({ page }) => {
+  test('websearch activates with "web" keyword', async ({ page }) => {
     await injectTauriMock(page);
     await page.goto('/');
-    await page.locator('#search-input').fill('?playwright testing');
+    await page.locator('#search-input').fill('web playwright testing');
     const firstResult = page.locator('[role="option"]').first();
     await expect(firstResult).toBeVisible({ timeout: 5000 });
     await expect(firstResult).toContainText('playwright testing');
@@ -89,40 +89,65 @@ test.describe('Search Flow', () => {
 
   test('search debounces rapid input', async ({ page }) => {
     // Custom mock that tracks search_streaming call count
-    await page.addInitScript(({ settings }) => {
-      (window as any).__SEARCH_CALL_COUNT__ = 0;
-      const CALLBACKS: Record<number, (...args: unknown[]) => unknown> = {};
-      let cbCounter = 0;
+    await page.addInitScript(
+      ({ settings }) => {
+        (window as any).__SEARCH_CALL_COUNT__ = 0;
+        const CALLBACKS: Record<number, (...args: unknown[]) => unknown> = {};
+        let cbCounter = 0;
 
-      (window as any).__TAURI_INTERNALS__ = {
-        invoke: async (cmd: string) => {
-          if (typeof cmd === 'string' && cmd.startsWith('plugin:')) {
-            if (cmd === 'plugin:event|listen') return cbCounter++;
-            return null;
-          }
-          if (cmd === 'search_streaming') {
-            (window as any).__SEARCH_CALL_COUNT__++;
-            return null;
-          }
-          const handlers: Record<string, unknown> = {
-            load_settings: settings, scan_applications: [], search_applications: [],
-            search_files: [], get_launch_history: [], get_pinned_apps: [],
-            get_frecency_scores: {}, get_frecency_suggestions: [], save_settings: null,
-            start_indexing: null, get_default_index_folders: [], log_from_frontend: null,
-            get_clipboard_history: [], get_quick_links: [], get_quicklinks: [],
-            get_snippets: [], get_app_icon: null, launch_application: null,
-            record_launch: null, get_window_position: { x: 0, y: 0 },
-            get_enabled_extensions_sources: [], get_steam_games: [],
-            start_clipboard_monitoring: null, hide_window: null,
-          };
-          return handlers[cmd] ?? null;
-        },
-        transformCallback: (cb: (...args: unknown[]) => unknown) => { const id = cbCounter++; CALLBACKS[id] = cb; (window as any)['_' + id] = cb; return id; },
-        unregisterCallback: (id: number) => { delete CALLBACKS[id]; },
-        metadata: { currentWindow: { label: 'main' }, currentWebview: { label: 'main' } },
-        convertFileSrc: (p: string) => 'https://asset.localhost/' + encodeURIComponent(p),
-      };
-    }, { settings: MOCK_SETTINGS });
+        (window as any).__TAURI_INTERNALS__ = {
+          invoke: async (cmd: string) => {
+            if (typeof cmd === 'string' && cmd.startsWith('plugin:')) {
+              if (cmd === 'plugin:event|listen') return cbCounter++;
+              return null;
+            }
+            if (cmd === 'search_streaming') {
+              (window as any).__SEARCH_CALL_COUNT__++;
+              return null;
+            }
+            const handlers: Record<string, unknown> = {
+              load_settings: settings,
+              scan_applications: [],
+              search_applications: [],
+              search_files: [],
+              get_launch_history: [],
+              get_pinned_apps: [],
+              get_frecency_scores: {},
+              get_frecency_suggestions: [],
+              save_settings: null,
+              start_indexing: null,
+              get_default_index_folders: [],
+              log_from_frontend: null,
+              get_clipboard_history: [],
+              get_quick_links: [],
+              get_quicklinks: [],
+              get_snippets: [],
+              get_app_icon: null,
+              launch_application: null,
+              record_launch: null,
+              get_window_position: { x: 0, y: 0 },
+              get_enabled_extensions_sources: [],
+              get_steam_games: [],
+              start_clipboard_monitoring: null,
+              hide_window: null,
+            };
+            return handlers[cmd] ?? null;
+          },
+          transformCallback: (cb: (...args: unknown[]) => unknown) => {
+            const id = cbCounter++;
+            CALLBACKS[id] = cb;
+            (window as any)['_' + id] = cb;
+            return id;
+          },
+          unregisterCallback: (id: number) => {
+            delete CALLBACKS[id];
+          },
+          metadata: { currentWindow: { label: 'main' }, currentWebview: { label: 'main' } },
+          convertFileSrc: (p: string) => 'https://asset.localhost/' + encodeURIComponent(p),
+        };
+      },
+      { settings: MOCK_SETTINGS }
+    );
     await page.goto('/');
     await page.locator('#search-input').waitFor({ state: 'visible', timeout: 10000 });
 
@@ -146,9 +171,9 @@ test.describe('Search Flow', () => {
   test('result items have correct structure', async ({ page }) => {
     await injectTauriMock(page);
     await page.goto('/');
-    // websearch (? prefix) yields a canonical result row with title, image icon
+    // An explicit web keyword yields a canonical result row with title, image icon
     // and a type badge ("Web Search"). The calculator path uses a custom card.
-    await page.locator('#search-input').fill('?hello');
+    await page.locator('#search-input').fill('web hello');
     const firstResult = page.locator('[role="option"]').first();
     await expect(firstResult).toBeVisible({ timeout: 5000 });
     await expect(firstResult.locator('img').first()).toBeVisible();
@@ -168,7 +193,7 @@ test.describe('Search Flow', () => {
   test('Tab autocompletes with selected result title', async ({ page }) => {
     await injectTauriMock(page);
     await page.goto('/');
-    await page.locator('#search-input').fill('?hello');
+    await page.locator('#search-input').fill('web hello');
     const firstResult = page.locator('[role="option"]').first();
     await expect(firstResult).toBeVisible({ timeout: 5000 });
     // The websearch plugin titles its result `Search "<query>" on <Engine>`.

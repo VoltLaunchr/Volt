@@ -1,19 +1,54 @@
-<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
-<g clip-path="url(#clip0_142_140)">
-<path d="M384 0H128C57.3075 0 0 57.3075 0 128V384C0 454.692 57.3075 512 128 512H384C454.692 512 512 454.692 512 384V128C512 57.3075 454.692 0 384 0Z" fill="url(#paint0_radial_142_140)"/>
-<path d="M184.271 252.287C188.204 254.934 192.938 257.325 196.693 260.005C217.701 275 244.191 284.549 270.14 279.318C277.015 277.932 283.652 275.728 290.152 273.067C304.451 268.05 315.756 256.831 329.475 250.631C331.786 249.586 334.627 249.651 337.121 249.66C348.427 249.665 359.755 252.324 369.96 257.139C400.744 271.663 414.542 307.282 420.421 338.709C422.503 351.562 424.458 364.622 424.291 377.675C424.248 380.971 425.156 384.583 424.982 387.653C424.718 392.321 424.481 398.148 423.914 402.755C422.68 412.944 419.07 422.701 413.372 431.24C411.512 433.995 409.248 436.553 406.954 438.949C397.366 449.047 384.837 455.864 371.15 458.43C368.87 458.879 363.726 459.034 361.745 460H149.061C146.381 459.071 141.296 458.71 138.285 458.13C110.775 452.828 89.0848 430.098 86.123 401.896L86.4958 401.71C86.9104 400.954 86.6357 393.72 86.6105 392.304C86.4711 384.466 86.4021 376.486 86.6456 368.653C86.7713 364.611 87.5502 360.829 87.1596 356.763C87.4107 352.674 88.0241 348.894 88.6273 344.975C94.1103 309.345 109.205 268.487 145.773 254.681C150.163 253.024 153.998 252.121 158.567 251.083C159.906 251.547 160.842 251.389 162.31 251.214C167.008 250.653 172.064 251.036 176.781 250.867C177.618 250.837 182.61 252.233 183.381 252.599C183.88 252.563 183.845 252.559 184.271 252.287Z" fill="#EBEBEB"/>
-<path d="M244.801 53H260.441C267.44 54.439 273.517 54.8037 280.589 56.8815C298.191 62.0534 314.066 72.4031 326.047 86.2787C329.182 89.8991 332.151 93.3307 334.779 97.3513C343.546 110.8 348.82 126.222 350.125 142.223C350.912 151.775 350.224 163.807 348.205 173.166C344.855 188.235 337.863 202.253 327.84 213.994C322.069 220.767 313.737 228.461 306.255 233.28C284.206 247.665 257.307 252.603 231.586 246.986C206.188 241.341 184.032 225.927 169.909 204.076C162.036 191.846 156.668 177.942 155.285 163.401C155.484 163.326 155.588 163.225 155.768 163.096C155.92 162.313 155.85 156.68 155.81 155.464C155.621 149.79 156.121 142.857 155.516 137.352C155.687 134.419 156.375 131.57 156.971 128.706C159.836 114.939 165.93 102.697 174.545 91.5129C185.014 77.6886 198.963 66.8883 214.969 60.2133C218.147 58.8794 220.95 57.7646 224.268 56.7839C230.994 54.7949 238.103 54.4343 244.801 53Z" fill="#EBEBEB"/>
-<path d="M86.1228 401.896C85.7104 400.451 85.7952 398.859 85.7571 397.359C85.5164 387.908 85.7762 378.449 85.8054 368.997C85.8102 367.466 86.2397 365.66 86.3454 364.106C86.5145 361.616 86.6316 359.208 87.1594 356.764C87.5499 360.829 86.7711 364.611 86.6454 368.653C86.4018 376.486 86.4709 384.467 86.6102 392.305C86.6354 393.72 86.9102 400.954 86.4955 401.71L86.1228 401.896Z" fill="#EBEBEB"/>
-<path d="M158.566 251.083C162.961 249.934 174.363 249.118 179.073 250.121C180.66 250.459 182.79 251.754 184.271 252.287C183.845 252.559 183.88 252.563 183.381 252.599C182.61 252.234 177.618 250.837 176.78 250.867C172.063 251.037 167.008 250.653 162.31 251.215C160.841 251.39 159.906 251.547 158.566 251.083Z" fill="#EBEBEB"/>
-<path d="M155.285 163.401C154.436 160.506 154.998 144.28 155.015 140.43C155.017 139.943 155.389 137.962 155.515 137.353C156.121 142.857 155.621 149.79 155.81 155.464C155.85 156.68 155.919 162.313 155.768 163.096C155.588 163.225 155.484 163.326 155.285 163.401Z" fill="#EBEBEB"/>
-</g>
-<defs>
-<radialGradient id="paint0_radial_142_140" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(256 256) scale(512)">
-<stop stop-color="#4D4D4D"/>
-<stop offset="1"/>
-</radialGradient>
-<clipPath id="clip0_142_140">
-<rect width="512" height="512" fill="white"/>
-</clipPath>
-</defs>
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48" fill="none">
+  <defs>
+    <linearGradient id="surface" x1="7" y1="4" x2="41" y2="45" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#202330" />
+      <stop offset="0.52" stop-color="#151821" />
+      <stop offset="1" stop-color="#0D0F16" />
+    </linearGradient>
+    <radialGradient id="glow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(13 8) rotate(43) scale(44)">
+      <stop stop-color="#64748b" stop-opacity="0.72" />
+      <stop offset="0.42" stop-color="#334155" stop-opacity="0.28" />
+      <stop offset="1" stop-color="#334155" stop-opacity="0" />
+    </radialGradient>
+    <linearGradient id="edge" x1="7" y1="4" x2="42" y2="43" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#64748b" stop-opacity="0.92" />
+      <stop offset="0.36" stop-color="#FFFFFF" stop-opacity="0.15" />
+      <stop offset="0.72" stop-color="#FFFFFF" stop-opacity="0.05" />
+      <stop offset="1" stop-color="#334155" stop-opacity="0.55" />
+    </linearGradient>
+    <linearGradient id="top-line" x1="11" y1="5" x2="34" y2="5" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#64748b" stop-opacity="0" />
+      <stop offset="0.5" stop-color="#FFFFFF" stop-opacity="0.48" />
+      <stop offset="1" stop-color="#64748b" stop-opacity="0" />
+    </linearGradient>
+    <filter id="shadow" x="-30%" y="-30%" width="160%" height="170%">
+      <feDropShadow dx="0" dy="3" stdDeviation="3" flood-color="#02030A" flood-opacity="0.52" />
+    </filter>
+    <filter id="glyph-glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="1.7" />
+    </filter>
+    <clipPath id="clip">
+      <rect x="2" y="2" width="44" height="44" rx="13" />
+    </clipPath>
+  </defs>
+  <g filter="url(#shadow)">
+    <rect x="2" y="2" width="44" height="44" rx="13" fill="url(#surface)" />
+    <g clip-path="url(#clip)">
+      <rect x="2" y="2" width="44" height="44" fill="url(#glow)" />
+      <circle cx="39" cy="40" r="13" fill="#334155" fill-opacity="0.1" />
+    </g>
+    <rect x="2.5" y="2.5" width="43" height="43" rx="12.5" stroke="url(#edge)" />
+    <path d="M12 4.5H34" stroke="url(#top-line)" stroke-linecap="round" />
+  </g>
+  <g transform="translate(12 12)" stroke="#64748b" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" opacity="0.28" filter="url(#glyph-glow)">
+    <path d="M18 20a6 6 0 0 0-12 0" />
+    <circle cx="12" cy="10" r="4" />
+    <circle cx="12" cy="12" r="10" />
+  </g>
+  <g transform="translate(12 12)" stroke="#F8FAFF" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M18 20a6 6 0 0 0-12 0" />
+    <circle cx="12" cy="10" r="4" />
+    <circle cx="12" cy="12" r="10" />
+  </g>
 </svg>

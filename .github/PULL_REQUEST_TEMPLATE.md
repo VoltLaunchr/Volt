@@ -19,7 +19,7 @@
 ## Checklist
 
 - [ ] My code follows the project style (Prettier + rustfmt)
-- [ ] I have run `bun run test` and `cd src-tauri && cargo test --lib` locally
+[ ] I have run `pnpm run test` and `cd src-tauri && cargo test --lib` locally
 - [ ] I have added tests for new functionality (or explained why not)
 - [ ] I have updated docs where relevant
 - [ ] My commits follow Conventional Commits format

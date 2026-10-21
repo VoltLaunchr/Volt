@@ -1,10 +1,56 @@
-<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
-<rect width="512" height="512" rx="117" fill="url(#paint0_radial_134_310)"/>
-<path d="M236.625 75.5C195.1 75.5 161.125 109.475 161.125 151C161.125 192.525 195.1 226.5 236.625 226.5C278.15 226.5 312.125 192.525 312.125 151C312.125 109.475 278.15 75.5 236.625 75.5ZM236.625 264.25C153.575 264.25 85.625 298.225 85.625 339.75V377.5H264.938C259.275 362.4 255.5 347.3 255.5 330.312C255.5 307.662 261.162 286.9 272.487 266.138C261.162 266.138 249.837 264.25 236.625 264.25ZM368.75 377.5C342.325 377.5 321.562 356.737 321.562 330.312C321.562 322.762 323.45 315.212 327.225 309.55L306.462 288.788C298.912 300.113 293.25 315.212 293.25 330.312C293.25 371.838 327.225 405.812 368.75 405.812V434.125L410.275 392.6L368.75 349.188V377.5ZM368.75 254.812V226.5L327.225 268.025L368.75 309.55V283.125C395.175 283.125 415.938 303.888 415.938 330.312C415.938 337.863 414.05 345.413 410.275 351.075L431.037 371.838C438.587 360.513 444.25 345.413 444.25 330.312C444.25 288.787 410.275 254.812 368.75 254.812Z" fill="#F0F0F0"/>
-<defs>
-<radialGradient id="paint0_radial_134_310" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(149 152.5) rotate(58.5561) scale(580.826 1006.08)">
-<stop stop-color="#393939"/>
-<stop offset="1" stop-color="#252525"/>
-</radialGradient>
-</defs>
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48" fill="none">
+  <defs>
+    <linearGradient id="surface" x1="7" y1="4" x2="41" y2="45" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#202330" />
+      <stop offset="0.52" stop-color="#151821" />
+      <stop offset="1" stop-color="#0D0F16" />
+    </linearGradient>
+    <radialGradient id="glow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(13 8) rotate(43) scale(44)">
+      <stop stop-color="#0ea5e9" stop-opacity="0.72" />
+      <stop offset="0.42" stop-color="#0369a1" stop-opacity="0.28" />
+      <stop offset="1" stop-color="#0369a1" stop-opacity="0" />
+    </radialGradient>
+    <linearGradient id="edge" x1="7" y1="4" x2="42" y2="43" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0ea5e9" stop-opacity="0.92" />
+      <stop offset="0.36" stop-color="#FFFFFF" stop-opacity="0.15" />
+      <stop offset="0.72" stop-color="#FFFFFF" stop-opacity="0.05" />
+      <stop offset="1" stop-color="#0369a1" stop-opacity="0.55" />
+    </linearGradient>
+    <linearGradient id="top-line" x1="11" y1="5" x2="34" y2="5" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0ea5e9" stop-opacity="0" />
+      <stop offset="0.5" stop-color="#FFFFFF" stop-opacity="0.48" />
+      <stop offset="1" stop-color="#0ea5e9" stop-opacity="0" />
+    </linearGradient>
+    <filter id="shadow" x="-30%" y="-30%" width="160%" height="170%">
+      <feDropShadow dx="0" dy="3" stdDeviation="3" flood-color="#02030A" flood-opacity="0.52" />
+    </filter>
+    <filter id="glyph-glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="1.7" />
+    </filter>
+    <clipPath id="clip">
+      <rect x="2" y="2" width="44" height="44" rx="13" />
+    </clipPath>
+  </defs>
+  <g filter="url(#shadow)">
+    <rect x="2" y="2" width="44" height="44" rx="13" fill="url(#surface)" />
+    <g clip-path="url(#clip)">
+      <rect x="2" y="2" width="44" height="44" fill="url(#glow)" />
+      <circle cx="39" cy="40" r="13" fill="#0369a1" fill-opacity="0.1" />
+    </g>
+    <rect x="2.5" y="2.5" width="43" height="43" rx="12.5" stroke="url(#edge)" />
+    <path d="M12 4.5H34" stroke="url(#top-line)" stroke-linecap="round" />
+  </g>
+  <g transform="translate(12 12)" stroke="#0ea5e9" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" opacity="0.28" filter="url(#glyph-glow)">
+    <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" />
+    <path d="M21 3v5h-5" />
+    <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" />
+    <path d="M8 16H3v5" />
+  </g>
+  <g transform="translate(12 12)" stroke="#F8FAFF" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" />
+    <path d="M21 3v5h-5" />
+    <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" />
+    <path d="M8 16H3v5" />
+  </g>
 </svg>

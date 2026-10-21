@@ -2,9 +2,9 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import { getVersion } from '@tauri-apps/api/app';
 import { invoke } from '@tauri-apps/api/core';
 import { emit } from '@tauri-apps/api/event';
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import i18n from '../../i18n';
+import i18n, { resolveAppLanguage } from '../../i18n';
 import {
   Package,
   Bug,
@@ -16,7 +16,14 @@ import {
   Activity,
   Gamepad2,
   Clipboard as ClipboardIcon,
+  Smile,
+  StickyNote,
+  Scissors,
+  Link as LinkIcon,
+  LayoutGrid,
+  Wrench,
   Folder,
+  FolderPlus,
   FolderOpen,
   FolderX,
   Lightbulb,
@@ -29,6 +36,14 @@ import {
   Download,
   Upload,
   RefreshCw,
+  Plus,
+  X,
+  ArrowUp,
+  ArrowDown,
+  Pencil,
+  Trash2,
+  KeyRound,
+  Loader2,
 } from 'lucide-react';
 import { Button, HotkeyCapture, Spinner, Toggle } from '../../shared/components/ui';
 import { extractErrorMessage } from '../../shared/utils/error';
@@ -47,6 +62,14 @@ import {
 import type { SkinTone } from '../plugins/builtin/emoji-picker/types';
 import { applyTheme, settingsService } from './services/settingsService';
 import {
+  applyWindowOpacity,
+  clampTransparency,
+  TRANSPARENCY_MAX,
+  TRANSPARENCY_MIN,
+  TRANSPARENCY_STEP,
+} from './services/appearanceService';
+import { previewAppearanceOnMain } from '../window/services/windowEffectService';
+import {
   checkForUpdate,
   downloadAndInstall,
   deferredInstall,
@@ -54,6 +77,7 @@ import {
   clearPendingUpdate,
   snoozeUpdate,
   skipVersion,
+  isPackageManagerManaged,
   type UpdateInfo,
   type UpdateChannel,
 } from './services/updateService';
@@ -61,19 +85,67 @@ import {
   DEFAULT_SETTINGS,
   Settings,
   Theme,
+  WindowEffect,
   WindowPosition,
   ShowOnScreen,
   AppShortcut,
+  FallbackCommand,
+  FallbackKind,
 } from './types/settings.types';
 import { SETTINGS_CATEGORIES, type SettingsCategory } from './constants/settingsCategories';
+import { MANAGED_PLUGINS } from '../plugins/builtin/manifest';
 import { ExtensionsStore } from '../extensions';
 import { AiSettingsView } from './components/AiSettingsView';
 import { IntegrationsPanel } from './components/IntegrationsPanel';
 import { NotesSettingsPanel } from './components/NotesSettingsPanel';
+import { SnippetsManagerPanel } from './components/SnippetsManagerPanel';
+import { WebSearchSettingsPanel } from './components/WebSearchSettingsPanel';
+import { webSearchHistory } from '../web-search';
+import { credentialsService } from './services/credentialsService';
+import { getShortcutCategoryMeta } from './components/ShortcutCategoryIcon';
+import { stripShortcutIcon, useShortcutAppIcons } from './hooks/useShortcutAppIcons';
 import { SyncPanel } from './components/SyncPanel';
 import { AccountSection } from '../auth';
 import logo from '../../assets/icons/logo.svg';
 import { cn } from '@/lib/utils';
+
+// Lucide icon per managed plugin id. Keyed by the canonical runtime id from the
+// MANAGED_PLUGINS manifest so the Settings list, the registry, and the default
+// settings all agree on one id set.
+const PLUGIN_ICONS: Record<string, React.ComponentType<{ size?: number; className?: string }>> = {
+  calculator: Calculator,
+  websearch: Globe,
+  systemcommands: Terminal,
+  timer: Clock,
+  system_monitor: Activity,
+  games: Gamepad2,
+  clipboard: ClipboardIcon,
+  'emoji-picker': Smile,
+  notes: StickyNote,
+  snippets: Scissors,
+  shellcommand: Terminal,
+  quicklinks: LinkIcon,
+  'window-management': LayoutGrid,
+  'developer-tools': Wrench,
+};
+
+const SHORTCUTS_RENDER_LIMIT = 80;
+const SHORTCUT_ICON_PREFETCH_LIMIT = 96;
+const getShortcutCategory = (shortcut: AppShortcut) => shortcut.category || 'Applications';
+const BRAVE_SEARCH_SERVICE = 'brave-search' as const;
+
+type EditableFallbackKind = Extract<FallbackKind, 'webSearch' | 'url'>;
+type FallbackDraft = Pick<FallbackCommand, 'label' | 'target' | 'icon' | 'enabled'> & {
+  kind: EditableFallbackKind;
+};
+
+const EMPTY_FALLBACK_DRAFT: FallbackDraft = {
+  label: '',
+  target: '',
+  icon: 'globe',
+  kind: 'webSearch',
+  enabled: true,
+};
 
 export function SettingsApp() {
   const { t } = useTranslation('settings');
@@ -95,6 +167,7 @@ export function SettingsApp() {
   const [hasChanges, setHasChanges] = useState(false);
   const [isRestartingOnboarding, setIsRestartingOnboarding] = useState(false);
   const [hotkeyError, setHotkeyError] = useState<string | null>(null);
+  const [snippetExpansionError, setSnippetExpansionError] = useState<string | null>(null);
   const [appShortcuts, setAppShortcuts] = useState<AppShortcut[]>([]);
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(
     new Set(['Applications'])
@@ -104,7 +177,9 @@ export function SettingsApp() {
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [diagnosticsCopied, setDiagnosticsCopied] = useState(false);
   const [isScanningApps, setIsScanningApps] = useState(false);
-  const [scanResult, setScanResult] = useState<{ count: number; error: string | null } | null>(null);
+  const [scanResult, setScanResult] = useState<{ count: number; error: string | null } | null>(
+    null
+  );
   const [exportImportStatus, setExportImportStatus] = useState<{
     type: 'success' | 'error';
     message: string;
@@ -120,8 +195,46 @@ export function SettingsApp() {
   const [appVersion, setAppVersion] = useState<string>('');
   const [emojiSkinTone, setEmojiSkinToneState] = useState<SkinTone>(() => getPreferredSkinTone());
   const [emojiColumns, setEmojiColumnsState] = useState<number>(() => getEmojiColumns());
-  const [emojiPrimaryAction, setEmojiPrimaryActionState] = useState<'copy' | 'paste'>(
-    () => getEmojiPrimaryAction()
+  const [emojiPrimaryAction, setEmojiPrimaryActionState] = useState<'copy' | 'paste'>(() =>
+    getEmojiPrimaryAction()
+  );
+  const [editingFallbackId, setEditingFallbackId] = useState<string | null>(null);
+  const [fallbackDraft, setFallbackDraft] = useState<FallbackDraft>(EMPTY_FALLBACK_DRAFT);
+  const [fallbackFormError, setFallbackFormError] = useState<string | null>(null);
+  const [braveApiKey, setBraveApiKey] = useState('');
+  const [hasBraveApiKey, setHasBraveApiKey] = useState(false);
+  const [isBraveCredentialBusy, setIsBraveCredentialBusy] = useState(false);
+  const [braveCredentialStatus, setBraveCredentialStatus] = useState<
+    'idle' | 'saved' | 'valid' | 'invalid' | 'deleted'
+  >('idle');
+  const [braveCredentialError, setBraveCredentialError] = useState<string | null>(null);
+  const shortcutsForIconLoading = useMemo(() => {
+    if (activeCategory !== 'shortcuts') return [];
+
+    const query = searchQuery.trim().toLowerCase();
+    const normalizedCategoryFilter = categoryFilter.toLowerCase();
+
+    return appShortcuts
+      .filter((shortcut) => {
+        const category = getShortcutCategory(shortcut);
+        if (!expandedCategories.has(category)) return false;
+        if (
+          normalizedCategoryFilter !== 'all' &&
+          category.toLowerCase() !== normalizedCategoryFilter
+        ) {
+          return false;
+        }
+        if (!query) return true;
+
+        const name = shortcut.name.toLowerCase();
+        const alias = shortcut.alias?.toLowerCase() ?? '';
+        return name.includes(query) || alias.includes(query);
+      })
+      .slice(0, SHORTCUT_ICON_PREFETCH_LIMIT);
+  }, [activeCategory, appShortcuts, categoryFilter, expandedCategories, searchQuery]);
+  const { getShortcutIconSrc, markIconFailed } = useShortcutAppIcons(
+    shortcutsForIconLoading,
+    activeCategory === 'shortcuts'
   );
 
   useEffect(() => {
@@ -144,6 +257,8 @@ export function SettingsApp() {
     dbSizeBytes: number;
     lastFullScan: number;
     isWatching: boolean;
+    staleCatchupCount: number;
+    lastStaleCatchup: number;
   } | null>(null);
   const [isRebuilding, setIsRebuilding] = useState(false);
 
@@ -155,6 +270,8 @@ export function SettingsApp() {
         dbSizeBytes: number;
         lastFullScan: number;
         isWatching: boolean;
+        staleCatchupCount: number;
+        lastStaleCatchup: number;
       }>('get_db_index_stats');
       setIndexStats(stats);
     } catch (err) {
@@ -189,25 +306,23 @@ export function SettingsApp() {
     void loadSettings();
   }, [loadSettings]);
 
+  useEffect(() => {
+    if (activeCategory !== 'plugins') return;
+
+    let cancelled = false;
+    void credentialsService.hasToken(BRAVE_SEARCH_SERVICE).then((hasToken) => {
+      if (!cancelled) setHasBraveApiKey(hasToken);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeCategory]);
+
   // Apply theme on mount
   useEffect(() => {
     applyTheme(settings.appearance.theme);
   }, [settings.appearance.theme]);
-
-  // Handle escape key to close window
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        void (async () => {
-          const currentWindow = getCurrentWindow();
-          await currentWindow.close();
-        })();
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
 
   // Switch to a target section when the main window pings us via Tauri event.
   // This covers the case where the settings window is already open — the URL
@@ -257,7 +372,7 @@ export function SettingsApp() {
 
   const saveAppShortcut = async (shortcut: AppShortcut) => {
     try {
-      await invoke<void>('save_app_shortcut', { shortcut });
+      await invoke<void>('save_app_shortcut', { shortcut: stripShortcutIcon(shortcut) });
       await loadAppShortcuts();
     } catch (err) {
       logger.error('Failed to save app shortcut:', err);
@@ -275,27 +390,41 @@ export function SettingsApp() {
     setExpandedCategories(newExpanded);
   };
 
-  const handleSave = async () => {
+  const handleSave = useCallback(async (): Promise<boolean> => {
     setIsSaving(true);
     setError(null);
     try {
       await settingsService.saveSettings(settings);
       setHasChanges(false);
+      return true;
     } catch (err) {
       setError(t('errors.saveFailed'));
       logger.error('Failed to save settings:', err);
+      return false;
     } finally {
       setIsSaving(false);
     }
-  };
+  }, [settings, t]);
 
-  const handleClose = async () => {
-    if (hasChanges) {
-      await handleSave();
+  const handleClose = useCallback(async () => {
+    if (hasChanges && !(await handleSave())) {
+      return;
     }
     const currentWindow = getCurrentWindow();
     await currentWindow.close();
-  };
+  }, [handleSave, hasChanges]);
+
+  // Escape follows the same save-before-close contract as the title-bar button.
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        void handleClose();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleClose]);
 
   const handleMinimize = async () => {
     const currentWindow = getCurrentWindow();
@@ -320,6 +449,10 @@ export function SettingsApp() {
     []
   );
 
+  const handleWebSearchSettingsUpdated = useCallback((webSearch: Settings['webSearch']) => {
+    setSettings((current) => ({ ...current, webSearch }));
+  }, []);
+
   const handleThemeChange = useCallback(
     (theme: Theme) => {
       updateSettings('appearance', 'theme', theme);
@@ -328,26 +461,38 @@ export function SettingsApp() {
     [updateSettings]
   );
 
+  const handleWindowEffectChange = useCallback(
+    (windowEffect: WindowEffect) => {
+      const nextAppearance = {
+        ...settings.appearance,
+        windowEffect,
+      };
+      updateSettings('appearance', 'windowEffect', windowEffect);
+      applyWindowOpacity(nextAppearance.transparency, windowEffect);
+      void previewAppearanceOnMain(nextAppearance);
+    },
+    [settings.appearance, updateSettings]
+  );
+
+  const handleTransparencyChange = useCallback(
+    (transparency: number) => {
+      const clamped = clampTransparency(transparency);
+      const nextAppearance = {
+        ...settings.appearance,
+        transparency: clamped,
+      };
+      updateSettings('appearance', 'transparency', clamped);
+      applyWindowOpacity(clamped, nextAppearance.windowEffect);
+      void previewAppearanceOnMain(nextAppearance);
+    },
+    [settings.appearance, updateSettings]
+  );
+
   const handleLanguageChange = useCallback(
     async (language: 'auto' | 'en' | 'fr') => {
       updateSettings('general', 'language', language);
 
-      let resolvedLng: string = language;
-      if (language === 'auto') {
-        try {
-          const { locale } = await import('@tauri-apps/plugin-os');
-          const osLocale = await locale();
-          if (osLocale) {
-            const base = osLocale.split('-')[0].toLowerCase();
-            if (base === 'fr' || base === 'en') resolvedLng = base;
-            else resolvedLng = 'en';
-          } else {
-            resolvedLng = 'en';
-          }
-        } catch {
-          resolvedLng = 'en';
-        }
-      }
+      const resolvedLng = await resolveAppLanguage(language);
 
       await i18n.changeLanguage(resolvedLng);
       await emit('volt://language-changed', { language: resolvedLng });
@@ -404,6 +549,177 @@ export function SettingsApp() {
       ? [...currentPlugins, pluginId]
       : currentPlugins.filter((id) => id !== pluginId);
     updateSettings('plugins', 'enabledPlugins', newPlugins);
+  };
+
+  const beginAddFallback = () => {
+    setFallbackDraft(EMPTY_FALLBACK_DRAFT);
+    setFallbackFormError(null);
+    setEditingFallbackId('new');
+  };
+
+  const beginEditFallback = (command: FallbackCommand) => {
+    if (command.kind === 'shell') return;
+    setFallbackDraft({
+      label: command.label,
+      target: command.target,
+      icon: command.icon ?? '',
+      kind: command.kind,
+      enabled: command.enabled,
+    });
+    setFallbackFormError(null);
+    setEditingFallbackId(command.id);
+  };
+
+  const closeFallbackEditor = () => {
+    setEditingFallbackId(null);
+    setFallbackDraft(EMPTY_FALLBACK_DRAFT);
+    setFallbackFormError(null);
+  };
+
+  const saveFallbackDraft = () => {
+    const label = fallbackDraft.label.trim();
+    const target = fallbackDraft.target.trim();
+    if (!label || !target) {
+      setFallbackFormError(t('fallbacks.validation.required'));
+      return;
+    }
+    try {
+      const parsedTarget = new URL(
+        target.replaceAll('{query}', 'query').replaceAll('{rawQuery}', 'query')
+      );
+      if (parsedTarget.protocol !== 'http:' && parsedTarget.protocol !== 'https:') {
+        throw new Error('Unsupported fallback protocol');
+      }
+    } catch {
+      setFallbackFormError(t('fallbacks.validation.invalidUrl'));
+      return;
+    }
+
+    const currentCommands = settings.fallbacks.commands;
+    const nextCommand: FallbackCommand = {
+      ...fallbackDraft,
+      id:
+        editingFallbackId === 'new'
+          ? `fallback-custom-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+          : editingFallbackId!,
+      label,
+      target,
+      icon: fallbackDraft.icon?.trim() || undefined,
+      order:
+        editingFallbackId === 'new'
+          ? currentCommands.reduce((max, command) => Math.max(max, command.order), -1) + 1
+          : (currentCommands.find((command) => command.id === editingFallbackId)?.order ?? 0),
+    };
+
+    const commands =
+      editingFallbackId === 'new'
+        ? [...currentCommands, nextCommand]
+        : currentCommands.map((command) =>
+            command.id === editingFallbackId ? nextCommand : command
+          );
+
+    updateSettings('fallbacks', 'commands', commands);
+    closeFallbackEditor();
+  };
+
+  const toggleFallback = (id: string, enabled: boolean) => {
+    updateSettings(
+      'fallbacks',
+      'commands',
+      settings.fallbacks.commands.map((command) =>
+        command.id === id ? { ...command, enabled } : command
+      )
+    );
+  };
+
+  const moveFallback = (id: string, direction: -1 | 1) => {
+    const ordered = [...settings.fallbacks.commands].sort(
+      (a, b) => a.order - b.order || a.id.localeCompare(b.id)
+    );
+    const fromIndex = ordered.findIndex((command) => command.id === id);
+    if (fromIndex < 0) return;
+
+    let toIndex = fromIndex + direction;
+    while (toIndex >= 0 && toIndex < ordered.length && ordered[toIndex].kind === 'shell') {
+      toIndex += direction;
+    }
+    if (toIndex < 0 || toIndex >= ordered.length) return;
+
+    const [moved] = ordered.splice(fromIndex, 1);
+    ordered.splice(toIndex, 0, moved);
+    updateSettings(
+      'fallbacks',
+      'commands',
+      ordered.map((command, order) => ({ ...command, order }))
+    );
+  };
+
+  const removeFallback = (command: FallbackCommand) => {
+    if (!window.confirm(t('fallbacks.confirmDelete', { label: command.label }))) return;
+    updateSettings(
+      'fallbacks',
+      'commands',
+      settings.fallbacks.commands
+        .filter((candidate) => candidate.id !== command.id)
+        .sort((a, b) => a.order - b.order)
+        .map((candidate, order) => ({ ...candidate, order }))
+    );
+    if (editingFallbackId === command.id) closeFallbackEditor();
+  };
+
+  const handleSaveBraveApiKey = async () => {
+    const apiKey = braveApiKey.trim();
+    if (!apiKey) {
+      setBraveCredentialError(t('fallbacks.brave.keyRequired'));
+      return;
+    }
+
+    setIsBraveCredentialBusy(true);
+    setBraveCredentialError(null);
+    setBraveCredentialStatus('idle');
+    try {
+      await credentialsService.saveToken(BRAVE_SEARCH_SERVICE, apiKey);
+      setBraveApiKey('');
+      setHasBraveApiKey(true);
+      setBraveCredentialStatus('saved');
+    } catch (credentialError) {
+      setBraveCredentialError(extractErrorMessage(credentialError));
+    } finally {
+      setIsBraveCredentialBusy(false);
+    }
+  };
+
+  const handleTestBraveApiKey = async () => {
+    setIsBraveCredentialBusy(true);
+    setBraveCredentialError(null);
+    setBraveCredentialStatus('idle');
+    try {
+      const isValid = await credentialsService.testToken(BRAVE_SEARCH_SERVICE);
+      setBraveCredentialStatus(isValid ? 'valid' : 'invalid');
+    } catch (credentialError) {
+      setBraveCredentialError(extractErrorMessage(credentialError));
+      setBraveCredentialStatus('invalid');
+    } finally {
+      setIsBraveCredentialBusy(false);
+    }
+  };
+
+  const handleDeleteBraveApiKey = async () => {
+    if (!window.confirm(t('fallbacks.brave.confirmDelete'))) return;
+
+    setIsBraveCredentialBusy(true);
+    setBraveCredentialError(null);
+    setBraveCredentialStatus('idle');
+    try {
+      await credentialsService.deleteToken(BRAVE_SEARCH_SERVICE);
+      setBraveApiKey('');
+      setHasBraveApiKey(false);
+      setBraveCredentialStatus('deleted');
+    } catch (credentialError) {
+      setBraveCredentialError(extractErrorMessage(credentialError));
+    } finally {
+      setIsBraveCredentialBusy(false);
+    }
   };
 
   const handleClipboardMonitoringToggle = async (enabled: boolean) => {
@@ -469,7 +785,9 @@ export function SettingsApp() {
                     <category.icon size={18} className="shrink-0" />
                   )}
                   <span className="flex-1">
-                    {t(`sections.${category.id === 'file-search' ? 'fileSearch' : category.id === 'clipboard' ? 'clipboard' : category.id}`)}
+                    {t(
+                      `sections.${category.id === 'file-search' ? 'fileSearch' : category.id === 'web-search' ? 'webSearch' : category.id === 'clipboard' ? 'clipboard' : category.id}`
+                    )}
                   </span>
                 </button>
               </div>
@@ -572,7 +890,9 @@ export function SettingsApp() {
 
         <div className="flex items-center justify-between py-3 border-b border-hairline last:border-0">
           <div className="flex flex-col gap-0.5">
-            <span className="text-sm text-body" id="hotkey-label">{t('general.voltHotkey')}</span>
+            <span className="text-sm text-body" id="hotkey-label">
+              {t('general.voltHotkey')}
+            </span>
             <span className="text-xs text-mute mt-0.5" id="hotkey-desc">
               {t('general.hotkeyDesc')}
             </span>
@@ -622,7 +942,7 @@ export function SettingsApp() {
     // Group shortcuts by category
     const groupedShortcuts = appShortcuts.reduce(
       (acc, shortcut) => {
-        const category = shortcut.category || 'Applications';
+        const category = getShortcutCategory(shortcut);
         if (!acc[category]) {
           acc[category] = [];
         }
@@ -633,6 +953,7 @@ export function SettingsApp() {
     );
 
     // Filter shortcuts based on search query and category filter
+    const normalizedSearchQuery = searchQuery.trim().toLowerCase();
     const filteredShortcuts = Object.entries(groupedShortcuts).reduce(
       (acc, [category, shortcuts]) => {
         if (categoryFilter !== 'all' && category.toLowerCase() !== categoryFilter.toLowerCase()) {
@@ -640,11 +961,10 @@ export function SettingsApp() {
         }
 
         const filtered = shortcuts.filter((shortcut) => {
-          if (!searchQuery) return true;
-          const query = searchQuery.toLowerCase();
+          if (!normalizedSearchQuery) return true;
           return (
-            shortcut.name.toLowerCase().includes(query) ||
-            shortcut.alias?.toLowerCase().includes(query)
+            shortcut.name.toLowerCase().includes(normalizedSearchQuery) ||
+            shortcut.alias?.toLowerCase().includes(normalizedSearchQuery)
           );
         });
 
@@ -678,18 +998,18 @@ export function SettingsApp() {
 
     return (
       <div className="flex-1 flex flex-col overflow-hidden">
-        <div className="flex items-center justify-between h-14 px-6 border-b border-hairline shrink-0">
+        <div className="flex min-h-14 flex-col gap-3 border-b border-hairline px-4 py-3 shrink-0 lg:flex-row lg:items-center lg:justify-between lg:px-6">
           <h2 className="text-sm font-medium text-ink m-0">{t('shortcuts.title')}</h2>
-          <div className="flex items-center gap-2.5 flex-wrap">
+          <div className="grid w-full grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(12rem,auto)] lg:w-auto lg:grid-cols-[minmax(0,1fr)_minmax(12rem,auto)_auto]">
             <input
               type="text"
-              className="w-52 bg-surface-elevated border border-hairline rounded-md px-3 py-1.5 text-sm text-on-dark outline-none focus:border-hairline-strong placeholder:text-ash"
+              className="min-w-0 w-full bg-surface-elevated border border-hairline rounded-md px-3 py-1.5 text-sm text-on-dark outline-none focus:border-hairline-strong placeholder:text-ash lg:w-64"
               placeholder={t('shortcuts.searchPlaceholder')}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
             />
             <select
-              className="bg-surface-elevated border border-hairline rounded-md px-3 py-1.5 text-sm text-on-dark outline-none focus:border-hairline-strong cursor-pointer"
+              className="min-w-0 w-full bg-surface-elevated border border-hairline rounded-md px-3 py-1.5 text-sm text-on-dark outline-none focus:border-hairline-strong cursor-pointer sm:w-auto"
               value={categoryFilter}
               onChange={(e) => setCategoryFilter(e.target.value)}
             >
@@ -700,110 +1020,148 @@ export function SettingsApp() {
                 </option>
               ))}
             </select>
-            <Button variant="secondary" onClick={() => { void syncAppShortcuts(); }}>
+            <Button
+              variant="secondary"
+              className="w-full sm:col-span-2 lg:col-span-1 lg:w-auto"
+              onClick={() => {
+                void syncAppShortcuts();
+              }}
+            >
               {t('shortcuts.syncApps')}
             </Button>
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-6">
+        <div className="flex-1 overflow-y-auto p-3 sm:p-6">
           {Object.entries(filteredShortcuts).map(([category, shortcuts]) => {
             const isExpanded = expandedCategories.has(category);
+            const categoryMeta = getShortcutCategoryMeta(category);
+            const CategoryIcon = categoryMeta.Icon;
+            const shouldLimitRows = !normalizedSearchQuery;
+            const visibleShortcuts = shouldLimitRows
+              ? shortcuts.slice(0, SHORTCUTS_RENDER_LIMIT)
+              : shortcuts;
+            const hiddenShortcutCount = shortcuts.length - visibleShortcuts.length;
 
             return (
-              <div key={category} className="mb-6">
+              <div key={category} className="mb-4 sm:mb-6">
                 <div
-                  className="flex items-center gap-2.5 px-4 py-3 cursor-pointer bg-surface-elevated/30 rounded-md mb-2 transition-colors hover:bg-surface-elevated/50 select-none"
+                  className="flex min-h-14 items-center gap-2.5 px-3 py-3 cursor-pointer bg-surface-elevated/30 rounded-md mb-2 transition-colors hover:bg-surface-elevated/50 select-none sm:px-4"
                   onClick={() => toggleCategory(category)}
                 >
                   {isExpanded ? (
-                    <ChevronDown size={20} className="text-ash" />
+                    <ChevronDown size={18} className="shrink-0 text-ash" />
                   ) : (
-                    <ChevronRight size={20} className="text-ash" />
+                    <ChevronRight size={18} className="shrink-0 text-ash" />
                   )}
-                  <Package size={20} className="text-ash" />
-                  <span className="flex-1 text-sm font-semibold text-ink">
-                    {category} ({shortcuts.length})
+                  <span
+                    className={cn(
+                      'flex size-8 shrink-0 items-center justify-center rounded-md border',
+                      categoryMeta.bgClass,
+                      categoryMeta.colorClass
+                    )}
+                  >
+                    <CategoryIcon className="size-5" />
+                  </span>
+                  <span className="min-w-0 flex-1 truncate text-sm font-semibold text-ink">
+                    {category}
+                  </span>
+                  <span className="shrink-0 text-xs font-medium text-mute">
+                    ({shortcuts.length})
                   </span>
                 </div>
 
                 {isExpanded && (
-                  <div className="bg-surface-elevated/20 rounded-lg overflow-hidden">
-                    <div className="grid gap-4 px-4 py-2.5 bg-black/20 text-[12px] font-semibold text-mute uppercase tracking-[0.5px]"
-                      style={{ gridTemplateColumns: '1fr 120px 160px 60px' }}
-                    >
+                  <div className="min-w-0 overflow-hidden rounded-lg bg-surface-elevated/20">
+                    <div className="hidden gap-3 bg-black/20 px-4 py-2.5 text-[12px] font-semibold uppercase tracking-[0.5px] text-mute md:grid md:grid-cols-[minmax(10rem,1fr)_minmax(8.5rem,9.5rem)_minmax(8rem,9rem)_3rem]">
                       <span>{t('shortcuts.tableHeaders.name')}</span>
                       <span>{t('shortcuts.tableHeaders.alias')}</span>
                       <span>{t('shortcuts.tableHeaders.hotkey')}</span>
                       <span></span>
                     </div>
 
-                    <div className="max-h-[400px] overflow-y-auto">
-                      {shortcuts.map((shortcut) => (
-                        <div
-                          key={shortcut.id}
-                          className="grid gap-4 px-4 py-3 items-center border-b border-hairline/40 last:border-0 transition-colors hover:bg-white/[0.03]"
-                          style={{ gridTemplateColumns: '1fr 120px 160px 60px' }}
-                        >
-                          <span className="flex items-center gap-2.5 text-[13px] text-ink">
-                            {shortcut.icon ? (
-                              <img
-                                src={`data:image/png;base64,${shortcut.icon}`}
-                                alt=""
-                                className="shrink-0"
-                                style={{ width: 16, height: 16 }}
-                              />
-                            ) : (
-                              <Package size={16} className="text-ash shrink-0" />
-                            )}
-                            {shortcut.name}
-                          </span>
-                          <span className="flex items-center pointer-events-auto">
-                            {editingAliasId === shortcut.id ? (
-                              <input
-                                type="text"
-                                className="w-full bg-surface-elevated border border-hairline rounded-md px-2 py-1 text-sm text-on-dark outline-none focus:border-hairline-strong"
-                                defaultValue={shortcut.alias || ''}
-                                autoFocus
-                                onBlur={(e) => {
-                                  void handleAliasChange(shortcut, e.target.value);
+                    <div className="max-h-[400px] overflow-y-auto overflow-x-hidden">
+                      {visibleShortcuts.map((shortcut) => {
+                        const shortcutIconSrc = getShortcutIconSrc(shortcut);
+
+                        return (
+                          <div
+                            key={shortcut.id}
+                            className="grid grid-cols-1 items-center gap-2 border-b border-hairline/40 px-3 py-3 transition-colors last:border-0 hover:bg-white/[0.03] sm:px-4 md:grid-cols-[minmax(10rem,1fr)_minmax(8.5rem,9.5rem)_minmax(8rem,9rem)_3rem] md:gap-3"
+                          >
+                            <span className="flex min-w-0 items-center gap-2.5 text-[13px] text-ink">
+                              {shortcutIconSrc ? (
+                                <img
+                                  src={shortcutIconSrc}
+                                  alt=""
+                                  className="size-5 shrink-0 rounded-[4px] object-contain"
+                                  onError={() => markIconFailed(shortcut.path)}
+                                />
+                              ) : (
+                                <span
+                                  className={cn(
+                                    'flex size-5 shrink-0 items-center justify-center rounded-[5px] border',
+                                    categoryMeta.bgClass,
+                                    categoryMeta.colorClass
+                                  )}
+                                >
+                                  <CategoryIcon className="size-3.5" />
+                                </span>
+                              )}
+                              <span className="min-w-0 truncate">{shortcut.name}</span>
+                            </span>
+                            <span className="flex min-w-0 items-center pointer-events-auto">
+                              {editingAliasId === shortcut.id ? (
+                                <input
+                                  type="text"
+                                  className="w-full bg-surface-elevated border border-hairline rounded-md px-2 py-1 text-sm text-on-dark outline-none focus:border-hairline-strong"
+                                  defaultValue={shortcut.alias || ''}
+                                  autoFocus
+                                  onBlur={(e) => {
+                                    void handleAliasChange(shortcut, e.target.value);
+                                  }}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                      void handleAliasChange(shortcut, e.currentTarget.value);
+                                    } else if (e.key === 'Escape') {
+                                      setEditingAliasId(null);
+                                    }
+                                  }}
+                                />
+                              ) : (
+                                <button
+                                  className="w-full min-w-0 overflow-hidden text-ellipsis whitespace-nowrap rounded-sm border border-dashed border-white/20 bg-transparent px-2.5 py-1.5 text-xs text-mute transition-all hover:border-accent-blue hover:text-accent-blue"
+                                  onClick={() => handleAliasClick(shortcut.id)}
+                                >
+                                  {shortcut.alias || t('shortcuts.addAlias')}
+                                </button>
+                              )}
+                            </span>
+                            <span className="flex min-w-0 items-center pointer-events-auto [&_button]:w-full [&_button]:justify-center [&_button]:px-2.5 [&_button]:py-1.5">
+                              <HotkeyCapture
+                                value={shortcut.hotkey || ''}
+                                onChange={(hotkey) => {
+                                  void handleHotkeyChange(shortcut, hotkey);
                                 }}
-                                onKeyDown={(e) => {
-                                  if (e.key === 'Enter') {
-                                    void handleAliasChange(shortcut, e.currentTarget.value);
-                                  } else if (e.key === 'Escape') {
-                                    setEditingAliasId(null);
-                                  }
+                                onError={setHotkeyError}
+                              />
+                            </span>
+                            <span className="flex items-center justify-start pointer-events-auto md:justify-center">
+                              <Toggle
+                                checked={shortcut.enabled}
+                                onChange={() => {
+                                  void handleToggleEnabled(shortcut);
                                 }}
                               />
-                            ) : (
-                              <button
-                                className="px-3 py-1.5 rounded-sm bg-transparent border border-dashed border-white/20 text-mute text-xs cursor-pointer transition-all hover:border-accent-blue hover:text-accent-blue whitespace-nowrap"
-                                onClick={() => handleAliasClick(shortcut.id)}
-                              >
-                                {shortcut.alias || t('shortcuts.addAlias')}
-                              </button>
-                            )}
-                          </span>
-                          <span className="flex items-center pointer-events-auto">
-                            <HotkeyCapture
-                              value={shortcut.hotkey || ''}
-                              onChange={(hotkey) => {
-                                void handleHotkeyChange(shortcut, hotkey);
-                              }}
-                              onError={setHotkeyError}
-                            />
-                          </span>
-                          <span className="flex items-center justify-center pointer-events-auto">
-                            <Toggle
-                              checked={shortcut.enabled}
-                              onChange={() => {
-                                void handleToggleEnabled(shortcut);
-                              }}
-                            />
-                          </span>
+                            </span>
+                          </div>
+                        );
+                      })}
+                      {hiddenShortcutCount > 0 && (
+                        <div className="border-t border-hairline/40 px-4 py-2.5 text-xs text-mute">
+                          {t('shortcuts.hiddenCount', { count: hiddenShortcutCount })}
                         </div>
-                      ))}
+                      )}
                     </div>
                   </div>
                 )}
@@ -813,9 +1171,7 @@ export function SettingsApp() {
 
           {Object.keys(filteredShortcuts).length === 0 && (
             <div className="text-center py-10 text-mute">
-              {appShortcuts.length === 0
-                ? t('shortcuts.noShortcuts')
-                : t('shortcuts.noMatch')}
+              {appShortcuts.length === 0 ? t('shortcuts.noShortcuts') : t('shortcuts.noMatch')}
             </div>
           )}
         </div>
@@ -908,23 +1264,84 @@ export function SettingsApp() {
 
         <div className="flex items-center justify-between py-3 border-b border-hairline last:border-0">
           <div className="flex flex-col gap-0.5">
+            <span className="text-sm text-body">{t('advanced.windowEffect')}</span>
+            <span className="text-xs text-mute mt-0.5">{t('advanced.windowEffectDesc')}</span>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
+          {(['volt-glass', 'mica', 'acrylic', 'solid'] as const).map((effectOption) => (
+            <button
+              key={effectOption}
+              type="button"
+              className={cn(
+                'p-4 rounded-xl bg-surface-elevated/30 border-2 cursor-pointer transition-all flex flex-col items-center gap-3',
+                settings.appearance.windowEffect === effectOption
+                  ? 'border-accent-blue bg-accent-blue/10'
+                  : 'border-transparent hover:bg-surface-elevated/50'
+              )}
+              onClick={() => handleWindowEffectChange(effectOption)}
+            >
+              <div
+                className={cn(
+                  'w-full h-[60px] rounded-md overflow-hidden border border-hairline-soft',
+                  effectOption === 'volt-glass' &&
+                    'bg-[rgba(20,20,30,0.85)] backdrop-blur-md border-white/10',
+                  effectOption === 'mica' &&
+                    'bg-gradient-to-br from-indigo-500/25 via-[rgba(20,20,30,0.45)] to-purple-500/15',
+                  effectOption === 'acrylic' &&
+                    'bg-gradient-to-br from-white/15 via-[rgba(30,30,45,0.5)] to-white/10 backdrop-blur-sm',
+                  effectOption === 'solid' && 'bg-surface'
+                )}
+              />
+              <span
+                className={cn(
+                  'text-[13px] font-medium text-center',
+                  settings.appearance.windowEffect === effectOption
+                    ? 'text-accent-blue'
+                    : 'text-body'
+                )}
+              >
+                {t(
+                  `advanced.windowEffect${effectOption
+                    .split('-')
+                    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+                    .join('')}`
+                )}
+              </span>
+            </button>
+          ))}
+        </div>
+
+        <div className="flex items-center justify-between py-3 border-b border-hairline last:border-0">
+          <div className="flex flex-col gap-0.5">
             <span className="text-sm text-body">{t('advanced.windowTransparency')}</span>
-            <span className="text-xs text-mute mt-0.5">{t('advanced.transparencyDesc')}</span>
+            <span className="text-xs text-mute mt-0.5">
+              {settings.appearance.windowEffect === 'solid'
+                ? t('advanced.transparencySolidHint')
+                : t('advanced.transparencyDesc')}
+            </span>
           </div>
           <div className="flex items-center gap-3">
             <input
               type="range"
-              min="0.5"
-              max="1"
-              step="0.05"
+              min={TRANSPARENCY_MIN}
+              max={TRANSPARENCY_MAX}
+              step={TRANSPARENCY_STEP}
               value={settings.appearance.transparency}
-              onChange={(e) =>
-                updateSettings('appearance', 'transparency', parseFloat(e.target.value))
-              }
-              className="w-36 h-1 rounded-full bg-white/10 outline-none cursor-pointer appearance-none"
+              disabled={settings.appearance.windowEffect === 'solid'}
+              onChange={(e) => handleTransparencyChange(parseFloat(e.target.value))}
+              className={cn(
+                'w-40 h-1 rounded-full bg-white/10 outline-none appearance-none',
+                settings.appearance.windowEffect === 'solid'
+                  ? 'opacity-40 cursor-not-allowed'
+                  : 'cursor-pointer'
+              )}
             />
-            <span className="text-[13px] text-body min-w-[44px] text-right">
-              {Math.round(settings.appearance.transparency * 100)}%
+            <span className="text-[13px] text-body min-w-[44px] text-right tabular-nums">
+              {settings.appearance.windowEffect === 'solid'
+                ? '100%'
+                : `${Math.round(settings.appearance.transparency * 100)}%`}
             </span>
           </div>
         </div>
@@ -953,19 +1370,22 @@ export function SettingsApp() {
                   themeOption === 'auto' && 'bg-gradient-to-br from-[#f3f4f6] to-[#1f2937]'
                 )}
               >
-                <div className={cn(
-                  'h-3',
-                  themeOption === 'light' ? 'bg-black/10' : 'bg-white/10'
-                )} />
-                <div className={cn(
-                  'flex-1 m-2 rounded-xs',
-                  themeOption === 'light' ? 'bg-black/5' : 'bg-white/5'
-                )} />
+                <div
+                  className={cn('h-3', themeOption === 'light' ? 'bg-black/10' : 'bg-white/10')}
+                />
+                <div
+                  className={cn(
+                    'flex-1 m-2 rounded-xs',
+                    themeOption === 'light' ? 'bg-black/5' : 'bg-white/5'
+                  )}
+                />
               </div>
-              <span className={cn(
-                'text-[13px] font-medium',
-                settings.appearance.theme === themeOption ? 'text-accent-blue' : 'text-body'
-              )}>
+              <span
+                className={cn(
+                  'text-[13px] font-medium',
+                  settings.appearance.theme === themeOption ? 'text-accent-blue' : 'text-body'
+                )}
+              >
                 {t(`advanced.theme${themeOption.charAt(0).toUpperCase() + themeOption.slice(1)}`)}
               </span>
             </button>
@@ -1033,7 +1453,7 @@ export function SettingsApp() {
     setUpdateError(null);
     setUpdateInfo(null);
     try {
-      const channel = (settings?.general.updateChannel ?? 'stable') as UpdateChannel;
+      const channel = settings?.general.updateChannel ?? 'stable';
       const update = await checkForUpdate(channel);
       setUpdateInfo(update);
       setUpdateChecked(true);
@@ -1117,9 +1537,21 @@ export function SettingsApp() {
         <div className="flex flex-col gap-1">
           {[
             { icon: Globe, label: t('about.officialWebsite'), url: 'https://voltlaunchr.com' },
-            { icon: Package, label: t('about.githubRepo'), url: 'https://github.com/VoltLaunchr/Volt' },
-            { icon: Bug, label: t('about.reportIssue'), url: 'https://github.com/VoltLaunchr/Volt/issues/new' },
-            { icon: FileText, label: t('about.releaseNotes'), url: 'https://github.com/VoltLaunchr/Volt/blob/main/CHANGELOG.md' },
+            {
+              icon: Package,
+              label: t('about.githubRepo'),
+              url: 'https://github.com/VoltLaunchr/Volt',
+            },
+            {
+              icon: Bug,
+              label: t('about.reportIssue'),
+              url: 'https://github.com/VoltLaunchr/Volt/issues/new',
+            },
+            {
+              icon: FileText,
+              label: t('about.releaseNotes'),
+              url: 'https://github.com/VoltLaunchr/Volt/blob/main/CHANGELOG.md',
+            },
           ].map(({ icon: Icon, label, url }) => (
             <button
               key={url}
@@ -1144,11 +1576,21 @@ export function SettingsApp() {
         <div className="h-px bg-hairline my-5" />
 
         <div className="flex flex-col gap-1">
-          <button onClick={() => { void handleOpenLogsFolder(); }} className="flex items-center gap-3 px-4 py-3 rounded-lg text-body bg-transparent border-none w-full text-left text-[length:inherit] font-[inherit] cursor-pointer transition-colors hover:bg-white/5 hover:text-on-dark">
+          <button
+            onClick={() => {
+              void handleOpenLogsFolder();
+            }}
+            className="flex items-center gap-3 px-4 py-3 rounded-lg text-body bg-transparent border-none w-full text-left text-[length:inherit] font-[inherit] cursor-pointer transition-colors hover:bg-white/5 hover:text-on-dark"
+          >
             <FolderOpen size={20} className="text-accent-blue shrink-0" />
             <span>{t('about.openLogs')}</span>
           </button>
-          <button onClick={() => { void handleCopyDiagnostics(); }} className="flex items-center gap-3 px-4 py-3 rounded-lg text-body bg-transparent border-none w-full text-left text-[length:inherit] font-[inherit] cursor-pointer transition-colors hover:bg-white/5 hover:text-on-dark">
+          <button
+            onClick={() => {
+              void handleCopyDiagnostics();
+            }}
+            className="flex items-center gap-3 px-4 py-3 rounded-lg text-body bg-transparent border-none w-full text-left text-[length:inherit] font-[inherit] cursor-pointer transition-colors hover:bg-white/5 hover:text-on-dark"
+          >
             {diagnosticsCopied ? (
               <Check size={20} className="text-accent-green shrink-0" />
             ) : (
@@ -1160,32 +1602,58 @@ export function SettingsApp() {
 
         <div className="h-px bg-hairline my-5" />
 
-        <div className="py-2">
-          <h4 className="text-[11px] font-medium text-ash uppercase tracking-widest mb-3">{t('about.updates')}</h4>
-
-          {/* Channel selector */}
-          <div className="flex items-center gap-3 mb-3">
-            <span className="text-xs text-mute">{t('about.channel')}</span>
-            {(['stable', 'beta'] as UpdateChannel[]).map((ch) => (
-              <label key={ch} className="flex items-center gap-1.5 cursor-pointer text-xs text-body">
-                <input
-                  type="radio"
-                  name="updateChannel"
-                  value={ch}
-                  checked={(settings?.general.updateChannel ?? 'stable') === ch}
-                  onChange={() => {
-                    if (!settings) return;
-                    const updated = { ...settings, general: { ...settings.general, updateChannel: ch } };
-                    void settingsService.updateGeneralSettings(updated.general).catch(() => {});
-                  }}
-                  className="accent-accent-blue"
-                />
-                {ch === 'stable' ? t('about.channelStable') : t('about.channelBeta')}
-              </label>
-            ))}
+        <div className="rounded-xl border border-hairline bg-surface/60 p-4 overflow-hidden">
+          <div className="flex items-center justify-between gap-3 mb-4">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="w-8 h-8 rounded-lg border border-accent-blue/20 bg-accent-blue/10 text-accent-blue flex items-center justify-center shrink-0">
+                <RefreshCw size={15} />
+              </span>
+              <div className="min-w-0">
+                <h4 className="text-sm font-semibold text-ink m-0">{t('about.updates')}</h4>
+                <p className="text-[11px] text-mute m-0 mt-0.5">Volt {appVersion || ''}</p>
+              </div>
+            </div>
+            <div
+              className="inline-flex rounded-lg border border-hairline bg-canvas p-0.5 shrink-0"
+              aria-label={t('about.channel')}
+            >
+              {(['stable', 'beta'] as UpdateChannel[]).map((ch) => {
+                const isActive = (settings?.general.updateChannel ?? 'stable') === ch;
+                return (
+                  <button
+                    key={ch}
+                    type="button"
+                    aria-pressed={isActive}
+                    onClick={() => {
+                      const updated = {
+                        ...settings,
+                        general: { ...settings.general, updateChannel: ch },
+                      };
+                      setSettings(updated);
+                      void settingsService.updateGeneralSettings(updated.general).catch(() => {});
+                    }}
+                    className={cn(
+                      'px-2.5 py-1 rounded-md border-none text-[11px] font-medium cursor-pointer transition-colors',
+                      isActive
+                        ? 'bg-accent-blue text-white shadow-sm'
+                        : 'bg-transparent text-mute hover:text-ink'
+                    )}
+                  >
+                    {ch === 'stable' ? t('about.channelStable') : t('about.channelBeta')}
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
           <div className="flex flex-col gap-2">
+            {isPackageManagerManaged() ? (
+              <div className="flex items-center gap-2 rounded-lg border border-accent-blue/20 bg-accent-blue/10 px-3 py-2.5 text-[13px] text-ink">
+                <Package size={16} className="text-accent-blue shrink-0" />
+                <span>{t('about.packageManagerManaged')}</span>
+              </div>
+            ) : (
+              <>
             {/* Deferred update ready banner */}
             {deferralReady && (
               <div className="flex items-center justify-between gap-2 px-3 py-2 rounded-md bg-accent-blue/10 border border-accent-blue/30 text-[13px] text-ink">
@@ -1203,22 +1671,33 @@ export function SettingsApp() {
             )}
 
             {!updateChecked && !isCheckingUpdate && !deferralReady && (
-              <Button onClick={() => { void handleCheckForUpdate(); }} disabled={isCheckingUpdate}>
+              <Button
+                onClick={() => {
+                  void handleCheckForUpdate();
+                }}
+                disabled={isCheckingUpdate}
+                className="w-full justify-center bg-accent-blue text-white hover:bg-accent-blue/90"
+              >
                 <RefreshCw size={16} />
                 {t('about.checkForUpdates')}
               </Button>
             )}
             {isCheckingUpdate && (
-              <div className="flex items-center gap-2 text-[13px] text-ink">
+              <div className="flex items-center gap-2 rounded-lg border border-hairline bg-canvas/70 px-3 py-2.5 text-[13px] text-ink">
                 <Spinner size="small" />
                 <span>{t('about.checking')}</span>
               </div>
             )}
             {updateChecked && !updateInfo && !isCheckingUpdate && (
-              <div className="flex items-center gap-2 text-[13px] text-ink">
+              <div className="flex items-center gap-2 rounded-lg border border-accent-green/20 bg-accent-green/10 px-3 py-2.5 text-[13px] text-ink">
                 <CheckCircle size={16} className="text-accent-green" />
                 <span>{t('about.upToDate')}</span>
-                <Button onClick={() => { void handleCheckForUpdate(); }} className="p-1 min-w-0 ml-auto">
+                <Button
+                  onClick={() => {
+                    void handleCheckForUpdate();
+                  }}
+                  className="p-1 min-w-0 ml-auto"
+                >
                   <RefreshCw size={14} />
                 </Button>
               </div>
@@ -1235,7 +1714,8 @@ export function SettingsApp() {
                 <div className="flex items-center gap-2 text-[13px] text-ink">
                   <span>{t('about.updateAvailable')}</span>
                   <span className="inline-flex items-center px-2 py-0.5 text-xs font-semibold rounded-full bg-accent-green text-on-dark">
-                    v{updateInfo.version}{updateInfo.isBeta ? ' beta' : ''}
+                    v{updateInfo.version}
+                    {updateInfo.isBeta ? ' beta' : ''}
                   </span>
                 </div>
                 {updateInfo.body && (
@@ -1247,22 +1727,33 @@ export function SettingsApp() {
                   </div>
                 )}
                 {updateInfo.isBeta ? (
-                  <Button onClick={() => {
-                    void import('@tauri-apps/plugin-opener').then(({ openUrl }) =>
-                      openUrl('https://github.com/VoltLaunchr/Volt/releases')
-                    );
-                  }}>
+                  <Button
+                    onClick={() => {
+                      void import('@tauri-apps/plugin-opener').then(({ openUrl }) =>
+                        openUrl('https://github.com/VoltLaunchr/Volt/releases')
+                      );
+                    }}
+                  >
                     <Download size={16} />
                     {t('about.downloadFromGitHub')}
                   </Button>
                 ) : (
                   <>
-                    <Button onClick={() => { void handleDownloadAndInstall(); }}>
+                    <Button
+                      onClick={() => {
+                        void handleDownloadAndInstall();
+                      }}
+                    >
                       <Download size={16} />
                       {t('about.downloadAndInstall')}
                     </Button>
                     {!updateInfo.critical && (
-                      <Button onClick={() => { void handleDeferredInstall(); }} className="bg-transparent border border-hairline hover:bg-white/5">
+                      <Button
+                        onClick={() => {
+                          void handleDeferredInstall();
+                        }}
+                        className="bg-transparent border border-hairline hover:bg-white/5"
+                      >
                         <Download size={16} />
                         {t('about.installOnNextRestart')}
                       </Button>
@@ -1314,6 +1805,8 @@ export function SettingsApp() {
                 <AlertCircle size={16} />
                 <span>{updateError}</span>
               </div>
+            )}
+              </>
             )}
           </div>
         </div>
@@ -1404,11 +1897,21 @@ export function SettingsApp() {
 
   // Render File Search section
   const renderFileSearchSection = () => {
-    const addFolder = () => {
-      const folder = window.prompt('Enter folder path to index:');
-      if (folder && folder.trim()) {
-        const newFolders = [...settings.indexing.folders, folder.trim()];
-        updateSettings('indexing', 'folders', newFolders);
+    const selectDirectory = async (title: string): Promise<string | null> => {
+      try {
+        const { open } = await import('@tauri-apps/plugin-dialog');
+        const selected = await open({ directory: true, multiple: false, title });
+        return typeof selected === 'string' ? selected : null;
+      } catch (dialogError) {
+        logger.error('Failed to open directory picker:', dialogError);
+        return null;
+      }
+    };
+
+    const addFolder = async () => {
+      const folder = await selectDirectory(t('fileSearch.addFolder'));
+      if (folder && !settings.indexing.folders.includes(folder)) {
+        updateSettings('indexing', 'folders', [...settings.indexing.folders, folder]);
       }
     };
 
@@ -1417,11 +1920,10 @@ export function SettingsApp() {
       updateSettings('indexing', 'folders', newFolders);
     };
 
-    const addExcludedPath = () => {
-      const path = window.prompt('Enter path to exclude from indexing:');
-      if (path && path.trim()) {
-        const newPaths = [...settings.indexing.excludedPaths, path.trim()];
-        updateSettings('indexing', 'excludedPaths', newPaths);
+    const addExcludedPath = async () => {
+      const path = await selectDirectory(t('fileSearch.addPath'));
+      if (path && !settings.indexing.excludedPaths.includes(path)) {
+        updateSettings('indexing', 'excludedPaths', [...settings.indexing.excludedPaths, path]);
       }
     };
 
@@ -1461,41 +1963,76 @@ export function SettingsApp() {
             />
           </div>
 
+          <div className="flex items-center justify-between py-3 border-b border-hairline last:border-0">
+            <div className="flex flex-col gap-0.5">
+              <span className="text-sm text-body">{t('fileSearch.staleThreshold')}</span>
+              <span className="text-xs text-mute mt-0.5">{t('fileSearch.staleThresholdDesc')}</span>
+            </div>
+            <select
+              className="bg-surface-elevated border border-hairline rounded-md px-3 py-1.5 text-sm text-on-dark outline-none focus:border-hairline-strong cursor-pointer"
+              value={settings.indexing.staleThresholdSecs}
+              onChange={(e) =>
+                updateSettings('indexing', 'staleThresholdSecs', parseInt(e.target.value, 10))
+              }
+            >
+              <option value={900}>{t('fileSearch.staleOptions.15m')}</option>
+              <option value={1800}>{t('fileSearch.staleOptions.30m')}</option>
+              <option value={3600}>{t('fileSearch.staleOptions.1h')}</option>
+              <option value={21600}>{t('fileSearch.staleOptions.6h')}</option>
+              <option value={86400}>{t('fileSearch.staleOptions.24h')}</option>
+              <option value={0}>{t('fileSearch.staleOptions.off')}</option>
+            </select>
+          </div>
+
           <div className="h-px bg-hairline my-5" />
 
-          <h3 className="text-sm font-semibold text-ink mb-1.5">{t('fileSearch.foldersToIndex')}</h3>
+          <h3 className="text-sm font-semibold text-ink mb-1.5">
+            {t('fileSearch.foldersToIndex')}
+          </h3>
           <p className="text-xs text-mute mb-4" id="folders-desc">
             {t('fileSearch.foldersToIndexDesc')}
           </p>
 
           <div className="flex flex-col gap-2" aria-describedby="folders-desc">
             {settings.indexing.folders.map((folder, index) => (
-              <div key={index} className="flex items-center gap-2.5 px-3.5 py-2.5 bg-surface-elevated/30 rounded-md border border-hairline transition-all hover:bg-surface-elevated/50">
+              <div
+                key={index}
+                className="flex items-center gap-2.5 px-3.5 py-2.5 bg-surface-elevated/30 rounded-md border border-hairline transition-all hover:bg-surface-elevated/50"
+              >
                 <Folder size={16} className="text-body shrink-0" />
-                <span className="flex-1 text-[13px] text-body font-mono whitespace-nowrap overflow-hidden text-ellipsis" title={folder}>
+                <span
+                  className="flex-1 text-[13px] text-body font-mono whitespace-nowrap overflow-hidden text-ellipsis"
+                  title={folder}
+                >
                   {folder}
                 </span>
                 <button
-                  className="w-6 h-6 rounded-sm bg-transparent border-none text-ash text-lg cursor-pointer flex items-center justify-center transition-all hover:bg-accent-red/15 hover:text-accent-red"
+                  className="w-7 h-7 rounded-md bg-transparent border-none text-ash cursor-pointer flex items-center justify-center transition-all hover:bg-accent-red/15 hover:text-accent-red"
                   onClick={() => removeFolder(index)}
                   title="Remove folder"
                 >
-                  ×
+                  <X size={14} />
                 </button>
               </div>
             ))}
             <button
               className="flex items-center justify-center gap-1.5 py-3 rounded-md bg-transparent border border-dashed border-accent-blue/30 text-accent-blue text-[13px] font-medium cursor-pointer transition-all hover:bg-accent-blue/10 hover:border-accent-blue"
-              onClick={addFolder}
+              onClick={() => {
+                void addFolder();
+              }}
             >
-              <span>+</span> {t('fileSearch.addFolder')}
+              <FolderPlus size={15} /> {t('fileSearch.addFolder')}
             </button>
           </div>
 
           <div className="h-px bg-hairline my-5" />
 
-          <h3 className="text-sm font-semibold text-ink mb-1.5">{t('fileSearch.fileExtensions')}</h3>
-          <p className="text-xs text-mute mb-4" id="extensions-desc">{t('fileSearch.fileExtensionsDesc')}</p>
+          <h3 className="text-sm font-semibold text-ink mb-1.5">
+            {t('fileSearch.fileExtensions')}
+          </h3>
+          <p className="text-xs text-mute mb-4" id="extensions-desc">
+            {t('fileSearch.fileExtensionsDesc')}
+          </p>
 
           <input
             type="text"
@@ -1519,44 +2056,85 @@ export function SettingsApp() {
 
           <div className="flex flex-col gap-2">
             {settings.indexing.excludedPaths.map((path, index) => (
-              <div key={index} className="flex items-center gap-2.5 px-3.5 py-2.5 bg-surface-elevated/30 rounded-md border border-hairline transition-all hover:bg-surface-elevated/50">
+              <div
+                key={index}
+                className="flex items-center gap-2.5 px-3.5 py-2.5 bg-surface-elevated/30 rounded-md border border-hairline transition-all hover:bg-surface-elevated/50"
+              >
                 <FolderX size={16} className="text-body shrink-0" />
-                <span className="flex-1 text-[13px] text-body font-mono whitespace-nowrap overflow-hidden text-ellipsis" title={path}>
+                <span
+                  className="flex-1 text-[13px] text-body font-mono whitespace-nowrap overflow-hidden text-ellipsis"
+                  title={path}
+                >
                   {path}
                 </span>
                 <button
-                  className="w-6 h-6 rounded-sm bg-transparent border-none text-ash text-lg cursor-pointer flex items-center justify-center transition-all hover:bg-accent-red/15 hover:text-accent-red"
+                  className="w-7 h-7 rounded-md bg-transparent border-none text-ash cursor-pointer flex items-center justify-center transition-all hover:bg-accent-red/15 hover:text-accent-red"
                   onClick={() => removeExcludedPath(index)}
                   title="Remove excluded path"
                 >
-                  ×
+                  <X size={14} />
                 </button>
               </div>
             ))}
             <button
               className="flex items-center justify-center gap-1.5 py-3 rounded-md bg-transparent border border-dashed border-accent-blue/30 text-accent-blue text-[13px] font-medium cursor-pointer transition-all hover:bg-accent-blue/10 hover:border-accent-blue"
-              onClick={addExcludedPath}
+              onClick={() => {
+                void addExcludedPath();
+              }}
             >
-              <span>+</span> {t('fileSearch.addPath')}
+              <Plus size={15} /> {t('fileSearch.addPath')}
             </button>
           </div>
 
           <div className="h-px bg-hairline my-5" />
 
           <h3 className="text-sm font-semibold text-ink mb-1.5">{t('fileSearch.indexStatus')}</h3>
-          <p className="text-xs text-mute mb-4">
-            {t('fileSearch.indexStatusDesc')}
-          </p>
+          <p className="text-xs text-mute mb-4">{t('fileSearch.indexStatusDesc')}</p>
 
           {indexStats ? (
             <div className="grid grid-cols-2 gap-2 mt-2">
               {[
-                { label: t('fileSearch.stats.indexedFiles'), value: indexStats.indexedCount.toLocaleString() },
-                { label: t('fileSearch.stats.dbSize'), value: indexStats.dbSizeBytes > 0 ? `${(indexStats.dbSizeBytes / 1024).toFixed(1)} KB` : '—' },
-                { label: t('fileSearch.stats.lastScan'), value: indexStats.lastFullScan > 0 ? new Date(indexStats.lastFullScan * 1000).toLocaleString() : t('fileSearch.stats.never') },
-                { label: t('fileSearch.stats.watcher'), value: indexStats.isWatching ? t('fileSearch.stats.active') : t('fileSearch.stats.inactive'), accent: indexStats.isWatching ? 'text-accent-green' : undefined },
+                {
+                  label: t('fileSearch.stats.indexedFiles'),
+                  value: indexStats.indexedCount.toLocaleString(),
+                },
+                {
+                  label: t('fileSearch.stats.dbSize'),
+                  value:
+                    indexStats.dbSizeBytes > 0
+                      ? `${(indexStats.dbSizeBytes / 1024).toFixed(1)} KB`
+                      : '—',
+                },
+                {
+                  label: t('fileSearch.stats.lastScan'),
+                  value:
+                    indexStats.lastFullScan > 0
+                      ? new Date(indexStats.lastFullScan * 1000).toLocaleString()
+                      : t('fileSearch.stats.never'),
+                },
+                {
+                  label: t('fileSearch.stats.watcher'),
+                  value: indexStats.isWatching
+                    ? t('fileSearch.stats.active')
+                    : t('fileSearch.stats.inactive'),
+                  accent: indexStats.isWatching ? 'text-accent-green' : undefined,
+                },
+                {
+                  label: t('fileSearch.stats.catchupCount'),
+                  value: indexStats.staleCatchupCount.toLocaleString(),
+                },
+                {
+                  label: t('fileSearch.stats.lastCatchup'),
+                  value:
+                    indexStats.lastStaleCatchup > 0
+                      ? new Date(indexStats.lastStaleCatchup * 1000).toLocaleString()
+                      : t('fileSearch.stats.never'),
+                },
               ].map(({ label, value, accent }) => (
-                <div key={label} className="flex flex-col gap-0.5 px-3 py-2.5 rounded-md bg-surface-elevated/20 border border-hairline">
+                <div
+                  key={label}
+                  className="flex flex-col gap-0.5 px-3 py-2.5 rounded-md bg-surface-elevated/20 border border-hairline"
+                >
                   <span className="text-[11px] text-body uppercase tracking-[0.04em]">{label}</span>
                   <span className={cn('text-[13px] font-medium text-ink', accent)}>{value}</span>
                 </div>
@@ -1569,9 +2147,7 @@ export function SettingsApp() {
           <div className="flex items-center justify-between py-3 border-b border-hairline last:border-0 mt-3">
             <div className="flex flex-col gap-0.5">
               <span className="text-sm text-body">{t('fileSearch.stats.rebuild')}</span>
-              <span className="text-xs text-mute mt-0.5">
-                {t('fileSearch.stats.rebuildDesc')}
-              </span>
+              <span className="text-xs text-mute mt-0.5">{t('fileSearch.stats.rebuildDesc')}</span>
             </div>
             <Button
               variant="secondary"
@@ -1589,6 +2165,7 @@ export function SettingsApp() {
                           if (status.isIndexing) {
                             setTimeout(pollStats, 800);
                           } else {
+                            await invoke<void>('start_file_watcher');
                             await fetchIndexStats();
                             setIsRebuilding(false);
                           }
@@ -1616,7 +2193,14 @@ export function SettingsApp() {
 
   // Render Emoji & Symbols section
   const renderEmojiSection = () => {
-    const skinTones: SkinTone[] = ['none', 'light', 'medium-light', 'medium', 'medium-dark', 'dark'];
+    const skinTones: SkinTone[] = [
+      'none',
+      'light',
+      'medium-light',
+      'medium',
+      'medium-dark',
+      'dark',
+    ];
     const skinToneEmoji: Record<SkinTone, string> = {
       none: '✋',
       light: '✋🏻',
@@ -1636,7 +2220,9 @@ export function SettingsApp() {
           <div className="flex items-center justify-between py-3 border-b border-hairline">
             <div className="flex flex-col gap-0.5">
               <span className="text-sm text-body">Primary Action</span>
-              <span className="text-xs text-mute mt-0.5">What happens when you select an emoji</span>
+              <span className="text-xs text-mute mt-0.5">
+                What happens when you select an emoji
+              </span>
             </div>
             <select
               className="bg-surface-elevated border border-hairline rounded-md px-3 py-1.5 text-sm text-on-dark outline-none focus:border-hairline-strong cursor-pointer"
@@ -1655,7 +2241,9 @@ export function SettingsApp() {
           <div className="flex items-center justify-between py-3 border-b border-hairline">
             <div className="flex flex-col gap-0.5">
               <span className="text-sm text-body">Grid Columns</span>
-              <span className="text-xs text-mute mt-0.5">Number of columns in the emoji grid ({emojiColumns})</span>
+              <span className="text-xs text-mute mt-0.5">
+                Number of columns in the emoji grid ({emojiColumns})
+              </span>
             </div>
             <div className="flex items-center gap-2">
               <input
@@ -1678,7 +2266,9 @@ export function SettingsApp() {
           <div className="py-3 border-b border-hairline">
             <div className="flex flex-col gap-0.5 mb-4">
               <span className="text-sm text-body">Skin Tone</span>
-              <span className="text-xs text-mute mt-0.5">Default skin tone for emojis that support it</span>
+              <span className="text-xs text-mute mt-0.5">
+                Default skin tone for emojis that support it
+              </span>
             </div>
             <div className="flex items-center gap-2 flex-wrap">
               {skinTones.map((tone) => (
@@ -1724,9 +2314,7 @@ export function SettingsApp() {
         <div className="flex items-center justify-between py-3 border-b border-hairline last:border-0">
           <div className="flex flex-col gap-0.5">
             <span className="text-sm text-body">{t('applications.scanApps')}</span>
-            <span className="text-xs text-mute mt-0.5">
-              {t('applications.scanAppsDesc')}
-            </span>
+            <span className="text-xs text-mute mt-0.5">{t('applications.scanAppsDesc')}</span>
           </div>
           <Button
             variant="secondary"
@@ -1753,9 +2341,13 @@ export function SettingsApp() {
         {scanResult && (
           <div className="flex items-start gap-3 px-3.5 py-3.5 bg-accent-blue/8 border border-accent-blue/20 rounded-lg mt-2">
             {scanResult.error ? (
-              <p className="m-0 text-[13px] text-accent-red">{t('applications.scanError', { error: scanResult.error })}</p>
+              <p className="m-0 text-[13px] text-accent-red">
+                {t('applications.scanError', { error: scanResult.error })}
+              </p>
             ) : (
-              <p className="m-0 text-[13px] text-body">{t('applications.scanResult', { count: scanResult.count })}</p>
+              <p className="m-0 text-[13px] text-body">
+                {t('applications.scanResult', { count: scanResult.count })}
+              </p>
             )}
           </div>
         )}
@@ -1763,17 +2355,12 @@ export function SettingsApp() {
     </div>
   );
 
-  // Render Plugins section
+  // Render Plugins section. The list is driven by the canonical MANAGED_PLUGINS
+  // manifest so it stays in lockstep with the registry and default settings.
   const renderPluginsSection = () => {
-    const plugins = [
-      { id: 'calculator', nameKey: 'plugins.names.calculator', icon: Calculator, builtin: true },
-      { id: 'web-search', nameKey: 'plugins.names.webSearch', icon: Globe, builtin: true },
-      { id: 'system-commands', nameKey: 'plugins.names.systemCommands', icon: Terminal, builtin: true },
-      { id: 'timer', nameKey: 'plugins.names.timer', icon: Clock, builtin: true },
-      { id: 'system-monitor', nameKey: 'plugins.names.systemMonitor', icon: Activity, builtin: true },
-      { id: 'steam-games', nameKey: 'plugins.names.games', icon: Gamepad2, builtin: true },
-      { id: 'clipboard-manager', nameKey: 'plugins.names.clipboardHistory', icon: ClipboardIcon, builtin: true },
-    ];
+    const fallbackCommands = settings.fallbacks.commands
+      .filter((command) => command.kind !== 'shell')
+      .sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
 
     return (
       <div className="flex-1 flex flex-col overflow-hidden">
@@ -1782,22 +2369,27 @@ export function SettingsApp() {
         </div>
 
         <div className="flex-1 overflow-y-auto p-6">
-          <div className="flex flex-col gap-2">
-            {plugins.map((plugin) => {
+          <h3 className="mb-3 mt-0 text-sm font-semibold text-ink">{t('plugins.builtin')}</h3>
+          <div className="flex flex-col gap-2" aria-label={t('plugins.builtin')}>
+            {MANAGED_PLUGINS.map((plugin) => {
               const isEnabled = settings.plugins.enabledPlugins.includes(plugin.id);
+              const Icon = PLUGIN_ICONS[plugin.id] ?? Package;
               return (
-                <div key={plugin.id} className="flex items-center gap-3 px-4 py-3 bg-surface-elevated/30 rounded-lg transition-colors hover:bg-surface-elevated/50">
-                  {React.createElement(plugin.icon, { size: 20, className: 'text-accent-blue shrink-0' })}
+                <div
+                  key={plugin.id}
+                  className="flex items-center gap-3 px-4 py-3 bg-surface-elevated/30 rounded-lg transition-colors hover:bg-surface-elevated/50"
+                >
+                  <Icon size={20} className="text-accent-blue shrink-0" />
                   <div className="flex-1 flex items-center gap-2">
                     <span className="text-sm font-medium text-ink">{t(plugin.nameKey)}</span>
-                    {plugin.builtin && (
-                      <span className="px-2 py-0.5 rounded-xs bg-accent-blue/15 text-accent-blue text-[10px] font-semibold uppercase">
-                        {t('plugins.builtin')}
-                      </span>
-                    )}
+                    <kbd className="px-1.5 py-0.5 rounded-xs bg-black/30 font-mono text-[10px] text-mute">
+                      {plugin.hint}
+                    </kbd>
                   </div>
                   <Toggle
+                    id={`plugin-${plugin.id}`}
                     checked={isEnabled}
+                    label={t('fallbacks.enabled')}
                     onChange={(checked) => {
                       void handlePluginToggle(plugin.id, checked);
                     }}
@@ -1806,6 +2398,360 @@ export function SettingsApp() {
               );
             })}
           </div>
+
+          <div className="my-6 h-px bg-hairline" />
+
+          <section aria-labelledby="fallback-commands-title">
+            <div className="mb-1.5 flex items-center justify-between gap-4">
+              <div>
+                <h3 id="fallback-commands-title" className="m-0 text-sm font-semibold text-ink">
+                  {t('fallbacks.title')}
+                </h3>
+                <p className="mb-0 mt-1 text-xs leading-relaxed text-mute">
+                  {t('fallbacks.description')}
+                </p>
+              </div>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={beginAddFallback}
+                disabled={editingFallbackId !== null}
+              >
+                <Plus size={14} />
+                {t('fallbacks.add')}
+              </Button>
+            </div>
+
+            <div className="mt-4 flex items-center justify-between gap-4 rounded-lg border border-hairline bg-surface-elevated/20 px-3.5 py-3">
+              <div className="min-w-0">
+                <label
+                  htmlFor="remember-web-search-history"
+                  className="block text-[13px] font-medium text-ink"
+                >
+                  {t('fallbacks.rememberHistory')}
+                </label>
+                <p className="mb-0 mt-1 text-[11px] leading-relaxed text-mute">
+                  {t('fallbacks.rememberHistoryDesc')}
+                </p>
+              </div>
+              <Toggle
+                id="remember-web-search-history"
+                checked={settings.fallbacks.rememberWebSearchHistory}
+                onChange={(checked) => {
+                  webSearchHistory.setEnabled(checked);
+                  if (!checked) webSearchHistory.clear();
+                  updateSettings('fallbacks', 'rememberWebSearchHistory', checked);
+                }}
+              />
+            </div>
+
+            <div className="mt-4 flex flex-col gap-2">
+              {fallbackCommands.length === 0 && editingFallbackId !== 'new' ? (
+                <div className="rounded-lg border border-dashed border-hairline px-4 py-5 text-center text-xs text-mute">
+                  {t('fallbacks.empty')}
+                </div>
+              ) : (
+                fallbackCommands.map((command, index) => (
+                  <div
+                    key={command.id}
+                    className={cn(
+                      'rounded-lg border bg-surface-elevated/30 transition-colors',
+                      editingFallbackId === command.id
+                        ? 'border-accent-blue/40'
+                        : 'border-hairline hover:bg-surface-elevated/50'
+                    )}
+                  >
+                    <div className="flex items-center gap-3 px-3.5 py-3">
+                      <Globe size={18} className="shrink-0 text-accent-blue" />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex min-w-0 items-center gap-2">
+                          <span className="truncate text-[13px] font-medium text-ink">
+                            {command.label}
+                          </span>
+                          <span className="shrink-0 rounded-sm bg-black/25 px-1.5 py-0.5 font-mono text-[10px] text-mute">
+                            {t(`fallbacks.kinds.${command.kind}`)}
+                          </span>
+                        </div>
+                        <p
+                          className="mb-0 mt-1 truncate font-mono text-[11px] text-ash"
+                          title={command.target}
+                        >
+                          {command.target}
+                        </p>
+                      </div>
+
+                      <Toggle
+                        id={`fallback-enabled-${command.id}`}
+                        checked={command.enabled}
+                        label={t('fallbacks.enabled')}
+                        onChange={(checked) => toggleFallback(command.id, checked)}
+                      />
+
+                      <div className="flex shrink-0 items-center gap-0.5">
+                        <button
+                          type="button"
+                          className="flex size-7 items-center justify-center rounded-md border-none bg-transparent text-ash transition-colors hover:bg-white/5 hover:text-on-dark focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-hairline-strong disabled:cursor-not-allowed disabled:opacity-30"
+                          onClick={() => moveFallback(command.id, -1)}
+                          disabled={index === 0}
+                          aria-label={t('fallbacks.moveUp', { label: command.label })}
+                          title={t('fallbacks.moveUp', { label: command.label })}
+                        >
+                          <ArrowUp size={14} />
+                        </button>
+                        <button
+                          type="button"
+                          className="flex size-7 items-center justify-center rounded-md border-none bg-transparent text-ash transition-colors hover:bg-white/5 hover:text-on-dark focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-hairline-strong disabled:cursor-not-allowed disabled:opacity-30"
+                          onClick={() => moveFallback(command.id, 1)}
+                          disabled={index === fallbackCommands.length - 1}
+                          aria-label={t('fallbacks.moveDown', { label: command.label })}
+                          title={t('fallbacks.moveDown', { label: command.label })}
+                        >
+                          <ArrowDown size={14} />
+                        </button>
+                        <button
+                          type="button"
+                          className="flex size-7 items-center justify-center rounded-md border-none bg-transparent text-ash transition-colors hover:bg-white/5 hover:text-on-dark focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-hairline-strong disabled:cursor-not-allowed disabled:opacity-30"
+                          onClick={() => beginEditFallback(command)}
+                          disabled={editingFallbackId !== null}
+                          aria-label={t('fallbacks.edit', { label: command.label })}
+                          title={t('fallbacks.edit', { label: command.label })}
+                        >
+                          <Pencil size={14} />
+                        </button>
+                        <button
+                          type="button"
+                          className="flex size-7 items-center justify-center rounded-md border-none bg-transparent text-ash transition-colors hover:bg-accent-red/15 hover:text-accent-red focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent-red/50 disabled:cursor-not-allowed disabled:opacity-30"
+                          onClick={() => removeFallback(command)}
+                          disabled={editingFallbackId !== null}
+                          aria-label={t('fallbacks.delete', { label: command.label })}
+                          title={t('fallbacks.delete', { label: command.label })}
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            {editingFallbackId !== null && (
+              <div
+                className="mt-3 rounded-lg border border-accent-blue/30 bg-accent-blue/5 p-4"
+                aria-labelledby="fallback-editor-title"
+              >
+                <h4 id="fallback-editor-title" className="m-0 text-[13px] font-semibold text-ink">
+                  {editingFallbackId === 'new'
+                    ? t('fallbacks.editor.addTitle')
+                    : t('fallbacks.editor.editTitle')}
+                </h4>
+
+                <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <label className="flex flex-col gap-1.5 text-xs font-medium text-body">
+                    {t('fallbacks.editor.label')}
+                    <input
+                      type="text"
+                      value={fallbackDraft.label}
+                      onChange={(event) =>
+                        setFallbackDraft((draft) => ({ ...draft, label: event.target.value }))
+                      }
+                      placeholder={t('fallbacks.editor.labelPlaceholder')}
+                      className="rounded-md border border-hairline bg-surface-elevated px-3 py-2 text-[13px] text-on-dark outline-none placeholder:text-ash focus:border-hairline-strong"
+                      autoFocus
+                    />
+                  </label>
+
+                  <label className="flex flex-col gap-1.5 text-xs font-medium text-body">
+                    {t('fallbacks.editor.kind')}
+                    <select
+                      value={fallbackDraft.kind}
+                      onChange={(event) =>
+                        setFallbackDraft((draft) => ({
+                          ...draft,
+                          kind: event.target.value as EditableFallbackKind,
+                        }))
+                      }
+                      className="rounded-md border border-hairline bg-surface-elevated px-3 py-2 text-[13px] text-on-dark outline-none focus:border-hairline-strong"
+                    >
+                      <option value="webSearch">{t('fallbacks.kinds.webSearch')}</option>
+                      <option value="url">{t('fallbacks.kinds.url')}</option>
+                    </select>
+                  </label>
+                </div>
+
+                <label className="mt-3 flex flex-col gap-1.5 text-xs font-medium text-body">
+                  {t('fallbacks.editor.target')}
+                  <input
+                    type="url"
+                    value={fallbackDraft.target}
+                    onChange={(event) =>
+                      setFallbackDraft((draft) => ({ ...draft, target: event.target.value }))
+                    }
+                    placeholder={t('fallbacks.editor.targetPlaceholder')}
+                    aria-describedby="fallback-target-help"
+                    className="rounded-md border border-hairline bg-surface-elevated px-3 py-2 font-mono text-[12px] text-on-dark outline-none placeholder:text-ash focus:border-hairline-strong"
+                  />
+                  <span id="fallback-target-help" className="font-normal leading-relaxed text-mute">
+                    {t('fallbacks.editor.targetHelp')}
+                  </span>
+                </label>
+
+                <label className="mt-3 flex flex-col gap-1.5 text-xs font-medium text-body">
+                  {t('fallbacks.editor.icon')}
+                  <input
+                    type="text"
+                    value={fallbackDraft.icon ?? ''}
+                    onChange={(event) =>
+                      setFallbackDraft((draft) => ({ ...draft, icon: event.target.value }))
+                    }
+                    placeholder={t('fallbacks.editor.iconPlaceholder')}
+                    className="rounded-md border border-hairline bg-surface-elevated px-3 py-2 text-[13px] text-on-dark outline-none placeholder:text-ash focus:border-hairline-strong"
+                  />
+                </label>
+
+                {fallbackFormError && (
+                  <p role="alert" className="mb-0 mt-3 text-xs text-accent-red">
+                    {fallbackFormError}
+                  </p>
+                )}
+
+                <div className="mt-4 flex items-center justify-end gap-2">
+                  <Button type="button" size="sm" variant="ghost" onClick={closeFallbackEditor}>
+                    {t('fallbacks.editor.cancel')}
+                  </Button>
+                  <Button type="button" size="sm" onClick={saveFallbackDraft}>
+                    {t('fallbacks.editor.save')}
+                  </Button>
+                </div>
+              </div>
+            )}
+          </section>
+
+          <div className="my-6 h-px bg-hairline" />
+
+          <section aria-labelledby="brave-search-title">
+            <div className="rounded-xl border border-hairline bg-surface/60 p-4">
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex min-w-0 items-start gap-3">
+                  <span className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-accent-blue/20 bg-accent-blue/10 text-accent-blue">
+                    <KeyRound size={17} />
+                  </span>
+                  <div>
+                    <h3 id="brave-search-title" className="m-0 text-sm font-semibold text-ink">
+                      {t('fallbacks.brave.title')}
+                    </h3>
+                    <p className="mb-0 mt-1 text-xs leading-relaxed text-mute">
+                      {t('fallbacks.brave.description')}
+                    </p>
+                  </div>
+                </div>
+                <span
+                  className={cn(
+                    'shrink-0 rounded-full px-2.5 py-1 text-[10px] font-semibold',
+                    hasBraveApiKey
+                      ? 'bg-accent-green/10 text-accent-green'
+                      : 'bg-surface-elevated text-mute'
+                  )}
+                >
+                  {hasBraveApiKey
+                    ? t('fallbacks.brave.configured')
+                    : t('fallbacks.brave.notConfigured')}
+                </span>
+              </div>
+
+              <label
+                htmlFor="brave-search-api-key"
+                className="mt-4 flex flex-col gap-1.5 text-xs font-medium text-body"
+              >
+                {t('fallbacks.brave.apiKey')}
+                <input
+                  id="brave-search-api-key"
+                  type="password"
+                  value={braveApiKey}
+                  onChange={(event) => {
+                    setBraveApiKey(event.target.value);
+                    setBraveCredentialError(null);
+                    setBraveCredentialStatus('idle');
+                  }}
+                  placeholder={t('fallbacks.brave.apiKeyPlaceholder')}
+                  autoComplete="off"
+                  spellCheck={false}
+                  disabled={isBraveCredentialBusy}
+                  className="rounded-md border border-hairline bg-surface-elevated px-3 py-2 font-mono text-[13px] text-on-dark outline-none placeholder:text-ash focus:border-hairline-strong disabled:cursor-wait disabled:opacity-50"
+                />
+              </label>
+              <p className="mb-0 mt-1.5 text-[11px] leading-relaxed text-mute">
+                {t('fallbacks.brave.storageNotice')}
+              </p>
+
+              <div
+                className="mt-3 min-h-5 text-xs"
+                role="status"
+                aria-live="polite"
+                aria-atomic="true"
+              >
+                {braveCredentialError ? (
+                  <span className="text-accent-red">{braveCredentialError}</span>
+                ) : braveCredentialStatus !== 'idle' ? (
+                  <span
+                    className={
+                      braveCredentialStatus === 'invalid' ? 'text-accent-red' : 'text-accent-green'
+                    }
+                  >
+                    {t(`fallbacks.brave.status.${braveCredentialStatus}`)}
+                  </span>
+                ) : !hasBraveApiKey ? (
+                  <span className="text-mute">{t('fallbacks.brave.disabledWithoutKey')}</span>
+                ) : null}
+              </div>
+
+              <div className="mt-3 flex flex-wrap justify-end gap-2">
+                {hasBraveApiKey && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="destructive"
+                    onClick={() => {
+                      void handleDeleteBraveApiKey();
+                    }}
+                    disabled={isBraveCredentialBusy}
+                  >
+                    <Trash2 size={14} />
+                    {t('fallbacks.brave.delete')}
+                  </Button>
+                )}
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    void handleTestBraveApiKey();
+                  }}
+                  disabled={
+                    isBraveCredentialBusy || !hasBraveApiKey || braveApiKey.trim().length > 0
+                  }
+                  title={
+                    braveApiKey.trim().length > 0 ? t('fallbacks.brave.saveBeforeTest') : undefined
+                  }
+                >
+                  {isBraveCredentialBusy && <Loader2 size={14} className="animate-spin" />}
+                  {t('fallbacks.brave.test')}
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={() => {
+                    void handleSaveBraveApiKey();
+                  }}
+                  disabled={isBraveCredentialBusy || braveApiKey.trim().length === 0}
+                >
+                  {isBraveCredentialBusy && <Loader2 size={14} className="animate-spin" />}
+                  {hasBraveApiKey ? t('fallbacks.brave.update') : t('fallbacks.brave.save')}
+                </Button>
+              </div>
+            </div>
+          </section>
         </div>
       </div>
     );
@@ -1878,11 +2824,16 @@ export function SettingsApp() {
               onClick={() => {
                 const name = window.prompt('Enter executable name to exclude (e.g. 1password):');
                 if (name?.trim()) {
-                  const newList = [...settings.plugins.clipboardDisabledApps, name.trim().toLowerCase()];
+                  const newList = [
+                    ...settings.plugins.clipboardDisabledApps,
+                    name.trim().toLowerCase(),
+                  ];
                   updateSettings('plugins', 'clipboardDisabledApps', newList);
-                  void invoke<void>('set_clipboard_disabled_apps', { apps: newList }).catch((err) => {
-                    logger.error('Failed to update clipboard disabled apps:', err);
-                  });
+                  void invoke<void>('set_clipboard_disabled_apps', { apps: newList }).catch(
+                    (err) => {
+                      logger.error('Failed to update clipboard disabled apps:', err);
+                    }
+                  );
                 }
               }}
             >
@@ -1902,11 +2853,15 @@ export function SettingsApp() {
                   <button
                     className="w-6 h-6 rounded-sm bg-transparent border-none text-ash text-lg cursor-pointer flex items-center justify-center transition-all hover:bg-accent-red/15 hover:text-accent-red"
                     onClick={() => {
-                      const newList = settings.plugins.clipboardDisabledApps.filter((_, i) => i !== index);
+                      const newList = settings.plugins.clipboardDisabledApps.filter(
+                        (_, i) => i !== index
+                      );
                       updateSettings('plugins', 'clipboardDisabledApps', newList);
-                      void invoke<void>('set_clipboard_disabled_apps', { apps: newList }).catch((err) => {
-                        logger.error('Failed to update clipboard disabled apps:', err);
-                      });
+                      void invoke<void>('set_clipboard_disabled_apps', { apps: newList }).catch(
+                        (err) => {
+                          logger.error('Failed to update clipboard disabled apps:', err);
+                        }
+                      );
                     }}
                   >
                     ×
@@ -1980,9 +2935,7 @@ export function SettingsApp() {
             className="bg-surface-elevated border border-hairline rounded-md px-3 py-1.5 text-sm text-on-dark outline-none focus:border-hairline-strong placeholder:text-ash"
             placeholder={t('shell.defaultShellPlaceholder')}
             value={settings.shell?.defaultShell ?? ''}
-            onChange={(e) =>
-              updateSettings('shell', 'defaultShell', e.target.value || null)
-            }
+            onChange={(e) => updateSettings('shell', 'defaultShell', e.target.value || null)}
           />
         </div>
 
@@ -1996,9 +2949,7 @@ export function SettingsApp() {
             className="bg-surface-elevated border border-hairline rounded-md px-3 py-1.5 text-sm text-on-dark outline-none focus:border-hairline-strong placeholder:text-ash"
             placeholder={t('shell.workingDirPlaceholder')}
             value={settings.shell?.workingDir ?? ''}
-            onChange={(e) =>
-              updateSettings('shell', 'workingDir', e.target.value || null)
-            }
+            onChange={(e) => updateSettings('shell', 'workingDir', e.target.value || null)}
           />
         </div>
 
@@ -2063,6 +3014,144 @@ export function SettingsApp() {
     </div>
   );
 
+  // Render Snippets section (in-app `;` snippets are managed from the search
+  // bar itself; this panel only covers the global, system-wide expansion hook).
+  const renderSnippetsSection = () => {
+    const handleSnippetExpansionToggle = async (enabled: boolean) => {
+      setSnippetExpansionError(null);
+      try {
+        await invoke<void>('set_snippet_expansion_enabled', { enabled });
+        updateSettings('snippetExpansion', 'enabled', enabled);
+      } catch (err) {
+        logger.error('Failed to toggle global snippet expansion:', err);
+        setSnippetExpansionError(extractErrorMessage(err));
+      }
+    };
+
+    const addSnippetExpansionExcludedApp = () => {
+      const name = window.prompt(t('snippetExpansion.excludedAppsPrompt'));
+      const trimmed = name?.trim().toLowerCase();
+      if (trimmed && !settings.snippetExpansion.excludedApps.includes(trimmed)) {
+        updateSettings('snippetExpansion', 'excludedApps', [
+          ...settings.snippetExpansion.excludedApps,
+          trimmed,
+        ]);
+      }
+    };
+
+    const removeSnippetExpansionExcludedApp = (index: number) => {
+      const newList = settings.snippetExpansion.excludedApps.filter((_, i) => i !== index);
+      updateSettings('snippetExpansion', 'excludedApps', newList);
+    };
+
+    return (
+      <div className="flex-1 flex flex-col overflow-hidden">
+        <div className="flex items-center justify-between h-14 px-6 border-b border-hairline shrink-0">
+          <h2 className="text-sm font-medium text-ink m-0">{t('snippetExpansion.title')}</h2>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-6">
+          <div className="flex items-start gap-3 px-3.5 py-3.5 bg-accent-blue/8 border border-accent-blue/20 rounded-lg mb-5">
+            <Scissors size={20} className="text-accent-blue shrink-0 mt-0.5" />
+            <p className="m-0 text-[13px] text-body leading-relaxed">
+              {t('snippetExpansion.infoText')}{' '}
+              <kbd className="px-1.5 py-0.5 rounded-xs bg-black/30 font-mono text-xs">;</kbd>{' '}
+              {t('snippetExpansion.infoTextSuffix')}
+            </p>
+          </div>
+
+          <SnippetsManagerPanel />
+
+          <div className="h-px bg-hairline my-5" />
+
+          <h3 className="text-sm font-semibold text-ink mb-3">
+            {t('snippetExpansion.globalSectionTitle')}
+          </h3>
+
+          {snippetExpansionError && (
+            <div className="flex items-start gap-2 px-3.5 py-2.5 bg-accent-red/10 border border-accent-red/30 rounded-lg mb-5">
+              <AlertCircle size={16} className="text-accent-red shrink-0 mt-0.5" />
+              <p className="m-0 text-[13px] text-accent-red leading-relaxed">
+                {snippetExpansionError}
+              </p>
+            </div>
+          )}
+
+          <div className="flex items-center justify-between py-3 border-b border-hairline last:border-0">
+            <div className="flex flex-col gap-0.5">
+              <span className="text-sm text-body">{t('snippetExpansion.enabled')}</span>
+              <span className="text-xs text-mute mt-0.5">{t('snippetExpansion.enabledDesc')}</span>
+            </div>
+            <Toggle
+              checked={settings.snippetExpansion.enabled}
+              onChange={(enabled) => {
+                void handleSnippetExpansionToggle(enabled);
+              }}
+            />
+          </div>
+
+          <div className="flex items-center justify-between py-3 border-b border-hairline last:border-0">
+            <div className="flex flex-col gap-0.5">
+              <span className="text-sm text-body">{t('snippetExpansion.maxTriggerLen')}</span>
+              <span className="text-xs text-mute mt-0.5">
+                {t('snippetExpansion.maxTriggerLenDesc')}
+              </span>
+            </div>
+            <input
+              type="number"
+              className="bg-surface-elevated border border-hairline rounded-md px-3 py-1.5 text-sm text-on-dark outline-none focus:border-hairline-strong"
+              min={4}
+              max={256}
+              step={1}
+              value={settings.snippetExpansion.maxTriggerLen}
+              onChange={(e) =>
+                updateSettings(
+                  'snippetExpansion',
+                  'maxTriggerLen',
+                  Math.max(4, Number(e.target.value))
+                )
+              }
+            />
+          </div>
+
+          <div className="py-3 border-b border-hairline last:border-0">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex flex-col gap-0.5">
+                <span className="text-sm text-body">{t('snippetExpansion.excludedApps')}</span>
+                <span className="text-xs text-mute mt-0.5">
+                  {t('snippetExpansion.excludedAppsDesc')}
+                </span>
+              </div>
+              <Button variant="secondary" onClick={addSnippetExpansionExcludedApp}>
+                <Plus size={15} /> {t('snippetExpansion.addApp')}
+              </Button>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              {settings.snippetExpansion.excludedApps.length === 0 ? (
+                <p className="text-xs text-stone italic">{t('snippetExpansion.noExcludedApps')}</p>
+              ) : (
+                settings.snippetExpansion.excludedApps.map((app, index) => (
+                  <div
+                    key={index}
+                    className="flex items-center gap-2.5 px-3 py-2 bg-surface-elevated/30 rounded-md border border-hairline"
+                  >
+                    <span className="flex-1 text-[13px] text-body font-mono">{app}</span>
+                    <button
+                      className="w-6 h-6 rounded-sm bg-transparent border-none text-ash text-lg cursor-pointer flex items-center justify-center transition-all hover:bg-accent-red/15 hover:text-accent-red"
+                      onClick={() => removeSnippetExpansionExcludedApp(index)}
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   // Render main content
   const renderContent = () => {
     if (isLoading) {
@@ -2105,10 +3194,25 @@ export function SettingsApp() {
         return renderPluginsSection();
       case 'file-search':
         return renderFileSearchSection();
+      case 'web-search':
+        return (
+          <WebSearchSettingsPanel
+            settings={settings.webSearch}
+            rememberHistory={settings.fallbacks.rememberWebSearchHistory}
+            onSettingsUpdated={handleWebSearchSettingsUpdated}
+            onRememberHistoryChange={(checked) => {
+              webSearchHistory.setEnabled(checked);
+              if (!checked) webSearchHistory.clear();
+              updateSettings('fallbacks', 'rememberWebSearchHistory', checked);
+            }}
+          />
+        );
       case 'clipboard':
         return renderClipboardSection();
       case 'shell':
         return renderShellSection();
+      case 'snippets':
+        return renderSnippetsSection();
       case 'emoji':
         return renderEmojiSection();
       case 'ai':
@@ -2131,13 +3235,17 @@ export function SettingsApp() {
         <div className="no-drag flex gap-2">
           <button
             className="w-7 h-7 rounded-sm bg-transparent border-none text-ash text-lg cursor-pointer flex items-center justify-center transition-colors hover:bg-white/10 hover:text-on-dark"
-            onClick={() => { void handleMinimize(); }}
+            onClick={() => {
+              void handleMinimize();
+            }}
           >
             <span>−</span>
           </button>
           <button
             className="w-7 h-7 rounded-sm bg-transparent border-none text-ash text-lg cursor-pointer flex items-center justify-center transition-colors hover:bg-accent-red/20 hover:text-accent-red"
-            onClick={() => { void handleClose(); }}
+            onClick={() => {
+              void handleClose();
+            }}
           >
             <span>×</span>
           </button>
@@ -2166,10 +3274,21 @@ export function SettingsApp() {
             <div className="absolute bottom-0 left-0 right-0 flex items-center justify-between px-6 py-3 bg-black/30 border-t border-hairline">
               <span className="text-[13px] text-body">{t('saveBar.unsavedChanges')}</span>
               <div className="flex gap-2">
-                <Button variant="secondary" onClick={() => { void loadSettings(); }}>
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    void loadSettings();
+                  }}
+                >
                   {t('saveBar.discard')}
                 </Button>
-                <Button variant="default" onClick={() => { void handleSave(); }} disabled={isSaving}>
+                <Button
+                  variant="default"
+                  onClick={() => {
+                    void handleSave();
+                  }}
+                  disabled={isSaving}
+                >
                   {isSaving ? t('actions.saving') : t('saveBar.saveChanges')}
                 </Button>
               </div>

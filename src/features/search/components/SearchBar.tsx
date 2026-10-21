@@ -2,6 +2,7 @@ import React, { useEffect, useRef } from 'react';
 import { Search, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/utils';
+import './SearchBar.css';
 
 interface SearchBarProps {
   value: string;
@@ -11,6 +12,7 @@ interface SearchBarProps {
   autoFocus?: boolean;
   resultCount?: number;
   selectedIndex?: number;
+  isSearching?: boolean;
 }
 
 export function SearchBar({
@@ -21,6 +23,7 @@ export function SearchBar({
   autoFocus = true,
   resultCount,
   selectedIndex,
+  isSearching = false,
 }: SearchBarProps): React.JSX.Element {
   const { t } = useTranslation('common');
   const inputRef = useRef<HTMLInputElement>(null);
@@ -39,15 +42,20 @@ export function SearchBar({
   })();
 
   return (
-    <div className={cn('relative flex items-center h-[60px] px-4 gap-3 border-b border-hairline shrink-0')}>
-      <div className="text-mute shrink-0">
+    <div
+      className={cn(
+        'search-bar relative flex items-center h-[60px] px-4 gap-3 border-b border-hairline shrink-0 bg-canvas/35'
+      )}
+      data-searching={isSearching ? 'true' : 'false'}
+    >
+      <div className="search-bar__icon flex h-8 w-8 items-center justify-center rounded-md border border-hairline-soft bg-surface/50 text-mute shrink-0">
         <Search size={20} strokeWidth={2} />
       </div>
       <input
         ref={inputRef}
         id="search-input"
         type="text"
-        className="flex-1 bg-transparent text-on-dark text-[15px] placeholder:text-ash outline-none caret-on-dark"
+        className="search-bar__input flex-1 bg-transparent text-on-dark text-[15px] placeholder:text-ash outline-none caret-on-dark"
         value={value}
         onChange={(e) => onChange(e.target.value)}
         onKeyDown={onKeyDown}
@@ -57,6 +65,7 @@ export function SearchBar({
         autoCorrect="off"
         autoCapitalize="off"
         aria-label={t('search.label')}
+        aria-busy={isSearching}
         aria-autocomplete="list"
         aria-controls="results-listbox"
         aria-activedescendant={
@@ -65,9 +74,17 @@ export function SearchBar({
             : undefined
         }
       />
+      {value.trim() && resultCount !== undefined && !isSearching && (
+        <span
+          className="shrink-0 rounded-xs border border-hairline bg-surface/70 px-1.5 py-1 text-[11px] font-medium leading-none text-ash tabular-nums"
+          aria-hidden="true"
+        >
+          {resultCount}
+        </span>
+      )}
       {value && (
         <button
-          className="shrink-0 text-ash hover:text-on-dark transition-colors p-1 rounded-xs cursor-pointer"
+          className="shrink-0 text-ash hover:text-on-dark hover:bg-surface-elevated transition-colors p-1.5 rounded-xs cursor-pointer"
           onClick={() => onChange('')}
           aria-label={t('search.clearSearch')}
         >
@@ -76,8 +93,12 @@ export function SearchBar({
       )}
       {/* Live region: announces result count to screen readers */}
       <span role="status" aria-live="polite" aria-atomic="true" className="sr-only">
-        {liveAnnouncement}
+        {isSearching ? t('search.searching') : liveAnnouncement}
       </span>
+      <div className="search-bar__track" aria-hidden="true">
+        <span className="search-bar__beam-glow" />
+        <span className="search-bar__beam-core" />
+      </div>
     </div>
   );
 }

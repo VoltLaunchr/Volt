@@ -3,34 +3,26 @@ import { invoke } from '@tauri-apps/api/core';
 import { logger } from './logger';
 
 describe('logger', () => {
-  let errorSpy: ReturnType<typeof vi.spyOn>;
-  let warnSpy: ReturnType<typeof vi.spyOn>;
-  let infoSpy: ReturnType<typeof vi.spyOn>;
-  let debugSpy: ReturnType<typeof vi.spyOn>;
-
   beforeEach(() => {
-    errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
-    warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
-    infoSpy = vi.spyOn(console, 'info').mockImplementation(() => undefined);
-    debugSpy = vi.spyOn(console, 'debug').mockImplementation(() => undefined);
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    vi.spyOn(console, 'info').mockImplementation(() => undefined);
+    vi.spyOn(console, 'debug').mockImplementation(() => undefined);
   });
 
   afterEach(() => {
-    errorSpy.mockRestore();
-    warnSpy.mockRestore();
-    infoSpy.mockRestore();
-    debugSpy.mockRestore();
+    vi.restoreAllMocks();
   });
 
   it('forwards error calls to console.error', () => {
     logger.error('boom', { id: 1 });
-    expect(errorSpy).toHaveBeenCalledTimes(1);
-    expect(errorSpy).toHaveBeenCalledWith('boom', { id: 1 });
+    expect(console.error).toHaveBeenCalledTimes(1);
+    expect(console.error).toHaveBeenCalledWith('boom', { id: 1 });
   });
 
   it('forwards warn calls to console.warn', () => {
     logger.warn('careful');
-    expect(warnSpy).toHaveBeenCalledWith('careful');
+    expect(console.warn).toHaveBeenCalledWith('careful');
   });
 
   it('exposes info and debug which do not throw', () => {
@@ -44,7 +36,7 @@ describe('logger', () => {
     expect(() => logger.error('still fine', 'arg')).not.toThrow();
     // Let the swallowed promise settle before the test exits.
     await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(errorSpy).toHaveBeenCalledWith('still fine', 'arg');
+    expect(console.error).toHaveBeenCalledWith('still fine', 'arg');
   });
 
   it('serializes args and invokes the backend bridge on error', async () => {

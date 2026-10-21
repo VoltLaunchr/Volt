@@ -227,7 +227,7 @@ Tauri v2 utilise un système de permissions granulaire dans `capabilities/` :
 
 ### 3. Ajouter un Plugin Tauri
 1. `cargo add tauri-plugin-xxx` dans `src-tauri/`
-2. `bun add @tauri-apps/plugin-xxx` côté frontend
+2. `pnpm add @tauri-apps/plugin-xxx` côté frontend
 3. `.plugin(tauri_plugin_xxx::init())` dans `lib.rs`
 4. Permissions dans `capabilities/default.json`
 5. Vérifier la doc context7 pour les API spécifiques
@@ -236,8 +236,8 @@ Tauri v2 utilise un système de permissions granulaire dans `capabilities/` :
 ```bash
 cd src-tauri && cargo check          # Compilation
 cd src-tauri && cargo clippy         # Lint
-bun run build                        # Frontend build
-bun tauri dev                        # Test intégration
+pnpm run build                        # Frontend build
+pnpm run tauri -- dev                        # Test intégration
 ```
 
 ## Pièges Courants Tauri v2

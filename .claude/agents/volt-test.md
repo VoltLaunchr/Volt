@@ -168,10 +168,10 @@ mod tests {
 
 ```bash
 # Frontend
-bun run test                          # Tous les tests
-bun run test -- --run                 # Sans watch mode
-bun run test -- --coverage            # Avec couverture
-bun run test -- path/to/file.test.ts  # Un fichier specifique
+pnpm run test                          # Tous les tests
+pnpm run test -- --run                 # Sans watch mode
+pnpm run test -- --coverage            # Avec couverture
+pnpm run test -- path/to/file.test.ts  # Un fichier specifique
 
 # Backend
 cd src-tauri && cargo test            # Tous les tests Rust

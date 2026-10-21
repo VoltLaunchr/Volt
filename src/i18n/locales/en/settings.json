@@ -10,6 +10,7 @@
     "applications": "Applications",
     "plugins": "Plugins",
     "fileSearch": "File Search",
+    "webSearch": "Web Search",
     "clipboard": "Clipboard History",
     "integrations": "Integrations",
     "account": "Account",
@@ -18,7 +19,8 @@
     "shell": "Shell Commands",
     "emoji": "Emoji & Symbols",
     "ai": "AI",
-    "notes": "Notes"
+    "notes": "Notes",
+    "snippets": "Snippets"
   },
   "general": {
     "title": "General",
@@ -41,6 +43,20 @@
     "restartOnboarding": "Restart Onboarding",
     "restartOnboardingDesc": "Re-run the initial setup wizard"
   },
+  "webSearch": {
+    "title": "Web Search",
+    "description": "Choose how explicit web searches behave and which installed browser opens HTTP and HTTPS links.",
+    "searchDefaults": "Search defaults",
+    "defaultEngine": "Default search engine",
+    "defaultEngineDesc": "Used for ?, web, search, and chercher queries. Engine-specific keywords still take priority.",
+    "browser": "Browser for links",
+    "browserDesc": "Only browsers detected among your installed applications are shown.",
+    "systemBrowser": "System browser",
+    "refreshBrowsers": "Detect installed browsers again",
+    "rememberHistory": "Remember web search history",
+    "rememberHistoryDesc": "Opt in to local suggestions from your previous explicit web searches.",
+    "securityNotice": "Volt validates the selected browser and only opens HTTP or HTTPS URLs. If that browser is removed, Volt automatically returns to the system browser."
+  },
   "shortcuts": {
     "title": "Shortcuts",
     "searchPlaceholder": "Search by name or alias",
@@ -52,6 +68,8 @@
       "hotkey": "Hotkey"
     },
     "addAlias": "Add Alias",
+    "hiddenCount_one": "{{count}} more app hidden. Use search to narrow the list.",
+    "hiddenCount_other": "{{count}} more apps hidden. Use search to narrow the list.",
     "noShortcuts": "No shortcuts available. Click \"Sync Apps\" to load your applications.",
     "noMatch": "No shortcuts match your search."
   },
@@ -79,8 +97,15 @@
     "maxResults": "Max Results",
     "maxResultsDesc": "Maximum number of search results displayed",
     "results": "{{count}} results",
-    "windowTransparency": "Window Transparency",
-    "transparencyDesc": "Adjust the window background transparency",
+    "windowEffect": "Window material",
+    "windowEffectDesc": "Volt glass (default), native Windows backdrop, or solid",
+    "windowEffectVoltGlass": "Volt Glass",
+    "windowEffectMica": "Mica",
+    "windowEffectAcrylic": "Acrylic",
+    "windowEffectSolid": "Solid",
+    "windowTransparency": "Shell opacity",
+    "transparencyDesc": "Adjust glass tint and inner surfaces (50%–100%)",
+    "transparencySolidHint": "Disabled in solid mode — switch to Volt Glass, Mica or Acrylic",
     "theme": "Theme",
     "themeLight": "Light",
     "themeDark": "Dark",
@@ -104,6 +129,7 @@
     "upToDate": "Volt is up to date",
     "updateAvailable": "Update available",
     "downloadAndInstall": "Download & Install",
+    "packageManagerManaged": "Updates are managed by your operating-system package manager.",
     "installOnNextRestart": "Install on Next Restart",
     "deferring": "Downloading for next restart...",
     "deferralReady": "Update ready — will install on next restart",
@@ -129,6 +155,16 @@
     "title": "File Search",
     "indexOnStartup": "Index on Startup",
     "indexOnStartupDesc": "Automatically index files when Volt starts",
+    "staleThreshold": "Offline catch-up",
+    "staleThresholdDesc": "Re-scan on launch when the index is older than this (covers changes made while Volt was closed)",
+    "staleOptions": {
+      "15m": "After 15 minutes",
+      "30m": "After 30 minutes",
+      "1h": "After 1 hour",
+      "6h": "After 6 hours",
+      "24h": "After 24 hours",
+      "off": "Disabled"
+    },
     "foldersToIndex": "Folders to Index",
     "foldersToIndexDesc": "Directories to scan for files (e.g., Documents, Downloads)",
     "addFolder": "Add Folder",
@@ -149,6 +185,8 @@
       "active": "Active",
       "inactive": "Inactive",
       "never": "Never",
+      "catchupCount": "Offline catch-ups",
+      "lastCatchup": "Last catch-up",
       "rebuild": "Rebuild Index",
       "rebuildDesc": "Clears the database and re-scans all configured folders from scratch",
       "rebuilding": "Rebuilding…"
@@ -166,7 +204,71 @@
       "games": "Games",
       "clipboardHistory": "Clipboard History",
       "quicklinks": "Quicklinks",
-      "windowManagement": "Window Management"
+      "windowManagement": "Window Management",
+      "emoji": "Emoji Picker",
+      "notes": "Notes",
+      "snippets": "Snippets",
+      "shell": "Shell Commands",
+      "developerTools": "Developer Tools"
+    }
+  },
+  "fallbacks": {
+    "title": "Search fallbacks",
+    "description": "Choose the web actions Volt shows when local results are not confident enough.",
+    "add": "Add fallback",
+    "empty": "No web fallback configured.",
+    "enabled": "Enabled",
+    "rememberHistory": "Remember web search history",
+    "rememberHistoryDesc": "Allow Volt to keep your web queries on this device. Disabled by default.",
+    "moveUp": "Move {{label}} up",
+    "moveDown": "Move {{label}} down",
+    "edit": "Edit {{label}}",
+    "delete": "Delete {{label}}",
+    "confirmDelete": "Delete the fallback “{{label}}”?",
+    "kinds": {
+      "webSearch": "Web search",
+      "url": "URL"
+    },
+    "validation": {
+      "required": "A label and target URL are required.",
+      "invalidUrl": "Enter a valid HTTP or HTTPS URL."
+    },
+    "editor": {
+      "addTitle": "New search fallback",
+      "editTitle": "Edit search fallback",
+      "label": "Result label",
+      "labelPlaceholder": "Search {rawQuery} on Example",
+      "kind": "Action type",
+      "target": "Target URL",
+      "targetPlaceholder": "https://example.com/search?q={query}",
+      "targetHelp": "Use {query} for the URL-encoded query or {rawQuery} for the original text.",
+      "icon": "Icon name (optional)",
+      "iconPlaceholder": "globe",
+      "cancel": "Cancel",
+      "save": "Save fallback"
+    },
+    "brave": {
+      "title": "Brave Search API",
+      "description": "Optional provider for live web results and suggestions inside Volt.",
+      "configured": "Key saved",
+      "notConfigured": "No key",
+      "apiKey": "API key",
+      "apiKeyPlaceholder": "Paste your Brave Search API key",
+      "storageNotice": "Stored in the operating system credential vault. The key is never written to your settings file.",
+      "disabledWithoutKey": "Live Brave results stay disabled until a key is saved.",
+      "keyRequired": "Enter an API key first.",
+      "save": "Save key",
+      "update": "Update key",
+      "test": "Test key",
+      "delete": "Delete key",
+      "saveBeforeTest": "Save the new key before testing it.",
+      "confirmDelete": "Delete the saved Brave Search API key?",
+      "status": {
+        "saved": "API key saved securely.",
+        "valid": "The saved API key is valid.",
+        "invalid": "The saved API key could not be validated.",
+        "deleted": "API key deleted."
+      }
     }
   },
   "clipboard": {
@@ -209,6 +311,51 @@
     "clearHistoryDesc": "Remove all saved shell command history",
     "clear": "Clear",
     "clearFailed": "Failed to clear shell history"
+  },
+  "snippetExpansion": {
+    "title": "Snippets",
+    "infoText": "In-app snippets are triggered by typing the",
+    "infoTextSuffix": "prefix in Volt's search bar. The setting below is a separate, global mechanism that expands the same triggers system-wide, in any application.",
+    "globalSectionTitle": "Global Expansion",
+    "enabled": "Enable Global Expansion",
+    "enabledDesc": "Expand snippet triggers anywhere on Windows, not just in Volt",
+    "maxTriggerLen": "Max Trigger Length",
+    "maxTriggerLenDesc": "Longest trigger the system-wide watcher tracks, in characters",
+    "excludedApps": "Excluded Applications",
+    "excludedAppsDesc": "Global expansion never fires while one of these apps is focused",
+    "excludedAppsPrompt": "Enter executable name to exclude (e.g. keepass):",
+    "addApp": "Add",
+    "noExcludedApps": "No applications excluded"
+  },
+  "snippetsManager": {
+    "title": "Your Snippets",
+    "subtitle": "Manage the triggers and content used by in-app and global expansion",
+    "add": "New Snippet",
+    "edit": "Edit snippet",
+    "delete": "Delete snippet",
+    "loading": "Loading snippets…",
+    "empty": "No snippets yet. Create your first one.",
+    "loadError": "Failed to load snippets",
+    "createError": "Failed to create snippet",
+    "updateError": "Failed to update snippet",
+    "deleteError": "Failed to delete snippet",
+    "confirmDelete": "Delete the snippet \"{{trigger}}\"? This cannot be undone.",
+    "createTitle": "New Snippet",
+    "editTitle": "Edit Snippet",
+    "triggerLabel": "Trigger",
+    "triggerPlaceholder": ";sig",
+    "triggerHint": "Include the prefix you'll type to expand it, e.g. \";sig\"",
+    "contentLabel": "Content",
+    "contentPlaceholder": "Text to insert when the trigger is typed",
+    "contentHint": "Supports {date}, {time}, {datetime}, {clipboard}, and {random} variables",
+    "categoryLabel": "Category",
+    "categoryPlaceholder": "Optional",
+    "descriptionLabel": "Description",
+    "descriptionPlaceholder": "Optional",
+    "enabledLabel": "Enabled",
+    "cancel": "Cancel",
+    "save": "Save",
+    "saving": "Saving…"
   },
   "integrations": {
     "title": "Integrations",
@@ -324,6 +471,18 @@
       "cancel": "Cancel",
       "save": "Save",
       "saving": "Saving…"
+    },
+    "local": {
+      "title": "Local model",
+      "description": "Run models on your machine with Ollama or LM Studio — no API key. Volt connects to your OpenAI-compatible endpoint.",
+      "baseUrl": "Endpoint URL",
+      "model": "Model",
+      "modelPlaceholder": "e.g. llama3.1",
+      "hint": "Ollama: http://localhost:11434/v1 · LM Studio: http://localhost:1234/v1",
+      "save": "Save",
+      "saved": "Saved",
+      "remove": "Remove",
+      "configured": "Configured"
     },
     "profile": {
       "title": "Profile",

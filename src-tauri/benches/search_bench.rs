@@ -1,4 +1,7 @@
 use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
+use std::collections::HashMap;
+#[cfg(feature = "tantivy-search")]
+use volt_lib::benchmark_api::{FileCategory, FileInfo, FulltextIndex, SearchEngine, SearchOptions};
 use volt_lib::commands::apps::AppInfo;
 use volt_lib::launcher::{LaunchRecord, QueryBindingStore};
 use volt_lib::search::search_applications;
@@ -128,11 +131,83 @@ fn generate_history(apps: &[AppInfo], count: usize) -> Vec<LaunchRecord> {
             launch_count: (10 - (i % 10)) as u32,
             first_launched: now_ms - 86_400_000 * 30, // 30 days ago
             last_launched: now_ms - (i as i64 * 3_600_000), // staggered
+            // Frecency date pushed into the future, more for "more used" entries.
+            frecency_date: now_ms + (10 - (i % 10)) as i64 * 86_400_000,
             total_time_ms: None,
             tags: Vec::new(),
             pinned: false,
         })
         .collect()
+}
+
+/// Project a history slice into the `path → frecency_date` map that
+/// `search_applications_with_frecency` consumes.
+fn frecency_map(history: &[LaunchRecord]) -> HashMap<String, i64> {
+    history
+        .iter()
+        .map(|r| (r.path.clone(), r.frecency_date))
+        .collect()
+}
+
+#[cfg(feature = "tantivy-search")]
+fn generate_files(count: usize) -> Vec<FileInfo> {
+    const NAMES: &[(&str, &str)] = &[
+        ("Visual Studio Code.exe", "exe"),
+        ("Mozilla Firefox.exe", "exe"),
+        ("project roadmap 2026.pdf", "pdf"),
+        ("meeting notes.txt", "txt"),
+        ("R\u{e9}sum\u{e9} de r\u{e9}union.docx", "docx"),
+        ("vacation photo.jpg", "jpg"),
+        ("quarterly report.xlsx", "xlsx"),
+        ("rust search engine.rs", "rs"),
+        ("Docker Desktop.exe", "exe"),
+        ("customer database.sql", "sql"),
+    ];
+
+    (0..count)
+        .map(|i| {
+            let (base, extension) = NAMES[i % NAMES.len()];
+            let name = if i < NAMES.len() {
+                base.to_string()
+            } else {
+                format!("{base} archive-{}", i / NAMES.len())
+            };
+            let path = format!(r"C:\Users\bench\Documents\folder-{}\{name}", i % 100);
+            FileInfo {
+                id: format!("bench-{i}"),
+                name,
+                path,
+                extension: extension.to_string(),
+                size: 4_096 + i as u64 * 37,
+                modified: 1_700_000_000 + i as i64,
+                created: None,
+                accessed: None,
+                icon: None,
+                category: FileCategory::from_path("", extension, false),
+            }
+        })
+        .collect()
+}
+
+#[cfg(feature = "tantivy-search")]
+fn directory_size(path: &std::path::Path) -> u64 {
+    std::fs::read_dir(path)
+        .into_iter()
+        .flatten()
+        .filter_map(Result::ok)
+        .map(|entry| {
+            entry
+                .metadata()
+                .map(|metadata| {
+                    if metadata.is_dir() {
+                        directory_size(&entry.path())
+                    } else {
+                        metadata.len()
+                    }
+                })
+                .unwrap_or(0)
+        })
+        .sum()
 }
 
 // ---------------------------------------------------------------------------
@@ -253,19 +328,21 @@ fn bench_search_with_frecency(c: &mut Criterion) {
     for &count in &[100, 1000, 5000] {
         let apps = generate_apps(count);
         let history = generate_history(&apps, count.min(50)); // realistic: 50 history entries
+        let frecency = frecency_map(&history);
+        let empty_frecency: HashMap<String, i64> = HashMap::new();
         let bindings = QueryBindingStore::default();
         let empty_aliases: std::collections::HashMap<String, String> =
             std::collections::HashMap::new();
 
         group.bench_with_input(
             BenchmarkId::new("with_history", count),
-            &(apps.clone(), history.clone()),
-            |b, (apps, history)| {
+            &(apps.clone(), frecency.clone()),
+            |b, (apps, frecency)| {
                 b.iter(|| {
                     search_applications_with_frecency(
                         black_box("code"),
                         black_box(apps.clone()),
-                        black_box(history),
+                        black_box(frecency),
                         black_box(Some(&bindings)),
                         black_box(&empty_aliases),
                     )
@@ -278,7 +355,7 @@ fn bench_search_with_frecency(c: &mut Criterion) {
                 search_applications_with_frecency(
                     black_box("chrome"),
                     black_box(apps.clone()),
-                    black_box(&[]),
+                    black_box(&empty_frecency),
                     black_box(None),
                     black_box(&empty_aliases),
                 )
@@ -289,11 +366,90 @@ fn bench_search_with_frecency(c: &mut Criterion) {
     group.finish();
 }
 
+#[cfg(feature = "tantivy-search")]
+fn bench_file_search_backends(c: &mut Criterion) {
+    const QUERIES: &[&str] = &["visual code", "firefx", "resume reunion", "quarter report"];
+    let options = SearchOptions {
+        limit: Some(20),
+        filename_only: true,
+        ..SearchOptions::default()
+    };
+
+    let mut group = c.benchmark_group("file_search_nucleo_vs_tantivy");
+    group.sample_size(30);
+    for count in [1_000, 10_000] {
+        let files = generate_files(count);
+        let index_dir = tempfile::tempdir().expect("create benchmark index directory");
+        let tantivy =
+            FulltextIndex::open_or_create(index_dir.path()).expect("create Tantivy index");
+        tantivy
+            .build_from_files(&files)
+            .expect("build Tantivy benchmark index");
+
+        let disk_bytes = directory_size(index_dir.path());
+        eprintln!(
+            "search-bench metadata: documents={count}, tantivy_disk_bytes={disk_bytes}, bytes_per_document={:.1}",
+            disk_bytes as f64 / count as f64
+        );
+
+        // Deterministic relevance checks are deliberately outside Criterion timing.
+        let mut nucleo = SearchEngine::new();
+        let nucleo_exact = nucleo.search("Visual Studio Code", &files, &options);
+        let tantivy_exact = tantivy
+            .query("Visual Studio Code", 20, false)
+            .expect("query Tantivy index");
+        assert_eq!(
+            nucleo_exact.first().map(|hit| hit.file.name.as_str()),
+            Some("Visual Studio Code.exe")
+        );
+        assert_eq!(
+            tantivy_exact.first().map(|hit| hit.name.as_str()),
+            Some("Visual Studio Code.exe")
+        );
+        assert!(
+            tantivy
+                .query("resume reunion", 20, false)
+                .expect("query folded accents")
+                .iter()
+                .any(|hit| hit.name.starts_with("R\u{e9}sum\u{e9}"))
+        );
+
+        for query in QUERIES {
+            group.bench_with_input(
+                BenchmarkId::new(format!("nucleo/{query}"), count),
+                &files,
+                |b, files| {
+                    let mut engine = SearchEngine::new();
+                    b.iter(|| {
+                        engine.search(black_box(query), black_box(files), black_box(&options))
+                    })
+                },
+            );
+            group.bench_with_input(
+                BenchmarkId::new(format!("tantivy/{query}"), count),
+                &tantivy,
+                |b, index| {
+                    b.iter(|| {
+                        index
+                            .query(black_box(query), black_box(20), false)
+                            .expect("Tantivy query")
+                    })
+                },
+            );
+        }
+    }
+    group.finish();
+}
+
+#[cfg(not(feature = "tantivy-search"))]
+fn bench_file_search_backends(_c: &mut Criterion) {}
+
 criterion_group!(
     benches,
     bench_fuzzy_match,
     bench_calculate_match_score,
     bench_search_applications,
     bench_search_with_frecency,
+    bench_file_search_backends,
 );
 criterion_main!(benches);

@@ -261,15 +261,77 @@ describe('PluginRegistry', () => {
     });
 
     it('ignores plugins that return non-array values', async () => {
+      // Simulate a misbehaving plugin whose match() returns a single object
+      // instead of an array. The wrong shape is produced as `unknown` and
+      // narrowed to the declared match signature so no `any` leaks in.
+      const badMatch = (): unknown => ({
+        id: 'x',
+        type: PluginResultType.Info,
+        title: 'bad',
+        score: 10,
+      });
       registry.register(
         makePlugin({
           id: 'bad',
-          // @ts-expect-error - intentionally wrong shape
-          match: () => ({ id: 'x', type: PluginResultType.Info, title: 'bad', score: 10 }),
+          match: badMatch as Plugin['match'],
         })
       );
       const results = await registry.query(ctx);
       expect(results).toEqual([]);
+    });
+  });
+
+  describe('activation injection + matchKind', () => {
+    it('injects the activation match into the context and annotates matchKind', async () => {
+      let seenStripped: string | undefined;
+      registry.register(
+        makePlugin({
+          id: 'declarative',
+          activation: { keywords: ['note'] },
+          canHandle: (c) => c.activation?.matched ?? false,
+          match: (c) => {
+            seenStripped = c.activation?.stripped;
+            return [{ id: 'd', type: PluginResultType.Info, title: 'D', score: 50 }];
+          },
+        })
+      );
+      const results = await registry.query({ query: 'note todo' });
+      expect(results).toHaveLength(1);
+      expect(seenStripped).toBe('todo');
+      expect(results[0].matchKind).toBe('keyword');
+    });
+
+    it('annotates matchKind "none" for plugins without an activation manifest', async () => {
+      registry.register(
+        makePlugin({
+          id: 'legacy',
+          match: () => [{ id: 'l', type: PluginResultType.Info, title: 'L', score: 50 }],
+        })
+      );
+      const results = await registry.query({ query: 'whatever' });
+      expect(results[0].matchKind).toBe('none');
+    });
+  });
+
+  describe('applyEnabledSet', () => {
+    it('disables managed plugins absent from the enabled list', () => {
+      registry.register(makePlugin({ id: 'calculator', enabled: true }));
+      registry.register(makePlugin({ id: 'notes', enabled: true }));
+      registry.applyEnabledSet(['calculator'], ['calculator', 'notes']);
+      expect(registry.getPlugin('calculator')?.enabled).toBe(true);
+      expect(registry.getPlugin('notes')?.enabled).toBe(false);
+    });
+
+    it('leaves unmanaged plugins always-on regardless of the list', () => {
+      registry.register(makePlugin({ id: 'ai-chat', enabled: true }));
+      registry.applyEnabledSet([], ['calculator', 'notes']);
+      expect(registry.getPlugin('ai-chat')?.enabled).toBe(true);
+    });
+
+    it('re-enables a managed plugin when added back to the list', () => {
+      registry.register(makePlugin({ id: 'notes', enabled: false }));
+      registry.applyEnabledSet(['notes'], ['notes']);
+      expect(registry.getPlugin('notes')?.enabled).toBe(true);
     });
   });
 });

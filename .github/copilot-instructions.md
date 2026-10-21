@@ -5,14 +5,14 @@
 - Volt is a Tauri v2 desktop launcher: React/Vite frontend + Rust backend.
 - Entrypoints: frontend [src/main.tsx](../src/main.tsx) → [src/app/App.tsx](../src/app/App.tsx); backend [src-tauri/src/main.rs](../src-tauri/src/main.rs) → `volt_lib::run()` in [src-tauri/src/lib.rs](../src-tauri/src/lib.rs)
 
-## Dev workflows (use Bun)
+## Dev workflows (use pnpm)
 
-- Install: `bun install`
-- Full app dev (recommended): `bun tauri dev`
-- Frontend only (Vite on 1420): `bun run dev`
-- Build: `bun run build` (web) and `bun tauri build` (desktop bundle)
-- Lint: `bun run lint`
-- Format: `bun prettier --write .`
+- Install: `pnpm install`
+- Full app dev (recommended): `pnpm run tauri -- dev`
+- Frontend only (Vite on 1420): `pnpm run dev`
+- Build: `pnpm run build` (web) and `pnpm run tauri -- build` (desktop bundle)
+- Lint: `pnpm run lint`
+- Format: `pnpm exec prettier --write .`
 
 ## Where things live
 
@@ -38,9 +38,11 @@
 
 ## Search + results behavior (don’t break these)
 
-- Search is debounced (150ms) and prevents stale responses via `latestSearchId` in [src/app/App.tsx](../src/app/App.tsx).
+- Search is debounced (150ms) and prevents stale responses via `latestSearchId` in [src/app/hooks/useSearchPipeline.ts](../src/app/hooks/useSearchPipeline.ts).
 - App + file + plugin search run in parallel and are merged/sorted by `score`.
 - File indexing is optional: frontend treats `search_files` failures as empty results.
+- File search uses nucleo by default. With the `tantivy-search` Cargo feature it uses the persistent Tantivy index, with SQLite as source of truth and nucleo as fallback.
+- The frontend watcher lifecycle is serialized by `FileWatcherLifecycle`: stop before rebuild/config change, start only after indexing completes, stop on unmount.
 
 ## Project conventions (senior guardrails)
 
@@ -66,4 +68,4 @@
 ## Error handling
 
 - All Tauri commands return `VoltResult<T>` (alias for `Result<T, VoltError>`).
-- `VoltError` is a discriminated union defined in `src-tauri/src/core/errors.rs` — do not use raw `Result<T, String>`.
+- `VoltError` is a discriminated union defined in `src-tauri/src/core/error.rs` — do not use raw `Result<T, String>` for Tauri commands.

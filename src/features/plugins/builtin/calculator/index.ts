@@ -1,6 +1,7 @@
-import { Plugin, PluginContext, PluginResult, PluginResultType } from '../../types';
+import { Plugin, PluginActivation, PluginContext, PluginResult, PluginResultType } from '../../types';
 import { copyToClipboard } from '../../utils/helpers';
 import { logger } from '../../../../shared/utils/logger';
+import { VOLT_EVENTS, emitVoltEvent } from '../../../../shared/events';
 import { detectQueryType, parseQuery } from './parsers/queryParser';
 import { evaluateMathExpression } from './converters/math';
 import { convertUnit } from './converters/units';
@@ -14,9 +15,6 @@ import { formatNumber, formatWithUnit } from './utils/formatting';
 import { addToHistory } from './utils/history';
 import type { SpecificQuery } from './types';
 
-// Export the view component
-export { CalculatorView } from './components/CalculatorView';
-
 // Keywords that trigger the calculator shortcut
 const CALCULATOR_KEYWORDS = ['calc', 'calculatrice', 'calculer', 'calculator', 'math'];
 
@@ -25,6 +23,15 @@ export class CalculatorPlugin implements Plugin {
   name = 'Calculator';
   description = 'Math, unit conversions, date calculations, and timezone conversions';
   enabled = true;
+
+  // `mode: 'custom'` — canHandle still relies on math/unit/date detection; the
+  // keywords/prefix here only drive the scoring boost when the query starts
+  // with them (e.g. `calc …`, `=5+5`).
+  activation: PluginActivation = {
+    mode: 'custom',
+    prefixes: ['='],
+    keywords: [...CALCULATOR_KEYWORDS, 'calcul', 'time'],
+  };
 
   /**
    * Check if query can be handled by calculator
@@ -93,7 +100,7 @@ export class CalculatorPlugin implements Plugin {
     // Handle "open calculator view" action
     if (result.data?.action === 'open-calculator-view') {
       // Dispatch custom event to open calculator view in App.tsx
-      window.dispatchEvent(new CustomEvent('volt:open-calculator'));
+      emitVoltEvent(VOLT_EVENTS.OPEN_CALCULATOR);
       return;
     }
 

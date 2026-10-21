@@ -19,10 +19,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
+      - name: Reject tracked secrets and private keys
+        if: matrix.platform == 'ubuntu-latest'
+        run: bash scripts/check-no-secrets.sh
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
         with:
-          bun-version: latest
+          node-version: "22"
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -41,30 +48,43 @@ jobs:
           sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libssl-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev
 
       - name: Install Frontend Dependencies
-        run: bun install
+        run: pnpm install --frozen-lockfile
 
       - name: Verify version manifests are aligned
         # Runs only once — version sync is platform-independent
         if: matrix.platform == 'ubuntu-latest'
-        run: bun run check-version
+        run: pnpm run check-version
 
       - name: Lint
-        run: bunx eslint .
+        run: pnpm run lint
 
       - name: Build Frontend & Check Types
-        run: bun run build
+        run: pnpm run build
 
       - name: Frontend Tests (Vitest)
-        run: bun run test
+        run: pnpm run test
 
       - name: Rust Format Check
         run: cd src-tauri && cargo fmt --check
 
       - name: Rust Clippy
-        run: cd src-tauri && cargo clippy --all-features --all-targets -- -D warnings
+        run: cd src-tauri && cargo clippy --all-targets --features tantivy-search -- -D warnings
 
       - name: Check Rust Backend (Fast)
-        run: cd src-tauri && cargo check --all-features
+        run: cd src-tauri && cargo check --features tantivy-search
 
       - name: Rust Tests
-        run: cd src-tauri && cargo test --workspace --lib
+        run: cd src-tauri && cargo test --workspace --lib --features tantivy-search
+
+      - name: SQLCipher Clippy
+        run: cd src-tauri && cargo clippy --all-targets --no-default-features --features sqlcipher -- -D warnings
+
+      - name: SQLCipher Tests
+        run: cd src-tauri && cargo test --workspace --lib --no-default-features --features sqlcipher,bundled-onnxruntime
+
+      - name: Verify generated TS bindings are up to date
+        # The Rust test step regenerates the ts-rs IPC bindings; fail if they
+        # drift from what's committed (fix: run `cargo test` and commit the
+        # result). Linux only — single source of truth, avoids CRLF/LF noise.
+        if: matrix.platform == 'ubuntu-latest'
+        run: git diff --exit-code -- src/shared/types/generated

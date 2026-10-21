@@ -1,6 +1,6 @@
 /**
  * Volt commit message policy.
- * Enforced locally via scripts/hooks/commit-msg (bun run setup-hooks)
+ * Enforced locally via scripts/hooks/commit-msg (pnpm run setup-hooks)
  * and in CI via the PR title lint workflow.
  *
  * Rules follow Conventional Commits (extends @commitlint/config-conventional).
@@ -14,17 +14,17 @@ export default {
       2,
       'always',
       [
-        'feat',      // new feature                   → Features
-        'fix',       // bug fix                       → Bug Fixes
-        'perf',      // performance improvement       → Performance
-        'refactor',  // internal cleanup              → Refactoring
-        'docs',      // documentation only            → Documentation
-        'test',      // tests only                    → Testing
-        'style',     // formatting, no code change    → Styling
-        'ci',        // CI pipeline                   → CI
-        'build',     // build system / bundler        → Other
-        'chore',     // misc housekeeping             → Other
-        'revert',    // reverts a previous commit
+        'feat', // new feature                   → Features
+        'fix', // bug fix                       → Bug Fixes
+        'perf', // performance improvement       → Performance
+        'refactor', // internal cleanup              → Refactoring
+        'docs', // documentation only            → Documentation
+        'test', // tests only                    → Testing
+        'style', // formatting, no code change    → Styling
+        'ci', // CI pipeline                   → CI
+        'build', // build system / bundler        → Other
+        'chore', // misc housekeeping             → Other
+        'revert', // reverts a previous commit
       ],
     ],
     // Allow long bodies (useful for release PRs with generated changelogs)

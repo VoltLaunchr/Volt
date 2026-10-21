@@ -10,7 +10,7 @@ import {
 } from "@/shared/components/ui/select";
 import { cn } from "@/lib/utils";
 import { CheckIcon, CopyIcon } from "lucide-react";
-import type { ComponentProps, CSSProperties, HTMLAttributes } from "react";
+import type { ComponentProps, HTMLAttributes } from "react";
 import {
   createContext,
   memo,
@@ -61,16 +61,14 @@ const addKeysToTokens = (lines: ThemedToken[][]): KeyedLine[] =>
 const TokenSpan = ({ token }: { token: ThemedToken }) => (
   <span
     className="dark:!bg-[var(--shiki-dark-bg)] dark:!text-[var(--shiki-dark)]"
-    style={
-      {
-        backgroundColor: token.bgColor,
-        color: token.color,
-        fontStyle: isItalic(token.fontStyle) ? "italic" : undefined,
-        fontWeight: isBold(token.fontStyle) ? "bold" : undefined,
-        textDecoration: isUnderline(token.fontStyle) ? "underline" : undefined,
-        ...token.htmlStyle,
-      } as CSSProperties
-    }
+    style={{
+      backgroundColor: token.bgColor,
+      color: token.color,
+      fontStyle: isItalic(token.fontStyle) ? "italic" : undefined,
+      fontWeight: isBold(token.fontStyle) ? "bold" : undefined,
+      textDecoration: isUnderline(token.fontStyle) ? "underline" : undefined,
+      ...token.htmlStyle,
+    }}
   >
     {token.content}
   </span>
@@ -500,7 +498,9 @@ export const CodeBlockCopyButton = ({
   return (
     <Button
       className={cn("shrink-0", className)}
-      onClick={copyToClipboard}
+      onClick={() => {
+        void copyToClipboard();
+      }}
       size="icon"
       variant="ghost"
       {...props}

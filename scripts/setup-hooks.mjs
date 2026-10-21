@@ -5,7 +5,7 @@
  * Sets `core.hooksPath` in this repo's local .git/config only.
  * Does NOT touch the user's global git config.
  *
- * Usage: bun run setup-hooks
+ * Usage: pnpm run setup-hooks
  */
 
 import { execFileSync } from 'node:child_process';

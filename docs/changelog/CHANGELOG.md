@@ -13,7 +13,7 @@
 - **Shell settings panel**: configure default shell, working directory, timeout, and history size; clear shell history.
 - **Premium-gated Account UI**: new Account panel with login/upgrade hints.
 - **Extension icons**: GitHub and Notion integration icons.
-- **Build script**: `bun run tauri:build` wraps the PowerShell build pipeline (`scripts/build.ps1`).
+- **Build script**: `pnpm run tauri:build` wraps the PowerShell build pipeline (`scripts/build.ps1`).
 
 ### Changed
 

@@ -1,4 +1,10 @@
-import { Plugin, PluginContext, PluginResult, PluginResultType } from '../../types';
+import {
+  Plugin,
+  PluginActivation,
+  PluginContext,
+  PluginResult,
+  PluginResultType,
+} from '../../types';
 import { logger } from '../../../../shared/utils/logger';
 
 // Window position commands with their trigger keywords and aliases
@@ -110,6 +116,13 @@ export class WindowManagementPlugin implements Plugin {
   description = 'Snap, resize, and move windows using keyboard commands';
   enabled = true;
 
+  // `mode: 'custom'` — canHandle keeps its bidirectional type-ahead matching
+  // (typing "win" matches "window"); these keywords drive only the scoring boost.
+  activation: PluginActivation = {
+    mode: 'custom',
+    keywords: PLUGIN_KEYWORDS,
+  };
+
   /**
    * Check if query can be handled by window management
    */
@@ -178,7 +191,9 @@ export class WindowManagementPlugin implements Plugin {
 
   /**
    * Execute the window management command.
-   * Hides Volt first, then invokes the backend snap command.
+   * Delegates target validation and hiding to the backend, which uses the
+   * external foreground window remembered before Volt took focus.
+   * If snapping fails, restores Volt so the user is not left without the launcher.
    */
   async execute(result: PluginResult): Promise<void> {
     const position = result.data?.position as string;
@@ -187,16 +202,22 @@ export class WindowManagementPlugin implements Plugin {
       return;
     }
 
+    let invoke: typeof import('@tauri-apps/api/core').invoke | undefined;
+
     try {
-      const { invoke } = await import('@tauri-apps/api/core');
-
-      // Hide Volt first so the foreground window is the user's target
-      await invoke<void>('hide_window');
-
-      // Snap the (now-foreground) window
+      ({ invoke } = await import('@tauri-apps/api/core'));
+      // Backend validates the remembered target before hiding Volt.
       await invoke<void>('snap_window', { position });
     } catch (error) {
       logger.error('Failed to snap window:', error);
+      // If the Tauri API itself could not load, the backend never hid Volt.
+      if (!invoke) return;
+      // Restore Volt so the user can retry — previously the launcher stayed hidden on failure
+      try {
+        await invoke<void>('show_window');
+      } catch (showError) {
+        logger.error('Failed to restore window after snap failure:', showError);
+      }
     }
   }
 }

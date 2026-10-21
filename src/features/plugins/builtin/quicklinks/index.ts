@@ -1,5 +1,11 @@
 import { invoke } from '@tauri-apps/api/core';
-import { Plugin, PluginContext, PluginResult, PluginResultType } from '../../types';
+import {
+  Plugin,
+  PluginActivation,
+  PluginContext,
+  PluginResult,
+  PluginResultType,
+} from '../../types';
 import { fuzzyScore, openUrl } from '../../utils/helpers';
 import { logger } from '../../../../shared/utils/logger';
 
@@ -20,7 +26,7 @@ const TYPE_ICONS: Record<Quicklink['type'], string> = {
 };
 
 // Keywords that trigger the quicklinks plugin
-const QUICKLINK_KEYWORDS = ['quicklink', 'link', 'bookmark', 'ql'];
+const QUICKLINK_KEYWORDS = ['quicklink', 'quicklinks', 'link', 'bookmark', 'ql'];
 
 // Management command prefixes
 const MANAGEMENT_COMMANDS: Record<string, string> = {
@@ -37,6 +43,14 @@ export class QuicklinksPlugin implements Plugin {
   name = 'Quicklinks';
   description = 'Custom shortcuts to URLs, folders, or shell commands';
   enabled = true;
+
+  // `mode: 'custom'` — canHandle also fuzzy-matches against cached quicklink
+  // names; these keywords/prefixes drive only the scoring boost.
+  activation: PluginActivation = {
+    mode: 'custom',
+    prefixes: ['ql:', 'quicklink:'],
+    keywords: QUICKLINK_KEYWORDS,
+  };
 
   /** Cached quicklinks list for fast canHandle() checks */
   private cachedQuicklinks: Quicklink[] = [];
@@ -89,8 +103,7 @@ export class QuicklinksPlugin implements Plugin {
     // Check if query matches any cached quicklink name or shortcut
     return this.cachedQuicklinks.some(
       (ql) =>
-        ql.name.toLowerCase().includes(lowerQuery) ||
-        ql.shortcut.toLowerCase().includes(lowerQuery)
+        ql.name.toLowerCase().includes(lowerQuery) || ql.shortcut.toLowerCase().includes(lowerQuery)
     );
   }
 
@@ -146,6 +159,13 @@ export class QuicklinksPlugin implements Plugin {
         const icon = ql.icon || TYPE_ICONS[ql.type];
         const score = searchTerm === '' ? 80 : bestScore;
 
+        // A user typing their own quicklink's exact shortcut (or a prefix of
+        // it) is as deliberate a trigger as typing a keyword — without this,
+        // the flat APPLICATION base score (200) always buries an unboosted
+        // quicklink match (PLUGIN_BASE 100) under incidental app fuzzy
+        // matches, so saved shortcuts would never surface by name alone.
+        const isDeliberateShortcutMatch = shortcutScore >= 90;
+
         results.push({
           id: `quicklink-${ql.id}`,
           type: PluginResultType.Info,
@@ -153,6 +173,7 @@ export class QuicklinksPlugin implements Plugin {
           subtitle: `${ql.type === 'command' ? 'Run' : 'Open'}: ${ql.target}`,
           badge: ql.type.charAt(0).toUpperCase() + ql.type.slice(1),
           score: isKeywordTriggered ? score : Math.max(score - 10, 0),
+          matchKind: isKeywordTriggered || isDeliberateShortcutMatch ? 'keyword' : undefined,
           data: {
             quicklink: ql,
             action: 'open',
@@ -232,10 +253,7 @@ export class QuicklinksPlugin implements Plugin {
   /**
    * Handle management commands (ql:add, ql:list, ql:remove)
    */
-  private async handleManagementCommand(
-    action: string,
-    args: string
-  ): Promise<PluginResult[]> {
+  private async handleManagementCommand(action: string, args: string): Promise<PluginResult[]> {
     switch (action) {
       case 'add':
         return this.handleAdd(args);
@@ -309,7 +327,7 @@ export class QuicklinksPlugin implements Plugin {
     // Check for duplicate shortcut
     if (!this.cacheLoaded) await this.refreshCache();
     const existing = this.cachedQuicklinks.find(
-      (ql) => ql.shortcut.toLowerCase() === shortcut.toLowerCase(),
+      (ql) => ql.shortcut.toLowerCase() === shortcut.toLowerCase()
     );
     if (existing) {
       return [
@@ -351,7 +369,7 @@ export class QuicklinksPlugin implements Plugin {
    * Handle ql:list - show all quicklinks
    */
   private async handleList(): Promise<PluginResult[]> {
-    let quicklinks: Quicklink[] = [];
+    let quicklinks: Quicklink[];
     try {
       quicklinks = await invoke<Quicklink[]>('get_quicklinks');
     } catch {
@@ -415,7 +433,7 @@ export class QuicklinksPlugin implements Plugin {
     }
 
     const searchTerm = args.trim().toLowerCase();
-    let quicklinks: Quicklink[] = [];
+    let quicklinks: Quicklink[];
     try {
       quicklinks = await invoke<Quicklink[]>('get_quicklinks');
     } catch {
@@ -424,8 +442,7 @@ export class QuicklinksPlugin implements Plugin {
 
     const matches = quicklinks.filter(
       (ql) =>
-        ql.shortcut.toLowerCase().includes(searchTerm) ||
-        ql.name.toLowerCase().includes(searchTerm)
+        ql.shortcut.toLowerCase().includes(searchTerm) || ql.name.toLowerCase().includes(searchTerm)
     );
 
     if (matches.length === 0) {

@@ -35,3 +35,23 @@ pub fn no_window_tokio(cmd: &mut tokio::process::Command) -> &mut tokio::process
 pub fn no_window_tokio(cmd: &mut tokio::process::Command) -> &mut tokio::process::Command {
     cmd
 }
+
+/// Reaps a fire-and-forget child in the background so it doesn't linger as a
+/// zombie for the app's lifetime.
+///
+/// `Command::spawn` never reaps on its own — on Unix, an exited child stays
+/// in the process table as `<defunct>` until something calls `wait()` on it.
+/// Volt is a long-running background app (it stays alive for the whole
+/// session to serve the hotkey), so any fire-and-forget spawn that skips this
+/// leaves a permanent zombie entry — one per app/command launched, none of
+/// them cleaned up until Volt itself quits. No-op on Windows, which has no
+/// equivalent concept, so callers can use it unconditionally.
+#[cfg(unix)]
+pub fn reap_in_background(mut child: std::process::Child) {
+    std::thread::spawn(move || {
+        let _ = child.wait();
+    });
+}
+
+#[cfg(not(unix))]
+pub fn reap_in_background(_child: std::process::Child) {}

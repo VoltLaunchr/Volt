@@ -98,7 +98,7 @@ export function useWindowState(): UseWindowStateReturn {
     await windowService.center();
     setState((prev) => ({
       ...prev,
-      position: 'center' as WindowPosition,
+      position: 'center',
       customPosition: undefined,
     }));
   }, []);

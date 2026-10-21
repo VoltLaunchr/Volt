@@ -1,6 +1,6 @@
 [package]
 name = "volt"
-version = "0.2.1"
+version = "0.5.0"
 description = "Lightning-fast keyboard-driven launcher for Windows, macOS, and Linux"
 authors = ["VoltLaunchr Contributors"]
 license = "Apache-2.0"
@@ -19,7 +19,6 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
-dotenvy = "0.15"
 
 [dependencies]
 # Tauri features intentionally empty: devtools is gated to debug builds via the
@@ -27,8 +26,6 @@ dotenvy = "0.15"
 tauri = { version = "2", features = ["protocol-asset"] }
 tauri-plugin-opener = "2"
 tauri-plugin-global-shortcut = "2"
-tauri-plugin-shell = "2"
-tauri-plugin-fs = "2"
 tauri-plugin-autostart = "2"
 tauri-plugin-deep-link = "2"
 tauri-plugin-dialog = "2"
@@ -41,18 +38,28 @@ chrono = "0.4"
 async-trait = "0.1"
 tauri-plugin-updater = "2.9.0"
 tauri-plugin-process = "2.3.1"
+tauri-plugin-os = "2"
 regex = "1.11"
 dirs = "6.0"
 tokio = { version = "1", features = ["full"] }
 sysinfo = "0.32"
 semver = "1.0"
 arboard = "3.4"
-rusqlite = { version = "0.32", features = ["bundled"] }
+# Bundling flavor is selected by Volt features (see [features] below), NOT here,
+# so the default build keeps plain bundled SQLite while `--features sqlcipher`
+# can swap in bundled SQLCipher. `libsqlite3-sys` links exactly one amalgamation,
+# so `bundled` and `bundled-sqlcipher` are mutually exclusive by design.
+rusqlite = { version = "0.40.1" }
+fs4 = "0.13.1"
 notify = { version = "6.1", features = ["macos_fsevent"] }
 image = "0.25"
 base64 = "0.22"
-once_cell = "1.20"
 nucleo-matcher = "0.3"
+# Rust→TS type generation (IPC contract sync). Bindings are emitted by the
+# `export_bindings_*` tests into src/shared/types/generated/ and guarded by a
+# vitest type test, so a Rust struct change that drifts from the frontend fails
+# CI. serde-compat (default) honours #[serde(rename_all)].
+ts-rs = "10"
 log = "0.4"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
@@ -77,38 +84,87 @@ sha2 = "0.10"
 rand = "0.9"
 hex = "0.4"
 unicode-normalization = "0.1"
-jsonwebtoken = { version = "10", features = ["rust_crypto"] }
+jsonwebtoken = { version = "10", features = ["aws_lc_rs"] }
 trash = "5.2.6"
 thiserror = "2"
+shlex = "1.3"
 # Local embeddings for "Ask my notes" RAG. fastembed wraps ort + ONNX Runtime
 # and ships pure-Rust tokenizers; the model itself is downloaded on first use
 # to `app_data_dir/embeddings/` (NOT bundled into the binary). Uses native-tls
 # by default — matches our existing reqwest config.
-fastembed = "5"
+fastembed = { version = "5", default-features = false, features = ["hf-hub-native-tls", "image-models"] }
+# Pilier D Track 1: full-text/relevance file index. Pure-Rust, builds on
+# Windows/macOS/Linux. OPTIONAL and OFF by default — only compiled when the
+# `tantivy-search` feature is enabled, so the default build is unaffected.
+# See REFONTE-PILIER-D-SEARCH.md.
+tantivy = { version = "0.26", optional = true }
+tauri-plugin-notification = "2"
 
 [target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
 tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
 
 [target.'cfg(windows)'.dependencies]
-winapi = { version = "0.3", features = ["shellapi", "winuser", "wingdi", "winnt", "winreg", "fileapi", "psapi", "processthreadsapi", "handleapi"] }
+# `ioapiset` (DeviceIoControl) + `errhandlingapi` (GetLastError) are required by
+# the unprivileged USN change-journal reader (indexer::usn, feature
+# `usn-incremental`). They are cheap and harmless when that feature is off.
+winapi = { version = "0.3", features = ["shellapi", "winuser", "wingdi", "winnt", "winreg", "fileapi", "winbase", "psapi", "processthreadsapi", "handleapi", "ioapiset", "errhandlingapi"] }
 winreg = "0.55"
-lnk = "0.6"
+notify-rust = "4.18"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 icns = "0.1"
 plist = "1.7"
 
+[target.'cfg(target_os = "linux")'.dependencies]
+# EWMH/ICCCM window control (snap/maximize/minimize/fullscreen the foreground
+# window, foreground-app resolution, simulated Ctrl+V via XTEST) on X11 and
+# XWayland. Pure-Rust connection, no libxcb link required.
+x11rb = { version = "0.13", features = ["randr", "xtest"] }
+
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-positioner = "2"
 
 [features]
-default = []
+# Default keeps plain bundled SQLite — today's behavior, no new build deps.
+default = ["bundled-sqlite", "bundled-onnxruntime"]
+# Plain bundled SQLite (current behavior). Kept as an explicit feature so the
+# bundling flavor is selected here rather than on the rusqlite dep line.
+bundled-sqlite = ["rusqlite/bundled"]
+# Upstream installers keep fastembed's verified prebuilt ONNX Runtime download.
+# Native distribution packages can instead select `system-onnxruntime` and use
+# the runtime shipped by the distribution without network access in build().
+bundled-onnxruntime = ["fastembed/ort-download-binaries-native-tls"]
+system-onnxruntime = ["fastembed/ort-load-dynamic"]
+# Pilier C — encrypted data-at-rest. Replaces plain SQLite with bundled
+# SQLCipher + vendored OpenSSL (no system OpenSSL required, best for Windows).
+# Implies `rusqlite/bundled-sqlcipher`. NOT in `default`: keeps the everyday
+# build free of the OpenSSL/Perl toolchain until validated across CI. Build
+# with: `cargo build --no-default-features --features sqlcipher` (do NOT combine
+# with `bundled-sqlite` — the two bundlings conflict at the link step).
+sqlcipher = ["rusqlite/bundled-sqlcipher-vendored-openssl"]
 devtools = ["tauri/devtools"]
+# Pilier D Track 1: enables the Tantivy-backed full-text file-search index
+# (`indexer::fulltext`). OFF by default; the default build keeps the existing
+# nucleo search path unchanged. See REFONTE-PILIER-D-SEARCH.md.
+tantivy-search = ["dep:tantivy"]
+# Pilier D Track 2 (no-admin): unprivileged USN change-journal delta reader
+# (`indexer::usn`). Windows-only at runtime via FSCTL_READ_UNPRIVILEGED_USN_JOURNAL
+# on a FILE_TRAVERSE handle — NO administrator privileges required. The record
+# parser is pure and portable (unit-tested on any OS). OFF by default; not wired
+# into the lifecycle yet (gated on the D1 benchmark GO). See REFONTE-PILIER-D-SEARCH.md §3.
+usn-incremental = []
 # Enables the heavy end-to-end embedding test that downloads the multilingual-e5-small
 # model (~120 MB on first run, then cached). Run with:
 #   cargo test --features test-embeddings -- --test-threads=1
 # Kept off by default so CI and routine `cargo test` do not pull the model.
 test-embeddings = []
+# Pilier E1: global snippet expansion via a WH_KEYBOARD_LL low-level keyboard
+# hook (no uiAccess, no administrator privileges). OFF by default — this is
+# an opt-in feature that installs a system-wide keyboard hook and can inject
+# synthetic keystrokes (SendInput) into any foreground window. Windows-only
+# at runtime; the pure trigger-matching logic (`expansion::trigger_buffer`)
+# still compiles and is unit-tested on every OS regardless of this flag.
+snippet-global-expansion = []
 
 [dev-dependencies]
 tempfile = "3"
