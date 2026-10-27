@@ -123,6 +123,9 @@ importers:
       '@visx/event':
         specifier: 4.0.1-alpha.0
         version: 4.0.1-alpha.0
+      '@visx/group':
+        specifier: 4.0.1-alpha.0
+        version: 4.0.1-alpha.0(react@19.2.8)
       '@visx/responsive':
         specifier: 4.0.1-alpha.0
         version: 4.0.1-alpha.0(react@19.2.8)
