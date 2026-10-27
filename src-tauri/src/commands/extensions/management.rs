@@ -629,12 +629,15 @@ fn extract_tar_gz(bytes: &[u8], dest_dir: &Path) -> VoltResult<()> {
             continue;
         }
 
-        // Reject absolute paths and parent-directory components.
-        if entry_path.is_absolute()
-            || entry_path
-                .components()
-                .any(|c| matches!(c, std::path::Component::ParentDir))
-        {
+        // Only plain relative components are allowed: this rejects `..`, root
+        // and Windows drive prefixes (`C:foo` is not `is_absolute()` but still
+        // escapes `dest_dir` when joined).
+        if !entry_path.components().all(|c| {
+            matches!(
+                c,
+                std::path::Component::Normal(_) | std::path::Component::CurDir
+            )
+        }) {
             warn!("Skipping unsafe tar entry: {:?}", entry_path);
             continue;
         }
