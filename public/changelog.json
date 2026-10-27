@@ -22,7 +22,10 @@
           "title": "Bug Fixes",
           "icon": "shield",
           "items": [
-            "System Monitor: fixed overlapping chart axes, half-width and uneven panels, and cramped storage legends"
+            "System Monitor: fixed overlapping chart axes, half-width and uneven panels, and cramped storage legends",
+            "Fix release builds: align @tauri-apps/api and plugin-updater with the Tauri 2.12 crates",
+            "Harden extension tar extraction against Windows drive-prefix paths",
+            "Update tokio, rustls, webpki-roots and zip to patched versions"
           ]
         }
       ],
