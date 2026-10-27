@@ -166,6 +166,9 @@ pub struct IndexConfig {
     pub file_extensions: Vec<String>,
     pub max_depth: usize,
     pub max_file_size: u64, // in bytes, 0 = no limit
+    pub respect_ignore_files: bool,
+    pub exclude_generated_dirs: bool,
+    pub diagnostics_enabled: bool,
 }
 
 impl Default for IndexConfig {
@@ -176,6 +179,9 @@ impl Default for IndexConfig {
             file_extensions: vec![],
             max_depth: 10,
             max_file_size: 0, // No limit by default
+            respect_ignore_files: true,
+            exclude_generated_dirs: true,
+            diagnostics_enabled: false,
         }
     }
 }

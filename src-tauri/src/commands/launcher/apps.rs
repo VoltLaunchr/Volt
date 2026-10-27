@@ -14,10 +14,10 @@ use ts_rs::TS;
 
 use crate::commands::launcher::{LaunchHistoryState, execute_launch};
 use crate::core::error::{VoltError, VoltResult};
-use crate::utils::icon::extract_icon;
 #[cfg(any(target_os = "windows", test))]
 use crate::utils::path::find_main_executable;
-use tauri::State;
+use std::sync::atomic::{AtomicU64, Ordering};
+use tauri::{AppHandle, Emitter, State};
 
 #[cfg(target_os = "windows")]
 use crate::utils::path::get_local_drives;
@@ -476,18 +476,75 @@ static SCAN_CACHE: LazyLock<Arc<RwLock<Option<ScanCache>>>> =
 // extraction + .lnk parsing can OOM the process.
 static SCAN_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
 
+/// Settings may read an old catalog, but must never start filesystem I/O merely to display it.
+pub(crate) async fn cached_applications() -> Option<Vec<AppInfo>> {
+    let apps = SCAN_CACHE
+        .read()
+        .await
+        .as_ref()
+        .map(|cache| Arc::clone(&cache.apps))?;
+    Some((*apps).clone())
+}
+
+#[cfg(target_os = "windows")]
+static SCAN_WORKERS: LazyLock<Arc<Semaphore>> = LazyLock::new(|| Arc::new(Semaphore::new(3)));
+
+/// Keep permits inside physical workers, even if a deadline stops awaiting their JoinHandle.
+#[cfg(target_os = "windows")]
+async fn bounded_scan<F>(duration: Duration, scan: F) -> Result<Vec<AppInfo>, String>
+where
+    F: FnOnce(std::time::Instant) -> Result<Vec<AppInfo>, String> + Send + 'static,
+{
+    bounded_scan_with_pool(Arc::clone(&SCAN_WORKERS), duration, scan).await
+}
+
+#[cfg(target_os = "windows")]
+async fn bounded_scan_with_pool<F>(
+    pool: Arc<Semaphore>,
+    duration: Duration,
+    scan: F,
+) -> Result<Vec<AppInfo>, String>
+where
+    F: FnOnce(std::time::Instant) -> Result<Vec<AppInfo>, String> + Send + 'static,
+{
+    let deadline = std::time::Instant::now() + duration;
+    timeout(duration, async move {
+        let permit = pool.acquire_owned().await.map_err(|e| e.to_string())?;
+        tokio::task::spawn_blocking(move || {
+            let _permit = permit;
+            scan(deadline)
+        })
+        .await
+        .map_err(|e| e.to_string())?
+    })
+    .await
+    .map_err(|_| "application scan deadline exceeded".to_string())?
+}
+
+/// Incremented every time a fresh scan replaces the cache.
+static SCAN_GENERATION: AtomicU64 = AtomicU64::new(0);
+
+/// Event emitted to every window when a scan produced a new application list, so open windows
+/// (e.g. Settings) can refresh without any manual "scan" action.
+pub const APPS_SCAN_FINISHED_EVENT: &str = "apps:scan-finished";
+
 /// Scans system for installed applications (cross-platform)
 /// Uses caching to avoid expensive rescans
 #[tauri::command]
-pub async fn scan_applications() -> VoltResult<Vec<AppInfo>> {
-    scan_applications_with_options(false).await
+pub async fn scan_applications(app_handle: AppHandle) -> VoltResult<Vec<AppInfo>> {
+    let before = SCAN_GENERATION.load(Ordering::SeqCst);
+    let apps = scan_applications_with_options(false).await?;
+    if SCAN_GENERATION.load(Ordering::SeqCst) != before {
+        let _ = app_handle.emit(APPS_SCAN_FINISHED_EVENT, apps.len());
+    }
+    Ok(apps)
 }
 
 /// Extracts icon for a single application by its executable path.
 /// Used for lazy icon loading after the initial scan returns apps without icons.
 #[tauri::command]
-pub fn get_app_icon(path: String) -> Option<String> {
-    extract_icon(&path)
+pub async fn get_app_icon(path: String) -> Option<String> {
+    crate::utils::app_icons::load(path).await
 }
 
 /// Force a fresh scan without using cache (for sync operations)
@@ -567,6 +624,7 @@ pub(crate) async fn scan_applications_with_options(
         timestamp: SystemTime::now(),
     });
     drop(cache);
+    SCAN_GENERATION.fetch_add(1, Ordering::SeqCst);
 
     Ok(result)
 }
@@ -620,13 +678,12 @@ async fn scan_applications_windows() -> Result<Vec<AppInfo>, String> {
 
                 // Scan with 30-second timeout per path
                 let path_for_log = base_path.clone();
-                match timeout(
-                    Duration::from_secs(30),
-                    tokio::task::spawn_blocking(move || scan_directory_recursive(&base_path, 0, 3)),
-                )
+                match bounded_scan(Duration::from_secs(30), move |deadline| {
+                    scan_directory_until(&base_path, 0, 3, deadline)
+                })
                 .await
                 {
-                    Ok(Ok(Ok(scanned_apps))) => {
+                    Ok(scanned_apps) => {
                         info!(
                             "Drive {}: Found {} apps in {}",
                             drive,
@@ -635,14 +692,8 @@ async fn scan_applications_windows() -> Result<Vec<AppInfo>, String> {
                         );
                         drive_apps.extend(scanned_apps);
                     }
-                    Ok(Ok(Err(e))) => {
+                    Err(e) => {
                         warn!("Drive {}: Scan failed for {}: {}", drive, path_for_log, e);
-                    }
-                    Ok(Err(e)) => {
-                        warn!("Drive {}: Task failed for {}: {}", drive, path_for_log, e);
-                    }
-                    Err(_) => {
-                        warn!("Drive {}: Timeout scanning {}", drive, path_for_log);
                     }
                 }
             }
@@ -686,16 +737,13 @@ async fn scan_applications_windows() -> Result<Vec<AppInfo>, String> {
     };
 
     for base_path in user_paths {
-        match timeout(
-            Duration::from_secs(15),
-            tokio::task::spawn_blocking({
-                let path = base_path.clone();
-                move || scan_directory_recursive(&path, 0, 2)
-            }),
-        )
+        match bounded_scan(Duration::from_secs(15), {
+            let path = base_path.clone();
+            move |deadline| scan_directory_until(&path, 0, 2, deadline)
+        })
         .await
         {
-            Ok(Ok(Ok(scanned_apps))) => {
+            Ok(scanned_apps) => {
                 info!(
                     "User path: Found {} apps in {}",
                     scanned_apps.len(),
@@ -760,16 +808,13 @@ async fn scan_applications_windows() -> Result<Vec<AppInfo>, String> {
     };
 
     for base_path in start_menu_paths {
-        match timeout(
-            Duration::from_secs(10),
-            tokio::task::spawn_blocking({
-                let path = base_path.clone();
-                move || scan_shortcuts(&path)
-            }),
-        )
+        match bounded_scan(Duration::from_secs(10), {
+            let path = base_path.clone();
+            move |deadline| scan_shortcuts_until(&path, deadline, 0)
+        })
         .await
         {
-            Ok(Ok(Ok(apps_from_shortcuts))) => {
+            Ok(apps_from_shortcuts) => {
                 info!(
                     "Shortcuts: Found {} apps in {}",
                     apps_from_shortcuts.len(),
@@ -782,7 +827,7 @@ async fn scan_applications_windows() -> Result<Vec<AppInfo>, String> {
     }
 
     // Scan registry for installed applications (better names)
-    match scan_registry_apps() {
+    match bounded_scan(Duration::from_secs(10), scan_registry_apps).await {
         Ok(registry_apps) => {
             info!("Registry: Found {} apps", registry_apps.len());
             apps.extend(registry_apps);
@@ -791,7 +836,7 @@ async fn scan_applications_windows() -> Result<Vec<AppInfo>, String> {
     }
 
     // Scan Shell AppsFolder for Store/UWP apps
-    match crate::utils::shell_apps::enumerate_apps_folder() {
+    match crate::utils::shell_apps::enumerate_apps_folder().await {
         Ok(shell_apps) => {
             info!("AppsFolder: Found {} apps", shell_apps.len());
             apps.extend(shell_apps);
@@ -818,7 +863,7 @@ async fn scan_applications_windows() -> Result<Vec<AppInfo>, String> {
 
 /// Scan Windows registry Uninstall keys for installed applications
 #[cfg(target_os = "windows")]
-fn scan_registry_apps() -> Result<Vec<AppInfo>, String> {
+fn scan_registry_apps(deadline: std::time::Instant) -> Result<Vec<AppInfo>, String> {
     use winreg::RegKey;
     use winreg::enums::*;
 
@@ -836,6 +881,7 @@ fn scan_registry_apps() -> Result<Vec<AppInfo>, String> {
         };
 
         for name in uninstall_key.enum_keys().filter_map(|k| k.ok()) {
+            check_scan_deadline(deadline)?;
             let Ok(subkey) = uninstall_key.open_subkey(&name) else {
                 continue;
             };
@@ -1358,23 +1404,19 @@ pub async fn search_applications(query: String, apps: Vec<AppInfo>) -> VoltResul
     Ok(crate::search::search_applications(&query, apps))
 }
 
-/// Search applications with frecency scoring from launch history
+/// Search applications with frecency scoring from launch history.
+///
+/// `sensitivity` is optional on the wire (defaults to `medium`).
 #[tauri::command]
 pub async fn search_applications_frecency(
     query: String,
     apps: Vec<AppInfo>,
+    sensitivity: Option<crate::search::SearchSensitivity>,
     history_state: tauri::State<'_, crate::commands::launcher::LaunchHistoryState>,
     binding_state: tauri::State<'_, crate::commands::launcher::QueryBindingState>,
 ) -> VoltResult<Vec<AppInfoWithScore>> {
     crate::time_command!("search_applications_frecency");
-    // Project the history into a path→frecency map under the lock instead of
-    // cloning every LaunchRecord just to read its score.
-    let frecency = history_state.history.with_records(|records| {
-        records
-            .iter()
-            .map(|(path, record)| (path.clone(), record.frecency_date))
-            .collect::<std::collections::HashMap<String, i64>>()
-    });
+    let frecency = history_state.history.app_frecency();
     let bindings = binding_state
         .store
         .lock()
@@ -1385,20 +1427,40 @@ pub async fn search_applications_frecency(
         &frecency,
         Some(&bindings),
         &std::collections::HashMap::new(),
+        sensitivity.unwrap_or_default(),
     );
     Ok(results
         .into_iter()
-        .map(|(app, score)| AppInfoWithScore { app, score })
+        .map(|(app, rank)| AppInfoWithScore::new(app, rank))
         .collect())
 }
 
-/// App info with an attached score for frontend consumption
+/// App info with its ranking signals for frontend consumption.
+///
+/// The frontend merges apps with plugin commands through one lexicographic
+/// comparator (`src/app/searchRanking.ts`): `tier`, then `score` (match
+/// quality inside the tier), then `frecency`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppInfoWithScore {
     #[serde(flatten)]
     pub app: AppInfo,
-    pub score: f32,
+    /// Match quality inside the tier: 100 exact, 90 prefix, 50-89 fuzzy.
+    pub score: u32,
+    pub tier: crate::search::SearchTier,
+    /// `LaunchRecord::frecency_date` in ms (`0` = never launched).
+    pub frecency: i64,
+}
+
+impl AppInfoWithScore {
+    pub fn new(app: AppInfo, rank: crate::search::AppRank) -> Self {
+        Self {
+            app,
+            score: u32::from(rank.quality),
+            tier: rank.tier,
+            frecency: rank.frecency,
+        }
+    }
 }
 
 /// Launches an application by its path.
@@ -1422,12 +1484,37 @@ pub async fn launch_application(
 // ============================================================================
 
 /// Recursively scans a directory for applications up to a given depth.
-#[cfg(any(target_os = "windows", test))]
+#[cfg(test)]
 fn scan_directory_recursive(
     dir_path: &str,
     current_depth: usize,
     max_depth: usize,
 ) -> Result<Vec<AppInfo>, String> {
+    scan_directory_until(
+        dir_path,
+        current_depth,
+        max_depth,
+        std::time::Instant::now() + Duration::from_secs(30),
+    )
+}
+
+#[cfg(any(target_os = "windows", test))]
+fn check_scan_deadline(deadline: std::time::Instant) -> Result<(), String> {
+    if std::time::Instant::now() >= deadline {
+        Err("application scan deadline exceeded".into())
+    } else {
+        Ok(())
+    }
+}
+
+#[cfg(any(target_os = "windows", test))]
+fn scan_directory_until(
+    dir_path: &str,
+    current_depth: usize,
+    max_depth: usize,
+    deadline: std::time::Instant,
+) -> Result<Vec<AppInfo>, String> {
+    check_scan_deadline(deadline)?;
     let mut apps = Vec::new();
 
     // Stop if we've reached max depth
@@ -1446,6 +1533,7 @@ fn scan_directory_recursive(
     };
 
     for entry in entries.flatten() {
+        check_scan_deadline(deadline)?;
         let entry_path = entry.path();
 
         // Skip known system/protected directories on Windows
@@ -1457,7 +1545,7 @@ fn scan_directory_recursive(
         }
 
         // Skip if not a directory
-        if let Ok(metadata) = entry.metadata()
+        if let Ok(metadata) = std::fs::symlink_metadata(&entry_path)
             && metadata.is_dir()
             && !metadata.is_symlink()
         {
@@ -1484,14 +1572,13 @@ fn scan_directory_recursive(
             }
 
             // Recursively scan subdirectories
-            if current_depth + 1 < max_depth
-                && let Ok(sub_apps) = scan_directory_recursive(
+            if current_depth + 1 < max_depth {
+                apps.extend(scan_directory_until(
                     &entry_path.to_string_lossy(),
                     current_depth + 1,
                     max_depth,
-                )
-            {
-                apps.extend(sub_apps);
+                    deadline,
+                )?);
             }
         }
     }
@@ -1500,21 +1587,31 @@ fn scan_directory_recursive(
 }
 
 #[cfg(target_os = "windows")]
-fn scan_shortcuts(dir_path: &str) -> Result<Vec<AppInfo>, String> {
+fn scan_shortcuts_until(
+    dir_path: &str,
+    deadline: std::time::Instant,
+    depth: usize,
+) -> Result<Vec<AppInfo>, String> {
+    check_scan_deadline(deadline)?;
+    if depth > 32 {
+        return Ok(Vec::new());
+    }
     let mut apps = Vec::new();
 
     if let Ok(entries) = std::fs::read_dir(dir_path) {
         for entry in entries.flatten() {
+            check_scan_deadline(deadline)?;
             let path = entry.path();
 
             // Skip symlinks to avoid infinite loops
-            if let Ok(metadata) = entry.metadata() {
+            if let Ok(metadata) = std::fs::symlink_metadata(&path) {
                 // Recursively scan subdirectories (but not symlinks)
-                if metadata.is_dir()
-                    && !metadata.is_symlink()
-                    && let Ok(sub_apps) = scan_shortcuts(&path.to_string_lossy())
-                {
-                    apps.extend(sub_apps);
+                if metadata.is_dir() && !metadata.is_symlink() {
+                    apps.extend(scan_shortcuts_until(
+                        &path.to_string_lossy(),
+                        deadline,
+                        depth + 1,
+                    )?);
                 } else if metadata.is_file()
                     && let Some(ext) = path.extension()
                     && ext == "lnk"
@@ -1551,6 +1648,44 @@ fn scan_shortcuts(dir_path: &str) -> Result<Vec<AppInfo>, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn expired_scan_budget_stops_before_walking() {
+        assert!(scan_directory_until(".", 0, 10, std::time::Instant::now()).is_err());
+    }
+
+    #[cfg(target_os = "windows")]
+    #[tokio::test]
+    async fn timed_out_scan_retains_its_physical_worker_permit() {
+        let pool = Arc::new(Semaphore::new(1));
+        let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel();
+        let worker_pool = Arc::clone(&pool);
+        let first = tokio::spawn(bounded_scan_with_pool(
+            worker_pool,
+            Duration::from_millis(200),
+            move |_| {
+                let _ = started_tx.send(());
+                let _ = release_rx.recv_timeout(Duration::from_secs(5));
+                Ok(Vec::new())
+            },
+        ));
+        started_rx.await.unwrap();
+        assert!(first.await.unwrap().is_err());
+        assert_eq!(pool.available_permits(), 0);
+        assert!(
+            bounded_scan_with_pool(Arc::clone(&pool), Duration::from_millis(20), |_| {
+                panic!("a timed-out physical worker must still occupy its permit")
+            })
+            .await
+            .is_err()
+        );
+        release_tx.send(()).unwrap();
+        let _permit = tokio::time::timeout(Duration::from_secs(2), pool.acquire())
+            .await
+            .unwrap()
+            .unwrap();
+    }
 
     // Categories are emitted in the lowercase/camelCase form expected by the
     // TS `AppCategory` enum (`src/shared/types/common.types.ts`). The

@@ -1,5 +1,6 @@
 pub mod database;
 pub mod file_history;
+mod ignore_policy;
 pub mod scanner;
 pub mod search_engine;
 pub mod types;
@@ -23,6 +24,7 @@ pub mod usn;
 
 pub use database::{FileIndexDb, IndexStats};
 pub use file_history::*;
+pub(crate) use ignore_policy::set_external_policy;
 pub use scanner::*;
 pub use search_engine::{SearchEngine, SearchOptions, SearchResult};
 pub use types::*;

@@ -4,7 +4,7 @@
 //! Calls are deliberately bounded and only target Brave's fixed HTTPS endpoint.
 
 use crate::commands::auth::load_credential;
-use crate::commands::launcher::{AppInfo, scan_applications};
+use crate::commands::launcher::{AppInfo, scan_applications_with_options};
 use crate::commands::system::settings::{
     WebSearchSettings, load_settings, update_settings_section,
 };
@@ -218,7 +218,7 @@ fn is_launchable_browser(app: &AppInfo) -> bool {
 }
 
 async fn detected_browser_apps() -> VoltResult<Vec<AppInfo>> {
-    let mut browsers = scan_applications()
+    let mut browsers = scan_applications_with_options(false)
         .await?
         .into_iter()
         .filter(is_launchable_browser)

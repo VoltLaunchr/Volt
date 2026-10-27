@@ -56,6 +56,7 @@ pub(crate) fn remember_foreground_target(app: &tauri::AppHandle) {
 
 #[cfg(target_os = "windows")]
 mod windows_impl {
+    use crate::commands::system::behavior_settings::tile_rect;
     use std::mem;
     use tauri::{AppHandle, Manager};
     use winapi::shared::windef::{HWND, RECT};
@@ -125,7 +126,7 @@ mod windows_impl {
         external_window(unsafe { GetForegroundWindow() }).map(|hwnd| hwnd as usize as u64)
     }
 
-    pub fn snap_window_impl(app: &AppHandle, position: &str) -> Result<(), String> {
+    pub fn snap_window_impl(app: &AppHandle, position: &str, gap: i32) -> Result<(), String> {
         let target_hwnd = app
             .try_state::<super::SnapTargetState>()
             .and_then(|state| state.validated_target())
@@ -144,17 +145,11 @@ mod windows_impl {
         let wa_w = wa.right - wa.left;
         let wa_h = wa.bottom - wa.top;
 
+        if let Some((x, y, w, h)) = tile_rect(position, (wa_x, wa_y, wa_w, wa_h), gap) {
+            return set_window_rect(hwnd, x, y, w, h);
+        }
+
         match position {
-            "left_half" => set_window_rect(hwnd, wa_x, wa_y, wa_w / 2, wa_h),
-            "right_half" => set_window_rect(hwnd, wa_x + wa_w / 2, wa_y, wa_w / 2, wa_h),
-            "top_half" => set_window_rect(hwnd, wa_x, wa_y, wa_w, wa_h / 2),
-            "bottom_half" => set_window_rect(hwnd, wa_x, wa_y + wa_h / 2, wa_w, wa_h / 2),
-            "top_left" => set_window_rect(hwnd, wa_x, wa_y, wa_w / 2, wa_h / 2),
-            "top_right" => set_window_rect(hwnd, wa_x + wa_w / 2, wa_y, wa_w / 2, wa_h / 2),
-            "bottom_left" => set_window_rect(hwnd, wa_x, wa_y + wa_h / 2, wa_w / 2, wa_h / 2),
-            "bottom_right" => {
-                set_window_rect(hwnd, wa_x + wa_w / 2, wa_y + wa_h / 2, wa_w / 2, wa_h / 2)
-            }
             "center" => {
                 // Keep current window size, move to center of work area
                 let mut rect: RECT = unsafe { mem::zeroed() };
@@ -203,6 +198,7 @@ mod windows_impl {
 /// best-effort path rather than full Wayland support).
 #[cfg(target_os = "linux")]
 mod linux_impl {
+    use crate::commands::system::behavior_settings::tile_rect;
     use crate::utils::x11::{X11, active_window, atom, connect, wm_class};
     use tauri::{AppHandle, Manager};
     use x11rb::connection::Connection as _;
@@ -365,7 +361,7 @@ mod linux_impl {
         external_window(&x, active_window(&x).ok()?).map(u64::from)
     }
 
-    pub fn snap_window_impl(app: &AppHandle, position: &str) -> Result<(), String> {
+    pub fn snap_window_impl(app: &AppHandle, position: &str, gap: i32) -> Result<(), String> {
         let x = connect()?;
 
         let target_window = app
@@ -392,62 +388,18 @@ mod linux_impl {
             | "bottom_left" | "bottom_right" | "center" => {
                 let (wa_x, wa_y, wa_w, wa_h) = monitor_rect_for_window(&x, window)?;
                 let (wa_x, wa_y, wa_w, wa_h) = (wa_x as i32, wa_y as i32, wa_w as i32, wa_h as i32);
-                let left_w = wa_w / 2;
-                let right_w = wa_w - left_w;
-                let top_h = wa_h / 2;
-                let bottom_h = wa_h - top_h;
                 unmaximize(&x, window)?;
+                if let Some((tx, ty, tw, th)) = tile_rect(position, (wa_x, wa_y, wa_w, wa_h), gap) {
+                    return move_resize(&x, window, tx, ty, tw.max(1) as u32, th.max(1) as u32);
+                }
                 match position {
-                    "left_half" => move_resize(&x, window, wa_x, wa_y, left_w as u32, wa_h as u32),
-                    "right_half" => move_resize(
-                        &x,
-                        window,
-                        wa_x + wa_w / 2,
-                        wa_y,
-                        right_w as u32,
-                        wa_h as u32,
-                    ),
-                    "top_half" => move_resize(&x, window, wa_x, wa_y, wa_w as u32, top_h as u32),
-                    "bottom_half" => move_resize(
-                        &x,
-                        window,
-                        wa_x,
-                        wa_y + wa_h / 2,
-                        wa_w as u32,
-                        bottom_h as u32,
-                    ),
-                    "top_left" => move_resize(&x, window, wa_x, wa_y, left_w as u32, top_h as u32),
-                    "top_right" => move_resize(
-                        &x,
-                        window,
-                        wa_x + wa_w / 2,
-                        wa_y,
-                        right_w as u32,
-                        top_h as u32,
-                    ),
-                    "bottom_left" => move_resize(
-                        &x,
-                        window,
-                        wa_x,
-                        wa_y + wa_h / 2,
-                        left_w as u32,
-                        bottom_h as u32,
-                    ),
-                    "bottom_right" => move_resize(
-                        &x,
-                        window,
-                        wa_x + wa_w / 2,
-                        wa_y + wa_h / 2,
-                        right_w as u32,
-                        bottom_h as u32,
-                    ),
                     "center" => {
                         let (_, _, win_w, win_h) = absolute_geometry(&x, window)?;
                         let x_pos = wa_x + (wa_w - win_w as i32) / 2;
                         let y_pos = wa_y + (wa_h - win_h as i32) / 2;
                         move_resize(&x, window, x_pos, y_pos, win_w as u32, win_h as u32)
                     }
-                    _ => unreachable!(),
+                    _ => Err(format!("Unknown position: {}", position)),
                 }
             }
             _ => Err(format!("Unknown position: {}", position)),
@@ -461,7 +413,11 @@ mod linux_impl {
 /// so a Z-order neighbor or a focus change after hide cannot become the target.
 /// On failure Volt is shown again.
 #[tauri::command]
-pub async fn snap_window(app: tauri::AppHandle, position: String) -> Result<(), String> {
+pub async fn snap_window(
+    app: tauri::AppHandle,
+    position: String,
+    gap: Option<u32>,
+) -> Result<(), String> {
     // Validate early to avoid hiding for bad input
     const VALID: &[&str] = &[
         "left_half",
@@ -484,10 +440,13 @@ pub async fn snap_window(app: tauri::AppHandle, position: String) -> Result<(), 
 
     #[cfg(any(target_os = "windows", target_os = "linux"))]
     {
+        let gap = gap
+            .unwrap_or(0)
+            .min(super::behavior_settings::WINDOW_GAP_PX_MAX) as i32;
         #[cfg(target_os = "windows")]
-        let res = windows_impl::snap_window_impl(&app, &position);
+        let res = windows_impl::snap_window_impl(&app, &position, gap);
         #[cfg(target_os = "linux")]
-        let res = linux_impl::snap_window_impl(&app, &position);
+        let res = linux_impl::snap_window_impl(&app, &position, gap);
 
         if res.is_err()
             && let Some(window) = app.get_webview_window("main")
@@ -502,6 +461,7 @@ pub async fn snap_window(app: tauri::AppHandle, position: String) -> Result<(), 
     {
         let _ = app;
         let _ = position;
+        let _ = gap;
         Err("Window management is currently only supported on Windows and Linux".to_string())
     }
 }

@@ -1,6 +1,6 @@
 # Architecture & Technical Documentation
 
-> **Stack snapshot (v0.2.0)**: Tauri 2 + Rust (edition 2024) backend, React 19 + TypeScript 5.8 + Vite 7 frontend, SQLite (rusqlite, bundled) for indexes, fastembed/ONNX for local embeddings, Tiptap 3 for notes, Tailwind v4, Zustand for state.
+> **Stack snapshot (v0.4.0, 2026-07-19)**: Tauri 2 + Rust (edition 2024) backend, React 19 + TypeScript 6 + Vite 8 frontend, SQLite (rusqlite, bundled) for indexes, fastembed/ONNX for local embeddings, Tiptap 3 for notes, Tailwind v4, Zustand for state.
 
 ---
 
@@ -19,7 +19,7 @@ The main window is created **hidden** in `tauri.conf.json` and revealed once the
 
 ```
 core/        constants.rs · error.rs (VoltError) · traits.rs (Plugin) · types.rs · mod.rs
-commands/    30 modules — Tauri command handlers (see §3)
+commands/    8 domains (ai/ · auth/ · content/ · extensions/ · files/ · launcher/ · shell/ · system/) — ~40 files, ~230 #[tauri::command] (see §3; recompter via `rg -o "#\[tauri::command\]" src-tauri/src/commands | wc -l`)
 plugins/     Backend plugin system
   api.rs           VoltPluginAPI (path validation, data dir, state)
   registry.rs      Thread-safe PluginRegistry (Arc<RwLock<HashMap>>)
@@ -44,44 +44,22 @@ utils/       icon · matching · path · hash · launch_validation · extension_
    - Register Tauri-managed state: `HotkeyState`, `ShowOnScreenState`, `FileIndexState` (SQLite at `file_index.db`), `WatcherState`, `LaunchHistoryState`, `QueryBindingState`, `FileHistoryState`, `SnippetState`, `ShellHistoryState`, `QuicklinkState`, `NoteState` (SQLite + FTS5), `SyncState`, `EmbeddingState` (`Arc<EmbeddingEngine>`), `PluginState`, `ClipboardManagerState`, `ShellExecutionState`, `SystemMonitorState`, `QuickActionHotkeyState`.
    - Spawn async tasks: load settings → apply hotkey, autostart, window position, AI quick-action hotkeys; CPU prime + 5 s system-monitor ticker (offloaded via `spawn_blocking`).
    - Deep-link listener routes `volt://auth/callback`, `volt://oauth-callback`, `volt://ext-oauth-callback` through their respective handlers (with a 60 s / 5-callback rate limiter, **H9**).
-4. `invoke_handler!` registers **~150 commands** (see §3).
+4. `invoke_handler!` registers **~230 commands** across the 8 domains (see §3).
 
 ---
 
-## 3. Tauri Commands (`commands/`)
+## 3. Tauri Commands (`commands/` — 8 domains, legacy flat paths re-exported via `commands/mod.rs`)
 
-| File | Responsibility |
-|---|---|
-| `apps.rs` | App discovery + search (`scan_applications`, `search_applications`, `search_applications_frecency`, `launch_application`) |
-| `launcher.rs` | Launch history & pins, frecency, tags, `open_path` (executable extensions rejected), `open_file_with_dialog` (UNC + `.lnk` blocked), `record_search_selection` |
-| `files.rs` | SQLite indexer commands: `start_indexing`, `search_files*`, watcher start/stop, recent files, categories, stats |
-| `search.rs` | Batch `search_all` + `search_streaming` |
-| `settings.rs` | Load/save settings (8+ categories), per-category updates, theme, app shortcuts, export/import |
-| `clipboard.rs` | Clipboard manager (history, search, pin, monitor, paste, sequential paste, retention/exclusions) |
-| `extensions.rs` | Extension registry, install/uninstall, toggle, **permission allowlist** (M1), tamper alerts (H4), storage/preferences/secrets/OAuth/AI APIs, ext-OAuth deep-link handler |
-| `games.rs` | Multi-platform game scanner (10 platforms, see §6) |
-| `steam.rs` | Steam-specific commands (kept separate for backwards compat) |
-| `system_monitor.rs` | CPU/RAM/disk + **v2**: per-core, network, temps, processes; `kill_process_by_pid`, `open_task_manager` |
-| `snippets.rs` | CRUD + variable expansion; JSON import size-capped |
-| `quicklinks.rs` | CRUD with URL/folder/command validation |
-| `shell.rs` | Streaming execution with NFKC blocklist + 9+ patterns, extended redactors (GitHub/AWS/Stripe/Slack/JWT/curl basic-auth), UNC `working_dir` rejected |
-| `shell_history.rs` | Shell history with frecency (500 entries cap) |
-| `notes.rs` | Tiptap-backed notes: CRUD, FTS5 search, trash (soft delete), restore, empty, JSON import/export |
-| `ai_profile.rs` | Persistent personalization prefix (role, tone, language) appended to AI prompts |
-| `ai_quick_actions.rs` | Per-hotkey one-shot prompts on the clipboard/selection; `apply_all` binds global shortcuts |
-| `custom_emojis.rs` | SDXL Emoji via Replicate; list/delete/copy + `ai_pro_features_enabled` gate |
-| `embeddings.rs` | `embeddings_prepare`, `embeddings_is_ready`, `embeddings_test` (debug-only) |
-| `preview.rs` | `get_file_preview` (text/image/folder/metadata) for the preview panel |
-| `auth.rs` | Supabase auth + deep link; **CSRF state nonce** (5 min TTL, C1); JWT claim validation (`exp`/`iss`/`sub`); refresh `user_id` consistency check; HMAC-signed keyring storage |
-| `oauth.rs` | OAuth flow (GitHub, Notion) + deep-link callbacks (host check, state log demoted) |
-| `credentials.rs` | Encrypted credential storage (OS keyring); `test_credential` (token never crosses IPC); `extension_authenticated_fetch` |
-| `keyring_store.rs` | OS keyring abstraction; `store_signed`/`retrieve_signed` (domain-tagged HMAC-SHA256, length-prefixed domain) |
-| `sync.rs` | Premium cloud sync (push/pull, status) |
-| `plugins.rs` | Plugin registry inspection, external plugin loading |
-| `hotkey.rs` | `set_global_hotkey`, `get_current_hotkey` |
-| `autostart.rs` | Enable/disable/check autostart (auto-disabled in debug builds) |
-| `logging.rs` | `get_log_file_path` |
-| `window_management.rs` | `snap_window`, `open_notes_window` |
+| Domain | Files | Responsibility |
+|---|---|---|
+| `launcher/` | `apps.rs` · `games.rs` · `steam.rs` · `search.rs` · `history.rs` | App discovery + search (`scan_applications`, `search_applications`, `search_applications_frecency`, `launch_application`), multi-platform game scanner (10 platforms), Steam compat, batch `search_all` + `search_streaming`, launch history & pins, frecency, tags, `open_path`, `record_search_selection` |
+| `files/` | `index.rs` · `preview.rs` | SQLite indexer commands: `start_indexing`, `search_files*`, watcher start/stop, recent files, categories, stats; `get_file_preview` (text/image/folder/metadata) |
+| `system/` | `settings.rs` · `clipboard.rs` · `monitor.rs` · `window_management.rs` · `autostart.rs` · `logging.rs` · `notifications.rs` · `web_search.rs` | Settings (categories defined in `settings.rs`), clipboard manager, CPU/RAM/disk + v2 (per-core, network, temps, processes; `kill_process_by_pid`), `snap_window`, autostart, logs, notifications, web search |
+| `content/` | `notes.rs` · `snippets.rs` · `quicklinks.rs` · `snippet_expansion.rs` | Notes (FTS5, trash/restore, import/export), snippets CRUD + expansion, quicklinks CRUD with validation |
+| `shell/` | `execution.rs` · `history.rs` | Streaming execution with NFKC blocklist + 9+ patterns, extended redactors, UNC `working_dir` rejected; shell history with frecency (500 entries cap) |
+| `ai/` | `profile.rs` · `quick_actions.rs` · `embeddings.rs` · `proxy.rs` · `custom_emojis.rs` | Personalization prefix, per-hotkey one-shot prompts, `embeddings_prepare/is_ready/test`, AI proxy/stream, SDXL emoji (Pro-gated) |
+| `auth/` | `session.rs` · `oauth.rs` · `credentials.rs` · `keyring_store.rs` · `sync.rs` | Supabase auth + deep link (CSRF nonce 5 min TTL, JWT `exp`/`iss`/`sub` checks), OAuth (GitHub/Notion), OS-keyring credentials, signed keyring store (HMAC-SHA256), premium cloud sync |
+| `extensions/` | `management.rs` · `plugins.rs` | Extension registry, install/uninstall/toggle, **permission allowlist** (M1), tamper alerts (H4), storage/preferences/secrets/OAuth/AI APIs, plugin registry inspection |
 
 ### Type sync convention
 
@@ -106,7 +84,7 @@ features/
     core/registry.ts     Plugin registry singleton (500 ms timeout per plugin)
     types/               Plugin · PluginContext · PluginResult interfaces
   extensions/            api · loader (Sucrase + Worker sandbox) · services · components
-  settings/              Settings window (8+ panels)
+  settings/              Settings window (panels defined in `src/features/settings/`)
   suggestions/           Empty-query default suggestions
   notes/                 Tiptap notes editor, slash menu, task lists, image embed
   ai-profile/            AI personalization service + UI
@@ -169,8 +147,8 @@ Backend plugins (Rust, `plugins/builtin/`): `system_monitor`, `game_scanner`, `c
 1. **Frontend** — `useSearchPipeline` debounces input 150 ms, tags each call with `latestSearchId` for stale-response protection, then fans out to:
    - `pluginRegistry.query()` (500 ms timeout per plugin)
    - Backend `search_all` / `search_streaming` (apps + files + commands)
-2. **Backend scoring** (`apps.rs`): exact=100, startsWith=90, contains=80-position, fuzzy=50. Filtered out if no match.
-3. **Frecency** (`launcher::history`): `launch_count × exp(-age_hours / 168)` (1-week half-life), 30 % penalty for never-used apps when history exists. On empty query, results are ordered by frecency alone.
+2. **Backend scoring** (`utils/matching.rs`): exact=100, startsWith=90, nucleo fuzzy 50–89 (word-boundary aware, position-sensitive). Filtered out if no match.
+3. **Frecency** (`launcher::history` + `search/mod.rs`): `frecency_date = max(now, frecency_date) + 1 day` on each launch (backfilled on load, capped); search bonus is a bounded `ln` boost (cap +20 via `MAX_FRECENCY_BOOST`, single `now()` per query). On empty query, results are ordered by `frecency_date DESC` alone.
 4. **Power-user operators** parsed by `queryParser.ts`: `ext:pdf`, `in:~/Documents`, `size:>10mb`, `modified:<7d`, `modified:>30d` → filter params forwarded to `search_files_advanced`.
 5. **Results grouping**: Raycast-style section headers (Applications, Commands, Games, Files); shown only when results span multiple sections.
 
@@ -241,12 +219,12 @@ Backend plugins (Rust, `plugins/builtin/`): `system_monitor`, `game_scanner`, `c
 
 | Concern | Tool |
 |---|---|
-| Frontend bundler | Vite 7 (multi-page) |
-| TS strictness | TypeScript 5.8 strict mode |
-| Lint | ESLint 9 flat config — `react-hooks/purity`, `react-hooks/refs`, `react-hooks/rules-of-hooks`, `react-hooks/exhaustive-deps`, `@typescript-eslint/no-unused-vars`, `@typescript-eslint/no-require-imports` all `error`; no `eslint-disable` / `@ts-ignore` allowed (see [`CLAUDE.md`](../../CLAUDE.md)) |
+| Frontend bundler | Vite 8 (multi-page) |
+| TS strictness | TypeScript 6 strict mode |
+| Lint | ESLint 10 flat config — `react-hooks/purity`, `react-hooks/refs`, `react-hooks/rules-of-hooks`, `react-hooks/exhaustive-deps`, `@typescript-eslint/no-unused-vars`, `@typescript-eslint/no-require-imports` all `error`; no `eslint-disable` / `@ts-ignore` allowed (see [`CLAUDE.md`](../../CLAUDE.md)) |
 | Format | Prettier (single quotes, 100 cols, 2-space) |
 | Test | Vitest 4 (jsdom) + Playwright (e2e) |
-| Rust lint | rustfmt + clippy (`-D warnings` on Rust 1.95) |
+| Rust lint | rustfmt + clippy (`-D warnings`, stable toolchain) — two matrices: default `tantivy-search` + `--no-default-features --features sqlcipher` |
 | CI | GitHub Actions — `check.yml`, `release.yml`, `auto-tag.yml`, `changelog.yml`, `e2e.yml`, `pr-title.yml`, `version-bump.yml` |
 
 ### Release flow

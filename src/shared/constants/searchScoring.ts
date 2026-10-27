@@ -1,57 +1,13 @@
 /**
- * Search scoring and limit constants
- * Centralized configuration for search behavior, scoring weights, and timeouts
+ * Search limit constants
+ * Centralized configuration for search limits and timeouts
  */
 
-import type { SearchSensitivity } from '../../features/settings/types/settings.types';
-
-/**
- * Minimum score thresholds per search sensitivity level.
- * - low:    strict — only exact and starts-with matches survive (score >= 70)
- * - medium: balanced — current default behaviour (no filtering)
- * - high:   permissive — even weak fuzzy matches are shown
- */
-export const SEARCH_SENSITIVITY_THRESHOLDS: Record<SearchSensitivity, number> = {
-  low: 70,
-  medium: 1,
-  high: 1,
-} as const;
-
-/**
- * Multiplier applied to fuzzy match scores per sensitivity level.
- * - low:    fuzzy results are discarded (multiplier 0)
- * - medium: no change (multiplier 1)
- * - high:   fuzzy results get a small boost (multiplier 1.3)
- */
-export const SEARCH_SENSITIVITY_FUZZY_MULTIPLIER: Record<SearchSensitivity, number> = {
-  low: 0,
-  medium: 1,
-  high: 1.3,
-} as const;
-
-export const SEARCH_SCORING = {
-  // Base scoring for different match types
-  EXACT_MATCH: 100,
-  STARTS_WITH: 90,
-  CONTAINS: 80,
-  FUZZY: 50,
-
-  // Result type priority scores
-  APPLICATION: 200,
-  FILE: 160, // boosted from 80 so strong filename matches (160+50=210) can beat weak app matches
-  PLUGIN_BASE: 100,
-
-  // Boost factors
-  PLUGIN_KEYWORD_BOOST: 300, // Boost plugins when query matches their keywords exactly
-  WEB_EXPLICIT_ACTION: 1300, // Explicit web trigger: "search this query" action
-  WEB_EXPLICIT_RESULT: 1250, // Live web hits, directly below the explicit action
-  GAME_BOOST: 500, // Push games above everything when query is game-related
-  FRECENCY_SUPPLEMENT: 40, // High score for supplementary frecency results, offset from APPLICATION
-
-  // Decay and aging
-  RECENCY_DECAY: 0.95,
-  FRECENCY_ORDER_DECAY: 1, // Preserve order: 1000 - index
-} as const;
+// Ranking is not configured with numeric weights any more: every result is
+// ordered by the unified comparator in src/app/searchRanking.ts on the tier
+// ladder generated from Rust (src-tauri/src/search/tiers.rs). Search
+// sensitivity (low / medium / high) is enforced by the Rust ranker — see
+// `SearchSensitivity` in src-tauri/src/search/mod.rs.
 
 export const SEARCH_LIMITS = {
   MAX_RESULTS: 20,

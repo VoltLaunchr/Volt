@@ -19,6 +19,7 @@
   },
   "iconLibrary": "lucide",
   "registries": {
+    "@bklit": "https://ui.bklit.com/r/{name}.json",
     "@reui": "https://reui.io/r/{style}/{name}.json"
   }
 }

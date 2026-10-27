@@ -224,7 +224,7 @@ export function EmojiPickerView({
 
         {!isCustomTab && (
           <button
-            className="flex items-center gap-2 h-11 px-3 rounded-lg text-sm font-medium cursor-pointer whitespace-nowrap transition-all bg-accent/10 border border-accent/30 text-accent hover:bg-accent/15"
+            className="flex items-center gap-2 h-11 px-3 rounded-lg text-sm font-medium cursor-pointer whitespace-nowrap transition-all bg-accent-blue/10 border border-accent-blue/30 text-accent-blue hover:bg-accent-blue/15"
             onClick={() => handleCategoryChange('custom')}
             title="Generate custom emoji with AI"
           >

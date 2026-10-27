@@ -1,0 +1,13 @@
+{
+  "$comment": "MSIX identity for scripts/package-msix.ps1. The values below are LOCAL TEST placeholders. Once the Partner Center account exists, paste the values from Partner Center > Product identity: identityName = 'Package/Identity/Name', publisher = 'Package/Identity/Publisher' (CN=...), publisherDisplayName = 'Package/Properties/PublisherDisplayName'. 'version': 'auto' = package.json version + '.0' (the Store requires the 4th part to be 0). See docs/build-release/MICROSOFT_STORE.md.",
+  "identityName": "VoltLaunchr.Volt.LocalTest",
+  "publisher": "CN=VOLT-LOCAL-TEST",
+  "publisherDisplayName": "VoltLaunchr",
+  "displayName": "Volt",
+  "description": "Fast, keyboard-driven launcher: apps, files, commands and more with Ctrl+Space.",
+  "version": "auto",
+  "architecture": "x64",
+  "executable": "volt.exe",
+  "minWindowsVersion": "10.0.19041.0",
+  "maxVersionTested": "10.0.26100.0"
+}

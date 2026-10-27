@@ -23,10 +23,11 @@ fn send_platform_notification(
     app: AppHandle,
     payload: NativeNotificationPayload,
 ) -> VoltResult<()> {
+    let app_id = notification_app_id(&app);
     let mut notification = notify_rust::Notification::new();
     notification
         .appname("Volt")
-        .app_id(&app.config().identifier)
+        .app_id(&app_id)
         .summary(&payload.title);
 
     if let Some(body) = payload.body.as_deref() {
@@ -43,6 +44,29 @@ fn send_platform_notification(
             err
         ))
     })
+}
+
+/// AppUserModelID used for Windows toasts.
+///
+/// Installer builds (NSIS/MSI) register `identifier` (`volt.launch`) on the
+/// Start-menu shortcut. An MSIX package has no such shortcut: its tile is
+/// registered as `<PackageFamilyName>!<Application Id>`, so toasts must use
+/// that AUMID or Windows drops them silently.
+#[cfg(all(target_os = "windows", feature = "store"))]
+fn notification_app_id(app: &AppHandle) -> String {
+    /// Must match `Application/@Id` in packaging/msix/AppxManifest.template.xml.
+    const MSIX_APPLICATION_ID: &str = "Volt";
+
+    windows::ApplicationModel::Package::Current()
+        .and_then(|package| package.Id())
+        .and_then(|id| id.FamilyName())
+        .map(|family| format!("{}!{}", family, MSIX_APPLICATION_ID))
+        .unwrap_or_else(|_| app.config().identifier.clone())
+}
+
+#[cfg(all(target_os = "windows", not(feature = "store")))]
+fn notification_app_id(app: &AppHandle) -> String {
+    app.config().identifier.clone()
 }
 
 #[cfg(target_os = "windows")]

@@ -1,6 +1,7 @@
 //! Operating-system integration and application-wide settings.
 
 pub mod autostart;
+pub mod behavior_settings;
 pub mod clipboard;
 pub mod logging;
 pub mod monitor;

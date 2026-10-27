@@ -4,6 +4,8 @@ import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/utils';
 import { Clipboard, Pin } from 'lucide-react';
 import { ClipboardItem, ClipboardType } from '../../../shared/types/clipboard';
+import { navigationKey } from '../../settings/behavior/keyboard';
+import { useListNavigationPreset } from '../../settings/behavior/useListNavigationPreset';
 import { logger } from '../../../shared/utils';
 
 interface ClipboardHistoryViewProps {
@@ -18,6 +20,7 @@ export function ClipboardHistoryView({ onClose }: ClipboardHistoryViewProps): Re
   const [filteredItems, setFilteredItems] = useState<ClipboardItem[]>([]);
   const [selectedItem, setSelectedItem] = useState<ClipboardItem | null>(null);
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const listNavigation = useListNavigationPreset();
   const [filterQuery, setFilterQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState<FilterType>('all');
   const [isLoading, setIsLoading] = useState(true);
@@ -89,7 +92,7 @@ export function ClipboardHistoryView({ onClose }: ClipboardHistoryViewProps): Re
   // Handle keyboard navigation
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
-      switch (e.key) {
+      switch (navigationKey(listNavigation, e)) {
         case 'Escape':
           e.preventDefault();
           onClose();
@@ -124,7 +127,7 @@ export function ClipboardHistoryView({ onClose }: ClipboardHistoryViewProps): Re
           break;
       }
     },
-    [selectedIndex, filteredItems, selectedItem, onClose, handlePaste]
+    [selectedIndex, filteredItems, selectedItem, onClose, handlePaste, listNavigation]
   );
 
   // Paste all visible text items in sequence

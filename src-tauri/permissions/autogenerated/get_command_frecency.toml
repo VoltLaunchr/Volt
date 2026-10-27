@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-get-command-frecency"
+description = "Enables the get_command_frecency command without any pre-configured scope."
+commands.allow = ["get_command_frecency"]
+
+[[permission]]
+identifier = "deny-get-command-frecency"
+description = "Denies the get_command_frecency command without any pre-configured scope."
+commands.deny = ["get_command_frecency"]

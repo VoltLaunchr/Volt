@@ -1,7 +1,7 @@
-import { localPoint } from "@visx/event";
-import { ParentSize } from "@visx/responsive";
-import { scaleLinear, scaleTime } from "@visx/scale";
-import { bisector } from "d3-array";
+import { localPoint } from '@visx/event';
+import { ParentSize } from '@visx/responsive';
+import { scaleLinear, scaleTime } from '@visx/scale';
+import { bisector } from 'd3-array';
 import {
   Children,
   isValidElement,
@@ -12,15 +12,10 @@ import {
   useMemo,
   useRef,
   useState,
-} from "react";
-import { cn } from "@/lib/utils";
-import {
-  ChartProvider,
-  type LineConfig,
-  type Margin,
-  type TooltipData,
-} from "./chart-context";
-import type { LiveLineProps } from "./live-line";
+} from 'react';
+import { cn } from '@/lib/utils';
+import { ChartProvider, type LineConfig, type Margin, type TooltipData } from './chart-context';
+import type { LiveLineProps } from './live-line';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -52,6 +47,10 @@ export interface LiveLineChartProps {
   margin?: Partial<Margin>;
   /** Freeze chart scrolling. Default: false */
   paused?: boolean;
+  /** Fixed bounds for meaningful comparisons (for example percentages use [0, 100]). */
+  yDomain?: [number, number];
+  /** Limit render frequency for dashboards containing several streaming charts. */
+  frameRate?: number;
   /** Child components (LiveLine, Grid, ChartTooltip, LiveXAxis, LiveYAxis, etc.) */
   children: ReactNode;
   className?: string;
@@ -72,11 +71,7 @@ interface AnimFrame {
   displayValue: number;
 }
 
-function computeTargetRange(
-  data: LiveLinePoint[],
-  value: number,
-  exaggerate: boolean
-) {
+function computeTargetRange(data: LiveLinePoint[], value: number, exaggerate: boolean) {
   if (data.length === 0) {
     return { yMin: 0, yMax: 100 };
   }
@@ -118,8 +113,7 @@ function nextAnimFrame(
     targetRange.yMax > prev.yMax
       ? targetRange.yMax
       : prev.yMax + (targetRange.yMax - prev.yMax) * speed;
-  const nextValue =
-    prev.displayValue + (targetValue - prev.displayValue) * speed;
+  const nextValue = prev.displayValue + (targetValue - prev.displayValue) * speed;
   return {
     now: nextNow,
     yMin: nextYMin,
@@ -128,10 +122,7 @@ function nextAnimFrame(
   };
 }
 
-function interpolateAtTime(
-  points: LiveLinePoint[],
-  timeSec: number
-): number | null {
+function interpolateAtTime(points: LiveLinePoint[], timeSec: number): number | null {
   if (points.length === 0) {
     return null;
   }
@@ -171,12 +162,8 @@ function interpolateAtTime(
 }
 
 const timeBisector = bisector<LiveLinePoint, number>((d) => d.time);
-const bisectTime = (
-  array: ArrayLike<LiveLinePoint>,
-  x: number,
-  lo?: number,
-  hi?: number
-) => timeBisector.left(array, x, lo, hi);
+const bisectTime = (array: ArrayLike<LiveLinePoint>, x: number, lo?: number, hi?: number) =>
+  timeBisector.left(array, x, lo, hi);
 
 function extractLiveLineConfigs(children: ReactNode): LineConfig[] {
   const configs: LineConfig[] = [];
@@ -186,17 +173,12 @@ function extractLiveLineConfigs(children: ReactNode): LineConfig[] {
     }
     const childType = child.type as { displayName?: string; name?: string };
     const name =
-      typeof child.type === "function"
-        ? childType.displayName || childType.name || ""
-        : "";
+      typeof child.type === 'function' ? childType.displayName || childType.name || '' : '';
     const props = child.props as LiveLineProps | undefined;
-    if (
-      (name === "LiveLine" || (props && "dataKey" in props)) &&
-      props?.dataKey
-    ) {
+    if ((name === 'LiveLine' || (props && 'dataKey' in props)) && props?.dataKey) {
       configs.push({
         dataKey: props.dataKey,
-        stroke: props.stroke || "var(--chart-line-primary)",
+        stroke: props.stroke || 'var(--chart-line-primary)',
         strokeWidth: props.strokeWidth || 2,
       });
     }
@@ -219,6 +201,8 @@ interface InnerProps {
   lerpSpeed: number;
   margin: Margin;
   paused: boolean;
+  yDomain?: [number, number];
+  frameRate: number;
   width: number;
   height: number;
   containerRef: React.RefObject<HTMLDivElement | null>;
@@ -236,6 +220,8 @@ function LiveLineChartInner({
   lerpSpeed,
   margin,
   paused,
+  yDomain,
+  frameRate,
   width,
   height,
   containerRef,
@@ -248,8 +234,8 @@ function LiveLineChartInner({
   // ---- Animation state ----
   const [frame, setFrame] = useState<AnimFrame>(() => ({
     now: Date.now(),
-    yMin: 0,
-    yMax: 100,
+    yMin: yDomain?.[0] ?? 0,
+    yMax: yDomain?.[1] ?? 100,
     displayValue: value,
   }));
   const animRef = useRef<AnimFrame | null>(null);
@@ -271,8 +257,11 @@ function LiveLineChartInner({
   }, [data, dataKey]);
 
   const targetRange = useMemo(
-    () => computeTargetRange(data, value, exaggerate),
-    [data, value, exaggerate]
+    () =>
+      yDomain
+        ? { yMin: yDomain[0], yMax: yDomain[1] }
+        : computeTargetRange(data, value, exaggerate),
+    [data, value, exaggerate, yDomain]
   );
   // Mirror targetRange + value into refs so the rAF loop reads fresh values
   // without restarting on every poll tick (which would cancel the animation).
@@ -296,8 +285,16 @@ function LiveLineChartInner({
   const [tooltipData, setTooltipData] = useState<TooltipData | null>(null);
 
   useEffect(() => {
+    if (paused) return;
     let raf: number;
-    const tick = () => {
+    let lastFrame = -Infinity;
+    const interval = 1000 / Math.max(1, Math.min(60, frameRate));
+    const tick = (time: number) => {
+      if (document.hidden || time - lastFrame < interval) {
+        raf = requestAnimationFrame(tick);
+        return;
+      }
+      lastFrame = time;
       const current = animRef.current;
       if (current === null) {
         raf = requestAnimationFrame(tick);
@@ -317,10 +314,7 @@ function LiveLineChartInner({
       let nextTooltip: TooltipData | null = null;
       if (cursorX !== null && innerWidth > 0 && innerHeight > 0) {
         const xScaleNext = scaleTime({
-          domain: [
-            new Date(domainEndMsNext - windowMs),
-            new Date(domainEndMsNext),
-          ],
+          domain: [new Date(domainEndMsNext - windowMs), new Date(domainEndMsNext)],
           range: [0, innerWidth],
         });
         const yScaleNext = scaleLinear({
@@ -331,9 +325,7 @@ function LiveLineChartInner({
         const timeMs = xScaleNext.invert(cursorX).getTime();
         const timeSec = timeMs / 1000;
         const currentData = dataRef.current;
-        const visible = currentData.filter(
-          (p) => p.time >= (domainEndMsNext - windowMs) / 1000
-        );
+        const visible = currentData.filter((p) => p.time >= (domainEndMsNext - windowMs) / 1000);
         visible.push({ time: next.now / 1000, value: next.displayValue });
         visible.push({
           time: (next.now + xTickUnitMs) / 1000,
@@ -359,7 +351,7 @@ function LiveLineChartInner({
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [leadingMs, windowMs, xTickUnitMs, innerWidth, innerHeight]);
+  }, [leadingMs, windowMs, xTickUnitMs, innerWidth, innerHeight, paused, frameRate]);
 
   const domainEndMs = frame.now + leadingMs;
 
@@ -409,15 +401,7 @@ function LiveLineChartInner({
       [dataKey]: frame.displayValue,
     });
     return records;
-  }, [
-    data,
-    frame.now,
-    frame.displayValue,
-    domainEndMs,
-    windowMs,
-    dataKey,
-    xTickUnitMs,
-  ]);
+  }, [data, frame.now, frame.displayValue, domainEndMs, windowMs, dataKey, xTickUnitMs]);
 
   // ---- X accessor ----
   const xAccessor = useCallback(
@@ -434,8 +418,23 @@ function LiveLineChartInner({
       }
       const x = coords.x - margin.left;
       cursorXRef.current = x >= 0 && x <= innerWidth ? x : null;
+      // Frozen charts remain inspectable without running an idle animation loop.
+      if (paused && cursorXRef.current !== null) {
+        const timeMs = xScale.invert(x).getTime();
+        const val = interpolateAtTime(data, timeMs / 1000);
+        setTooltipData(
+          val === null
+            ? null
+            : {
+                point: { date: new Date(timeMs), [dataKey]: val },
+                index: 0,
+                x,
+                yPositions: { [dataKey]: yScale(val) ?? 0 },
+              }
+        );
+      }
     },
-    [margin.left, innerWidth]
+    [margin.left, innerWidth, paused, xScale, yScale, data, dataKey]
   );
 
   const handleMouseLeave = useCallback(() => {
@@ -447,10 +446,10 @@ function LiveLineChartInner({
   const dateLabels = useMemo(
     () =>
       contextData.map((d) =>
-        xAccessor(d).toLocaleTimeString("en-US", {
-          hour: "2-digit",
-          minute: "2-digit",
-          second: "2-digit",
+        xAccessor(d).toLocaleTimeString('en-US', {
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
           hour12: false,
         })
       ),
@@ -508,26 +507,15 @@ function LiveLineChartInner({
 
   return (
     <ChartProvider value={contextValue}>
-      <svg
-        aria-hidden="true"
-        className="overflow-visible"
-        height={height}
-        width={width}
-      >
+      <svg aria-hidden="true" className="overflow-visible" height={height} width={width}>
         {/* biome-ignore lint/a11y/noStaticElementInteractions: SVG group for mouse tracking */}
         <g
           onMouseLeave={handleMouseLeave}
           onMouseMove={handleMouseMove}
-          style={{ cursor: "crosshair" }}
+          style={{ cursor: 'crosshair' }}
           transform={`translate(${margin.left},${margin.top})`}
         >
-          <rect
-            fill="transparent"
-            height={innerHeight}
-            width={innerWidth}
-            x={0}
-            y={0}
-          />
+          <rect fill="transparent" height={innerHeight} width={innerWidth} x={0} y={0} />
           {children}
         </g>
       </svg>
@@ -542,7 +530,7 @@ function LiveLineChartInner({
 export function LiveLineChart({
   data,
   value,
-  dataKey = "value",
+  dataKey = 'value',
   window: windowSecs = 30,
   numXTicks = 5,
   nowOffsetUnits = 0,
@@ -550,6 +538,8 @@ export function LiveLineChart({
   lerpSpeed = LERP_SPEED,
   margin: marginProp,
   paused = false,
+  yDomain,
+  frameRate = 30,
   children,
   className,
   style,
@@ -559,9 +549,9 @@ export function LiveLineChart({
 
   return (
     <div
-      className={cn("relative w-full", className)}
+      className={cn('relative w-full', className)}
       ref={containerRef}
-      style={{ height: 300, touchAction: "none", ...style }}
+      style={{ height: 300, touchAction: 'none', ...style }}
     >
       <ParentSize debounceTime={10}>
         {({ width, height }) => (
@@ -576,6 +566,8 @@ export function LiveLineChart({
             nowOffsetUnits={nowOffsetUnits}
             numXTicks={numXTicks}
             paused={paused}
+            yDomain={yDomain}
+            frameRate={frameRate}
             value={value}
             width={width}
             windowSecs={windowSecs}

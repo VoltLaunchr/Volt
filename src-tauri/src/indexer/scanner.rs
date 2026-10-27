@@ -1,3 +1,4 @@
+use super::ignore_policy::IgnorePolicy;
 use super::types::{FileCategory, FileInfo, IndexConfig};
 #[cfg(target_os = "windows")]
 use crate::utils::extract_icon;
@@ -41,7 +42,7 @@ const SENSITIVE_DIRECTORIES_WRAPPED: &[&str] = &[
 
 /// Check if a directory is a known sensitive/protected Windows directory
 #[cfg(target_os = "windows")]
-fn is_sensitive_directory(path: &Path) -> bool {
+pub(super) fn is_sensitive_directory(path: &Path) -> bool {
     let path_str = path.to_string_lossy();
     SENSITIVE_DIRECTORIES
         .iter()
@@ -52,7 +53,7 @@ fn is_sensitive_directory(path: &Path) -> bool {
 }
 
 #[cfg(not(target_os = "windows"))]
-fn is_sensitive_directory(_path: &Path) -> bool {
+pub(super) fn is_sensitive_directory(_path: &Path) -> bool {
     false
 }
 
@@ -118,6 +119,7 @@ fn get_file_icon(path: &Path) -> Option<String> {
 /// Scans directories and builds a file index based on configuration
 pub fn scan_files(config: &IndexConfig) -> Result<Vec<FileInfo>, String> {
     let mut files = Vec::new();
+    let policy = IgnorePolicy::new(config);
 
     // Build lowercased extension set once — O(1) lookup per file instead of O(n) per-extension alloc.
     let extensions_lower: std::collections::HashSet<String> = config
@@ -126,48 +128,32 @@ pub fn scan_files(config: &IndexConfig) -> Result<Vec<FileInfo>, String> {
         .map(|e| e.to_lowercase())
         .collect();
 
-    // Canonicalise excluded paths exactly once instead of re-canonicalising
-    // every excluded entry against every visited directory inside `scan_directory`.
-    // On a typical Windows scan that's ~5 exclusions × ~50 000 directories =
-    // ~250 000 redundant `canonicalize` syscalls that each potentially hit the
-    // disk; the previous code paid that cost on every recursion. We keep the
-    // original `excluded` string alongside the canonical form so the
-    // component-equality fallback (for relative exclusions like `node_modules`)
-    // still works.
-    let excluded_canonical: Vec<(String, PathBuf)> = config
-        .excluded_paths
-        .iter()
-        .map(|excluded| {
-            let p = Path::new(excluded);
-            let canonical = p.canonicalize().unwrap_or_else(|_| p.to_path_buf());
-            (excluded.clone(), canonical)
-        })
-        .collect();
-
-    for folder in dedup_nested_folders(&config.folders) {
+    for folder in dedup_roots(&config.folders) {
         let path = PathBuf::from(&folder);
         if !path.exists() {
             warn!("Folder does not exist: {}", folder);
             continue;
         }
 
-        if let Ok(scanned) =
-            scan_directory(&path, config, 0, &extensions_lower, &excluded_canonical)
-        {
+        if path.ancestors().any(|ancestor| {
+            fs::symlink_metadata(ancestor).is_ok_and(|m| m.file_type().is_symlink())
+        }) {
+            continue;
+        }
+        if let Ok(scanned) = scan_directory(&path, config, 0, &extensions_lower, &policy) {
             files.extend(scanned);
         }
     }
 
+    let mut seen = std::collections::HashSet::new();
+    files.retain(|file| seen.insert(policy.normalize_path(Path::new(&file.path))));
     Ok(files)
 }
 
-/// Drop folders that are already covered by another folder in the list (e.g.
-/// `Program Files\Epic Games` is a subdirectory of `Program Files`). Indexing
-/// folders commonly overlap — `get_default_index_folders` adds both a known
-/// game-launcher folder and its parent `Program Files` — and walking both
-/// roots independently visits the nested directory twice, producing duplicate
-/// `FileInfo` entries for the same path that then fail to persist.
-fn dedup_nested_folders(folders: &[String]) -> Vec<String> {
+/// Deduplicate identical roots. Keep explicit nested roots because an ignore
+/// rule can prune their parent during the outer walk. Results are deduplicated
+/// separately so overlapping roots never produce duplicate SQLite records.
+fn dedup_roots(folders: &[String]) -> Vec<String> {
     let canonical: Vec<(String, PathBuf)> = folders
         .iter()
         .map(|f| {
@@ -187,7 +173,7 @@ fn dedup_nested_folders(folders: &[String]) -> Vec<String> {
     let mut kept: Vec<PathBuf> = Vec::new();
     let mut result = Vec::new();
     for (original, candidate) in sorted {
-        if kept.iter().any(|k| candidate.starts_with(k)) {
+        if kept.contains(&candidate) {
             continue;
         }
         kept.push(candidate);
@@ -202,7 +188,7 @@ fn scan_directory(
     config: &IndexConfig,
     current_depth: usize,
     extensions_lower: &std::collections::HashSet<String>,
-    excluded_canonical: &[(String, PathBuf)],
+    policy: &IgnorePolicy,
 ) -> Result<Vec<FileInfo>, String> {
     let mut files = Vec::new();
 
@@ -211,27 +197,8 @@ fn scan_directory(
         return Ok(files);
     }
 
-    // Check if path is excluded. The canonical exclusion list is pre-computed
-    // in `scan_files`; we only canonicalise `dir_path` once per recursion.
-    if !excluded_canonical.is_empty() {
-        let dir_canonical = dir_path
-            .canonicalize()
-            .unwrap_or_else(|_| dir_path.to_path_buf());
-        for (raw, canonical) in excluded_canonical {
-            if canonical.is_absolute() {
-                if dir_canonical.starts_with(canonical) {
-                    return Ok(files);
-                }
-            } else {
-                for component in dir_canonical.components() {
-                    if let Some(comp_str) = component.as_os_str().to_str()
-                        && comp_str == raw
-                    {
-                        return Ok(files);
-                    }
-                }
-            }
-        }
+    if !policy.allows(dir_path, true) {
+        return Ok(files);
     }
 
     // Skip sensitive directories silently
@@ -267,6 +234,12 @@ fn scan_directory(
             continue;
         }
         let path = entry.path();
+        // Filter before inserting directory entries, not only before recursion.
+        if !policy.allows(&path, file_type.is_dir())
+            || (file_type.is_dir() && is_sensitive_directory(&path))
+        {
+            continue;
+        }
 
         if file_type.is_dir() {
             // Always index directories at the first two levels (game folders and subfolders)
@@ -279,13 +252,9 @@ fn scan_directory(
             }
 
             // Recursively scan subdirectory
-            if let Ok(sub_files) = scan_directory(
-                &path,
-                config,
-                current_depth + 1,
-                extensions_lower,
-                excluded_canonical,
-            ) {
+            if let Ok(sub_files) =
+                scan_directory(&path, config, current_depth + 1, extensions_lower, policy)
+            {
                 files.extend(sub_files);
             }
         } else if file_type.is_file() {
@@ -446,6 +415,58 @@ mod tests {
     use super::*;
 
     #[test]
+    fn scanner_filters_ignored_directory_entries_and_generated_subtrees() {
+        let root = tempfile::tempdir().unwrap();
+        for name in ["ignored", "node_modules", "node_modules-old", "target"] {
+            fs::create_dir(root.path().join(name)).unwrap();
+            fs::write(root.path().join(name).join("note.txt"), b"x").unwrap();
+        }
+        fs::write(root.path().join("Cargo.toml"), "[package]").unwrap();
+        fs::write(root.path().join(".voltignore"), "ignored/\n").unwrap();
+        let config = IndexConfig {
+            folders: vec![root.path().to_string_lossy().into_owned()],
+            file_extensions: vec!["txt".into()],
+            ..IndexConfig::default()
+        };
+        let files = scan_files(&config).unwrap();
+        assert_eq!(
+            files.len(),
+            2,
+            "only node_modules-old and its note are indexed"
+        );
+        assert!(files.iter().all(|file| Path::new(&file.path).starts_with(root.path().join("node_modules-old"))));
+    }
+
+    #[test]
+    fn explicit_nested_root_under_pruned_parent_is_scanned_without_duplicates() {
+        let root = tempfile::tempdir().unwrap();
+        let nested = root.path().join("node_modules/target");
+        fs::create_dir_all(&nested).unwrap();
+        fs::write(nested.join("keep.txt"), b"x").unwrap();
+        let allowed = root.path().join("normal");
+        fs::create_dir(&allowed).unwrap();
+        fs::write(allowed.join("other.txt"), b"x").unwrap();
+        let config = IndexConfig {
+            folders: vec![
+                root.path().to_string_lossy().into_owned(),
+                nested.to_string_lossy().into_owned(),
+                allowed.to_string_lossy().into_owned(),
+            ],
+            file_extensions: vec!["txt".into()],
+            ..IndexConfig::default()
+        };
+        let files = scan_files(&config).unwrap();
+        assert_eq!(
+            files.iter().filter(|file| file.name == "keep.txt").count(),
+            1
+        );
+        assert_eq!(
+            files.iter().filter(|file| file.name == "other.txt").count(),
+            1
+        );
+    }
+
+    #[test]
     fn read_dir_scanner_remains_the_cross_platform_fallback() {
         let root = tempfile::tempdir().expect("temporary scan root");
         let nested = root.path().join("nested");
@@ -459,6 +480,7 @@ mod tests {
             file_extensions: vec!["txt".to_string()],
             max_depth: 10,
             max_file_size: 1024,
+            ..IndexConfig::default()
         };
 
         let files = scan_files(&config).expect("read_dir fallback scan");

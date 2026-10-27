@@ -1,0 +1,129 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Volt - MSIX manifest template (Microsoft Store channel).
+
+  Rendered by scripts/package-msix.ps1 from packaging/msix/msix.config.json:
+  every double-brace token is replaced (XML-escaped) and the script fails if one is left.
+  Do not hand-edit the rendered AppxManifest.xml in target/msix/layout.
+
+  Design notes (see docs/build-release/MICROSOFT_STORE.md):
+  - Full-trust desktop app (Windows.FullTrustApplication + runFullTrust).
+    No other restricted capability on purpose (no uiAccess, no
+    unvirtualizedResources, no packageManagement) for the first Store version.
+  - Application "Volt": the visible app (Start menu) + the volt:// protocol.
+    Protocol activation passes the URI as the single argv entry, which is the
+    format tauri-plugin-deep-link + single-instance already parse.
+  - Application "VoltStartup": hidden (AppListEntry="none"), only carries the
+    windows.startupTask so logon launches pass the "hidden" CLI flag (same
+    contract as tauri-plugin-autostart). TaskId must match TASK_ID in
+    src-tauri/src/commands/system/autostart.rs. Enabled="false": the user opts
+    in from Volt settings (StartupTask.RequestEnableAsync).
+  - Application Id "Volt" must match MSIX_APPLICATION_ID in
+    src-tauri/src/commands/system/notifications.rs (toast AUMID).
+-->
+<Package
+  xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+  xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:uap3="http://schemas.microsoft.com/appx/manifest/uap/windows10/3"
+  xmlns:uap10="http://schemas.microsoft.com/appx/manifest/uap/windows10/10"
+  xmlns:desktop="http://schemas.microsoft.com/appx/manifest/desktop/windows10"
+  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+  IgnorableNamespaces="uap uap3 uap10 desktop rescap">
+
+  <Identity
+    Name="{{IDENTITY_NAME}}"
+    Publisher="{{PUBLISHER}}"
+    Version="{{VERSION}}"
+    ProcessorArchitecture="{{ARCH}}" />
+
+  <Properties>
+    <DisplayName>{{DISPLAY_NAME}}</DisplayName>
+    <PublisherDisplayName>{{PUBLISHER_DISPLAY_NAME}}</PublisherDisplayName>
+    <Logo>Assets\StoreLogo.png</Logo>
+    <Description>{{DESCRIPTION}}</Description>
+  </Properties>
+
+  <Dependencies>
+    <!-- uap10:Parameters (VoltStartup) requires Windows 10 2004 (19041). -->
+    <TargetDeviceFamily
+      Name="Windows.Desktop"
+      MinVersion="{{MIN_VERSION}}"
+      MaxVersionTested="{{MAX_VERSION_TESTED}}" />
+    <!-- The prebuilt ONNX Runtime imports MSVCP140.dll / MSVCP140_1.dll.
+         Desktop Bridge uses the Store-serviced desktop C++ framework. -->
+    <PackageDependency
+      Name="Microsoft.VCLibs.140.00.UWPDesktop"
+      MinVersion="14.0.33728.0"
+      Publisher="CN=Microsoft Corporation, O=Microsoft Corporation, L=Redmond, S=Washington, C=US" />
+  </Dependencies>
+
+  <Resources>
+    <Resource Language="en-us" />
+    <Resource Language="fr-fr" />
+  </Resources>
+
+  <Applications>
+    <Application
+      Id="Volt"
+      Executable="{{EXECUTABLE}}"
+      EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements
+        DisplayName="{{DISPLAY_NAME}}"
+        Description="{{DESCRIPTION}}"
+        BackgroundColor="transparent"
+        Square150x150Logo="Assets\Square150x150Logo.png"
+        Square44x44Logo="Assets\Square44x44Logo.png">
+        <uap:DefaultTile
+          ShortName="{{DISPLAY_NAME}}"
+          Wide310x150Logo="Assets\Wide310x150Logo.png"
+          Square71x71Logo="Assets\SmallTile.png"
+          Square310x310Logo="Assets\LargeTile.png">
+          <uap:ShowNameOnTiles>
+            <uap:ShowOn Tile="square150x150Logo" />
+            <uap:ShowOn Tile="wide310x150Logo" />
+            <uap:ShowOn Tile="square310x310Logo" />
+          </uap:ShowNameOnTiles>
+        </uap:DefaultTile>
+        <uap:SplashScreen Image="Assets\SplashScreen.png" />
+      </uap:VisualElements>
+      <Extensions>
+        <uap3:Extension Category="windows.protocol">
+          <uap3:Protocol Name="volt" Parameters="&quot;%1&quot;">
+            <uap:DisplayName>{{DISPLAY_NAME}}</uap:DisplayName>
+          </uap3:Protocol>
+        </uap3:Extension>
+      </Extensions>
+    </Application>
+
+    <Application
+      Id="VoltStartup"
+      Executable="{{EXECUTABLE}}"
+      EntryPoint="Windows.FullTrustApplication"
+      uap10:Parameters="--hidden">
+      <uap:VisualElements
+        DisplayName="{{DISPLAY_NAME}}"
+        Description="{{DESCRIPTION}}"
+        BackgroundColor="transparent"
+        Square150x150Logo="Assets\Square150x150Logo.png"
+        Square44x44Logo="Assets\Square44x44Logo.png"
+        AppListEntry="none">
+        <uap:SplashScreen Image="Assets\SplashScreen.png" />
+      </uap:VisualElements>
+      <Extensions>
+        <desktop:Extension
+          Category="windows.startupTask"
+          Executable="{{EXECUTABLE}}"
+          EntryPoint="Windows.FullTrustApplication">
+          <desktop:StartupTask
+            TaskId="VoltStartup"
+            Enabled="false"
+            DisplayName="{{DISPLAY_NAME}}" />
+        </desktop:Extension>
+      </Extensions>
+    </Application>
+  </Applications>
+
+  <Capabilities>
+    <rescap:Capability Name="runFullTrust" />
+  </Capabilities>
+</Package>

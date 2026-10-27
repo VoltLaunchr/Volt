@@ -19,7 +19,8 @@
     "linkButton": "Lier une extension de développement",
     "linking": "Liaison...",
     "sectionTitle": "Développement",
-    "badge": "DEV"
+    "badge": "DEV",
+    "selectFolder": "Sélectionner le dossier de l’extension"
   },
   "sections": {
     "installed": "Installées"
@@ -30,6 +31,42 @@
     "installed": "Installée",
     "disable": "Désactiver",
     "enable": "Activer",
-    "uninstall": "Désinstaller"
+    "uninstall": "Désinstaller",
+    "retry": "Réessayer",
+    "dismissError": "Masquer l’erreur"
+  },
+  "categories": {
+    "all": "Toutes",
+    "productivity": "Productivité",
+    "utilities": "Utilitaires",
+    "developer": "Développement",
+    "media": "Médias",
+    "social": "Communication",
+    "finance": "Finance",
+    "games": "Jeux",
+    "system": "Système",
+    "other": "Autres"
+  },
+  "errors": {
+    "registryTitle": "Catalogue indisponible",
+    "installedTitle": "Extensions installées indisponibles",
+    "loadDescription": "Impossible d’actualiser cette liste. Vérifiez votre connexion, puis réessayez. Les éventuelles données précédentes restent affichées.",
+    "install": "Impossible d’installer {{name}}. Réessayez.",
+    "uninstall": "Impossible de désinstaller cette extension. Réessayez.",
+    "link": "Impossible de lier cette extension. Vérifiez le dossier sélectionné.",
+    "unlink": "Impossible de retirer le lien vers cette extension."
+  },
+  "preferences": {
+    "title": "Préférences de {{name}}",
+    "empty": "Cette extension ne propose aucun réglage.",
+    "saved": "Enregistré",
+    "save": "Enregistrer",
+    "cancel": "Annuler",
+    "close": "Fermer",
+    "select": "Choisir une option",
+    "required": "Obligatoire",
+    "optional": "Facultatif",
+    "showSecret": "Afficher la valeur",
+    "hideSecret": "Masquer la valeur"
   }
 }

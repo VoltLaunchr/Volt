@@ -44,7 +44,7 @@ use commands::shell::ShellExecutionState;
 use commands::sync::SyncState;
 use commands::system_monitor::SystemMonitorState;
 use commands::*;
-use hotkey::HotkeyState;
+use hotkey::{HotkeyState, OpenSettingsHotkeyState};
 use plugins::api::VoltPluginAPI;
 use plugins::registry::PluginRegistry;
 use std::collections::VecDeque;
@@ -147,8 +147,40 @@ pub struct LogGuard {
     _guard: WorkerGuard,
 }
 
+// ---------------------------------------------------------------------------
+// Minimal CLI flags (`std::env::args` only, no new dependency)
+// ---------------------------------------------------------------------------
+//
+// - `--hidden`: the first instance stays in the background — the main-window
+//   auto-reveal in `setup()` (the `volt://main-ready` block) is skipped. Used
+//   by autostart (`exec-once = volt --hidden` on Hyprland, and the
+//   `tauri-plugin-autostart` registration above which passes `--hidden`).
+// - `--toggle`: the Hyprland bind (`bind = SUPER, SPACE, exec, volt --toggle`)
+//   and the `Toggle` desktop action. The single-instance callback below
+//   toggles visibility instead of always showing when it sees this flag.
+//   The bare word `toggle` is accepted as an alias (some launchers strip
+//   leading dashes when forwarding argv).
+//
+// A first instance launched with `--toggle` needs no special case: the window
+// is created with `visible: false` (tauri.conf.json) and the normal
+// auto-reveal shows it — that *is* the hidden → visible toggle transition.
+// If both flags are passed to a first instance, `--hidden` wins (stay hidden).
+
+/// True if the forwarded single-instance argv requests a toggle.
+fn argv_requests_toggle(argv: &[String]) -> bool {
+    argv.iter()
+        .skip(1)
+        .any(|a| a == "--toggle" || a == "toggle")
+}
+
+/// True if this process was launched with `--hidden`.
+fn launched_hidden() -> bool {
+    std::env::args().skip(1).any(|a| a == "--hidden")
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let start_hidden = launched_hidden();
     let mut builder = tauri::Builder::default().plugin(tauri_plugin_notification::init());
 
     // Single-instance MUST be registered before any other plugin so that
@@ -177,10 +209,28 @@ pub fn run() {
                 }
             }
             if let Some(window) = app.get_webview_window("main") {
-                commands::window_management::remember_foreground_target(app);
-                let _ = window.show();
-                let _ = window.unminimize();
-                let _ = window.set_focus();
+                // CLI `--toggle` (Hyprland bind `volt --toggle`): toggle
+                // visibility instead of always showing. Mirrors the
+                // `toggle_window` command (`window/mod.rs`), plus `unminimize`
+                // on the show path (a minimized window still reports visible,
+                // so a bare toggle could leave it stuck in the taskbar).
+                // Default path (plain re-launch, Windows/macOS): unchanged.
+                if argv_requests_toggle(&argv) {
+                    let visible = window.is_visible().unwrap_or(false);
+                    if visible {
+                        let _ = window.hide();
+                    } else {
+                        commands::window_management::remember_foreground_target(app);
+                        let _ = window.show();
+                        let _ = window.unminimize();
+                        let _ = window.set_focus();
+                    }
+                } else {
+                    commands::window_management::remember_foreground_target(app);
+                    let _ = window.show();
+                    let _ = window.unminimize();
+                    let _ = window.set_focus();
+                }
             }
         }));
     }
@@ -198,7 +248,7 @@ pub fn run() {
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             Some(vec!["--hidden"]),
         ))
-        .setup(|app| {
+        .setup(move |app| {
             // Initialize structured logging. We resolve the app data dir first
             // so the rolling file appender can write to <app_data_dir>/logs.
             // The WorkerGuard returned by `non_blocking` is stored in app state
@@ -261,6 +311,7 @@ pub fn run() {
             app.manage(HotkeyState {
                 current: std::sync::Mutex::new(None),
             });
+            app.manage(OpenSettingsHotkeyState::default());
 
             // Remember the explicit external focus target used by window-snap
             // commands; Z-order is not a reliable focus history.
@@ -320,6 +371,20 @@ pub fn run() {
                             }
                         } else if let Err(e) = disable_autostart(app_handle.clone()).await {
                             warn!("Could not clean up dev autostart registration: {}", e);
+                        }
+
+                        // Optional global shortcut that opens the Settings window
+                        if !settings.hotkeys.open_settings.trim().is_empty() {
+                            match hotkey::apply_open_settings_hotkey(
+                                &app_handle,
+                                &settings.hotkeys.open_settings,
+                            ) {
+                                Ok(()) => info!(
+                                    "Applied open-settings hotkey: {}",
+                                    settings.hotkeys.open_settings
+                                ),
+                                Err(e) => warn!("Could not apply open-settings hotkey: {}", e),
+                            }
                         }
 
                         // Register AI Quick Action hotkeys (best-effort; failures
@@ -385,6 +450,19 @@ pub fn run() {
                         };
                         let show_handle = app_handle.clone();
                         tauri::async_runtime::spawn(async move {
+                            // CLI `--hidden` (autostart `volt --hidden`): stay
+                            // in the background. The window is created with
+                            // `visible: false`, so returning before the reveal
+                            // keeps it hidden. The user reveals it later via
+                            // the Hyprland bind (`volt --toggle`), the global
+                            // hotkey, or a plain `volt` re-launch. Takes
+                            // precedence over `--toggle` when both are passed.
+                            if start_hidden {
+                                info!(
+                                    "Launched with --hidden: staying in background, skipping main-window auto-reveal"
+                                );
+                                return;
+                            }
                             let (tx, rx) = tokio::sync::oneshot::channel::<()>();
                             let tx = std::sync::Arc::new(std::sync::Mutex::new(Some(tx)));
                             let listener_handle = show_handle.clone();
@@ -623,19 +701,15 @@ pub fn run() {
             // Store persistent system monitor instance for accurate CPU readings
             app.manage(ShellExecutionState::new());
 
-            app.manage(SystemMonitorState {
-                monitor: std::sync::Arc::new(std::sync::Mutex::new(
+            app.manage(SystemMonitorState::new(std::sync::Arc::new(
+                std::sync::Mutex::new(
                     plugins::builtin::SystemMonitorPlugin::new().with_api(plugin_api),
-                )),
-            });
+                ),
+            )));
 
-            // Prime the CPU baseline in the background so the first user
-            // query returns a meaningful value. sysinfo requires two
-            // `refresh_cpu_usage()` calls separated by MINIMUM_CPU_UPDATE_INTERVAL.
-            // The prime itself does a synchronous `std::thread::sleep` inside
-            // sysinfo's dual-sample, so we offload it to a blocking worker
-            // (same pattern as the ticker below) to avoid parking a Tokio
-            // worker thread for ~200ms at boot.
+            // Seed the CPU baseline on a blocking worker. Later ticker samples
+            // supply the delta; the monitor enforces MINIMUM_CPU_UPDATE_INTERVAL
+            // across all callers without sleeping while holding a system lock.
             let priming_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 tokio::time::sleep(sysinfo::MINIMUM_CPU_UPDATE_INTERVAL).await;
@@ -660,21 +734,20 @@ pub fn run() {
             });
 
             // Background ticker: refresh the system monitor's in-memory cache
-            // every ~5s so frontend queries are served instantly instead of
-            // running a full sysinfo refresh per keystroke. Interval is
-            // hard-coded for now since `PluginRegistry::initialize_all` is a
-            // stub (config wiring is out of scope for this phase).
+            // (default 5s, `plugins.systemMonitorRefreshMs`) so frontend queries are
+            // served instantly instead of running a full sysinfo refresh per keystroke.
+            // The delay is re-read on every iteration, so a settings change applies live.
             let ticker_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
-                // Wait for the CPU prime task to finish its dual-sample before
-                // the first cache refresh, so the ticker's first tick produces
-                // meaningful CPU readings without blocking.
+                // Allow startup to settle. If priming races this first tick,
+                // the monitor keeps its baseline until the minimum interval passes.
                 tokio::time::sleep(sysinfo::MINIMUM_CPU_UPDATE_INTERVAL).await;
                 loop {
+                    let mut next_delay = std::time::Duration::from_secs(5);
                     if let Some(state) = ticker_handle.try_state::<SystemMonitorState>() {
-                        // `refresh_cache` calls `std::thread::sleep` internally
-                        // (CPU dual-sample). Offload to a blocking thread so the
-                        // Tokio worker thread is not parked during the sleep.
+                        next_delay = state.refresh_interval();
+                        // OS/process collection remains blocking work even though
+                        // CPU sampling no longer sleeps or collects twice per tick.
                         let monitor_arc = state.monitor.clone();
                         let _ = tokio::task::spawn_blocking(move || {
                             match monitor_arc.lock() {
@@ -690,7 +763,7 @@ pub fn run() {
                         })
                         .await;
                     }
-                    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                    tokio::time::sleep(next_delay).await;
                 }
             });
 
@@ -873,6 +946,8 @@ pub fn run() {
             get_history_count,
             get_frecency_suggestions,
             record_search_selection,
+            record_command_usage,
+            get_command_frecency,
             open_path,
             open_file_with_dialog,
             // Batch search command
@@ -921,6 +996,7 @@ pub fn run() {
             // Hotkey commands
             hotkey::set_global_hotkey,
             hotkey::get_current_hotkey,
+            hotkey::set_open_settings_hotkey,
             // Autostart commands
             enable_autostart,
             disable_autostart,

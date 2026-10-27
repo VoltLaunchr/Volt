@@ -2,6 +2,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { extractErrorMessage } from '../../../shared/utils/error';
 import { logger } from '../../../shared/utils/logger';
 import { normalizeEnabledPlugins } from '../../plugins/builtin/manifest';
+import { normalizeBehaviorSettings } from '../behavior/normalize';
 import {
   AppearanceSettings,
   DEFAULT_SETTINGS,
@@ -45,7 +46,7 @@ export const settingsService = {
   async loadSettings(): Promise<Settings> {
     try {
       const settings = await invoke<Settings>('load_settings');
-      return normalizePluginIds(settings);
+      return normalizeBehaviorSettings(normalizePluginIds(settings));
     } catch (error) {
       logger.error('Failed to load settings:', error);
       return DEFAULT_SETTINGS;

@@ -108,13 +108,9 @@ core/
 
 #### Constants (`constants.rs`)
 
-Key application constants:
+Application version only — `APP_VERSION` (from `Cargo.toml`).
 
-- `APP_NAME`, `APP_VERSION`
-- `DEFAULT_WINDOW_WIDTH`, `DEFAULT_WINDOW_HEIGHT`
-- `MAX_SEARCH_RESULTS = 10`
-- `SEARCH_DEBOUNCE_MS = 150`
-- Score weights for search ranking
+> Frontend search limits live in `src/shared/constants/` (`MAX_RESULTS = 20`, `DEBOUNCE_MS = 150`); scoring tiers in `src-tauri/src/utils/matching.rs` (100 / 90 / 50–89).
 
 #### Error Handling (`error.rs`)
 
@@ -155,8 +151,7 @@ plugins/
 └── builtin/
     ├── mod.rs          # Plugin registration
     ├── clipboard_manager/  # Clipboard management plugin
-    ├── game_scanner/       # Multi-platform game scanner
-    │   └── scanners/       # EA, Epic, GOG, Riot, Steam, Ubisoft, Xbox
+    ├── game_scanner/       # Multi-platform game scanner (10 platform files: amazon, battlenet, ea, epic, gog, riot, rockstar, steam, ubisoft, xbox)
     └── system_monitor/     # System monitoring plugin
         ├── mod.rs
         └── plugin.rs
@@ -286,7 +281,7 @@ Features:
 - Score-based ranking
 - Empty query handling
 - Sorted results (highest score first)
-- Frecency ranking: `calculate_frecency()` with exponential time decay (1-week half-life)
+- Frecency ranking: `frecency_date = max(now, frecency_date) + 1 day` on launch (backfilled, capped) + bounded `ln` search bonus (`MAX_FRECENCY_BOOST = 20`, cf. `search/mod.rs`)
 - `search_applications_with_frecency()` combines match score with frecency for personalized ranking
 
 ---
@@ -317,30 +312,22 @@ pub fn center_window(window: Window) -> VoltResult<()>;
 
 ## Commands Module
 
-**Location**: `src/commands/`
+**Location**: `src/commands/` — 8 product domains (`ai/` · `auth/` · `content/` · `extensions/` · `files/` · `launcher/` · `shell/` · `system/`), ~40 files, ~230 `#[tauri::command]` (recompter via `rg -o "#\[tauri::command\]" src-tauri/src/commands | wc -l`).
 
-Tauri command handlers exposed to frontend.
+Tauri command handlers exposed to frontend. Legacy flat paths (e.g. `commands::files`, `commands::ai_profile`) are re-exported via `commands/mod.rs` — Tauri command names come from function names, so the IPC API is unchanged.
 
 ### Modules
 
-All commands return `VoltResult<T>` using the `VoltError` discriminated union.
+All commands return `VoltResult<T>` at the module boundary (using the `VoltError` discriminated union), mapped to `Result<T, String>` at the `#[tauri::command]` boundary.
 
-- **apps.rs**: Application scanning and launching
-- **autostart.rs**: Autostart management
-- **clipboard.rs**: Clipboard read/write operations
-- **extensions.rs**: Extension management
-- **files.rs**: File indexing
-- **games.rs**: Game scanning across platforms
-- **hotkey.rs**: Hotkey registration and management
-- **launcher.rs**: Launch history tracking
-- **logging.rs**: Logging configuration and log file management
-- **plugins.rs**: Plugin lifecycle commands
-- **preview.rs**: File preview command (`get_file_preview`: text/image/folder/app/binary detection)
-- **settings.rs**: Settings management
-- **snippets.rs**: Snippet CRUD (get/create/update/delete/expand/import/export) with JSON storage
-- **steam.rs**: Steam library integration
-- **system_monitor.rs**: System resource monitoring
-- **window_management.rs**: Window snap/maximize/minimize/restore commands (Windows Win32 + Linux X11/EWMH via `x11rb`)
+- **launcher/** (`apps.rs`, `history.rs`, `search.rs`, `games.rs`, `steam.rs`): application scanning/launching, launch history & frecency (`frecency_date`), batch/streaming search, multi-platform game scan, Steam integration
+- **files/** (`index.rs`, `preview.rs`): file indexing (SQLite + Tantivy), watcher, recent files/categories/stats; file preview (`get_file_preview`: text/image/folder/app/binary detection)
+- **system/** (`settings.rs`, `clipboard.rs`, `monitor.rs`, `window_management.rs`, `autostart.rs`, `logging.rs`, `notifications.rs`, `web_search.rs`): settings (8+ categories), clipboard, system resources (incl. v2: per-core/network/temps/processes), window snap/maximize/minimize/restore (Windows Win32 + Linux X11/EWMH), autostart, logs, notifications, web search
+- **content/** (`notes.rs`, `snippets.rs`, `quicklinks.rs`, `snippet_expansion.rs`): notes (FTS5, trash/restore), snippets CRUD + expansion (JSON import size-capped), quicklinks CRUD with validation
+- **shell/** (`execution.rs`, `history.rs`): streaming execution (NFKC blocklist + 9+ patterns, extended redactors, UNC `working_dir` rejected), shell history with frecency (500 entries)
+- **ai/** (`profile.rs`, `quick_actions.rs`, `embeddings.rs`, `proxy.rs`, `custom_emojis.rs`): AI profile, quick actions + global hotkeys, embeddings (`prepare`/`is_ready`/`test`), AI proxy, SDXL emoji (Pro-gated)
+- **auth/** (`session.rs`, `oauth.rs`, `credentials.rs`, `keyring_store.rs`, `sync.rs`): Supabase auth + deep link (CSRF nonce, JWT `exp`/`iss`/`sub` checks), OAuth (GitHub/Notion), OS-keyring credentials, signed keyring store (HMAC-SHA256), cloud sync
+- **extensions/** (`management.rs`, `plugins.rs`): extension registry/install/toggle, permission allowlist, tamper alerts, storage/preferences/secrets/OAuth/AI APIs, plugin lifecycle
 
 ---
 

@@ -6,16 +6,16 @@ Ce document récapitule toute la documentation créée pour le système de plugi
 
 ### Documentation principale
 
-| Fichier                                              | Description                                              | Taille | Public cible               |
-| ---------------------------------------------------- | -------------------------------------------------------- | ------ | -------------------------- |
-| [DEVELOPMENT.md](./DEVELOPMENT.md)         | Guide complet de développement (recommandé pour débuter) | ~15KB  | Débutants → Intermédiaires |
-| [API_REFERENCE.md](./API_REFERENCE.md)     | Documentation technique de l'API                         | ~25KB  | Intermédiaires → Avancés   |
-| [EXAMPLES.md](./EXAMPLES.md)               | Collection d'exemples avancés                            | ~30KB  | Avancés                    |
-| [TEMPLATE.md](./TEMPLATE.md)               | Template prêt à l'emploi                                 | ~12KB  | Tous niveaux               |
-| [PUBLISHING_GUIDE.md](./PUBLISHING_GUIDE.md) | Guide de publication web                              | ~10KB  | Administrateurs            |
-| [../README.md](../README.md)               | Index de la documentation                                | ~6KB   | Tous                       |
+| Fichier                                              | Description                                              | Public cible               |
+| ---------------------------------------------------- | -------------------------------------------------------- | -------------------------- |
+| [DEVELOPMENT.md](./DEVELOPMENT.md)         | Guide complet de développement (recommandé pour débuter) | Débutants → Intermédiaires |
+| [API_REFERENCE.md](./API_REFERENCE.md)     | Documentation technique de l'API                         | Intermédiaires → Avancés   |
+| [EXAMPLES.md](./EXAMPLES.md)               | Collection d'exemples avancés                            | Avancés                    |
+| [TEMPLATE.md](./TEMPLATE.md)               | Template prêt à l'emploi                                 | Tous niveaux               |
+| [PUBLISHING_GUIDE.md](./PUBLISHING_GUIDE.md) | Guide de publication web                              | Administrateurs            |
+| [../README.md](../README.md)               | Index de la documentation                                | Tous                       |
 
-**Total : ~98KB de documentation** ✅
+> Tailles indicatives : `ls -lh docs/plugins/*.md`.
 
 ---
 

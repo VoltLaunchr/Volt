@@ -46,7 +46,40 @@ export interface AppearanceSettings {
 
 export interface HotkeySettings {
   toggleWindow: string;
+  /**
+   * Optional system-wide shortcut that opens the Settings window. Empty = not registered
+   * (the in-launcher `Ctrl+,` works regardless).
+   */
   openSettings: string;
+}
+
+/** How long the launcher may stay hidden before it reopens on the root view. */
+export type PopToRootDelay = 'immediate' | '30s' | '1m' | '5m' | 'never';
+
+/** Root search and window lifecycle preferences. */
+export interface LauncherSettings {
+  popToRoot: PopToRootDelay;
+  /** Search indexed files from the root search bar. */
+  includeFilesInRootSearch: boolean;
+  /** Search installed games from the root search bar. */
+  includeGamesInRootSearch: boolean;
+}
+
+/**
+ * Escape in the search bar: `close` clears the query and hides the window, `clearThenClose`
+ * clears a non-empty query first and hides on the next press, `backToRoot` clears and returns
+ * to the root view without hiding.
+ */
+export type EscapeBehavior = 'close' | 'clearThenClose' | 'backToRoot';
+
+/** Extra list navigation keys on top of the arrows. */
+export type ListNavigationPreset = 'arrows' | 'emacs' | 'vim';
+
+export interface KeyboardSettings {
+  escapeBehavior: EscapeBehavior;
+  /** Escape closes the Settings and Notes windows. */
+  escapeClosesSecondaryWindows: boolean;
+  listNavigation: ListNavigationPreset;
 }
 
 export interface IndexingSettings {
@@ -55,6 +88,9 @@ export interface IndexingSettings {
   fileExtensions: string[];
   indexOnStartup: boolean;
   deepSearch: boolean;
+  respectIgnoreFiles: boolean;
+  excludeGeneratedDirs: boolean;
+  diagnosticsEnabled: boolean;
   /**
    * Re-walk the index on launch when the persisted snapshot is older than this
    * many seconds (the no-admin offline catch-up). `0` disables the catch-up.
@@ -67,6 +103,16 @@ export interface PluginSettings {
   clipboardMonitoring: boolean;
   clipboardRetentionDays: number;
   clipboardDisabledApps: string[];
+  /** System Monitor refresh period in milliseconds (also drives the backend sampling). */
+  systemMonitorRefreshMs: number;
+  /** Pomodoro durations in minutes. */
+  timerWorkMinutes: number;
+  timerShortBreakMinutes: number;
+  timerLongBreakMinutes: number;
+  /** Margin around and between windows snapped by Window Management, in pixels. */
+  windowManagementGapPx: number;
+  /** Open http(s) quicklinks in the browser chosen for web search. */
+  quicklinksUsePreferredBrowser: boolean;
 }
 
 export interface Integration {
@@ -166,6 +212,8 @@ export interface Settings {
   shell: ShellSettings;
   fallbacks: FallbacksSettings;
   snippetExpansion: SnippetExpansionSettings;
+  launcher: LauncherSettings;
+  keyboard: KeyboardSettings;
 }
 
 export type Theme = 'light' | 'dark' | 'auto';
@@ -212,7 +260,19 @@ export const DEFAULT_SETTINGS: Settings = {
   },
   hotkeys: {
     toggleWindow: 'Ctrl+Space', // Per documentation: /docs/user-guide/shortcuts
-    openSettings: 'Ctrl+,',
+    openSettings: '',
+  },
+  launcher: {
+    // Today the launcher keeps its state while hidden, indefinitely.
+    popToRoot: 'never',
+    includeFilesInRootSearch: true,
+    includeGamesInRootSearch: true,
+  },
+  keyboard: {
+    escapeBehavior: 'close',
+    escapeClosesSecondaryWindows: true,
+    // Ctrl+N / Ctrl+P already move through the results today.
+    listNavigation: 'emacs',
   },
   indexing: {
     folders: [],
@@ -250,6 +310,9 @@ export const DEFAULT_SETTINGS: Settings = {
     fileExtensions: ['pdf', 'docx', 'doc', 'txt', 'xlsx', 'xls', 'pptx', 'ppt', 'md', 'csv'],
     indexOnStartup: true,
     deepSearch: false,
+    respectIgnoreFiles: true,
+    excludeGeneratedDirs: true,
+    diagnosticsEnabled: false,
     staleThresholdSecs: 3600,
   },
   plugins: {
@@ -274,6 +337,12 @@ export const DEFAULT_SETTINGS: Settings = {
     clipboardMonitoring: true,
     clipboardRetentionDays: 30,
     clipboardDisabledApps: [],
+    systemMonitorRefreshMs: 5000,
+    timerWorkMinutes: 25,
+    timerShortBreakMinutes: 5,
+    timerLongBreakMinutes: 15,
+    windowManagementGapPx: 0,
+    quicklinksUsePreferredBrowser: false,
   },
   shortcuts: {
     appShortcuts: [],

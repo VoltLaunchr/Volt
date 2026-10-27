@@ -1,16 +1,18 @@
-import { SEARCH_SCORING } from '../shared/constants/searchScoring';
 import {
   SearchResult,
   SearchResultType,
   type PluginResultData,
 } from '../shared/types/common.types';
+import { isTierAtLeast } from './searchRanking';
 
 /**
- * The Rust application ranker reserves scores >= 500 for name matches.
- * Scores below that tier are secondary-field matches and should not suppress
- * useful web fallbacks on their own.
+ * An application matched on its alias, a learned query or its name (exact,
+ * prefix or fuzzy) is a confident local answer. A `secondary` match (install
+ * path / keywords only) should not suppress useful web fallbacks on its own.
  */
-const STRONG_APPLICATION_SCORE = SEARCH_SCORING.APPLICATION + 500;
+function hasStrongApplicationTier(result: SearchResult): boolean {
+  return result.rank !== undefined && isTierAtLeast(result.rank.tier, 'fuzzy');
+}
 
 const INTENTIONAL_RESULT_TYPES = new Set<SearchResultType>([
   SearchResultType.Calculator,
@@ -44,7 +46,7 @@ export function hasStrongLocalMatch(results: SearchResult[], query: string): boo
       case SearchResultType.Url:
         return false;
       case SearchResultType.Application:
-        return result.score >= STRONG_APPLICATION_SCORE;
+        return hasStrongApplicationTier(result);
       case SearchResultType.File:
         return hasStrongFileTitleMatch(result, query);
       case SearchResultType.Plugin:

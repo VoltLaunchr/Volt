@@ -25,22 +25,19 @@ export function useQuickActions() {
     void refresh();
   }, [refresh]);
 
-  const save = useCallback(
-    async (next: AiQuickAction[]) => {
-      try {
-        await aiQuickActionsService.save(next);
-        setActions(next);
-        // After save, fetch fresh report on bind success/failure
-        const newReport = await aiQuickActionsService.applyAll();
-        setReport(newReport);
-        setError(null);
-      } catch (e) {
-        setError(String(e));
-        throw e;
-      }
-    },
-    []
-  );
+  const save = useCallback(async (next: AiQuickAction[]) => {
+    try {
+      await aiQuickActionsService.save(next);
+      setActions(next);
+      // After save, fetch fresh report on bind success/failure
+      const newReport = await aiQuickActionsService.applyAll();
+      setReport(newReport);
+      setError(null);
+    } catch (e) {
+      setError(String(e));
+      throw e;
+    }
+  }, []);
 
   const updateAction = useCallback(
     async (id: string, patch: Partial<AiQuickAction>) => {

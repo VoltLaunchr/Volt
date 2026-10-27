@@ -1,8 +1,23 @@
 import { invoke } from '@tauri-apps/api/core';
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { AlertCircle, Pencil, Plus, Trash2 } from 'lucide-react';
-import { Button, Modal, Toggle } from '../../../shared/components/ui';
+import { Pencil, Plus, Trash2 } from 'lucide-react';
+import { Button } from '@/shared/components/ui/button';
+import { Badge } from '@/shared/components/ui/badge';
+import { Input } from '@/shared/components/ui/input';
+import { Textarea } from '@/shared/components/ui/textarea';
+import { Switch } from '@/shared/components/ui/switch';
+import { Field, FieldDescription, FieldGroup, FieldLabel } from '@/shared/components/ui/field';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/shared/components/ui/dialog';
+import { SettingsField, SettingsStatus } from './SettingsChrome';
+import { SettingsList, SettingsNote, SettingsRow, SettingsSection } from './SettingsPrimitives';
 import { logger } from '../../../shared/utils/logger';
 import type { Snippet } from '../../plugins/builtin/snippets';
 
@@ -41,6 +56,7 @@ function toFormState(snippet: Snippet): SnippetFormState {
  */
 export function SnippetsManagerPanel(): React.JSX.Element {
   const { t } = useTranslation('settings');
+  const [pendingDelete, setPendingDelete] = useState<Snippet | null>(null);
   const [snippets, setSnippets] = useState<Snippet[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -99,9 +115,7 @@ export function SnippetsManagerPanel(): React.JSX.Element {
 
   const handleDelete = useCallback(
     (snippet: Snippet): void => {
-      if (!window.confirm(t('snippetsManager.confirmDelete', { trigger: snippet.trigger }))) {
-        return;
-      }
+      setPendingDelete(null);
       void (async () => {
         try {
           await invoke<void>('delete_snippet', { id: snippet.id });
@@ -159,160 +173,215 @@ export function SnippetsManagerPanel(): React.JSX.Element {
   const canSave = form.trigger.trim().length > 0 && form.content.trim().length > 0;
 
   return (
-    <section>
-      <div className="flex items-center justify-between mb-3">
-        <div className="flex flex-col gap-0.5">
-          <h3 className="text-sm font-semibold text-ink m-0">{t('snippetsManager.title')}</h3>
-          <span className="text-xs text-mute">{t('snippetsManager.subtitle')}</span>
-        </div>
-        <Button variant="secondary" onClick={openCreateModal}>
-          <Plus size={15} /> {t('snippetsManager.add')}
-        </Button>
-      </div>
-
-      {error && (
-        <div className="flex items-start gap-2 px-3.5 py-2.5 bg-accent-red/10 border border-accent-red/30 rounded-lg mb-3">
-          <AlertCircle size={16} className="text-accent-red shrink-0 mt-0.5" />
-          <p className="m-0 text-[13px] text-accent-red leading-relaxed">{error}</p>
-        </div>
-      )}
-
-      <div className="flex flex-col gap-1.5 mb-5">
-        {isLoading ? (
-          <p className="text-xs text-stone italic">{t('snippetsManager.loading')}</p>
-        ) : snippets.length === 0 ? (
-          <p className="text-xs text-stone italic">{t('snippetsManager.empty')}</p>
-        ) : (
-          snippets.map((snippet) => (
-            <div
-              key={snippet.id}
-              className="flex items-center gap-3 px-3 py-2.5 bg-surface-elevated/30 rounded-md border border-hairline"
-            >
-              <Toggle
-                checked={snippet.enabled}
-                onChange={(enabled) => handleToggleEnabled(snippet, enabled)}
-              />
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <span className="text-[13px] text-on-dark font-mono font-medium">
-                    {snippet.trigger}
-                  </span>
-                  {snippet.category && (
-                    <span className="text-[11px] text-mute px-1.5 py-0.5 rounded-full border border-hairline">
-                      {snippet.category}
-                    </span>
-                  )}
-                </div>
-                <p className="m-0 mt-0.5 text-xs text-mute truncate">
-                  {snippet.description || snippet.content}
-                </p>
-              </div>
-              <button
-                className="w-7 h-7 rounded-sm bg-transparent border-none text-ash cursor-pointer flex items-center justify-center transition-all hover:bg-white/10 hover:text-on-dark"
-                onClick={() => openEditModal(snippet)}
-                aria-label={t('snippetsManager.edit')}
-              >
-                <Pencil size={14} />
-              </button>
-              <button
-                className="w-7 h-7 rounded-sm bg-transparent border-none text-ash cursor-pointer flex items-center justify-center transition-all hover:bg-accent-red/15 hover:text-accent-red"
-                onClick={() => handleDelete(snippet)}
-                aria-label={t('snippetsManager.delete')}
-              >
-                <Trash2 size={14} />
-              </button>
-            </div>
-          ))
+    <>
+      <SettingsSection sectionId="snippets.library" showDescription>
+        <SettingsNote>
+          {t('snippetExpansion.infoText')} <kbd>;</kbd> {t('snippetExpansion.infoTextSuffix')}
+        </SettingsNote>
+        <SettingsRow rowId="snippets.library.new">
+          <Button variant="secondary" size="sm" onClick={openCreateModal}>
+            <Plus size={14} aria-hidden="true" />
+            {t('snippetsManager.add')}
+          </Button>
+        </SettingsRow>
+        {error && !isModalOpen && (
+          <div className="p-2.5">
+            <SettingsStatus kind="error">{error}</SettingsStatus>
+          </div>
         )}
-      </div>
-
-      <Modal
-        isOpen={isModalOpen}
-        onClose={closeModal}
-        title={editingId ? t('snippetsManager.editTitle') : t('snippetsManager.createTitle')}
-        size="medium"
+        {isLoading ? (
+          <SettingsNote>
+            <span role="status">{t('snippetsManager.loading')}</span>
+          </SettingsNote>
+        ) : snippets.length === 0 ? (
+          <SettingsNote>{t('snippetsManager.empty')}</SettingsNote>
+        ) : (
+          <SettingsList label={t('snippetsManager.title')}>
+            {snippets.map((snippet) => (
+              <div
+                key={snippet.id}
+                role="listitem"
+                className="settings-list__item settings-list__item--static"
+              >
+                <Switch
+                  checked={snippet.enabled}
+                  onCheckedChange={(enabled) => handleToggleEnabled(snippet, enabled)}
+                  aria-label={`${t('snippetsManager.enabledLabel')} ${snippet.trigger}`}
+                />
+                <div className="settings-list__text">
+                  <span className="settings-list__title">
+                    <code className="font-medium">{snippet.trigger}</code>
+                    {snippet.category && (
+                      <Badge variant="outline" className="ml-2 align-middle">
+                        {snippet.category}
+                      </Badge>
+                    )}
+                  </span>
+                  <span className="settings-list__meta">
+                    {snippet.description || snippet.content}
+                  </span>
+                </div>
+                <div className="settings-list__actions">
+                  <Button
+                    size="icon-sm"
+                    variant="ghost"
+                    aria-label={`${t('snippetsManager.edit')} ${snippet.trigger}`}
+                    onClick={() => openEditModal(snippet)}
+                  >
+                    <Pencil size={14} aria-hidden="true" />
+                  </Button>
+                  <Button
+                    size="icon-sm"
+                    variant="ghost"
+                    className="text-destructive"
+                    aria-label={`${t('snippetsManager.delete')} ${snippet.trigger}`}
+                    onClick={() => setPendingDelete(snippet)}
+                  >
+                    <Trash2 size={14} aria-hidden="true" />
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </SettingsList>
+        )}
+      </SettingsSection>
+      <Dialog
+        open={isModalOpen}
+        onOpenChange={(open) => {
+          if (!isSaving && !open) closeModal();
+        }}
       >
-        <div className="flex flex-col gap-4">
-          <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-medium text-body" htmlFor="snippet-trigger">
-              {t('snippetsManager.triggerLabel')}
-            </label>
-            <input
-              id="snippet-trigger"
-              type="text"
-              autoFocus
-              className="bg-surface-elevated border border-hairline rounded-md px-3 py-1.5 text-sm text-on-dark font-mono outline-none focus:border-hairline-strong placeholder:text-ash placeholder:font-sans"
-              placeholder={t('snippetsManager.triggerPlaceholder')}
-              value={form.trigger}
-              onChange={(e) => setForm((prev) => ({ ...prev, trigger: e.target.value }))}
-            />
-            <span className="text-[11px] text-mute">{t('snippetsManager.triggerHint')}</span>
-          </div>
-
-          <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-medium text-body" htmlFor="snippet-content">
-              {t('snippetsManager.contentLabel')}
-            </label>
-            <textarea
-              id="snippet-content"
-              rows={5}
-              className="bg-surface-elevated border border-hairline rounded-md px-3 py-1.5 text-sm text-on-dark outline-none focus:border-hairline-strong placeholder:text-ash resize-none"
-              placeholder={t('snippetsManager.contentPlaceholder')}
-              value={form.content}
-              onChange={(e) => setForm((prev) => ({ ...prev, content: e.target.value }))}
-            />
-            <span className="text-[11px] text-mute">{t('snippetsManager.contentHint')}</span>
-          </div>
-
-          <div className="flex gap-3">
-            <div className="flex-1 flex flex-col gap-1.5">
-              <label className="text-xs font-medium text-body" htmlFor="snippet-category">
-                {t('snippetsManager.categoryLabel')}
-              </label>
-              <input
-                id="snippet-category"
-                type="text"
-                className="bg-surface-elevated border border-hairline rounded-md px-3 py-1.5 text-sm text-on-dark outline-none focus:border-hairline-strong placeholder:text-ash"
-                placeholder={t('snippetsManager.categoryPlaceholder')}
-                value={form.category}
-                onChange={(e) => setForm((prev) => ({ ...prev, category: e.target.value }))}
-              />
-            </div>
-            <div className="flex-1 flex flex-col gap-1.5">
-              <label className="text-xs font-medium text-body" htmlFor="snippet-description">
-                {t('snippetsManager.descriptionLabel')}
-              </label>
-              <input
-                id="snippet-description"
-                type="text"
-                className="bg-surface-elevated border border-hairline rounded-md px-3 py-1.5 text-sm text-on-dark outline-none focus:border-hairline-strong placeholder:text-ash"
-                placeholder={t('snippetsManager.descriptionPlaceholder')}
-                value={form.description}
-                onChange={(e) => setForm((prev) => ({ ...prev, description: e.target.value }))}
-              />
-            </div>
-          </div>
-
-          {editingId && (
-            <div className="flex items-center justify-between py-1">
-              <span className="text-sm text-body">{t('snippetsManager.enabledLabel')}</span>
-              <Toggle
-                checked={form.enabled}
-                onChange={(enabled) => setForm((prev) => ({ ...prev, enabled }))}
-              />
-            </div>
-          )}
-
-          <div className="flex items-center justify-end gap-2 pt-1">
-            <Button variant="secondary" onClick={closeModal}>
+        <DialogContent
+          showCloseButton={false}
+          className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-lg"
+        >
+          <DialogHeader>
+            <DialogTitle>
+              {editingId ? t('snippetsManager.editTitle') : t('snippetsManager.createTitle')}
+            </DialogTitle>
+            <DialogDescription>{t('snippetsManager.subtitle')}</DialogDescription>
+          </DialogHeader>
+          <form
+            className="space-y-5"
+            onSubmit={(event) => {
+              event.preventDefault();
+              handleSave();
+            }}
+          >
+            <FieldGroup>
+              <Field>
+                <FieldLabel htmlFor="snippet-trigger">
+                  {t('snippetsManager.triggerLabel')}
+                </FieldLabel>
+                <Input
+                  id="snippet-trigger"
+                  value={form.trigger}
+                  onChange={(event) =>
+                    setForm((previous) => ({ ...previous, trigger: event.target.value }))
+                  }
+                  placeholder={t('snippetsManager.triggerPlaceholder')}
+                  className="font-mono"
+                  disabled={isSaving}
+                />
+                <FieldDescription>{t('snippetsManager.triggerHint')}</FieldDescription>
+              </Field>
+              <Field>
+                <FieldLabel htmlFor="snippet-content">
+                  {t('snippetsManager.contentLabel')}
+                </FieldLabel>
+                <Textarea
+                  id="snippet-content"
+                  value={form.content}
+                  onChange={(event) =>
+                    setForm((previous) => ({ ...previous, content: event.target.value }))
+                  }
+                  placeholder={t('snippetsManager.contentPlaceholder')}
+                  rows={5}
+                  disabled={isSaving}
+                />
+                <FieldDescription>{t('snippetsManager.contentHint')}</FieldDescription>
+              </Field>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field>
+                  <FieldLabel htmlFor="snippet-category">
+                    {t('snippetsManager.categoryLabel')}
+                  </FieldLabel>
+                  <Input
+                    id="snippet-category"
+                    value={form.category}
+                    onChange={(event) =>
+                      setForm((previous) => ({ ...previous, category: event.target.value }))
+                    }
+                    placeholder={t('snippetsManager.categoryPlaceholder')}
+                    disabled={isSaving}
+                  />
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor="snippet-description">
+                    {t('snippetsManager.descriptionLabel')}
+                  </FieldLabel>
+                  <Input
+                    id="snippet-description"
+                    value={form.description}
+                    onChange={(event) =>
+                      setForm((previous) => ({ ...previous, description: event.target.value }))
+                    }
+                    placeholder={t('snippetsManager.descriptionPlaceholder')}
+                    disabled={isSaving}
+                  />
+                </Field>
+              </div>
+              {editingId && (
+                <SettingsField label={t('snippetsManager.enabledLabel')} htmlFor="snippet-enabled">
+                  <Switch
+                    id="snippet-enabled"
+                    checked={form.enabled}
+                    disabled={isSaving}
+                    onCheckedChange={(enabled) => setForm((previous) => ({ ...previous, enabled }))}
+                  />
+                </SettingsField>
+              )}
+            </FieldGroup>
+            {error && <SettingsStatus kind="error">{error}</SettingsStatus>}
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={closeModal} disabled={isSaving}>
+                {t('snippetsManager.cancel')}
+              </Button>
+              <Button type="submit" disabled={!canSave || isSaving}>
+                {isSaving ? t('snippetsManager.saving') : t('snippetsManager.save')}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+      <Dialog
+        open={pendingDelete !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingDelete(null);
+        }}
+      >
+        <DialogContent showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle>{t('snippetsManager.delete')}</DialogTitle>
+            <DialogDescription>
+              {t('snippetsManager.confirmDelete', { trigger: pendingDelete?.trigger ?? '' })}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPendingDelete(null)}>
               {t('snippetsManager.cancel')}
             </Button>
-            <Button onClick={handleSave} disabled={!canSave || isSaving}>
-              {isSaving ? t('snippetsManager.saving') : t('snippetsManager.save')}
+            <Button
+              variant="destructive"
+              onClick={() => {
+                if (pendingDelete) handleDelete(pendingDelete);
+              }}
+            >
+              {t('snippetsManager.delete')}
             </Button>
-          </div>
-        </div>
-      </Modal>
-    </section>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }

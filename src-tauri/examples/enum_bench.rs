@@ -67,6 +67,9 @@ fn main() {
         file_extensions: vec![],
         max_depth: 40,
         max_file_size: 0,
+        respect_ignore_files: false,
+        exclude_generated_dirs: false,
+        diagnostics_enabled: false,
     };
 
     println!("[1/2] Directory walk (scan_files) ...");

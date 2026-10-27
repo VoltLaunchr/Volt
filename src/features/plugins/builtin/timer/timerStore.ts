@@ -7,6 +7,29 @@ import { logger } from '../../../../shared/utils/logger';
 import { notifyNative } from '../../../../shared/services/nativeNotificationService';
 
 const STORAGE_KEY = 'volt-timers';
+const COMPLETED_KEY = 'volt-completed-timers';
+const MAX_DURATION_MS = 24 * 60 * 60 * 1000;
+
+function isTimer(value: unknown): value is ActiveTimer {
+  if (!value || typeof value !== 'object') return false;
+  const t = value as ActiveTimer;
+  return (
+    typeof t.id === 'string' &&
+    t.id.length > 0 &&
+    typeof t.label === 'string' &&
+    Number.isFinite(t.duration) &&
+    t.duration >= 1000 &&
+    t.duration <= MAX_DURATION_MS &&
+    Number.isFinite(t.startTime) &&
+    Number.isFinite(t.endTime) &&
+    typeof t.isPaused === 'boolean' &&
+    (!t.isPaused ||
+      (typeof t.remainingWhenPaused === 'number' &&
+        Number.isFinite(t.remainingWhenPaused) &&
+        t.remainingWhenPaused >= 0 &&
+        t.remainingWhenPaused <= t.duration))
+  );
+}
 
 export interface ActiveTimer {
   id: string;
@@ -33,6 +56,7 @@ class TimerStore {
   private timeouts: Map<string, ReturnType<typeof setTimeout>> = new Map();
   private intervals: Map<string, ReturnType<typeof setInterval>> = new Map();
   private listeners: Set<TimerListener> = new Set();
+  private completed: ActiveTimer[] = [];
 
   constructor() {
     this.restoreTimers();
@@ -55,7 +79,38 @@ class TimerStore {
     return this.timers.get(id);
   }
 
+  /** Bounded completion receipts let the focus cycle reconcile after navigation or restart. */
+  getCompletedTimer(id: string): ActiveTimer | undefined {
+    return this.completed.find((timer) => timer.id === id);
+  }
+
+  private rememberCompletion(timer: ActiveTimer): void {
+    this.completed = [...this.completed.filter((t) => t.id !== timer.id), timer].slice(-32);
+    try {
+      localStorage.setItem(COMPLETED_KEY, JSON.stringify(this.completed));
+    } catch {
+      // Timer operation remains available when storage is full or unavailable.
+    }
+  }
+
+  private startTicks(id: string): void {
+    if (this.intervals.has(id)) return;
+    this.intervals.set(
+      id,
+      setInterval(() => {
+        const timer = this.timers.get(id);
+        if (timer && !timer.isPaused) {
+          if (timer.endTime <= Date.now()) this.completeTimer(id);
+          else this.emit({ type: 'tick', timer });
+        }
+      }, 1000)
+    );
+  }
+
   startTimer(duration: number, label: string): string {
+    if (!Number.isFinite(duration) || duration < 1000 || duration > MAX_DURATION_MS) {
+      throw new RangeError('Timer duration must be between 1 second and 24 hours');
+    }
     const id = `timer-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     const now = Date.now();
 
@@ -77,13 +132,7 @@ class TimerStore {
     this.timeouts.set(id, timeout);
 
     // Set interval for tick events (every second)
-    const interval = setInterval(() => {
-      const currentTimer = this.timers.get(id);
-      if (currentTimer && !currentTimer.isPaused) {
-        this.emit({ type: 'tick', timer: currentTimer });
-      }
-    }, 1000);
-    this.intervals.set(id, interval);
+    this.startTicks(id);
 
     this.emit({ type: 'start', timer });
     this.persist();
@@ -98,6 +147,10 @@ class TimerStore {
   pauseTimer(id: string): void {
     const timer = this.timers.get(id);
     if (!timer || timer.isPaused) return;
+    if (timer.endTime <= Date.now()) {
+      this.completeTimer(id);
+      return;
+    }
 
     // Clear timeout
     const timeout = this.timeouts.get(id);
@@ -114,7 +167,11 @@ class TimerStore {
 
   resumeTimer(id: string): void {
     const timer = this.timers.get(id);
-    if (!timer || !timer.isPaused || !timer.remainingWhenPaused) return;
+    if (!timer || !timer.isPaused || timer.remainingWhenPaused === undefined) return;
+    if (timer.remainingWhenPaused <= 0) {
+      this.completeTimer(id);
+      return;
+    }
 
     const now = Date.now();
     timer.isPaused = false;
@@ -126,6 +183,7 @@ class TimerStore {
       this.completeTimer(id);
     }, timer.remainingWhenPaused);
     this.timeouts.set(id, timeout);
+    this.startTicks(id);
 
     timer.remainingWhenPaused = undefined;
     this.emit({ type: 'resume', timer });
@@ -153,6 +211,8 @@ class TimerStore {
   private completeTimer(id: string): void {
     const timer = this.timers.get(id);
     if (!timer) return;
+    const timeout = this.timeouts.get(id);
+    if (timeout) clearTimeout(timeout);
 
     // Clear interval
     const interval = this.intervals.get(id);
@@ -161,6 +221,7 @@ class TimerStore {
     this.timeouts.delete(id);
 
     this.timers.delete(id);
+    this.rememberCompletion(timer);
     this.emit({ type: 'complete', timer });
     this.persist();
 
@@ -174,7 +235,7 @@ class TimerStore {
     const timer = this.timers.get(id);
     if (!timer) return 0;
 
-    if (timer.isPaused && timer.remainingWhenPaused) {
+    if (timer.isPaused && timer.remainingWhenPaused !== undefined) {
       return timer.remainingWhenPaused;
     }
 
@@ -206,16 +267,26 @@ class TimerStore {
 
   private restoreTimers(): void {
     try {
+      const receipts: unknown = JSON.parse(localStorage.getItem(COMPLETED_KEY) ?? '[]');
+      this.completed = Array.isArray(receipts) ? receipts.filter(isTimer).slice(-32) : [];
+    } catch {
+      this.completed = [];
+    }
+    try {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (!raw) return;
 
       const parsed: unknown = JSON.parse(raw);
-      const saved: ActiveTimer[] = Array.isArray(parsed) ? (parsed as ActiveTimer[]) : [];
+      const saved = Array.isArray(parsed) ? parsed.filter(isTimer) : [];
       const now = Date.now();
 
       for (const timer of saved) {
         // Skip timers that already expired while the app was closed
-        if (!timer.isPaused && timer.endTime <= now) continue;
+        if (!timer.isPaused && timer.endTime <= now) {
+          this.rememberCompletion(timer);
+          continue;
+        }
+        if (timer.endTime - now > MAX_DURATION_MS) continue;
 
         this.timers.set(timer.id, timer);
 
@@ -234,11 +305,7 @@ class TimerStore {
         this.timeouts.set(timer.id, timeout);
 
         // Set interval for tick events
-        const interval = setInterval(() => {
-          const t = this.timers.get(timer.id);
-          if (t && !t.isPaused) this.emit({ type: 'tick', timer: t });
-        }, 1000);
-        this.intervals.set(timer.id, interval);
+        this.startTicks(timer.id);
 
         this.emit({ type: 'start', timer });
       }

@@ -1,4 +1,4 @@
-import { beforeEach, describe, it, expect, vi } from 'vitest';
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 import { invoke } from '@tauri-apps/api/core';
 import { WorkerPlugin } from './worker-sandbox';
 
@@ -286,5 +286,203 @@ describe('WorkerPlugin extension runtime IPC parameters', () => {
     await request;
 
     expect(newWorker.postMessage).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Per-request cancellation (audit passe 2, sujet 4).
+ *
+ * Le bug historique: chaque timer `sendRequest` appelait `cleanupPending()`
+ * (rejet global) + `terminateWorker()`. Une requête A expirée tuait donc une
+ * requête B plus récente partageant le même worker. Ces tests pilotent un
+ * faux Worker déterministe (aucun sleep réel, fake timers) et prouvent:
+ *  - un timeout ne règle QUE sa propre requête;
+ *  - les réponses hors-ordre sont routées par id;
+ *  - un worker bloqué n'est recyclé que lorsqu'il n'a plus rien en vol;
+ *  - un timer périmé ne touche jamais un worker de remplacement.
+ */
+
+interface SentMessage {
+  type: string;
+  id: unknown;
+  payload: unknown;
+}
+
+class FakeWorker {
+  static instances: FakeWorker[] = [];
+  onmessage: ((event: { data: unknown }) => void) | null = null;
+  onerror: unknown = null;
+  sent: SentMessage[] = [];
+  terminated = false;
+  constructor() {
+    FakeWorker.instances.push(this);
+  }
+  postMessage(msg: SentMessage): void {
+    this.sent.push(msg);
+  }
+  terminate(): void {
+    this.terminated = true;
+  }
+  receive(data: unknown): void {
+    this.onmessage?.({ data });
+  }
+}
+
+type SandboxInternals = {
+  getOrCreateWorker(): FakeWorker;
+  sendRequest<T>(worker: FakeWorker, type: 'match' | 'execute', payload: unknown): Promise<T>;
+  pending: Map<string, unknown>;
+  worker: FakeWorker | null;
+};
+
+const asInternals = (p: WorkerPlugin): SandboxInternals => p as unknown as SandboxInternals;
+
+describe('WorkerPlugin per-request cancellation', () => {
+  beforeEach(() => {
+    FakeWorker.instances = [];
+    vi.useFakeTimers();
+    vi.stubGlobal('Worker', FakeWorker);
+    URL.createObjectURL = vi.fn(() => 'blob:fake');
+    URL.revokeObjectURL = vi.fn();
+    if (
+      typeof globalThis.crypto === 'undefined' ||
+      typeof (globalThis.crypto as { randomUUID?: unknown }).randomUUID !== 'function'
+    ) {
+      let counter = 0;
+      vi.stubGlobal('crypto', {
+        ...(globalThis.crypto as object | undefined),
+        randomUUID: () => `test-uuid-${++counter}`,
+      });
+    }
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
+
+  const freshPlugin = (): WorkerPlugin =>
+    new WorkerPlugin({
+      id: 'test',
+      name: 'test',
+      description: '',
+      keywords: ['test'],
+      prefix: null,
+      bundledModuleCode: '',
+      entryPoint: 'index.js',
+      grantedPermissions: [],
+    });
+
+  it("a stale timeout settles only its own request and never kills the worker's fresh request", async () => {
+    const p = freshPlugin();
+    const internals = asInternals(p);
+    const worker = internals.getOrCreateWorker();
+
+    const rA = internals.sendRequest<unknown[]>(worker, 'match', { query: 'a' });
+    // B démarre 4 s plus tard: les deux timers expirent à des instants
+    // distincts, ce qui rend le scénario A-puis-B déterministe.
+    await vi.advanceTimersByTimeAsync(4000);
+    const rB = internals.sendRequest<unknown[]>(worker, 'match', { query: 'ab' });
+    const settleA = rA.then(
+      () => 'resolved',
+      (e: unknown) => `rejected:${String(e)}`
+    );
+    const settleB = rB.then(
+      () => 'resolved',
+      (e: unknown) => `rejected:${String(e)}`
+    );
+
+    // Le timer de A (8 s après son envoi) expire alors que B est en vol sur
+    // le même worker. À cet instant t=8000, seul A est échu (B échoit à
+    // t=12000): on n'avance donc que de 4000.
+    await vi.advanceTimersByTimeAsync(4000);
+    await expect(settleA).resolves.toMatch(/^rejected:Error: Worker timeout/);
+    // B survit: toujours pending, worker intact.
+    expect(internals.pending.size).toBe(1);
+    expect(worker.terminated).toBe(false);
+    expect(internals.worker).toBe(worker);
+
+    // B peut encore se résoudre normalement (réponse tardive mais saine).
+    const idB = worker.sent[1].id;
+    worker.receive({ type: 'match-result', id: idB, payload: [{ id: 'r-b' }] });
+    await expect(settleB).resolves.toBe('resolved');
+    expect(internals.pending.size).toBe(0);
+    // Résolution normale: pas de recyclage.
+    expect(worker.terminated).toBe(false);
+  });
+
+  it('routes out-of-order completions to the correct request (A, B, C -> C, A, B)', async () => {
+    const p = freshPlugin();
+    const internals = asInternals(p);
+    const worker = internals.getOrCreateWorker();
+
+    const rA = internals.sendRequest<string>(worker, 'match', { query: 'a' });
+    const rB = internals.sendRequest<string>(worker, 'match', { query: 'b' });
+    const rC = internals.sendRequest<string>(worker, 'match', { query: 'c' });
+    const [idA, idB, idC] = worker.sent.map((m) => m.id);
+
+    worker.receive({ type: 'match-result', id: idC, payload: 'C' });
+    worker.receive({ type: 'match-result', id: idA, payload: 'A' });
+    worker.receive({ type: 'match-result', id: idB, payload: 'B' });
+
+    await expect(rC).resolves.toBe('C');
+    await expect(rA).resolves.toBe('A');
+    await expect(rB).resolves.toBe('B');
+    expect(internals.pending.size).toBe(0);
+    expect(worker.terminated).toBe(false);
+  });
+
+  it('recycles a wedged worker only once nothing is outstanding, then serves fresh requests', async () => {
+    const p = freshPlugin();
+    const internals = asInternals(p);
+    const wedged = internals.getOrCreateWorker();
+
+    // Deux requêtes échelonnées sur un worker qui ne répond jamais.
+    const rA = internals.sendRequest<unknown[]>(wedged, 'match', { query: 'a' });
+    await vi.advanceTimersByTimeAsync(4000);
+    const rB = internals.sendRequest<unknown[]>(wedged, 'match', { query: 'b' });
+    void rA.catch(() => {});
+    void rB.catch(() => {});
+
+    // Premier timeout (t=8000): B est encore en vol -> pas de terminate.
+    await vi.advanceTimersByTimeAsync(4000);
+    await expect(rA).rejects.toThrow(/Worker timeout/);
+    expect(wedged.terminated).toBe(false);
+
+    // Second timeout (t=12000): plus rien en vol sur ce worker -> recyclage.
+    await vi.advanceTimersByTimeAsync(4000);
+    await expect(rB).rejects.toThrow(/Worker timeout/);
+    expect(wedged.terminated).toBe(true);
+    expect(internals.worker).toBeNull();
+
+    // Une requête fraîche recrée un worker sain et se résout.
+    const fresh = internals.getOrCreateWorker();
+    expect(fresh).not.toBe(wedged);
+    const rC = internals.sendRequest<string>(fresh, 'match', { query: 'c' });
+    fresh.receive({ type: 'match-result', id: fresh.sent[0].id, payload: 'C' });
+    await expect(rC).resolves.toBe('C');
+  });
+
+  it('a destroyed worker never leaks a stale timer onto its replacement', async () => {
+    const p = freshPlugin();
+    const internals = asInternals(p);
+    const oldWorker = internals.getOrCreateWorker();
+    const rA = internals.sendRequest<unknown[]>(oldWorker, 'match', { query: 'a' });
+    void rA.catch(() => {});
+
+    // Teardown explicite: pending vidé, timers annulés, worker tué.
+    (p as unknown as { destroy(): void }).destroy();
+    expect(internals.pending.size).toBe(0);
+
+    const newWorker = internals.getOrCreateWorker();
+    expect(newWorker).not.toBe(oldWorker);
+    const rB = internals.sendRequest<string>(newWorker, 'match', { query: 'b' });
+    newWorker.receive({ type: 'match-result', id: newWorker.sent[0].id, payload: 'B' });
+    await expect(rB).resolves.toBe('B');
+
+    // Même loin après l'échéance originelle de A: rien ne bouge.
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(newWorker.terminated).toBe(false);
+    expect(internals.pending.size).toBe(0);
   });
 });

@@ -12,3 +12,8 @@ Keywords=launcher;search;applications;files;commands;
 MimeType=x-scheme-handler/volt;
 StartupNotify=false
 StartupWMClass=volt
+Actions=Toggle;
+
+[Desktop Action Toggle]
+Name=Toggle Volt
+Exec=volt --toggle

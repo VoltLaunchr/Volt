@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { SystemMonitorResult, SystemMonitorResultIcon } from './SystemMonitorResult';
+import { ApplicationIcon } from '../../../shared/components/ui/ApplicationIcon';
 import type { PluginResultAccessory } from '../../../shared/types/common.types';
 import {
-  AppWindow,
   Check,
   CircleAlert,
   Copy,
@@ -88,27 +89,6 @@ const getShellData = (data: unknown): ShellOutputData | null => {
   const inner = (data as Record<string, unknown>).data;
   if (!inner || typeof inner !== 'object') return null;
   return inner as ShellOutputData;
-};
-
-// System Monitor data interface
-interface SystemMonitorData {
-  type: 'cpu' | 'memory' | 'disk';
-  value: number;
-  color?: string;
-}
-
-// Type guard to check if data is SystemMonitorData
-const isSystemMonitorData = (data: unknown): data is SystemMonitorData => {
-  if (typeof data !== 'object' || data === null) {
-    return false;
-  }
-  const obj = data as Record<string, unknown>;
-  return (
-    'type' in obj &&
-    'value' in obj &&
-    typeof obj.value === 'number' &&
-    (obj.type === 'cpu' || obj.type === 'memory' || obj.type === 'disk')
-  );
 };
 
 interface ResultItemProps {
@@ -209,54 +189,10 @@ export function ResultItem({ result, isSelected, globalIndex }: ResultItemProps)
     );
   };
 
-  // Render custom system monitor item with progress bar
-  const renderSystemMonitorIcon = () => (
-    <img
-      src={APP_ICON.systemMonitor}
-      alt=""
-      className="w-8 h-8 object-contain shrink-0 rounded-md"
-    />
+  const renderSystemMonitorIcon = () => <SystemMonitorResultIcon data={result.data} />;
+  const renderSystemMonitorContent = () => (
+    <SystemMonitorResult data={result.data} title={result.title} subtitle={result.subtitle} />
   );
-
-  const renderSystemMonitorContent = () => {
-    if (!isSystemMonitorData(result.data)) {
-      return (
-        <div className="flex flex-col min-w-0 flex-1">
-          <div className="text-sm text-on-dark truncate leading-tight">{result.title}</div>
-          {result.subtitle && (
-            <div className="text-xs text-mute truncate leading-tight mt-0.5">{result.subtitle}</div>
-          )}
-        </div>
-      );
-    }
-    const data = result.data;
-
-    const rawValue = Number(data.value);
-    const value = Number.isFinite(rawValue) ? Math.min(100, Math.max(0, rawValue)) : 0;
-    const color = data.color || '#10b981';
-
-    return (
-      <div className="flex flex-col min-w-0 flex-1">
-        <div className="text-sm text-on-dark truncate leading-tight">{result.title}</div>
-        {result.subtitle && (
-          <div className="text-xs text-mute truncate leading-tight mt-0.5">{result.subtitle}</div>
-        )}
-        <div
-          className="mt-1 h-0.5 w-full overflow-hidden bg-hairline"
-          role="progressbar"
-          aria-valuenow={value}
-          aria-valuemin={0}
-          aria-valuemax={100}
-          aria-label={`${result.title}: ${value}%`}
-        >
-          <div
-            className="h-full transition-[width] duration-300"
-            style={{ width: `${value}%`, backgroundColor: color }}
-          />
-        </div>
-      </div>
-    );
-  };
 
   // Shell command output state — updated via DOM events from the plugin
   const isShellCommand = result.type === SearchResultType.ShellCommand;
@@ -405,7 +341,9 @@ export function ResultItem({ result, isSelected, globalIndex }: ResultItemProps)
                 {t('shell.timedOut')}
               </ShellStatus>
             ) : data.exitCode !== undefined && data.exitCode !== 0 ? (
-              <ShellStatus tone="danger">{t('shell.exitCode', { code: data.exitCode })}</ShellStatus>
+              <ShellStatus tone="danger">
+                {t('shell.exitCode', { code: data.exitCode })}
+              </ShellStatus>
             ) : (
               <ShellStatus tone="success">
                 <Check size={11} />
@@ -495,12 +433,12 @@ export function ResultItem({ result, isSelected, globalIndex }: ResultItemProps)
         <img src={APP_ICON.shell} alt="" className="w-8 h-8 object-contain shrink-0 rounded-md" />
       ) : result.type === SearchResultType.SystemMonitor ? (
         renderSystemMonitorIcon()
-      ) : result.type === SearchResultType.Application && result.icon ? (
-        <img
-          src={result.icon}
-          alt=""
-          className="w-8 h-8 object-contain shrink-0 rounded-md"
-          decoding="async"
+      ) : result.type === SearchResultType.Application ? (
+        <ApplicationIcon
+          path={
+            'path' in result.data && typeof result.data.path === 'string' ? result.data.path : ''
+          }
+          icon={result.icon}
         />
       ) : result.icon && isImageIcon(result.icon) ? (
         <img src={result.icon} alt="" className="w-8 h-8 object-contain shrink-0" />
@@ -542,9 +480,7 @@ export function ResultItem({ result, isSelected, globalIndex }: ResultItemProps)
         <img src={APP_ICON.timer} alt="" className="w-8 h-8 object-contain shrink-0 rounded-md" />
       ) : (
         <div className="flex items-center justify-center w-8 h-8 shrink-0 text-body">
-          {result.type === SearchResultType.Application ? (
-            <AppWindow size={24} strokeWidth={2} className="w-4 h-4 text-mute" />
-          ) : result.type === SearchResultType.Url ? (
+          {result.type === SearchResultType.Url ? (
             <Globe size={24} strokeWidth={2} className="w-4 h-4 text-mute" />
           ) : (
             <FolderOpen size={24} strokeWidth={2} className="w-4 h-4 text-mute" />

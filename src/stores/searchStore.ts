@@ -14,6 +14,8 @@ interface SearchState {
 interface SearchActions {
   setQuery: (query: string) => void;
   setResults: (results: SearchResult[]) => void;
+  /** Update results without resetting keyboard navigation (streaming batches). */
+  setResultsPreserveSelection: (results: SearchResult[]) => void;
   setSelectedIndex: (index: number | ((prev: number) => number)) => void;
   setSearchError: (error: string | null) => void;
   setShowSnowEffect: (show: boolean) => void;
@@ -42,6 +44,11 @@ export const useSearchStore = create<SearchState & SearchActions>()((set) => ({
     set({ searchQuery: query });
   },
   setResults: (results) => set({ results, selectedIndex: 0 }),
+  setResultsPreserveSelection: (results) =>
+    set((state) => ({
+      results,
+      selectedIndex: Math.min(state.selectedIndex, Math.max(results.length - 1, 0)),
+    })),
   setSelectedIndex: (indexOrFn) =>
     set((state) => ({
       selectedIndex: typeof indexOrFn === 'function' ? indexOrFn(state.selectedIndex) : indexOrFn,
@@ -50,7 +57,13 @@ export const useSearchStore = create<SearchState & SearchActions>()((set) => ({
   setShowSnowEffect: (show) => set({ showSnowEffect: show }),
   setIsSearching: (isSearching) => set({ isSearching }),
   clearSearch: () =>
-    set({ searchQuery: '', results: [], selectedIndex: 0, showSnowEffect: false, isSearching: false }),
+    set({
+      searchQuery: '',
+      results: [],
+      selectedIndex: 0,
+      showSnowEffect: false,
+      isSearching: false,
+    }),
   updateResultMetadata: (pluginId, opts) =>
     set((state) => ({
       results: state.results.map((r) => {

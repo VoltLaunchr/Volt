@@ -16,11 +16,11 @@
 
 ## Where things live
 
-- Main UI orchestration: [src/app/App.tsx](../src/app/App.tsx) (197 lines, delegates to extracted hooks in `src/app/hooks/`: `useSearchPipeline`, `useAppLifecycle`, `useGlobalHotkey`, `useResultActions`)
-- Feature slices: `src/features/*` (e.g. search/results/settings/plugins)
-- Shared UI + primitives: `src/shared/components`, shared TS types in `src/shared/types`
+- Main UI orchestration: [src/app/App.tsx](../src/app/App.tsx) (thin shell, delegates to extracted hooks in `src/app/hooks/`: `useSearchPipeline`, `useAppLifecycle`, `useGlobalHotkey`, `useResultActions`)
+- Feature slices: `src/features/*` (e.g. search/results/settings/plugins). Built-ins: `src/features/plugins/builtin/` (16 plugins, 14 toggleable via `MANAGED_PLUGINS` in `manifest.ts`; `ai-chat` + `developer` always-on), registered on startup in `useAppLifecycle.ts` — not directly in `App.tsx`.
+- Shared UI + primitives: `src/shared/components`, shared TS types in `src/shared/types` (plus `generated/` via ts-rs codegen — never hand-edit generated bindings)
 - Global styling + themes: `src/styles/*` (theme is driven via `data-theme` and settings)
-- Tauri commands: [src-tauri/src/commands](../src-tauri/src/commands) (13 modules: apps, files, settings, launcher, autostart, clipboard, extensions, games, steam, system_monitor, plugins, hotkey, logging)
+- Tauri commands: [src-tauri/src/commands](../src-tauri/src/commands) — 8 domains (`ai`, `auth`, `content`, `extensions`, `files`, `launcher`, `shell`, `system`), ~30 files. Legacy flat paths (e.g. `commands::files`) are re-exported via `commands/mod.rs` for compat.
 - Global hotkey: [src-tauri/src/hotkey/mod.rs](../src-tauri/src/hotkey/mod.rs)
 - Window behavior is configured in [src-tauri/tauri.conf.json](../src-tauri/tauri.conf.json) (transparent, always-on-top, no decorations).
 
@@ -31,23 +31,25 @@
 
 ## Adding a new Tauri command (the project’s wiring)
 
-1. Add `#[tauri::command]` function under [src-tauri/src/commands](../src-tauri/src/commands).
-2. Export it from [src-tauri/src/commands/mod.rs](../src-tauri/src/commands/mod.rs) (or re-export its module).
+1. Add `#[tauri::command]` function under the matching domain in [src-tauri/src/commands](../src-tauri/src/commands) (`ai` · `auth` · `content` · `extensions` · `files` · `launcher` · `shell` · `system`).
+2. Export it from [src-tauri/src/commands/mod.rs](../src-tauri/src/commands/mod.rs) (or re-export its module — legacy flat paths still work via the compat facade).
 3. Register it in `tauri::generate_handler![...]` in [src-tauri/src/lib.rs](../src-tauri/src/lib.rs).
 4. Call it from the frontend with `invoke('your_command_name', { ...params })`.
+5. If the shape crosses IPC, regenerate the ts-rs bindings into `src/shared/types/generated/` (a Vitest type test fails CI on drift).
 
 ## Search + results behavior (don’t break these)
 
 - Search is debounced (150ms) and prevents stale responses via `latestSearchId` in [src/app/hooks/useSearchPipeline.ts](../src/app/hooks/useSearchPipeline.ts).
-- App + file + plugin search run in parallel and are merged/sorted by `score`.
+- App + file + plugin search run in parallel and are merged by the shared `compareResults` comparator (`src/app/searchRanking.ts`): band, tier, quality, frecency, source, declared score, then title.
 - File indexing is optional: frontend treats `search_files` failures as empty results.
 - File search uses nucleo by default. With the `tantivy-search` Cargo feature it uses the persistent Tantivy index, with SQLite as source of truth and nucleo as fallback.
 - The frontend watcher lifecycle is serialized by `FileWatcherLifecycle`: stop before rebuild/config change, start only after indexing completes, stop on unmount.
 
 ## Project conventions (senior guardrails)
 
-- Plugins: registry is in [src/features/plugins/core](../src/features/plugins/core); built-ins live in [src/features/plugins/builtin](../src/features/plugins/builtin) and are registered on startup in [src/app/App.tsx](../src/app/App.tsx).
+- Plugins: registry is in [src/features/plugins/core](../src/features/plugins/core) (`registry.ts`, 500 ms timeout; `activation.ts` is the single source of truth for prefixes/keywords — do not duplicate keyword maps in the search pipeline); built-ins live in [src/features/plugins/builtin](../src/features/plugins/builtin) and are registered on startup in `useAppLifecycle.ts`. Toggleable set is `MANAGED_PLUGINS` in `manifest.ts` (with `normalizeEnabledPlugins()` migration).
 - Plugin→UI communication can use `volt:*` DOM events (e.g. `volt:open-settings` listener in [src/app/App.tsx](../src/app/App.tsx)); prefer this pattern over ad-hoc globals.
+- Frecency: `frecency_date = max(now, frecency_date) + 1 day` on launch. Its raw value breaks ties within a match tier for apps and commands; do not add cross-tier bonuses or reintroduce `calculate_frecency()` on the hot path.
 - Theme: applied via `applyTheme()` from `src/features/settings` (sets `data-theme`); keep colors in CSS variables/themes under `src/styles/*`.
 
 ## Hotkey behavior
@@ -58,7 +60,7 @@
 ## Extensions system
 
 - External extensions are loaded via `src/features/extensions/` on the frontend.
-- Backend extension commands live in `src-tauri/src/commands/extensions.rs`.
+- Backend extension commands live in `src-tauri/src/commands/extensions/` (`management.rs`, `plugins.rs`).
 
 ## Logging
 

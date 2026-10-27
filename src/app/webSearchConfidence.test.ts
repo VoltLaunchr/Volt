@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { SearchResult, SearchResultType, type FileCategory } from '../shared/types/common.types';
+import {
+  SearchResult,
+  SearchResultType,
+  type FileCategory,
+  type SearchTier,
+} from '../shared/types/common.types';
 import { hasStrongLocalMatch, shouldShowWebFallbacks } from './webSearchConfidence';
+
+function appRank(tier: SearchTier): SearchResult['rank'] {
+  return { band: 'ranked', tier, quality: 60, frecency: 0, source: 'app', declared: 0 };
+}
 
 function result(overrides: Partial<SearchResult>): SearchResult {
   return {
@@ -15,13 +24,13 @@ function result(overrides: Partial<SearchResult>): SearchResult {
 
 describe('web fallback confidence', () => {
   it('keeps fallbacks visible for a secondary application match', () => {
-    const results = [result({ score: 699 })];
+    const results = [result({ rank: appRank('secondary') })];
     expect(hasStrongLocalMatch(results, 'unrelated query')).toBe(false);
     expect(shouldShowWebFallbacks(results, 'unrelated query')).toBe(true);
   });
 
   it('suppresses fallbacks for an application name-tier match', () => {
-    const results = [result({ score: 700 })];
+    const results = [result({ rank: appRank('fuzzy') })];
     expect(hasStrongLocalMatch(results, 'result')).toBe(true);
     expect(shouldShowWebFallbacks(results, 'result')).toBe(false);
   });

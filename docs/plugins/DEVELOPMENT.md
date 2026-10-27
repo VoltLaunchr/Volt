@@ -198,7 +198,7 @@ import { MyPlugin } from './my-plugin';
 export { MyPlugin } from './my-plugin';
 ```
 
-Dans `src/app/App.tsx`, enregistrez-le au démarrage :
+Dans `src/app/hooks/useAppLifecycle.ts`, enregistrez-le au démarrage (registration block) :
 
 ```typescript
 import { MyPlugin } from '../features/plugins/builtin';

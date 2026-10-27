@@ -3,4 +3,9 @@
 /**
  * Hotkey settings
  */
-export type HotkeySettings = { toggleWindow: string, openSettings: string, };
+export type HotkeySettings = { toggleWindow: string, 
+/**
+ * Optional system-wide shortcut that opens the Settings window. Empty means "not
+ * registered" (the in-launcher `Ctrl+,` always works regardless).
+ */
+openSettings: string, };

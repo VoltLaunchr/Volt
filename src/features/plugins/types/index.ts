@@ -117,7 +117,7 @@ export interface PluginResult {
   layout?: 'grid';
   /**
    * How the originating query matched the plugin's activation manifest.
-   * Annotated by the registry (`prefix`/`keyword` → scoring boost). Plugins
+   * Annotated by the registry (`prefix`/`keyword` → `activation` tier). Plugins
    * normally do not set this themselves.
    */
   matchKind?: ActivationKind;

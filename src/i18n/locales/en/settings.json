@@ -20,7 +20,15 @@
     "emoji": "Emoji & Symbols",
     "ai": "AI",
     "notes": "Notes",
-    "snippets": "Snippets"
+    "snippets": "Snippets",
+    "launcher": "Launcher",
+    "calculator": "Calculator",
+    "games": "Games",
+    "keyboard": "Keyboard",
+    "system-monitor": "System Monitor",
+    "timer": "Timer",
+    "window-management": "Window Management",
+    "quicklinks": "Quicklinks"
   },
   "general": {
     "title": "General",
@@ -41,7 +49,12 @@
     "voltHotkey": "Volt Hotkey",
     "hotkeyDesc": "Press a key combination to set your global shortcut",
     "restartOnboarding": "Restart Onboarding",
-    "restartOnboardingDesc": "Re-run the initial setup wizard"
+    "restartOnboardingDesc": "Re-run the initial setup wizard",
+    "personalizationDesc": "Your language and appearance preferences.",
+    "followSystemAppearanceDesc": "Match the light or dark appearance of your system.",
+    "startupDesc": "Choose how Volt fits into your everyday workflow.",
+    "closeOnLaunchDesc": "Hide the launcher after opening a result.",
+    "searchPreferencesDesc": "Tune search results and your launcher shortcut."
   },
   "webSearch": {
     "title": "Web Search",
@@ -55,13 +68,18 @@
     "refreshBrowsers": "Detect installed browsers again",
     "rememberHistory": "Remember web search history",
     "rememberHistoryDesc": "Opt in to local suggestions from your previous explicit web searches.",
-    "securityNotice": "Volt validates the selected browser and only opens HTTP or HTTPS URLs. If that browser is removed, Volt automatically returns to the system browser."
+    "securityNotice": "Volt validates the selected browser and only opens HTTP or HTTPS URLs. If that browser is removed, Volt automatically returns to the system browser.",
+    "historyTitle": "History",
+    "clearHistory": "Clear web search history",
+    "clearHistoryDesc": "Delete the web queries remembered on this device.",
+    "clear": "Clear",
+    "cleared": "History cleared.",
+    "confirmClear": "Delete your remembered web searches?"
   },
   "shortcuts": {
     "title": "Shortcuts",
     "searchPlaceholder": "Search by name or alias",
     "allCategories": "All categories",
-    "syncApps": "Sync Apps",
     "tableHeaders": {
       "name": "Name",
       "alias": "Alias",
@@ -70,12 +88,12 @@
     "addAlias": "Add Alias",
     "hiddenCount_one": "{{count}} more app hidden. Use search to narrow the list.",
     "hiddenCount_other": "{{count}} more apps hidden. Use search to narrow the list.",
-    "noShortcuts": "No shortcuts available. Click \"Sync Apps\" to load your applications.",
+    "noShortcuts": "No applications found yet.",
     "noMatch": "No shortcuts match your search."
   },
   "advanced": {
     "title": "Advanced",
-    "showVoltOn": "Show Volt on",
+    "showVoltOn": "Position on screen",
     "positions": {
       "center": "Center of screen",
       "topCenter": "Top center",
@@ -87,7 +105,7 @@
       "leftCenter": "Left center",
       "rightCenter": "Right center"
     },
-    "showOnScreen": "Show Volt on",
+    "showOnScreen": "Display monitor",
     "showOnScreenDesc": "Choose which screen Volt appears on when toggled",
     "screenOptions": {
       "cursor": "Screen with cursor",
@@ -130,6 +148,7 @@
     "updateAvailable": "Update available",
     "downloadAndInstall": "Download & Install",
     "packageManagerManaged": "Updates are managed by your operating-system package manager.",
+    "microsoftStoreManaged": "Updates are delivered by the Microsoft Store.",
     "installOnNextRestart": "Install on Next Restart",
     "deferring": "Downloading for next restart...",
     "deferralReady": "Update ready — will install on next restart",
@@ -149,11 +168,40 @@
     "exportSuccess": "Settings exported successfully",
     "exportError": "Failed to export settings",
     "importSuccess": "Settings imported successfully",
-    "importError": "Failed to import settings"
+    "importError": "Failed to import settings",
+    "websiteDesc": "News, documentation and downloads.",
+    "githubDesc": "Source code and releases.",
+    "reportIssueDesc": "Tell us about a bug or suggest an improvement.",
+    "releaseNotesDesc": "What changed in each version.",
+    "open": "Open",
+    "autoCheck": "Check for updates automatically",
+    "autoCheckDesc": "Look for a new version in the background and notify you. Nothing is installed without your confirmation.",
+    "channelTitle": "Update channel",
+    "channelDesc": "Beta builds arrive earlier and may be less stable.",
+    "checkDesc": "Look for a new version now and install it.",
+    "diagnosticsTitle": "Diagnostics",
+    "openLogsDesc": "Show the folder that holds the Volt log files.",
+    "copyDiagnosticsDesc": "Copy version, system and log location details to share when you ask for support.",
+    "backupTitle": "Backup",
+    "backupDesc": "Move your settings to another computer or keep a copy.",
+    "exportDesc": "Save your settings to a JSON file.",
+    "importDesc": "Replace your settings with the content of a JSON file.",
+    "version": "Version {{version}}",
+    "resourcesTitle": "Resources"
   },
   "fileSearch": {
     "title": "File Search",
     "indexOnStartup": "Index on Startup",
+    "respectIgnoreFiles": "Respect ignore files",
+    "respectIgnoreFilesDesc": "Apply .gitignore, .ignore and .voltignore rules from folders and their parents.",
+    "excludeGeneratedDirs": "Exclude generated folders",
+    "excludeGeneratedDirsDesc": "Skip known dependency and build caches. Manual exclusions still take priority.",
+    "scanMedian": "Median scan duration",
+    "scanRecent": "Last scan duration",
+    "copyReport": "Copy local report",
+    "diagnosticsEnabled": "Measure scans locally",
+    "diagnosticsEnabledDesc": "Keep counts and durations for the last 50 scans for the local report. No paths recorded.",
+    "reportDesc": "The last 50 scans: durations and counters, without file paths. Nothing is sent automatically.",
     "indexOnStartupDesc": "Automatically index files when Volt starts",
     "staleThreshold": "Offline catch-up",
     "staleThresholdDesc": "Re-scan on launch when the index is older than this (covers changes made while Volt was closed)",
@@ -177,6 +225,11 @@
     "indexStatus": "Index Status",
     "indexStatusDesc": "Persistent SQLite index statistics and maintenance",
     "loadingStats": "Loading stats…",
+    "statsLoadFailed": "Index statistics unavailable",
+    "statsLoadFailedDesc": "The index status could not be loaded. Try again to check its state.",
+    "statsRefreshFailedDesc": "The latest index status could not be loaded. Previously loaded values are shown below and may be out of date.",
+    "removeFolder": "Remove {{path}} from indexed folders",
+    "removeExcludedPath": "Remove {{path}} from excluded paths",
     "stats": {
       "indexedFiles": "Indexed files",
       "dbSize": "DB size",
@@ -190,7 +243,9 @@
       "rebuild": "Rebuild Index",
       "rebuildDesc": "Clears the database and re-scans all configured folders from scratch",
       "rebuilding": "Rebuilding…"
-    }
+    },
+    "deepSearch": "Deep search",
+    "deepSearchDesc": "Search up to 10 levels inside indexed folders, instead of 3 by default."
   },
   "plugins": {
     "title": "Plugins",
@@ -210,6 +265,42 @@
       "snippets": "Snippets",
       "shell": "Shell Commands",
       "developerTools": "Developer Tools"
+    },
+    "builtinDesc": "Turn the tools of the launcher on or off. A disabled tool no longer answers in the search bar.",
+    "enableDesc": "Turn this tool on or off in the launcher. Changes apply once saved.",
+    "configure": "Settings",
+    "configureLabel": "Open the settings of {{name}}",
+    "enable": {
+      "calculator": "Enable Calculator",
+      "websearch": "Enable Web Search",
+      "systemcommands": "Enable System Commands",
+      "timer": "Enable Timer",
+      "system_monitor": "Enable System Monitor",
+      "games": "Enable Games",
+      "clipboard": "Enable Clipboard History",
+      "emoji-picker": "Enable Emoji Picker",
+      "notes": "Enable Notes",
+      "snippets": "Enable Snippets",
+      "shellcommand": "Enable Shell Commands",
+      "quicklinks": "Enable Quicklinks",
+      "window-management": "Enable Window Management",
+      "developer-tools": "Enable Developer Tools"
+    },
+    "descriptions": {
+      "calculator": "Evaluate math, unit conversions, dates and time zones as you type.",
+      "websearch": "Search the web with ? or an engine keyword, with optional live suggestions.",
+      "systemcommands": "Open Settings, reload or quit Volt from the launcher.",
+      "timer": "Countdown timers and a Pomodoro with a task list.",
+      "system_monitor": "Live CPU, memory, disk, network and process metrics.",
+      "games": "Find and launch installed games from every detected store.",
+      "clipboard": "Browse and reuse your clipboard history.",
+      "emoji-picker": "Pick emoji and symbols with : or the emoji keyword.",
+      "notes": "Create, search and open Markdown notes stored on this device.",
+      "snippets": "Expand ;triggers into reusable text from the search bar.",
+      "shellcommand": "Run shell commands from the launcher with the > prefix.",
+      "quicklinks": "Open saved URLs, folders and commands with a short keyword (ql).",
+      "window-management": "Snap and arrange windows with keyboard commands.",
+      "developer-tools": "Quick developer utilities such as UUIDs and hashes."
     }
   },
   "fallbacks": {
@@ -269,7 +360,9 @@
         "invalid": "The saved API key could not be validated.",
         "deleted": "API key deleted."
       }
-    }
+    },
+    "listTitle": "Fallback actions",
+    "listDesc": "Shown in this order when a search finds nothing. Turn each one on or off, reorder, edit or delete it."
   },
   "clipboard": {
     "title": "Clipboard History",
@@ -279,17 +372,30 @@
     "monitoringDesc": "Automatically track clipboard changes",
     "clearHistory": "Clear History",
     "clearHistoryDesc": "Remove all clipboard history items",
-    "clear": "Clear"
+    "clear": "Clear",
+    "retention": "Keep history for",
+    "retentionDesc": "How long clipboard entries are retained.",
+    "disabledApps": "Excluded applications",
+    "disabledAppsDesc": "Clipboard changes from these apps are not recorded.",
+    "addApp": "Add application",
+    "appExecutable": "Executable name to exclude",
+    "appExecutableHint": "Enter the application executable name without .exe (for example, 1password). A pasted .exe suffix is removed automatically.",
+    "noExcludedApps": "No applications excluded.",
+    "removeApp": "Remove {{app}} from exclusions",
+    "retentionOptions": {
+      "week": "1 week",
+      "twoWeeks": "2 weeks",
+      "month": "1 month",
+      "threeMonths": "3 months",
+      "forever": "Forever"
+    },
+    "pluginNote": "Turns the cb search command on or off. Capture and privacy settings below stay available so you can still control what is recorded."
   },
   "applications": {
     "title": "Applications",
-    "infoText": "Volt automatically scans for installed applications on your system. Applications are refreshed each time Volt starts.",
-    "scanApps": "Scan Applications",
-    "scanAppsDesc": "Manually trigger a scan for installed applications",
-    "scanNow": "Scan Now",
-    "scanning": "Scanning...",
-    "scanResult": "{{count}} applications found",
-    "scanError": "Error: {{error}}"
+    "updating": "Updating…",
+    "aliasesHotkeys": "Aliases & hotkeys",
+    "aliasesHotkeysDesc": "Give an installed app a short alias or a global hotkey, or turn it off."
   },
   "shell": {
     "title": "Shell Commands",
@@ -325,7 +431,8 @@
     "excludedAppsDesc": "Global expansion never fires while one of these apps is focused",
     "excludedAppsPrompt": "Enter executable name to exclude (e.g. keepass):",
     "addApp": "Add",
-    "noExcludedApps": "No applications excluded"
+    "noExcludedApps": "No applications excluded",
+    "globalDesc": "Expand the same triggers in any application, not only in Volt. Opt-in."
   },
   "snippetsManager": {
     "title": "Your Snippets",
@@ -355,7 +462,8 @@
     "enabledLabel": "Enabled",
     "cancel": "Cancel",
     "save": "Save",
-    "saving": "Saving…"
+    "saving": "Saving…",
+    "newDesc": "Create a text shortcut with a trigger, its content and optional variables."
   },
   "integrations": {
     "title": "Integrations",
@@ -385,16 +493,26 @@
     "security": {
       "title": "Your tokens are safe",
       "encrypted": "Encrypted using platform-native secure storage",
-      "neverTransmitted": "Never transmitted or logged",
+      "neverTransmitted": "Used for the services you connect",
       "storedLocally": "Stored locally on your machine",
       "deletable": "You can delete anytime"
     },
     "github": {
-      "description": "Search repositories, issues, PRs, and gists from Volt"
+      "description": "Search repositories, issues, PRs, and gists from Volt",
+      "name": "GitHub"
     },
     "notion": {
-      "description": "Access and search your Notion workspace from Volt"
-    }
+      "description": "Access and search your Notion workspace from Volt",
+      "name": "Notion"
+    },
+    "statusError": "Connection status unavailable",
+    "statusErrorDesc": "Stored credentials could not be checked. Try again to view your connections.",
+    "removeCredential": "Remove {{service}} credentials",
+    "showToken": "Show token",
+    "hideToken": "Hide token",
+    "tokenDesc": "Paste a token to connect without OAuth. It is stored in the operating system keyring.",
+    "tokenActions": "Verify and store",
+    "tokenActionsDesc": "Test the saved token, replace it or remove it."
   },
   "saveBar": {
     "unsavedChanges": "You have unsaved changes",
@@ -413,7 +531,17 @@
     "loading": "Loading account...",
     "signIn": "Sign in",
     "signOut": "Sign out",
-    "signInDescription": "Sign in to sync settings and unlock premium features."
+    "signInDescription": "Sign in to sync settings and unlock premium features.",
+    "tiers": {
+      "free": "Free",
+      "premium": "Premium",
+      "developer": "Developer",
+      "admin": "Administrator"
+    },
+    "statusTitle": "Account",
+    "statusDesc": "The account Volt is signed in with and its plan.",
+    "sessionTitle": "Session",
+    "sessionDesc": "Sign in to sync settings and unlock premium features, or sign out of this device."
   },
   "errors": {
     "loadFailed": "Failed to load settings",
@@ -422,7 +550,7 @@
   "notes": {
     "title": "Notes",
     "headline": "Markdown notes with full-text search",
-    "tagline": "Capture, search, and organize notes. Stored locally in SQLite with FTS5 search.",
+    "tagline": "Capture, search and organize notes stored on this device.",
     "active": "{{count}} active",
     "trashed": "{{count}} in trash",
     "openWindow": "Open Notes",
@@ -442,7 +570,10 @@
       "createDesc": "Start a fresh note in the editor",
       "search": "Search Notes",
       "searchDesc": "Full-text search via the launcher (n <query>)"
-    }
+    },
+    "loadFailed": "Your notes could not be loaded. Try again.",
+    "emptyTrashDesc": "Permanently remove every deleted note.",
+    "counts": "{{active}} active · {{trashed}} in trash"
   },
   "ai": {
     "title": "AI",
@@ -482,7 +613,10 @@
       "save": "Save",
       "saved": "Saved",
       "remove": "Remove",
-      "configured": "Configured"
+      "configured": "Configured",
+      "modelDesc": "Name of the model your local server should use.",
+      "saveTitle": "Connection",
+      "saveDesc": "Save the endpoint and model, or remove the local connection."
     },
     "profile": {
       "title": "Profile",
@@ -493,7 +627,9 @@
       "lastUpdated": "Last updated {{date}}",
       "notSaved": "Not saved yet",
       "save": "Save",
-      "saving": "Saving…"
+      "saving": "Saving…",
+      "contextTitle": "About you",
+      "contextDesc": "Free text sent as context with every AI Chat conversation."
     },
     "quickActions": {
       "title": "Quick Actions",
@@ -521,9 +657,23 @@
         "placeholdersIntro": "Available placeholders (resolved at trigger time):",
         "cancel": "Cancel",
         "save": "Save",
-        "saving": "Saving…"
-      }
-    }
+        "saving": "Saving…",
+        "icon": "Icon"
+      },
+      "addDesc": "Create a prompt you can run on your clipboard with a global hotkey."
+    },
+    "statusErrorTitle": "Provider status unavailable",
+    "statusErrorDesc": "Your provider configuration could not be loaded. Existing keys are unchanged.",
+    "statusUnavailable": "Try again to view configured providers.",
+    "deleteError": "The API key could not be removed. Try again.",
+    "deleteProvider": "Remove {{provider}} API key",
+    "providerNames": {
+      "openai": "OpenAI",
+      "anthropic": "Anthropic",
+      "groq": "Groq",
+      "huggingface": "Hugging Face"
+    },
+    "providerDesc": "Global API key, stored in the operating system keyring."
   },
   "sync": {
     "title": "Cloud Sync",
@@ -552,6 +702,234 @@
       "premiumRequired": "Upgrade to Premium to use cloud sync.",
       "notLoggedIn": "You need to log in first.",
       "failed": "Sync failed"
+    },
+    "statusErrorTitle": "Sync status unavailable",
+    "statusErrorDesc": "Your account status could not be checked. Try again before syncing.",
+    "signInTitle": "Sign in to Volt"
+  },
+  "navigation": {
+    "label": "Settings navigation",
+    "searchLabel": "Search settings",
+    "searchPlaceholder": "Search settings…",
+    "clearSearch": "Clear search",
+    "noResults": "No matching settings.",
+    "workspace": "Your Volt workspace",
+    "minimize": "Minimize window",
+    "close": "Close settings",
+    "dismissError": "Dismiss error",
+    "cancel": "Cancel",
+    "retry": "Try again",
+    "groups": {
+      "preferences": "Preferences",
+      "search": "Search",
+      "tools": "Tools",
+      "connections": "Connections",
+      "volt": "Volt"
+    },
+    "descriptions": {
+      "general": "Make Volt feel at home. Set your language, launch behavior and everyday search preferences.",
+      "advanced": "Fine-tune the launcher window, appearance and visual feedback.",
+      "shortcuts": "Give your applications memorable aliases and their own keyboard shortcuts.",
+      "applications": "Set an alias or a hotkey for your installed applications, or turn them off.",
+      "file-search": "Control what gets indexed, keep private folders out, and inspect index health.",
+      "web-search": "Choose your search engine, browser and local search history.",
+      "plugins": "Choose your built-in tools and configure fallback actions.",
+      "clipboard": "Keep useful copies within reach and control what Volt remembers.",
+      "ai": "Connect AI providers and configure local models, your profile and quick actions.",
+      "notes": "Capture ideas, open your notes and manage deleted items.",
+      "snippets": "Manage reusable text and control automatic expansion.",
+      "emoji": "Personalize the emoji picker and its keyboard behavior.",
+      "shell": "Configure how shell commands run from the launcher.",
+      "account": "Manage your Volt account and subscription.",
+      "sync": "Sync your snippets and quicklinks between devices with a signed-in premium account.",
+      "integrations": "Connect external services and manage their credentials.",
+      "extensions": "Discover and manage extensions that add new capabilities to Volt.",
+      "about": "Version information, updates and resources for Volt.",
+      "launcher": "Choose the actions offered when nothing matches, and clear what Volt has learned from your usage.",
+      "calculator": "Math, unit and date results in the search bar, and the history they leave behind.",
+      "games": "See which game stores Volt detected and refresh your game library.",
+      "keyboard": "Choose what Escape does, how you move through results and an optional global shortcut for Settings.",
+      "system-monitor": "Set how often live CPU, memory, disk and network metrics refresh.",
+      "timer": "Set the length of your Pomodoro work sessions and breaks.",
+      "window-management": "Leave a margin around and between the windows you snap.",
+      "quicklinks": "Choose which browser opens your web quicklinks."
+    },
+    "results": {
+      "label": "Search results",
+      "page": "Page"
+    },
+    "back": "Back",
+    "forward": "Forward",
+    "badges": {
+      "pro": "Pro",
+      "update": "Update"
+    },
+    "account": {
+      "signedOut": "Not signed in",
+      "label": "Account",
+      "open": "Open account settings"
     }
+  },
+  "layout": {
+    "personalization": "Make it yours",
+    "startup": "Startup & behavior",
+    "search": "Search & keyboard",
+    "setup": "Setup & previews",
+    "window": "Launcher window",
+    "appearance": "Appearance",
+    "indexing": "Indexing behavior",
+    "clipboardCapture": "Capture & privacy",
+    "clipboardData": "Stored data",
+    "emojiPreferences": "Selection & display",
+    "shellPreferences": "Command execution",
+    "scope": "Scope",
+    "pluginState": "Availability",
+    "emojiData": "Recent emoji"
+  },
+  "emoji": {
+    "primaryAction": "Selection action",
+    "primaryActionDesc": "Choose what happens when you select an emoji.",
+    "copy": "Copy to clipboard",
+    "paste": "Paste to active app",
+    "columns": "Grid columns",
+    "columnsDesc": "Number of grid columns: {{count}}",
+    "skinTone": "Skin tone",
+    "skinToneDesc": "Default tone for emoji that support it.",
+    "tones": {
+      "none": "Default",
+      "light": "Light",
+      "medium-light": "Medium light",
+      "medium": "Medium",
+      "medium-dark": "Medium dark",
+      "dark": "Dark"
+    },
+    "columnsHint": "Number of emoji per row in the picker.",
+    "clearRecent": "Clear recent emoji",
+    "clearRecentDesc": "Forget the emoji you used most. The picker starts over with no suggestions.",
+    "clear": "Clear",
+    "cleared": "Recent emoji cleared."
+  },
+  "availability": {
+    "only": "{{platforms}} only"
+  },
+  "launcher": {
+    "historyTitle": "Learning & history",
+    "historyDesc": "Volt learns from what you launch to rank results. You can start over at any time.",
+    "clearLaunches": "Clear launch history",
+    "clearLaunchesDesc": "Forget the apps and commands you launched. Suggestions and ranking start from scratch.",
+    "clearFiles": "Clear recent files",
+    "clearFilesDesc": "Forget the files you opened from Volt. The file index itself is not changed.",
+    "clear": "Clear",
+    "cleared": "History cleared.",
+    "clearFailed": "The history could not be cleared.",
+    "confirmLaunches": "Forget everything Volt learned from your launches? This cannot be undone.",
+    "confirmFiles": "Forget the list of recently opened files? This cannot be undone.",
+    "count_one": "{{count}} entry remembered",
+    "count_other": "{{count}} entries remembered",
+    "rootTitle": "Root search",
+    "rootDesc": "What the launcher shows and remembers each time you open it.",
+    "popToRoot": "Return to the root view",
+    "popToRootDesc": "Reset the search and the open view when you reopen Volt after this long. \"Never\" keeps exactly where you left off.",
+    "popToRootOptions": {
+      "immediate": "Immediately",
+      "30s": "After 30 seconds",
+      "1m": "After 1 minute",
+      "5m": "After 5 minutes",
+      "never": "Never"
+    },
+    "includeFiles": "Include files",
+    "includeFilesDesc": "Search indexed files from the main search bar. Queries with ext:, in:, size: or modified: still search files.",
+    "includeGames": "Include games",
+    "includeGamesDesc": "Show installed games among the root results. Typing game, games or play still finds them."
+  },
+  "calculator": {
+    "historyTitle": "History",
+    "infoText": "Type an expression, a unit conversion or a date question straight in Volt. Recent results are kept on this device.",
+    "clearHistory": "Clear calculation history",
+    "clearHistoryDesc": "Delete the recent results stored on this device (the last 50).",
+    "clear": "Clear",
+    "cleared": "History cleared."
+  },
+  "games": {
+    "libraryTitle": "Game library",
+    "libraryDesc": "Volt scans the game stores installed on this computer.",
+    "platforms": "Detected stores",
+    "platformsDesc": "Game launchers found on this computer and how many games each one holds.",
+    "rescan": "Rescan games",
+    "rescanDesc": "Look for newly installed or removed games now.",
+    "rescanAction": "Rescan",
+    "rescanning": "Scanning…",
+    "rescanned_one": "{{count}} game found.",
+    "rescanned_other": "{{count}} games found.",
+    "detected": "Detected",
+    "notDetected": "Not found",
+    "gameCount_one": "{{count}} game",
+    "gameCount_other": "{{count}} games",
+    "noPlatforms": "No game store detected on this computer.",
+    "loading": "Looking for game stores…",
+    "loadFailed": "The game stores could not be listed."
+  },
+  "extensions": {
+    "storeTitle": "Extension store",
+    "storeDesc": "Browse community extensions and manage the ones you installed."
+  },
+  "keyboard": {
+    "escapeTitle": "Escape key",
+    "escapeBehavior": "When pressing Escape",
+    "escapeBehaviorDesc": "What Escape does in the search bar.",
+    "escapeOptions": {
+      "close": "Clear the search and close",
+      "clearThenClose": "Clear first, close on the next press",
+      "backToRoot": "Clear and stay open"
+    },
+    "escapeSecondary": "Escape closes secondary windows",
+    "escapeSecondaryDesc": "Close the Settings and Notes windows with Escape.",
+    "navigationTitle": "Moving through results",
+    "listNavigation": "Navigation keys",
+    "listNavigationDesc": "Extra keys to move through lists, on top of the arrow keys. In the Vim preset the actions menu moves to Ctrl+Shift+K.",
+    "listNavigationOptions": {
+      "arrows": "Arrow keys only",
+      "emacs": "Arrows + Emacs (Ctrl+N / Ctrl+P)",
+      "vim": "Arrows + Vim (Ctrl+J / Ctrl+K)"
+    },
+    "globalTitle": "Global shortcut",
+    "openSettingsHotkey": "Open Settings from anywhere",
+    "openSettingsHotkeyDesc": "Optional system-wide shortcut. Ctrl+, always works inside the launcher.",
+    "clearHotkey": "Clear",
+    "notSet": "Not set"
+  },
+  "systemMonitor": {
+    "refreshTitle": "Refresh",
+    "refreshInterval": "Refresh interval",
+    "refreshIntervalDesc": "How often metrics are sampled and shown. Shorter intervals use slightly more CPU.",
+    "options": {
+      "1000": "Every second",
+      "2000": "Every 2 seconds",
+      "5000": "Every 5 seconds (default)",
+      "10000": "Every 10 seconds"
+    }
+  },
+  "timer": {
+    "durationsTitle": "Durations",
+    "durationsDesc": "Used by the Pomodoro presets and the Focus Timer view.",
+    "work": "Work session",
+    "workDesc": "Length of a focus session.",
+    "shortBreak": "Short break",
+    "shortBreakDesc": "Rest between two work sessions.",
+    "longBreak": "Long break",
+    "longBreakDesc": "Longer rest after a full cycle.",
+    "minutes": "min"
+  },
+  "windowManagement": {
+    "layoutTitle": "Layout",
+    "gap": "Gap between windows",
+    "gapDesc": "Pixels kept around the screen edges and between two snapped windows. 0 keeps windows flush.",
+    "pixels": "px"
+  },
+  "quicklinks": {
+    "browserTitle": "Opening links",
+    "usePreferredBrowser": "Use the web search browser",
+    "usePreferredBrowserDesc": "Open http and https quicklinks in the browser chosen in Web Search instead of the system default.",
+    "chooseBrowser": "No browser is chosen yet: pick one in Web Search settings."
   }
 }

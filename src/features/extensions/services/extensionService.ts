@@ -20,7 +20,7 @@ class ExtensionService {
   /**
    * Fetch the extension registry (primary: voltlauncher.com, fallback: GitHub)
    */
-  async fetchRegistry(): Promise<ExtensionRegistry> {
+  async fetchRegistry({ throwOnFailure = false }: { throwOnFailure?: boolean } = {}): Promise<ExtensionRegistry> {
     for (const url of [REGISTRY_URL, REGISTRY_FALLBACK_URL]) {
       try {
         const registry = await invoke<ExtensionRegistry>('fetch_extension_registry', { url });
@@ -30,6 +30,7 @@ class ExtensionService {
       }
     }
     logger.error('All registry sources failed');
+    if (throwOnFailure) throw new Error('Extension registry unavailable');
     return { version: '0.0.0', lastUpdated: new Date().toISOString(), extensions: [] };
   }
 

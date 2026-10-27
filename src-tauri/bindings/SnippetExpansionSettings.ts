@@ -10,22 +10,21 @@
  * `snippet-global-expansion` Cargo feature is disabled) toggling `enabled`
  * is a no-op.
  */
-export type SnippetExpansionSettings = {
-  /**
-   * Whether the global low-level keyboard hook is active. Defaults to
-   * `false`: a system-wide keyboard hook is opt-in, never active by
-   * default.
-   */
-  enabled: boolean;
-  /**
-   * Executable basenames (case-insensitive) in which expansion never
-   * fires, e.g. password managers.
-   */
-  excludedApps: Array<string>;
-  /**
-   * Maximum trigger length (in characters) the in-memory match buffer
-   * retains. `u64`/`usize` over the wire are JSON numbers; override
-   * ts-rs's default `bigint` mapping.
-   */
-  maxTriggerLen: number;
-};
+export type SnippetExpansionSettings = { 
+/**
+ * Whether the global low-level keyboard hook is active. Defaults to
+ * `false`: a system-wide keyboard hook is opt-in, never active by
+ * default.
+ */
+enabled: boolean, 
+/**
+ * Executable basenames (case-insensitive) in which expansion never
+ * fires, e.g. password managers.
+ */
+excludedApps: Array<string>, 
+/**
+ * Maximum trigger length (in characters) the in-memory match buffer
+ * retains. `u64`/`usize` over the wire are JSON numbers; override
+ * ts-rs's default `bigint` mapping.
+ */
+maxTriggerLen: number, };

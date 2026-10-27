@@ -10,6 +10,12 @@ import { logger } from '../../shared/utils/logger';
 import { pluginRegistry } from '../../features/plugins/core';
 import { useSearchStore } from '../../stores/searchStore';
 import { VOLT_EVENTS, onVoltEvent } from '../../shared/events';
+import {
+  isActionsMenuShortcut,
+  resolveEscapeAction,
+  resolveListNavigation,
+} from '../../features/settings/behavior/keyboard';
+import type { EscapeBehavior, ListNavigationPreset } from '../../features/settings/types/settings.types';
 
 // Helper to extract directory path (cross-platform)
 const getDirectoryPath = (filePath: string): string => {
@@ -23,6 +29,10 @@ const getDirectoryPath = (filePath: string): string => {
 
 interface UseGlobalHotkeyOptions {
   closeOnLaunch: boolean;
+  /** Settings -> Keyboard: what Escape does in the search bar (default: clear and hide). */
+  escapeBehavior?: EscapeBehavior;
+  /** Settings -> Keyboard: extra list navigation keys (default: arrows + Ctrl+N/P). */
+  listNavigation?: ListNavigationPreset;
   hideWindow: () => Promise<void>;
   onLaunch: (result: SearchResult) => void | Promise<void>;
   onActivateSuggestion: (categoryIndex: number, itemIndex: number) => void | Promise<void>;
@@ -49,6 +59,8 @@ export interface UseGlobalHotkeyResult {
  */
 export function useGlobalHotkey({
   closeOnLaunch,
+  escapeBehavior,
+  listNavigation,
   hideWindow,
   onLaunch,
   onActivateSuggestion,
@@ -112,8 +124,9 @@ export function useGlobalHotkey({
         return;
       }
 
-      // --- Ctrl+K: Open actions menu for selected result (falls back to clear if nothing selected) ---
-      if (e.key === 'k' && e.ctrlKey && !e.shiftKey && !e.altKey) {
+      // --- Ctrl+K: Open actions menu for selected result (falls back to clear if nothing selected).
+      // The vim preset gives Ctrl+K to "previous result" and moves the menu to Ctrl+Shift+K. ---
+      if (isActionsMenuShortcut(listNavigation, e)) {
         e.preventDefault();
         if (selectedResult) {
           onOpenActionsMenu(selectedResult);
@@ -152,22 +165,26 @@ export function useGlobalHotkey({
         return;
       }
 
-      // --- Ctrl+N: Navigate to next result (Emacs-style, alias for ArrowDown) ---
-      if (e.key === 'n' && e.ctrlKey && !e.shiftKey && !e.altKey) {
+      // --- Alternative list navigation of the preset: Ctrl+N/P (emacs) or Ctrl+J/K (vim),
+      // aliases of ArrowDown / ArrowUp. Emacs Ctrl+P keeps toggling the preview panel when
+      // there is no result list to move through. ---
+      const alternativeMove = resolveListNavigation(listNavigation, e);
+      if (alternativeMove) {
         e.preventDefault();
-        setSelectedIndex((prev) => (prev < maxIndex ? prev + 1 : prev));
+        if (alternativeMove === 'down') {
+          setSelectedIndex((prev) => (prev < maxIndex ? prev + 1 : prev));
+        } else if (e.key.toLowerCase() === 'p' && (isShowingSuggestions || results.length === 0)) {
+          onTogglePreview();
+        } else {
+          setSelectedIndex((prev) => (prev > 0 ? prev - 1 : prev));
+        }
         return;
       }
 
-      // --- Ctrl+P: Navigate to previous result (Emacs-style, alias for ArrowUp) ---
-      // When results are shown, Ctrl+P moves up the list; otherwise it toggles the preview panel.
+      // --- Ctrl+P: Toggle the preview panel (when Ctrl+P is not a navigation key) ---
       if (e.key === 'p' && e.ctrlKey && !e.shiftKey && !e.altKey) {
         e.preventDefault();
-        if (!isShowingSuggestions && results.length > 0) {
-          setSelectedIndex((prev) => (prev > 0 ? prev - 1 : prev));
-        } else {
-          onTogglePreview();
-        }
+        onTogglePreview();
         return;
       }
 
@@ -180,7 +197,7 @@ export function useGlobalHotkey({
             : (selectedResult.data as AppInfo).path;
         const dirPath = getDirectoryPath(path);
         invoke<void>('open_path', { path: dirPath }).catch((err: unknown) =>
-          logger.error('open_path failed:', err),
+          logger.error('open_path failed:', err)
         );
         return;
       }
@@ -239,11 +256,15 @@ export function useGlobalHotkey({
         // Remove from history if it's an app or file
         if (selectedResult.type === SearchResultType.Application) {
           const appData = selectedResult.data as AppInfo;
+          const removedId = selectedResult.id;
           invoke<void>('remove_from_history', { path: appData.path }).catch((err: unknown) =>
-            logger.error('remove_from_history failed:', err),
+            logger.error('remove_from_history failed:', err)
           );
-          // Remove from current results
-          setResults(results.filter((r) => r.id !== selectedResult.id));
+          // Re-read fresh results: a streaming batch may have arrived between
+          // keydown and now — filtering the stale `results` snapshot would
+          // resurrect removed items or drop fresh ones.
+          const fresh = useSearchStore.getState().results;
+          setResults(fresh.filter((r) => r.id !== removedId));
         }
         return;
       }
@@ -278,9 +299,9 @@ export function useGlobalHotkey({
         // Launch without hiding window
         if (selectedResult.type === SearchResultType.Application) {
           const appData = selectedResult.data as { path: string };
-          applicationService.launchApplication(appData.path).catch((err: unknown) =>
-            logger.error('launchApplication failed:', err),
-          );
+          applicationService
+            .launchApplication(appData.path)
+            .catch((err: unknown) => logger.error('launchApplication failed:', err));
         } else if (selectedResult.type === SearchResultType.File) {
           const fileData = selectedResult.data as FileInfo;
           openFilePath(fileData).catch((err: unknown) => logger.error('open_path failed:', err));
@@ -352,12 +373,17 @@ export function useGlobalHotkey({
           }
           break;
 
-        case KEYS.ESCAPE:
+        case KEYS.ESCAPE: {
           e.preventDefault();
+          const action = resolveEscapeAction(escapeBehavior, searchQuery);
           setSearchQuery('');
           setResults([]);
-          hideWindow().catch((err: unknown) => logger.error('hideWindow failed:', err));
+          setSelectedIndex(0);
+          if (action === 'hide') {
+            hideWindow().catch((err: unknown) => logger.error('hideWindow failed:', err));
+          }
           break;
+        }
       }
     },
     [
@@ -366,6 +392,8 @@ export function useGlobalHotkey({
       setResults,
       hideWindow,
       closeOnLaunch,
+      escapeBehavior,
+      listNavigation,
       onLaunch,
       onActivateSuggestion,
       onShowProperties,

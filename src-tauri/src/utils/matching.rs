@@ -101,13 +101,21 @@ pub fn calculate_match_score_with_matcher_buf(
         pattern.score(haystack, matcher)
     };
 
-    match raw_score {
-        Some(s) if s > 0 => {
-            let log_score = (s as f32).ln();
-            (50.0 + log_score * (39.0 / 10.0)).clamp(50.0, 89.0)
-        }
-        _ => 0.0,
+    raw_score.map_or(0.0, nucleo_score_to_match_score)
+}
+
+/// Map a raw nucleo fuzzy score onto the 50-89 "fuzzy" band used by
+/// [`calculate_match_score_with_matcher_buf`] (`0` → `0.0`, i.e. no match).
+///
+/// The mapping is monotonic (log-compressed), so thresholds expressed in raw
+/// nucleo units can be converted with this same function and compared against
+/// mapped scores without loss — see `search::SearchSensitivity::Medium`.
+pub fn nucleo_score_to_match_score(raw: u32) -> f32 {
+    if raw == 0 {
+        return 0.0;
     }
+    let log_score = (raw as f32).ln();
+    (50.0 + log_score * (39.0 / 10.0)).clamp(50.0, 89.0)
 }
 
 /// Calculates a match score using a caller-supplied `Matcher` so that the

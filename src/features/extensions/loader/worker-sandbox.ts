@@ -276,11 +276,12 @@ export class WorkerPlugin implements Plugin {
   }
 
   /**
-   * Reject and clear ALL pending requests (used when the worker is being torn
-   * down). Without this, a per-request timeout that recreates the worker
-   * leaves stale `pending` entries whose later timer firings call
-   * `terminateWorker()` on the freshly-recreated worker, breaking the new
-   * one. See M12.
+   * Reject and clear ALL pending requests. Reserved for worker DEATH
+   * (`handleError`) and explicit teardown (`destroy`): in those cases the
+   * worker can never resolve anything, so orphaned entries (and their timers,
+   * which would otherwise fire later against a recycled worker) must go in
+   * one shot. Per-request timeouts in `sendRequest` deliberately do NOT use
+   * this — see its doc comment. (M12)
    */
   private cleanupPending(reason: string): void {
     for (const [, p] of this.pending) {
@@ -292,6 +293,22 @@ export class WorkerPlugin implements Plugin {
 
   /**
    * Send a typed request to the Worker and wait for response with timeout.
+   *
+   * Cancellation is STRICTLY per-request (audit passe 2, sujet 4): the timer
+   * settles ONLY its own entry. An older request's timeout must never reject
+   * a newer request nor terminate the worker out from under it — the previous
+   * implementation called `cleanupPending()` (reject-all) +
+   * `terminateWorker()` from every timer, so typing a second query within the
+   * 8 s match window killed the fresh request when the stale timer fired.
+   *
+   * A wedged worker is still recycled, but lazily and only when NOTHING else
+   * is outstanding on the same worker instance: if this timeout empties the
+   * pending map and the worker hasn't been replaced since this request was
+   * sent, the worker made zero progress for a full timeout window and is
+   * terminated (the next `match()`/`execute()` transparently recreates it).
+   * Genuine crashes keep the fail-fast path in `handleError` (reject-all +
+   * terminate), which is correct there because a dead worker can never
+   * resolve anything.
    */
   private sendRequest<T>(worker: Worker, type: 'match' | 'execute', payload: unknown): Promise<T> {
     return new Promise<T>((resolve, reject) => {
@@ -299,16 +316,20 @@ export class WorkerPlugin implements Plugin {
       // compromised Worker that could otherwise forge a match/execute
       // response against a pending request.
       const id = crypto.randomUUID();
+      // Identity captured for the lazy-recycle check below. JS runs to
+      // completion between event-loop turns, so the read-then-act sequence
+      // in the timer callback is atomic w.r.t. other main-thread code.
+      const workerAtSend = worker;
 
       const timeoutMs = type === 'match' ? WORKER_MATCH_TIMEOUT_MS : WORKER_EXECUTE_TIMEOUT_MS;
       const timer = setTimeout(() => {
-        // Reject ALL pending entries — not just this one. Keeping the others
-        // alive past `terminateWorker()` is unsafe: their later timer firings
-        // would call `terminateWorker()` again, killing whichever worker the
-        // plugin has lazily recreated in the meantime. (M12)
-        this.cleanupPending(`Worker reset due to timeout (after ${timeoutMs}ms on ${type})`);
-        this.terminateWorker();
-        reject(new Error(`Worker timeout after ${timeoutMs}ms for ${type}`));
+        const entry = this.pending.get(id);
+        if (!entry) return; // already settled by a response — nothing to do.
+        this.pending.delete(id);
+        entry.reject(new Error(`Worker timeout after ${timeoutMs}ms for ${type}`));
+        if (this.pending.size === 0 && this.worker === workerAtSend) {
+          this.terminateWorker();
+        }
       }, timeoutMs);
 
       this.pending.set(id, { resolve: resolve as (v: unknown) => void, reject, timer });

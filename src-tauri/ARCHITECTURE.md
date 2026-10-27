@@ -6,21 +6,16 @@ This document describes the modular architecture of the Tauri backend.
 
 ```
 src-tauri/src/
-├── commands/           # Tauri command handlers
-│   ├── apps.rs        # Application scanning and launching
-│   ├── autostart.rs   # Autostart management
-│   ├── clipboard.rs   # Clipboard operations
-│   ├── extensions.rs  # Extension management
-│   ├── files.rs       # File indexing
-│   ├── games.rs       # Game scanning
-│   ├── hotkey.rs      # Hotkey management
-│   ├── launcher.rs    # Launch history tracking
-│   ├── logging.rs     # Logging configuration
-│   ├── plugins.rs     # Plugin commands
-│   ├── settings.rs    # Settings management
-│   ├── steam.rs       # Steam integration
-│   ├── system_monitor.rs # System monitoring
-│   └── mod.rs         # Module exports
+├── commands/           # Tauri command handlers (8 domains, ~30 files, ~200 #[tauri::command])
+│   ├── ai/             # AI profile, quick actions, embeddings, proxy, custom emojis
+│   ├── auth/           # Session, OAuth, credentials, keyring store, sync
+│   ├── content/        # Notes, snippets, quicklinks, snippet expansion
+│   ├── extensions/     # Extension management, plugin commands
+│   ├── files/          # File indexing, preview
+│   ├── launcher/       # App/game search & launch, history, Steam
+│   ├── shell/          # Shell execution, shell history
+│   ├── system/         # Settings, clipboard, monitor, window, autostart, logging, notifications, web search
+│   └── mod.rs          # Domain re-exports + legacy flat-path compat facade
 │
 ├── hotkey/            # Global hotkey management
 │   └── mod.rs
@@ -90,26 +85,29 @@ src-tauri/src/
 
 ## 🎯 Module Responsibilities
 
-### `commands/`
+### `commands/` — 8 product domains (~30 files, ~200 `#[tauri::command]`)
 
 Tauri command handlers that are exposed to the frontend via `invoke()`.
 All commands return `VoltResult<T>` using the `VoltError` discriminated union.
+See [MODULES.md](./MODULES.md#commands-module) for the per-file reference.
 
-- **apps.rs**: Cross-platform application scanning (Windows, macOS, Linux)
-- **autostart.rs**: Enable/disable autostart on system boot
-- **clipboard.rs**: Clipboard read/write operations
-- **extensions.rs**: Extension management
-- **files.rs**: File indexing for fast file search
-- **games.rs**: Game scanning across platforms
-- **hotkey.rs**: Hotkey registration and management
-- **launcher.rs**: Launch history, pinned apps, tags
-- **logging.rs**: Logging configuration and log file management
-- **plugins.rs**: Plugin lifecycle commands
-- **preview.rs**: File preview (`get_file_preview` detects file type and returns appropriate preview data for text/image/folder/app/binary)
-- **settings.rs**: Load/save user settings
-- **snippets.rs**: Snippet CRUD with JSON persistence; `SnippetState` managed state; variable expansion (`{date}`, `{time}`, etc.); import/export support
-- **steam.rs**: Steam library integration
-- **system_monitor.rs**: System resource monitoring
+- **ai/** (`profile.rs`, `quick_actions.rs`, `embeddings.rs`, `proxy.rs`, `custom_emojis.rs`): AI profile, quick actions + global hotkeys, embeddings, AI proxy, custom emojis
+- **auth/** (`session.rs`, `oauth.rs`, `credentials.rs`, `keyring_store.rs`, `sync.rs`): Supabase auth + deep link, OAuth (GitHub/Notion), OS-keyring credentials, signed keyring store, cloud sync
+- **content/** (`notes.rs`, `snippets.rs`, `quicklinks.rs`, `snippet_expansion.rs`): notes (FTS5, trash/restore), snippets CRUD + expansion, quicklinks CRUD
+- **extensions/** (`management.rs`, `plugins.rs`): extension registry/install/toggle, plugin lifecycle
+- **files/** (`index.rs`, `preview.rs`): file indexing (SQLite + Tantivy), watcher; file preview (`get_file_preview`: text/image/folder/app/binary)
+- **launcher/** (`apps.rs`, `history.rs`, `search.rs`, `games.rs`, `steam.rs`): app scanning/launching, launch history/pins/tags, batch/streaming search, game scan, Steam integration
+- **shell/** (`execution.rs`, `history.rs`): shell execution (streaming), shell history with frecency
+- **system/** (`settings.rs`, `clipboard.rs`, `monitor.rs`, `window_management.rs`, `autostart.rs`, `logging.rs`, `notifications.rs`, `web_search.rs`): settings, clipboard, system monitor, window management, autostart, logging, notifications, web search
+
+Legacy flat paths (e.g. `commands::files`, `commands::ai_profile`) are re-exported via `commands/mod.rs` — command names come from function names, so the IPC API is unchanged.
+
+#### Feature flags
+
+- `tantivy-search`: persistent Tantivy file-search backend (`indexer::fulltext`), off by default
+- `sqlcipher`: encrypted data-at-rest (bundled SQLCipher + vendored OpenSSL), off by default
+- `usn-incremental`: Windows USN change-journal delta reader, off by default
+- `snippet-global-expansion`: global snippet expansion via low-level keyboard hook (Windows), off by default
 
 ### `utils/`
 
@@ -343,11 +341,11 @@ User Query
     ↓
 Frontend → invoke('search')
     ↓
-commands/apps.rs
+commands/launcher/apps.rs
     ↓
 search::search_applications()
     ↓
-    ├─→ Built-in search (apps.rs)
+    ├─→ Built-in search (launcher/apps.rs)
     ├─→ File search (indexer/)
     └─→ Plugin search (plugins/)
            ↓
@@ -380,10 +378,10 @@ search::search_applications()
 
 ### Adding a new command
 
-1. Add function to appropriate file in `commands/`
+1. Add function to the appropriate domain file in `commands/<domain>/` (see [MODULES.md](./MODULES.md#commands-module))
 2. Mark with `#[tauri::command]` attribute
 3. Add to `invoke_handler!` macro in `lib.rs`
-4. Export from `commands/mod.rs`
+4. Export from `commands/<domain>/mod.rs` (re-exported via `commands/mod.rs`)
 
 ### Adding a new module
 
@@ -519,6 +517,7 @@ When contributing to the Rust backend:
 
 ## 📖 Additional Documentation
 
+- **Module Reference**: See [MODULES.md](./MODULES.md) for the detailed per-module and per-domain reference
 - **Plugin Development**: See [PLUGIN_GUIDE.md](src/plugins/PLUGIN_GUIDE.md)
 - **API Reference**: Run `cargo doc --open`
 - **Examples**: Check `examples/` directory

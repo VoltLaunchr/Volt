@@ -17,13 +17,10 @@ import {
   Search,
   Package,
   Loader2,
-  ToggleLeft,
-  ToggleRight,
   FolderOpen,
   Unlink,
   Code,
   Settings,
-  X,
   Save,
   Eye,
   EyeOff,
@@ -38,7 +35,6 @@ import type { ExtensionError } from '../loader/worker-sandbox';
 import { open } from '@tauri-apps/plugin-dialog';
 import { emit, listen } from '@tauri-apps/api/event';
 import { cn } from '@/lib/utils';
-import { extractErrorMessage } from '../../../shared/utils/error';
 import { logger } from '../../../shared/utils/logger';
 import { extensionService } from '../services/extensionService';
 import { invoke } from '@tauri-apps/api/core';
@@ -53,6 +49,22 @@ import type {
 } from '../types/extension.types';
 import { EXTENSION_CATEGORIES } from '../types/extension.types';
 import { isVersionAtLeast } from '../utils/version';
+import { Button } from '@/shared/components/ui/button';
+import { Card } from '@/shared/components/ui/card';
+import { Input } from '@/shared/components/ui/input';
+import { Switch } from '@/shared/components/ui/switch';
+import { Field, FieldDescription, FieldLabel } from '@/shared/components/ui/field';
+import { InputGroup, InputGroupAddon, InputGroupInput } from '@/shared/components/ui/input-group';
+import { ScrollArea } from '@/shared/components/ui/scroll-area';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/shared/components/ui/dialog';
+import { SettingsSelect } from '../../settings/components/SettingsChrome';
 
 const LOCAL_EXTENSION_ICONS: Record<string, string> = {
   github: '/extension-icons/github.svg',
@@ -77,15 +89,17 @@ const notifyMainWindowToReloadExtensions = async (
 
 interface ExtensionsStoreProps {
   onRefresh?: () => void;
+  embedded?: boolean;
 }
 
-export function ExtensionsStore(_props: ExtensionsStoreProps): React.JSX.Element {
+export function ExtensionsStore({ embedded = false }: ExtensionsStoreProps): React.JSX.Element {
   const { t } = useTranslation('extensions');
   const [availableExtensions, setAvailableExtensions] = useState<ExtensionInfo[]>([]);
   const [installedExtensions, setInstalledExtensions] = useState<InstalledExtension[]>([]);
   const [devExtensions, setDevExtensions] = useState<DevExtension[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [loadFailures, setLoadFailures] = useState({ browse: false, installed: false });
   const [searchQuery, setSearchQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<ExtensionCategory | 'all'>('all');
   const [installingIds, setInstallingIds] = useState<Set<string>>(new Set());
@@ -99,28 +113,37 @@ export function ExtensionsStore(_props: ExtensionsStoreProps): React.JSX.Element
     setError(null);
 
     try {
-      const [registry, installed, devExts, downloadCounts, currentVersion] = await Promise.all([
-        extensionService
-          .fetchRegistry()
-          .catch(() => ({ extensions: [] as ExtensionInfo[], version: '0', lastUpdated: '' })),
-        extensionService.getInstalledExtensions().catch(() => [] as InstalledExtension[]),
-        extensionService.getDevExtensions().catch(() => [] as DevExtension[]),
-        extensionService.fetchDownloadCounts().catch((): Record<string, number> => ({})),
-        getVersion().catch(() => '0.0.0'),
-      ]);
+      const [registryResult, installedResult, devResult, countsResult, versionResult] =
+        await Promise.allSettled([
+          extensionService.fetchRegistry({ throwOnFailure: true }),
+          extensionService.getInstalledExtensions(),
+          extensionService.getDevExtensions(),
+          extensionService.fetchDownloadCounts(),
+          getVersion(),
+        ]);
+      const registryReady =
+        registryResult.status === 'fulfilled' && Array.isArray(registryResult.value?.extensions);
+      const installedReady =
+        installedResult.status === 'fulfilled' && Array.isArray(installedResult.value);
+      const devReady = devResult.status === 'fulfilled' && Array.isArray(devResult.value);
+      const downloadCounts = countsResult.status === 'fulfilled' ? (countsResult.value ?? {}) : {};
 
-      const extensions = registry.extensions.map((ext) => {
-        const live = downloadCounts[ext.manifest.id];
-        return live !== undefined ? { ...ext, downloads: live } : ext;
-      });
-
-      setAvailableExtensions(extensions);
-      setInstalledExtensions(installed);
-      setDevExtensions(devExts);
-      setAppVersion(currentVersion);
+      if (registryReady && registryResult.status === 'fulfilled') {
+        setAvailableExtensions(
+          registryResult.value.extensions.map((extension) => {
+            const live = downloadCounts[extension.manifest.id];
+            return live !== undefined ? { ...extension, downloads: live } : extension;
+          })
+        );
+      }
+      if (installedReady && installedResult.status === 'fulfilled')
+        setInstalledExtensions(installedResult.value);
+      if (devReady && devResult.status === 'fulfilled') setDevExtensions(devResult.value);
+      if (versionResult.status === 'fulfilled') setAppVersion(versionResult.value);
+      setLoadFailures({ browse: !registryReady, installed: !installedReady || !devReady });
     } catch (err) {
       logger.error('Failed to load extensions:', err);
-      setError('Failed to load extensions. Check your internet connection.');
+      setLoadFailures({ browse: true, installed: true });
     } finally {
       setLoading(false);
     }
@@ -131,63 +154,72 @@ export function ExtensionsStore(_props: ExtensionsStoreProps): React.JSX.Element
     void loadExtensions();
   }, [loadExtensions]);
 
-  const handleInstall = useCallback(async (extension: ExtensionInfo) => {
-    const extensionId = extension.manifest.id;
-    setInstallingIds((prev) => new Set(prev).add(extensionId));
+  const handleInstall = useCallback(
+    async (extension: ExtensionInfo) => {
+      const extensionId = extension.manifest.id;
+      setInstallingIds((prev) => new Set(prev).add(extensionId));
 
-    try {
-      const installed = await extensionService.installExtension(extensionId, extension.downloadUrl);
-      setInstalledExtensions((prev) => [
-        ...prev.filter((e) => e.manifest.id !== extensionId),
-        installed,
-      ]);
+      try {
+        const installed = await extensionService.installExtension(
+          extensionId,
+          extension.downloadUrl
+        );
+        setInstalledExtensions((prev) => [
+          ...prev.filter((e) => e.manifest.id !== extensionId),
+          installed,
+        ]);
 
-      // Auto-load the extension immediately after installation
-      if (installed.enabled) {
-        await notifyMainWindowToReloadExtensions('load', extensionId);
+        // Auto-load the extension immediately after installation
+        if (installed.enabled) {
+          await notifyMainWindowToReloadExtensions('load', extensionId);
+        }
+
+        // Increment download counter in Supabase (fire-and-forget)
+        void extensionService.incrementDownload(extensionId);
+
+        // Optimistically bump the local counter
+        setAvailableExtensions((prev) =>
+          prev.map((ext) =>
+            ext.manifest.id === extensionId ? { ...ext, downloads: ext.downloads + 1 } : ext
+          )
+        );
+      } catch (err) {
+        logger.error('Failed to install extension:', err);
+        setError(t('errors.install', { name: extension.manifest.name }));
+      } finally {
+        setInstallingIds((prev) => {
+          const next = new Set(prev);
+          next.delete(extensionId);
+          return next;
+        });
       }
+    },
+    [t]
+  );
 
-      // Increment download counter in Supabase (fire-and-forget)
-      void extensionService.incrementDownload(extensionId);
+  const handleUninstall = useCallback(
+    async (extensionId: string) => {
+      setUninstallingIds((prev) => new Set(prev).add(extensionId));
 
-      // Optimistically bump the local counter
-      setAvailableExtensions((prev) =>
-        prev.map((ext) =>
-          ext.manifest.id === extensionId ? { ...ext, downloads: ext.downloads + 1 } : ext
-        )
-      );
-    } catch (err) {
-      logger.error('Failed to install extension:', err);
-      setError(`Failed to install ${extension.manifest.name}: ${extractErrorMessage(err)}`);
-    } finally {
-      setInstallingIds((prev) => {
-        const next = new Set(prev);
-        next.delete(extensionId);
-        return next;
-      });
-    }
-  }, []);
+      try {
+        // Unload the extension first
+        await notifyMainWindowToReloadExtensions('unload', extensionId);
 
-  const handleUninstall = useCallback(async (extensionId: string) => {
-    setUninstallingIds((prev) => new Set(prev).add(extensionId));
-
-    try {
-      // Unload the extension first
-      await notifyMainWindowToReloadExtensions('unload', extensionId);
-
-      await extensionService.uninstallExtension(extensionId);
-      setInstalledExtensions((prev) => prev.filter((e) => e.manifest.id !== extensionId));
-    } catch (err) {
-      logger.error('Failed to uninstall extension:', err);
-      setError(`Failed to uninstall extension`);
-    } finally {
-      setUninstallingIds((prev) => {
-        const next = new Set(prev);
-        next.delete(extensionId);
-        return next;
-      });
-    }
-  }, []);
+        await extensionService.uninstallExtension(extensionId);
+        setInstalledExtensions((prev) => prev.filter((e) => e.manifest.id !== extensionId));
+      } catch (err) {
+        logger.error('Failed to uninstall extension:', err);
+        setError(t('errors.uninstall'));
+      } finally {
+        setUninstallingIds((prev) => {
+          const next = new Set(prev);
+          next.delete(extensionId);
+          return next;
+        });
+      }
+    },
+    [t]
+  );
 
   const handleToggle = useCallback(async (extensionId: string, enabled: boolean) => {
     try {
@@ -214,7 +246,7 @@ export function ExtensionsStore(_props: ExtensionsStoreProps): React.JSX.Element
       const selected = await open({
         directory: true,
         multiple: false,
-        title: 'Select Extension Folder',
+        title: t('dev.selectFolder'),
       });
 
       if (selected && typeof selected === 'string') {
@@ -231,24 +263,27 @@ export function ExtensionsStore(_props: ExtensionsStoreProps): React.JSX.Element
       }
     } catch (err) {
       logger.error('Failed to link dev extension:', err);
-      setError(`Failed to link extension: ${extractErrorMessage(err)}`);
+      setError(t('errors.link'));
     } finally {
       setLinkingDev(false);
     }
-  }, []);
+  }, [t]);
 
-  const handleUnlinkDevExtension = useCallback(async (extensionId: string) => {
-    try {
-      // Unload the extension first
-      await notifyMainWindowToReloadExtensions('unload', extensionId);
+  const handleUnlinkDevExtension = useCallback(
+    async (extensionId: string) => {
+      try {
+        // Unload the extension first
+        await notifyMainWindowToReloadExtensions('unload', extensionId);
 
-      await extensionService.unlinkDevExtension(extensionId);
-      setDevExtensions((prev) => prev.filter((e) => e.manifest.id !== extensionId));
-    } catch (err) {
-      logger.error('Failed to unlink dev extension:', err);
-      setError('Failed to unlink extension');
-    }
-  }, []);
+        await extensionService.unlinkDevExtension(extensionId);
+        setDevExtensions((prev) => prev.filter((e) => e.manifest.id !== extensionId));
+      } catch (err) {
+        logger.error('Failed to unlink dev extension:', err);
+        setError(t('errors.unlink'));
+      }
+    },
+    [t]
+  );
 
   const handleToggleDevExtension = useCallback(async (extensionId: string, enabled: boolean) => {
     try {
@@ -319,6 +354,21 @@ export function ExtensionsStore(_props: ExtensionsStoreProps): React.JSX.Element
   // Total installed count includes dev extensions
   const totalInstalledCount = installedExtensions.length + devExtensions.length;
 
+  const activeLoadFailed = loadFailures[activeTab];
+  const refreshButton = (
+    <Button
+      variant="ghost"
+      size="sm"
+      onClick={() => {
+        void loadExtensions();
+      }}
+      title={t('header.refresh')}
+      aria-label={t('header.refresh')}
+    >
+      <RefreshCw size={18} />
+    </Button>
+  );
+
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center h-full gap-4 text-body">
@@ -329,214 +379,242 @@ export function ExtensionsStore(_props: ExtensionsStoreProps): React.JSX.Element
   }
 
   return (
-    <div className="flex flex-col h-full overflow-hidden">
+    <div className={embedded ? 'settings-page' : 'flex flex-col h-full overflow-hidden'}>
       {/* Header */}
-      <div className="flex items-center justify-between px-6 py-4 border-b border-hairline shrink-0">
-        <h2 className="flex items-center gap-2.5 m-0 text-lg font-semibold text-on-dark">
-          <Package size={24} className="text-accent-blue" />
-          {t('header.title')}
-        </h2>
-        <button
-          className="w-7 h-7 rounded-sm bg-transparent border-0 text-mute cursor-pointer flex items-center justify-center transition-colors hover:bg-white/10 hover:text-on-dark"
-          onClick={() => {
-            void loadExtensions();
-          }}
-          title={t('header.refresh')}
-        >
-          <RefreshCw size={18} />
-        </button>
-      </div>
-
-      {/* Error message */}
-      {error && (
-        <div className="flex items-center gap-2.5 px-3.5 py-2.5 mx-6 mb-4 bg-accent-red-soft border border-red-500/20 rounded-md text-accent-red text-sm">
-          <AlertCircle size={18} className="shrink-0" />
-          <span className="flex-1">{error}</span>
-          <button
-            onClick={() => setError(null)}
-            className="ml-auto bg-transparent border-0 text-inherit cursor-pointer text-lg p-0 opacity-70 leading-none hover:opacity-100"
-          >
-            ×
-          </button>
+      {!embedded && (
+        <div className="flex items-center justify-between px-6 py-4 border-b border-hairline shrink-0">
+          <h2 className="flex items-center gap-2.5 m-0 text-lg font-semibold text-on-dark">
+            <Package size={24} className="text-accent-blue" />
+            {t('header.title')}
+          </h2>
+          {refreshButton}
         </div>
       )}
 
-      {/* Tabs */}
-      <div className="flex gap-1 px-6 mb-4">
-        <button
-          className={cn(
-            'px-4 py-2 bg-transparent border-0 rounded-sm text-sm font-medium cursor-pointer transition-colors',
-            activeTab === 'browse'
-              ? 'bg-accent-blue-soft text-accent-blue'
-              : 'text-body hover:bg-white/[0.06] hover:text-on-dark'
-          )}
-          onClick={() => setActiveTab('browse')}
-        >
-          {t('tabs.browse')} ({availableExtensions.length})
-        </button>
-        <button
-          className={cn(
-            'px-4 py-2 bg-transparent border-0 rounded-sm text-sm font-medium cursor-pointer transition-colors',
-            activeTab === 'installed'
-              ? 'bg-accent-blue-soft text-accent-blue'
-              : 'text-body hover:bg-white/[0.06] hover:text-on-dark'
-          )}
-          onClick={() => setActiveTab('installed')}
-        >
-          {t('tabs.installed')} ({totalInstalledCount})
-        </button>
-      </div>
-
-      {/* Search and filters */}
-      <div className="flex flex-col gap-3 px-6 mb-4">
-        <div className="flex items-center gap-2.5 px-3 py-2 bg-white/[0.06] border border-white/10 rounded-md transition-colors focus-within:border-accent-blue focus-within:bg-white/[0.08]">
-          <Search size={18} className="text-mute shrink-0" />
-          <input
-            type="text"
-            placeholder={t('searchPlaceholder')}
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="flex-1 bg-transparent border-0 outline-none text-on-dark text-sm placeholder:text-mute"
-          />
-        </div>
-
-        {activeTab === 'browse' && (
-          <div className="flex flex-wrap gap-1.5">
-            {EXTENSION_CATEGORIES.map((cat) => {
-              const IconComponent = cat.icon;
-              return (
-                <button
-                  key={cat.id}
-                  className={cn(
-                    'inline-flex items-center gap-1.5 px-2.5 py-1.5 border-0 rounded-sm text-xs font-medium cursor-pointer transition-colors',
-                    categoryFilter === cat.id
-                      ? 'bg-accent-blue-soft text-accent-blue'
-                      : 'bg-white/[0.03] text-body hover:bg-white/[0.06] hover:text-on-dark'
-                  )}
-                  onClick={() => setCategoryFilter(cat.id)}
-                >
-                  <IconComponent size={14} className="shrink-0" />
-                  <span>{cat.label}</span>
-                </button>
-              );
-            })}
-          </div>
-        )}
-      </div>
-
-      {/* Extension list */}
-      <div className="flex-1 overflow-y-auto px-6 pb-6 flex flex-col gap-2 [scrollbar-width:thin] [scrollbar-color:rgba(255,255,255,0.1)_transparent]">
-        {activeTab === 'browse' ? (
-          filteredExtensions.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-12 text-center">
-              <Package size={48} className="opacity-20 text-mute mb-4" />
-              <p className="m-0 text-sm font-medium text-body">{t('empty.noExtensions')}</p>
-              {searchQuery && <p className="text-xs text-mute mt-1">{t('empty.tryDifferent')}</p>}
+      <ScrollArea className="min-h-0 flex-1">
+        <div className="py-5">
+          {activeLoadFailed && (
+            <div
+              role="alert"
+              className="mx-6 my-4 flex flex-wrap items-center gap-3 rounded-lg border border-accent-red/30 bg-accent-red/5 p-4 text-sm"
+            >
+              <AlertCircle size={18} className="shrink-0 text-accent-red" />
+              <div className="min-w-0 flex-1">
+                <strong className="block font-medium text-ink">
+                  {t(activeTab === 'browse' ? 'errors.registryTitle' : 'errors.installedTitle')}
+                </strong>
+                <p className="mb-0 mt-1 text-xs text-mute">{t('errors.loadDescription')}</p>
+              </div>
+              <Button variant="ghost" size="sm" type="button" onClick={() => void loadExtensions()}>
+                {t('actions.retry')}
+              </Button>
             </div>
-          ) : (
-            filteredExtensions.map((ext) => (
-              <ExtensionCard
-                key={ext.manifest.id}
-                extension={ext}
-                appVersion={appVersion}
-                installed={isInstalled(ext.manifest.id)}
-                installing={installingIds.has(ext.manifest.id)}
-                uninstalling={uninstallingIds.has(ext.manifest.id)}
-                onInstall={() => {
-                  void handleInstall(ext);
-                }}
-                onUninstall={() => {
-                  void handleUninstall(ext.manifest.id);
-                }}
-              />
-            ))
-          )
-        ) : (
-          <>
-            {/* Link Dev Extension button */}
-            <div className="mb-4">
-              <button
-                className="flex items-center justify-center gap-2 w-full px-3 py-3 bg-transparent border border-dashed border-accent-blue/30 rounded-md text-accent-blue text-sm font-medium cursor-pointer transition-colors hover:bg-accent-blue-soft hover:border-accent-blue disabled:opacity-50 disabled:cursor-not-allowed"
-                onClick={() => {
-                  void handleLinkDevExtension();
-                }}
-                disabled={linkingDev}
+          )}
+
+          {/* Error message */}
+          {error && (
+            <div
+              role="alert"
+              className="flex items-center gap-2.5 px-3.5 py-2.5 mx-6 mb-4 bg-accent-red-soft border border-red-500/20 rounded-md text-accent-red text-sm"
+            >
+              <AlertCircle size={18} className="shrink-0" />
+              <span className="flex-1">{error}</span>
+              <Button
+                variant="ghost"
+                size="sm"
+                aria-label={t('actions.dismissError')}
+                onClick={() => setError(null)}
               >
-                {linkingDev ? (
-                  <>
-                    <Loader2 className="animate-spin" size={16} />
-                    {t('dev.linking')}
-                  </>
-                ) : (
-                  <>
-                    <FolderOpen size={16} />
-                    {t('dev.linkButton')}
-                  </>
-                )}
-              </button>
+                ×
+              </Button>
             </div>
+          )}
 
-            {/* Dev Extensions */}
-            {filteredDevExtensions.length > 0 && (
-              <div className="mb-6">
-                <h4 className="flex items-center gap-2 m-0 mb-3 pb-2 border-b border-hairline text-[11px] font-semibold text-mute uppercase tracking-wide">
-                  <Code size={16} />
-                  {t('dev.sectionTitle')} ({filteredDevExtensions.length})
-                </h4>
-                {filteredDevExtensions.map((ext) => (
-                  <DevExtensionCard
-                    key={ext.manifest.id}
-                    extension={ext}
-                    onToggle={(enabled) => {
-                      void handleToggleDevExtension(ext.manifest.id, enabled);
-                    }}
-                    onUnlink={() => {
-                      void handleUnlinkDevExtension(ext.manifest.id);
-                    }}
-                    onRefresh={() => {
-                      void handleRefreshDevExtension(ext.manifest.id);
-                    }}
-                  />
-                ))}
+          {/* Tabs */}
+          <div className="flex items-center gap-1 px-6 my-4">
+            <Button
+              variant={activeTab === 'browse' ? 'secondary' : 'ghost'}
+              size="sm"
+              aria-pressed={activeTab === 'browse'}
+              onClick={() => setActiveTab('browse')}
+            >
+              {t('tabs.browse')} (
+              {loadFailures.browse && availableExtensions.length === 0
+                ? '—'
+                : availableExtensions.length}
+              )
+            </Button>
+            <Button
+              variant={activeTab === 'installed' ? 'secondary' : 'ghost'}
+              size="sm"
+              aria-pressed={activeTab === 'installed'}
+              onClick={() => setActiveTab('installed')}
+            >
+              {t('tabs.installed')} (
+              {loadFailures.installed && totalInstalledCount === 0 ? '—' : totalInstalledCount})
+            </Button>
+            {embedded && <div className="ml-auto">{refreshButton}</div>}
+          </div>
+
+          {/* Search and filters */}
+          <div className="flex flex-col gap-3 px-6 mb-4">
+            <InputGroup>
+              <InputGroupAddon>
+                <Search className="size-4" />
+              </InputGroupAddon>
+              <InputGroupInput
+                type="search"
+                aria-label={t('searchPlaceholder')}
+                placeholder={t('searchPlaceholder')}
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+              />
+            </InputGroup>
+
+            {activeTab === 'browse' && (
+              <div className="flex flex-wrap gap-1.5">
+                {EXTENSION_CATEGORIES.map((cat) => {
+                  const IconComponent = cat.icon;
+                  return (
+                    <Button
+                      variant={categoryFilter === cat.id ? 'secondary' : 'ghost'}
+                      size="sm"
+                      key={cat.id}
+                      aria-pressed={categoryFilter === cat.id}
+                      onClick={() => setCategoryFilter(cat.id)}
+                    >
+                      <IconComponent size={14} className="shrink-0" />
+                      <span>{t(`categories.${cat.id}`)}</span>
+                    </Button>
+                  );
+                })}
               </div>
             )}
+          </div>
 
-            {/* Installed Extensions */}
-            {filteredInstalled.length > 0 && (
-              <div className="mb-2">
-                {filteredDevExtensions.length > 0 && (
-                  <h4 className="flex items-center gap-2 m-0 mb-3 pb-2 border-b border-hairline text-[11px] font-semibold text-mute uppercase tracking-wide">
-                    <Package size={16} />
-                    {t('sections.installed')} ({filteredInstalled.length})
-                  </h4>
-                )}
-                {filteredInstalled.map((ext) => (
-                  <InstalledExtensionCard
+          {/* Extension list */}
+          <div className="flex flex-col gap-3 px-6 pb-2">
+            {activeTab === 'browse' ? (
+              filteredExtensions.length === 0 &&
+              loadFailures.browse ? null : filteredExtensions.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-12 text-center">
+                  <Package size={48} className="opacity-20 text-mute mb-4" />
+                  <p className="m-0 text-sm font-medium text-body">{t('empty.noExtensions')}</p>
+                  {searchQuery && (
+                    <p className="text-xs text-mute mt-1">{t('empty.tryDifferent')}</p>
+                  )}
+                </div>
+              ) : (
+                filteredExtensions.map((ext) => (
+                  <ExtensionCard
                     key={ext.manifest.id}
                     extension={ext}
+                    appVersion={appVersion}
+                    installed={isInstalled(ext.manifest.id)}
+                    installing={installingIds.has(ext.manifest.id)}
                     uninstalling={uninstallingIds.has(ext.manifest.id)}
-                    onToggle={(enabled) => {
-                      void handleToggle(ext.manifest.id, enabled);
+                    onInstall={() => {
+                      void handleInstall(ext);
                     }}
                     onUninstall={() => {
                       void handleUninstall(ext.manifest.id);
                     }}
                   />
-                ))}
-              </div>
-            )}
+                ))
+              )
+            ) : (
+              <>
+                {/* Link Dev Extension button */}
+                <div className="mb-4">
+                  <Button
+                    variant="default"
+                    size="sm"
+                    onClick={() => {
+                      void handleLinkDevExtension();
+                    }}
+                    disabled={linkingDev}
+                  >
+                    {linkingDev ? (
+                      <>
+                        <Loader2 className="animate-spin" size={16} />
+                        {t('dev.linking')}
+                      </>
+                    ) : (
+                      <>
+                        <FolderOpen size={16} />
+                        {t('dev.linkButton')}
+                      </>
+                    )}
+                  </Button>
+                </div>
 
-            {/* Empty state when no extensions */}
-            {filteredInstalled.length === 0 && filteredDevExtensions.length === 0 && (
-              <div className="flex flex-col items-center justify-center py-12 text-center">
-                <Package size={48} className="opacity-20 text-mute mb-4" />
-                <p className="m-0 text-sm font-medium text-body">{t('empty.noneInstalled')}</p>
-                <p className="text-xs text-mute mt-1">{t('empty.browseOrLink')}</p>
-              </div>
+                {/* Dev Extensions */}
+                {filteredDevExtensions.length > 0 && (
+                  <div className="mb-6">
+                    <h4 className="flex items-center gap-2 m-0 mb-3 pb-2 border-b border-hairline text-[11px] font-semibold text-mute uppercase tracking-wide">
+                      <Code size={16} />
+                      {t('dev.sectionTitle')} ({filteredDevExtensions.length})
+                    </h4>
+                    {filteredDevExtensions.map((ext) => (
+                      <DevExtensionCard
+                        key={ext.manifest.id}
+                        extension={ext}
+                        onToggle={(enabled) => {
+                          void handleToggleDevExtension(ext.manifest.id, enabled);
+                        }}
+                        onUnlink={() => {
+                          void handleUnlinkDevExtension(ext.manifest.id);
+                        }}
+                        onRefresh={() => {
+                          void handleRefreshDevExtension(ext.manifest.id);
+                        }}
+                      />
+                    ))}
+                  </div>
+                )}
+
+                {/* Installed Extensions */}
+                {filteredInstalled.length > 0 && (
+                  <div className="mb-2">
+                    {filteredDevExtensions.length > 0 && (
+                      <h4 className="flex items-center gap-2 m-0 mb-3 pb-2 border-b border-hairline text-[11px] font-semibold text-mute uppercase tracking-wide">
+                        <Package size={16} />
+                        {t('sections.installed')} ({filteredInstalled.length})
+                      </h4>
+                    )}
+                    {filteredInstalled.map((ext) => (
+                      <InstalledExtensionCard
+                        key={ext.manifest.id}
+                        extension={ext}
+                        uninstalling={uninstallingIds.has(ext.manifest.id)}
+                        onToggle={(enabled) => {
+                          void handleToggle(ext.manifest.id, enabled);
+                        }}
+                        onUninstall={() => {
+                          void handleUninstall(ext.manifest.id);
+                        }}
+                      />
+                    ))}
+                  </div>
+                )}
+
+                {/* Empty state when no extensions */}
+                {!loadFailures.installed &&
+                  filteredInstalled.length === 0 &&
+                  filteredDevExtensions.length === 0 && (
+                    <div className="flex flex-col items-center justify-center py-12 text-center">
+                      <Package size={48} className="opacity-20 text-mute mb-4" />
+                      <p className="m-0 text-sm font-medium text-body">
+                        {t('empty.noneInstalled')}
+                      </p>
+                      <p className="text-xs text-mute mt-1">{t('empty.browseOrLink')}</p>
+                    </div>
+                  )}
+              </>
             )}
-          </>
-        )}
-      </div>
+          </div>
+        </div>
+      </ScrollArea>
     </div>
   );
 }
@@ -577,7 +655,7 @@ function ExtensionCard({
           onClose={() => setShowScreenshots(false)}
         />
       )}
-      <div className="flex items-start gap-3 px-4 py-3 bg-white/[0.03] rounded-lg transition-colors hover:bg-white/[0.05]">
+      <Card className="flex-row flex-wrap items-start gap-3 p-4">
         {/* Icon */}
         <div className="shrink-0 w-10 h-10 flex items-center justify-center bg-white/[0.06] rounded-md text-mute">
           {manifest.icon || LOCAL_EXTENSION_ICONS[manifest.id] ? (
@@ -629,9 +707,11 @@ function ExtensionCard({
           {hasScreenshots && (
             <div className="flex gap-1.5 mt-1.5">
               {extension.screenshots!.slice(0, 3).map((src, i) => (
-                <button
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-auto overflow-hidden p-0"
                   key={i}
-                  className="p-0 border-0 bg-transparent cursor-pointer rounded-sm overflow-hidden opacity-70 hover:opacity-100 transition-opacity"
                   onClick={() => setShowScreenshots(true)}
                   title="Preview screenshots"
                 >
@@ -640,7 +720,7 @@ function ExtensionCard({
                     alt=""
                     className="h-10 w-16 object-cover rounded-sm border border-white/10"
                   />
-                </button>
+                </Button>
               ))}
             </div>
           )}
@@ -666,8 +746,9 @@ function ExtensionCard({
               {t('actions.installed')}
             </span>
           ) : (
-            <button
-              className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 bg-accent-blue text-white border-0 rounded-sm text-xs font-medium cursor-pointer transition-opacity hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
+            <Button
+              variant="default"
+              size="sm"
               onClick={onInstall}
               disabled={installing || !compatible}
               title={
@@ -687,13 +768,15 @@ function ExtensionCard({
                   {t('actions.install')}
                 </>
               )}
-            </button>
+            </Button>
           )}
 
           <div className="flex gap-1">
             {installed && (
-              <button
-                className="w-7 h-7 p-0 flex items-center justify-center rounded-sm bg-transparent border-0 text-mute cursor-pointer transition-colors hover:bg-red-500/15 hover:text-red-400 disabled:opacity-50 disabled:cursor-not-allowed"
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-destructive"
                 onClick={onUninstall}
                 disabled={uninstalling}
                 title="Uninstall"
@@ -703,16 +786,17 @@ function ExtensionCard({
                 ) : (
                   <Trash2 size={16} />
                 )}
-              </button>
+              </Button>
             )}
             {hasScreenshots && (
-              <button
-                className="w-7 h-7 p-0 flex items-center justify-center rounded-sm bg-transparent border-0 text-mute cursor-pointer transition-colors hover:bg-white/10 hover:text-on-dark"
+              <Button
+                variant="ghost"
+                size="sm"
                 onClick={() => setShowScreenshots(true)}
                 title={`Preview screenshots (${extension.screenshots!.length})`}
               >
                 <Images size={16} />
-              </button>
+              </Button>
             )}
             {manifest.repository && (
               <a
@@ -727,7 +811,7 @@ function ExtensionCard({
             )}
           </div>
         </div>
-      </div>
+      </Card>
     </>
   );
 }
@@ -782,12 +866,7 @@ function InstalledExtensionCard({
       {showPrefs && (
         <ExtensionPreferencesDialog manifest={manifest} onClose={() => setShowPrefs(false)} />
       )}
-      <div
-        className={cn(
-          'flex items-start gap-3 px-4 py-3 bg-white/[0.03] rounded-lg transition-colors hover:bg-white/[0.05]',
-          !enabled && 'opacity-50'
-        )}
-      >
+      <Card className={cn('flex-row flex-wrap items-start gap-3 p-4', !enabled && 'opacity-60')}>
         {/* Icon */}
         <div className="shrink-0 w-10 h-10 flex items-center justify-center bg-white/[0.06] rounded-md text-mute">
           {manifest.icon || LOCAL_EXTENSION_ICONS[manifest.id] ? (
@@ -832,23 +911,26 @@ function InstalledExtensionCard({
           {capturedErrors.length > 0 && (
             <div className="mt-1.5 flex flex-col gap-1">
               <div className="flex items-center gap-1.5">
-                <button
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-destructive"
                   onClick={() => setShowErrors((v) => !v)}
-                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-xs text-[10px] font-medium bg-red-500/10 text-red-400 hover:bg-red-500/15 border border-red-500/20 transition-colors"
                 >
                   <Bug size={10} />
                   {capturedErrors.length} error{capturedErrors.length !== 1 ? 's' : ''}
-                </button>
+                </Button>
                 {showErrors && (
-                  <button
+                  <Button
+                    variant="ghost"
+                    size="sm"
                     onClick={() => {
                       setCapturedErrors([]);
                       setShowErrors(false);
                     }}
-                    className="text-[10px] text-mute hover:text-body transition-colors"
                   >
                     clear
-                  </button>
+                  </Button>
                 )}
               </div>
               {showErrors && (
@@ -891,38 +973,30 @@ function InstalledExtensionCard({
         {/* Actions */}
         <div className="flex items-center gap-1.5 shrink-0">
           {hasPrefs && (
-            <button
-              className="w-7 h-7 p-0 flex items-center justify-center rounded-sm bg-transparent border-0 text-mute cursor-pointer transition-colors hover:bg-white/10 hover:text-on-dark"
+            <Button
+              variant="ghost"
+              size="sm"
               onClick={() => setShowPrefs(true)}
               title="Configure preferences"
             >
               <Settings size={16} />
-            </button>
+            </Button>
           )}
 
-          <button
-            className={cn(
-              'w-7 h-7 p-0 flex items-center justify-center rounded-sm bg-transparent border-0 cursor-pointer transition-colors',
-              enabled
-                ? 'text-accent-blue hover:bg-accent-blue-soft'
-                : 'text-mute hover:bg-white/10 hover:text-body'
-            )}
-            onClick={() => onToggle(!enabled)}
-            title={enabled ? t('actions.disable') : t('actions.enable')}
-          >
-            {enabled ? <ToggleRight size={20} /> : <ToggleLeft size={20} />}
-          </button>
+          <Switch checked={enabled} onCheckedChange={onToggle} aria-label={manifest.name} />
 
-          <button
-            className="w-7 h-7 p-0 flex items-center justify-center rounded-sm bg-transparent border-0 text-mute cursor-pointer transition-colors hover:bg-red-500/15 hover:text-red-400 disabled:opacity-50 disabled:cursor-not-allowed"
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-destructive"
             onClick={onUninstall}
             disabled={uninstalling}
             title={t('actions.uninstall')}
           >
             {uninstalling ? <Loader2 className="animate-spin" size={16} /> : <Trash2 size={16} />}
-          </button>
+          </Button>
         </div>
-      </div>
+      </Card>
     </>
   );
 }
@@ -1056,23 +1130,26 @@ function DevExtensionCard({
           {capturedErrors.length > 0 && (
             <div className="mt-1.5 flex flex-col gap-1">
               <div className="flex items-center gap-1.5">
-                <button
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-destructive"
                   onClick={() => setShowErrors((v) => !v)}
-                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-xs text-[10px] font-medium bg-red-500/10 text-red-400 hover:bg-red-500/15 border border-red-500/20 transition-colors"
                 >
                   <Bug size={10} />
                   {capturedErrors.length} error{capturedErrors.length !== 1 ? 's' : ''}
-                </button>
+                </Button>
                 {showErrors && (
-                  <button
+                  <Button
+                    variant="ghost"
+                    size="sm"
                     onClick={() => {
                       setCapturedErrors([]);
                       setShowErrors(false);
                     }}
-                    className="text-[10px] text-mute hover:text-body transition-colors"
                   >
                     clear
-                  </button>
+                  </Button>
                 )}
               </div>
               {showErrors && (
@@ -1115,43 +1192,31 @@ function DevExtensionCard({
         {/* Actions */}
         <div className="flex items-center gap-1.5 shrink-0">
           {hasPrefs && (
-            <button
-              className="w-7 h-7 p-0 flex items-center justify-center rounded-sm bg-transparent border-0 text-mute cursor-pointer transition-colors hover:bg-white/10 hover:text-on-dark"
+            <Button
+              variant="ghost"
+              size="sm"
               onClick={() => setShowPrefs(true)}
               title="Configure preferences"
             >
               <Settings size={16} />
-            </button>
+            </Button>
           )}
 
-          <button
-            className={cn(
-              'w-7 h-7 p-0 flex items-center justify-center rounded-sm bg-transparent border-0 cursor-pointer transition-colors',
-              enabled
-                ? 'text-accent-blue hover:bg-accent-blue-soft'
-                : 'text-mute hover:bg-white/10 hover:text-body'
-            )}
-            onClick={() => onToggle(!enabled)}
-            title={enabled ? t('actions.disable') : t('actions.enable')}
-          >
-            {enabled ? <ToggleRight size={20} /> : <ToggleLeft size={20} />}
-          </button>
+          <Switch checked={enabled} onCheckedChange={onToggle} aria-label={manifest.name} />
 
-          <button
-            className="w-7 h-7 p-0 flex items-center justify-center rounded-sm bg-transparent border-0 text-mute cursor-pointer transition-colors hover:bg-white/10 hover:text-on-dark"
-            onClick={onRefresh}
-            title="Refresh from disk"
-          >
+          <Button variant="ghost" size="sm" onClick={onRefresh} title="Refresh from disk">
             <RefreshCw size={16} />
-          </button>
+          </Button>
 
-          <button
-            className="w-7 h-7 p-0 flex items-center justify-center rounded-sm bg-transparent border-0 text-mute cursor-pointer transition-colors hover:bg-red-500/15 hover:text-red-400"
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-destructive"
             onClick={onUnlink}
             title="Unlink"
           >
             <Unlink size={16} />
-          </button>
+          </Button>
         </div>
       </div>
     </>
@@ -1171,82 +1236,63 @@ function ScreenshotsModal({
   onClose,
 }: ScreenshotsModalProps): React.JSX.Element {
   const [idx, setIdx] = useState(0);
-  const overlayRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-      if (e.key === 'ArrowRight') setIdx((i) => (i + 1) % screenshots.length);
-      if (e.key === 'ArrowLeft') setIdx((i) => (i - 1 + screenshots.length) % screenshots.length);
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose, screenshots.length]);
-
+  const { t } = useTranslation('extensions');
   return (
-    <div
-      ref={overlayRef}
-      className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black/80 backdrop-blur-sm"
-      onClick={(e) => {
-        if (e.target === overlayRef.current) onClose();
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open) onClose();
       }}
     >
-      {/* Header */}
-      <div className="flex items-center justify-between w-full max-w-3xl px-4 pb-3">
-        <span className="text-xs text-mute">
-          {name} — {idx + 1} / {screenshots.length}
-        </span>
-        <button
-          className="w-7 h-7 p-0 flex items-center justify-center rounded-sm bg-transparent border-0 text-mute cursor-pointer hover:text-on-dark hover:bg-white/10 transition-colors"
-          onClick={onClose}
-        >
-          <X size={16} />
-        </button>
-      </div>
-
-      {/* Image + nav */}
-      <div className="relative flex items-center justify-center w-full max-w-3xl px-4">
-        {screenshots.length > 1 && (
-          <button
-            className="absolute left-4 z-10 w-8 h-8 flex items-center justify-center rounded-full bg-black/60 border border-white/10 text-on-dark cursor-pointer hover:bg-black/80 transition-colors"
-            onClick={() => setIdx((i) => (i - 1 + screenshots.length) % screenshots.length)}
-          >
-            <ChevronLeft size={18} />
-          </button>
-        )}
-
+      <DialogContent
+        showCloseButton={false}
+        className="max-h-[calc(100dvh-2rem)] sm:max-w-3xl"
+        onKeyDown={(event) => {
+          if (event.key === 'ArrowRight') setIdx((index) => (index + 1) % screenshots.length);
+          if (event.key === 'ArrowLeft')
+            setIdx((index) => (index - 1 + screenshots.length) % screenshots.length);
+        }}
+      >
+        <DialogHeader>
+          <DialogTitle>{name}</DialogTitle>
+          <DialogDescription>
+            {idx + 1} / {screenshots.length}
+          </DialogDescription>
+        </DialogHeader>
         <img
           src={screenshots[idx]}
-          alt={`Screenshot ${idx + 1}`}
-          className="rounded-lg max-h-[60vh] max-w-full object-contain shadow-2xl border border-white/10"
+          alt={`${name} ${idx + 1}`}
+          className="max-h-[60dvh] w-full rounded-lg object-contain"
         />
-
-        {screenshots.length > 1 && (
-          <button
-            className="absolute right-4 z-10 w-8 h-8 flex items-center justify-center rounded-full bg-black/60 border border-white/10 text-on-dark cursor-pointer hover:bg-black/80 transition-colors"
-            onClick={() => setIdx((i) => (i + 1) % screenshots.length)}
-          >
-            <ChevronRight size={18} />
-          </button>
-        )}
-      </div>
-
-      {/* Dots */}
-      {screenshots.length > 1 && (
-        <div className="flex gap-1.5 mt-4">
-          {screenshots.map((_, i) => (
-            <button
-              key={i}
-              className={cn(
-                'w-1.5 h-1.5 rounded-full border-0 p-0 cursor-pointer transition-colors',
-                i === idx ? 'bg-white' : 'bg-white/30 hover:bg-white/50'
-              )}
-              onClick={() => setIdx(i)}
-            />
-          ))}
-        </div>
-      )}
-    </div>
+        <DialogFooter className="justify-between">
+          {screenshots.length > 1 && (
+            <div className="mr-auto flex gap-2">
+              <Button
+                variant="outline"
+                size="icon"
+                aria-label={t('preferences.previousImage')}
+                onClick={() =>
+                  setIdx((index) => (index - 1 + screenshots.length) % screenshots.length)
+                }
+              >
+                <ChevronLeft />
+              </Button>
+              <Button
+                variant="outline"
+                size="icon"
+                aria-label={t('preferences.nextImage')}
+                onClick={() => setIdx((index) => (index + 1) % screenshots.length)}
+              >
+                <ChevronRight />
+              </Button>
+            </div>
+          )}
+          <Button variant="outline" onClick={onClose}>
+            {t('preferences.close')}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -1260,12 +1306,13 @@ function ExtensionPreferencesDialog({
   manifest,
   onClose,
 }: ExtensionPreferencesDialogProps): React.JSX.Element {
+  const { t } = useTranslation('extensions');
+  const [saveError, setSaveError] = useState(false);
   const prefs = manifest.preferences ?? [];
   const [values, setValues] = useState<Record<string, string>>({});
   const [showSecrets, setShowSecrets] = useState<Record<string, boolean>>({});
   const [saving, setSaving] = useState(false);
   const [savedMsg, setSavedMsg] = useState(false);
-  const overlayRef = useRef<HTMLDivElement>(null);
 
   // Load existing values on mount (skip 'oauth' prefs — handled by OAuthPreferenceField).
   // Derive the pref list inside the effect so we depend only on the manifest's
@@ -1301,6 +1348,7 @@ function ExtensionPreferencesDialog({
 
   const handleSave = async () => {
     setSaving(true);
+    setSaveError(false);
     try {
       for (const pref of prefs) {
         if (pref.type === 'oauth') continue; // OAuth tokens are stored by the deep-link handler
@@ -1321,6 +1369,8 @@ function ExtensionPreferencesDialog({
       }
       setSavedMsg(true);
       setTimeout(() => setSavedMsg(false), 1800);
+    } catch {
+      setSaveError(true);
     } finally {
       setSaving(false);
     }
@@ -1331,36 +1381,23 @@ function ExtensionPreferencesDialog({
   const hasNonOAuthPrefs = prefs.some((p) => p.type !== 'oauth');
 
   return (
-    <div
-      ref={overlayRef}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
-      onClick={(e) => {
-        if (e.target === overlayRef.current) onClose();
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open && !saving) onClose();
       }}
     >
-      <div className="relative w-full max-w-md bg-[var(--bg-panel,#1a1a2e)] border border-white/10 rounded-xl shadow-2xl flex flex-col max-h-[80vh]">
-        {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-white/[0.08]">
-          <div className="flex items-center gap-2">
-            <Settings size={16} className="text-mute" />
-            <h2 className="m-0 text-sm font-semibold text-on-dark">
-              {manifest.name} — Preferences
-            </h2>
-          </div>
-          <button
-            className="w-7 h-7 p-0 flex items-center justify-center rounded-sm bg-transparent border-0 text-mute cursor-pointer hover:text-on-dark hover:bg-white/10 transition-colors"
-            onClick={onClose}
-          >
-            <X size={16} />
-          </button>
-        </div>
-
-        {/* Fields */}
-        <div className="flex-1 overflow-y-auto px-5 py-4 flex flex-col gap-4">
+      <DialogContent
+        showCloseButton={false}
+        className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-lg"
+      >
+        <DialogHeader>
+          <DialogTitle>{t('preferences.title', { name: manifest.name })}</DialogTitle>
+          <DialogDescription>{manifest.description}</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-5">
           {prefs.length === 0 ? (
-            <p className="text-xs text-mute text-center py-6">
-              No preferences defined for this extension.
-            </p>
+            <p className="text-sm text-muted-foreground">{t('preferences.empty')}</p>
           ) : (
             prefs.map((pref) =>
               pref.type === 'oauth' ? (
@@ -1372,49 +1409,41 @@ function ExtensionPreferencesDialog({
                   value={values[pref.name] ?? ''}
                   showSecret={showSecrets[pref.name] ?? false}
                   onToggleSecret={() =>
-                    setShowSecrets((prev) => ({ ...prev, [pref.name]: !prev[pref.name] }))
+                    setShowSecrets((previous) => ({
+                      ...previous,
+                      [pref.name]: !previous[pref.name],
+                    }))
                   }
-                  onChange={(val) => setValue(pref.name, val)}
+                  onChange={(value) => setValue(pref.name, value)}
+                  disabled={saving}
                 />
               )
             )
           )}
+          {saveError && (
+            <p role="alert" className="text-sm text-destructive">
+              {t('preferences.saveFailed')}
+            </p>
+          )}
         </div>
-
-        {/* Footer — only show Save when there are non-OAuth prefs */}
-        {hasNonOAuthPrefs && (
-          <div className="flex items-center justify-end gap-2 px-5 py-3 border-t border-white/[0.08]">
-            {savedMsg && <span className="text-xs text-green-400 mr-auto">Saved!</span>}
-            <button
-              className="px-3 py-1.5 text-xs text-mute bg-transparent border-0 cursor-pointer hover:text-on-dark transition-colors rounded-sm"
-              onClick={onClose}
-            >
-              Cancel
-            </button>
-            <button
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-accent-blue rounded-sm border-0 cursor-pointer hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
-              onClick={() => {
-                void handleSave();
-              }}
-              disabled={saving}
-            >
-              {saving ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
-              Save
-            </button>
-          </div>
-        )}
-        {!hasNonOAuthPrefs && (
-          <div className="flex items-center justify-end px-5 py-3 border-t border-white/[0.08]">
-            <button
-              className="px-3 py-1.5 text-xs text-mute bg-transparent border-0 cursor-pointer hover:text-on-dark transition-colors rounded-sm"
-              onClick={onClose}
-            >
-              Close
-            </button>
-          </div>
-        )}
-      </div>
-    </div>
+        <DialogFooter>
+          {savedMsg && (
+            <span role="status" className="mr-auto text-xs text-muted-foreground">
+              {t('preferences.saved')}
+            </span>
+          )}
+          <Button variant="outline" onClick={onClose} disabled={saving}>
+            {hasNonOAuthPrefs ? t('preferences.cancel') : t('preferences.close')}
+          </Button>
+          {hasNonOAuthPrefs && (
+            <Button onClick={() => void handleSave()} disabled={saving}>
+              {saving ? <Loader2 className="animate-spin" /> : <Save />}
+              {t('preferences.save')}
+            </Button>
+          )}
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -1554,8 +1583,10 @@ function OAuthPreferenceField({ pref, extensionId }: OAuthPreferenceFieldProps):
               <CheckCircle size={13} />
               Connected
             </span>
-            <button
-              className="flex items-center gap-1 px-2.5 py-1 text-xs text-mute bg-white/[0.06] border border-white/[0.1] rounded-md cursor-pointer hover:text-red-400 hover:border-red-400/30 transition-colors disabled:opacity-50"
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-destructive"
               onClick={() => {
                 void handleDisconnect();
               }}
@@ -1563,11 +1594,12 @@ function OAuthPreferenceField({ pref, extensionId }: OAuthPreferenceFieldProps):
             >
               {pending ? <Loader2 size={11} className="animate-spin" /> : <LogOut size={11} />}
               Disconnect
-            </button>
+            </Button>
           </>
         ) : (
-          <button
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-accent-blue rounded-md border-0 cursor-pointer hover:opacity-90 transition-opacity disabled:opacity-50"
+          <Button
+            variant="default"
+            size="sm"
             onClick={() => {
               void handleConnect();
             }}
@@ -1575,7 +1607,7 @@ function OAuthPreferenceField({ pref, extensionId }: OAuthPreferenceFieldProps):
           >
             {pending ? <Loader2 size={12} className="animate-spin" /> : <Link size={12} />}
             {pending ? 'Waiting for authorization…' : `Connect with ${provider}`}
-          </button>
+          </Button>
         )}
       </div>
 
@@ -1595,6 +1627,7 @@ interface PreferenceFieldProps {
   showSecret: boolean;
   onToggleSecret: () => void;
   onChange: (val: string) => void;
+  disabled?: boolean;
 }
 
 function PreferenceField({
@@ -1603,85 +1636,73 @@ function PreferenceField({
   showSecret,
   onToggleSecret,
   onChange,
+  disabled,
 }: PreferenceFieldProps): React.JSX.Element {
-  const inputClass =
-    'w-full px-3 py-2 text-xs text-on-dark bg-white/[0.06] border border-white/[0.1] rounded-md outline-none focus:border-accent-blue/60 transition-colors';
-
+  const { t } = useTranslation('extensions');
+  const id = `extension-pref-${pref.name}`;
+  const label = pref.title ?? pref.name;
   return (
-    <div className="flex flex-col gap-1.5">
-      <div className="flex items-center gap-1.5">
-        <label className="text-xs font-medium text-on-dark">{pref.title ?? pref.name}</label>
-        {pref.required && <span className="text-[10px] text-red-400">*</span>}
-      </div>
-      {pref.description && (
-        <p className="m-0 text-[11px] text-mute leading-snug">{pref.description}</p>
-      )}
-
+    <Field>
+      <FieldLabel htmlFor={id}>
+        {label}
+        {pref.required && <span className="text-destructive">*</span>}
+      </FieldLabel>
+      {pref.description && <FieldDescription>{pref.description}</FieldDescription>}
       {pref.type === 'boolean' ? (
-        <button
-          className={cn(
-            'self-start flex items-center gap-2 px-3 py-1.5 text-xs rounded-md border-0 cursor-pointer transition-colors',
-            value === 'true'
-              ? 'bg-accent-blue/20 text-accent-blue'
-              : 'bg-white/[0.06] text-mute hover:bg-white/[0.1] hover:text-on-dark'
-          )}
-          onClick={() => onChange(value === 'true' ? 'false' : 'true')}
-        >
-          {value === 'true' ? <ToggleRight size={16} /> : <ToggleLeft size={16} />}
-          {value === 'true' ? 'Enabled' : 'Disabled'}
-        </button>
+        <Switch
+          id={id}
+          checked={value === 'true'}
+          onCheckedChange={(checked) => onChange(String(checked))}
+          disabled={disabled}
+        />
       ) : pref.type === 'select' && pref.options ? (
-        <select
-          className={inputClass}
+        <SettingsSelect
+          id={id}
+          label={label}
           value={value}
-          onChange={(e) => onChange(e.target.value)}
-          style={{ background: 'rgba(255,255,255,0.06)', color: 'inherit' }}
-        >
-          {!pref.required && <option value="">— select —</option>}
-          {pref.options.map((opt) => (
-            <option key={opt} value={opt}>
-              {opt}
-            </option>
-          ))}
-        </select>
+          options={[
+            ...(!pref.required ? [{ value: '', label: t('preferences.select') }] : []),
+            ...pref.options.map((option) => ({ value: option, label: option })),
+          ]}
+          onValueChange={onChange}
+          disabled={disabled}
+          className="w-full sm:w-full"
+        />
       ) : pref.type === 'secret' ? (
         <div className="relative">
-          <input
+          <Input
+            id={id}
             type={showSecret ? 'text' : 'password'}
-            className={cn(inputClass, 'pr-9')}
             value={value}
-            onChange={(e) => onChange(e.target.value)}
-            placeholder={pref.required ? 'Required' : 'Optional'}
+            onChange={(event) => onChange(event.target.value)}
+            placeholder={pref.required ? t('preferences.required') : t('preferences.optional')}
             autoComplete="off"
+            disabled={disabled}
+            className="pr-10"
           />
-          <button
-            className="absolute right-2 top-1/2 -translate-y-1/2 p-0 bg-transparent border-0 text-mute cursor-pointer hover:text-on-dark transition-colors"
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className="absolute right-1 top-1/2 -translate-y-1/2"
             onClick={onToggleSecret}
-            tabIndex={-1}
+            aria-label={showSecret ? t('preferences.hideSecret') : t('preferences.showSecret')}
           >
-            {showSecret ? <EyeOff size={14} /> : <Eye size={14} />}
-          </button>
+            {showSecret ? <EyeOff /> : <Eye />}
+          </Button>
         </div>
-      ) : pref.type === 'number' ? (
-        <input
-          type="number"
-          className={inputClass}
+      ) : (
+        <Input
+          id={id}
+          type={pref.type === 'number' ? 'number' : 'text'}
           value={value}
-          onChange={(e) => onChange(e.target.value)}
+          onChange={(event) => onChange(event.target.value)}
           min={pref.min}
           max={pref.max}
-          placeholder={pref.required ? 'Required' : 'Optional'}
-        />
-      ) : (
-        <input
-          type="text"
-          className={inputClass}
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          placeholder={pref.required ? 'Required' : 'Optional'}
+          placeholder={pref.required ? t('preferences.required') : t('preferences.optional')}
+          disabled={disabled}
         />
       )}
-    </div>
+    </Field>
   );
 }
 

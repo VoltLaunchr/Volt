@@ -98,7 +98,7 @@ export function matchActivation(
 
   // 3. Always-on plugins (name-matching, e.g. games) activate on any query of
   //    sufficient length. Keyword/prefix matches above take precedence so their
-  //    `matchKind` (and scoring boost) still apply.
+  //    `matchKind` (and `activation` tier) still apply.
   if (activation.mode === 'always') {
     const minLength = activation.minLength ?? 2;
     if (trimmed.length >= minLength) {

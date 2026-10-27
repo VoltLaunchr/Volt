@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use volt_lib::benchmark_api::{FileCategory, FileInfo, FulltextIndex, SearchEngine, SearchOptions};
 use volt_lib::commands::apps::AppInfo;
 use volt_lib::launcher::{LaunchRecord, QueryBindingStore};
+use volt_lib::search::SearchSensitivity;
 use volt_lib::search::search_applications;
 use volt_lib::search::search_applications_with_frecency;
 use volt_lib::utils::matching::{calculate_match_score, fuzzy_match};
@@ -126,6 +127,7 @@ fn generate_history(apps: &[AppInfo], count: usize) -> Vec<LaunchRecord> {
         .take(count)
         .enumerate()
         .map(|(i, app)| LaunchRecord {
+            kind: volt_lib::launcher::UsageKind::App,
             path: app.path.clone(),
             name: app.name.clone(),
             launch_count: (10 - (i % 10)) as u32,
@@ -345,6 +347,7 @@ fn bench_search_with_frecency(c: &mut Criterion) {
                         black_box(frecency),
                         black_box(Some(&bindings)),
                         black_box(&empty_aliases),
+                        black_box(SearchSensitivity::default()),
                     )
                 })
             },
@@ -358,6 +361,7 @@ fn bench_search_with_frecency(c: &mut Criterion) {
                     black_box(&empty_frecency),
                     black_box(None),
                     black_box(&empty_aliases),
+                    black_box(SearchSensitivity::default()),
                 )
             })
         });

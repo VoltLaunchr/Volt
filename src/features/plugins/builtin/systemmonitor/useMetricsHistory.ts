@@ -18,6 +18,7 @@ export interface MetricSample {
 export function useMetricsHistory(
   metrics: SystemMetricsV2 | null,
   maxSamples: number = 60,
+  windowSeconds: number = 90
 ): MetricSample[] {
   const [history, setHistory] = useState<MetricSample[]>([]);
   const lastRef = useRef<SystemMetricsV2 | null>(null);
@@ -36,10 +37,14 @@ export function useMetricsHistory(
       networkTxBps: metrics.network.transmittedBytesPerSec,
     };
     setHistory((prev) => {
-      const next = prev.length >= maxSamples ? prev.slice(prev.length - maxSamples + 1) : prev;
+      const recent = prev.filter(
+        (item) => item.timestamp >= sample.timestamp - windowSeconds * 1000
+      );
+      const limit = Math.max(1, maxSamples);
+      const next = recent.length >= limit ? recent.slice(recent.length - limit + 1) : recent;
       return [...next, sample];
     });
-  }, [metrics, maxSamples]);
+  }, [metrics, maxSamples, windowSeconds]);
 
   return history;
 }

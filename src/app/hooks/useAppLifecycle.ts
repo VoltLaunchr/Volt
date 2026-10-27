@@ -8,6 +8,7 @@ import {
   AiChatPlugin,
   CalculatorPlugin,
   DeveloperCommandsPlugin,
+  SettingsCommandsPlugin,
   DeveloperToolsPlugin,
   EmojiPickerPlugin,
   GamesPlugin,
@@ -115,6 +116,7 @@ export function useAppLifecycle(): UseAppLifecycleResult {
           pluginRegistry.register(new EmojiPickerPlugin());
           pluginRegistry.register(new WebSearchPlugin());
           pluginRegistry.register(new SystemCommandsPlugin());
+          pluginRegistry.register(new SettingsCommandsPlugin());
           pluginRegistry.register(new TimerPlugin());
           pluginRegistry.register(new SystemMonitorPlugin());
           pluginRegistry.register(new GamesPlugin()); // Unified games plugin (all platforms)
@@ -369,7 +371,19 @@ export function useAppLifecycle(): UseAppLifecycleResult {
       const deepSearchChanged =
         currentSettings?.indexing.deepSearch !== newSettings.indexing.deepSearch;
 
-      if (foldersChanged || extensionsChanged || exclusionsChanged || deepSearchChanged) {
+      const ignorePolicyChanged =
+        currentSettings?.indexing.respectIgnoreFiles !== newSettings.indexing.respectIgnoreFiles ||
+        currentSettings?.indexing.excludeGeneratedDirs !==
+          newSettings.indexing.excludeGeneratedDirs ||
+        currentSettings?.indexing.diagnosticsEnabled !== newSettings.indexing.diagnosticsEnabled;
+
+      if (
+        foldersChanged ||
+        extensionsChanged ||
+        exclusionsChanged ||
+        deepSearchChanged ||
+        ignorePolicyChanged
+      ) {
         const indexingRunId = ++indexingRunIdRef.current;
         indexingUnlistenRef.current?.();
         indexingUnlistenRef.current = null;
@@ -427,6 +441,9 @@ export function useAppLifecycle(): UseAppLifecycleResult {
               fileExtensions: newSettings.indexing.fileExtensions,
               force: true,
               deepSearch: newSettings.indexing.deepSearch,
+              respectIgnoreFiles: newSettings.indexing.respectIgnoreFiles,
+              excludeGeneratedDirs: newSettings.indexing.excludeGeneratedDirs,
+              diagnosticsEnabled: newSettings.indexing.diagnosticsEnabled,
             });
           } catch (err) {
             if (cancelled || indexingRunId !== indexingRunIdRef.current) return;
@@ -507,6 +524,9 @@ export function useAppLifecycle(): UseAppLifecycleResult {
         ext: [...currentSettings.indexing.fileExtensions].sort(),
         excludedPaths: [...currentSettings.indexing.excludedPaths].sort(),
         deepSearch: currentSettings.indexing.deepSearch,
+        respectIgnoreFiles: currentSettings.indexing.respectIgnoreFiles,
+        excludeGeneratedDirs: currentSettings.indexing.excludeGeneratedDirs,
+        diagnosticsEnabled: currentSettings.indexing.diagnosticsEnabled,
       });
       const lastConfigSig = localStorage.getItem(INDEX_CONFIG_KEY);
       const forceRescan = lastConfigSig !== currentConfigSig;
@@ -566,6 +586,9 @@ export function useAppLifecycle(): UseAppLifecycleResult {
           fileExtensions: currentSettings.indexing.fileExtensions,
           force: forceRescan || undefined,
           deepSearch: currentSettings.indexing.deepSearch,
+          respectIgnoreFiles: currentSettings.indexing.respectIgnoreFiles,
+          excludeGeneratedDirs: currentSettings.indexing.excludeGeneratedDirs,
+          diagnosticsEnabled: currentSettings.indexing.diagnosticsEnabled,
         });
       } catch (err) {
         if (indexingRunId !== indexingRunIdRef.current) return;

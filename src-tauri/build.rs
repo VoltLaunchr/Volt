@@ -13,6 +13,19 @@
 /// files reference these as plain `allow-<cmd>` (no plugin prefix — the app
 /// itself owns these permissions).
 fn main() {
+    // rfd imports TaskDialogIndirect, which requires Common Controls v6.
+    // tauri-build embeds the application's manifest, but Rust unit-test
+    // harnesses also link rfd and do not inherit the binary-only resources.
+    // Embed this dependency for all MSVC targets, including those harnesses.
+    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows")
+        && std::env::var("CARGO_CFG_TARGET_ENV").as_deref() == Ok("msvc")
+    {
+        println!("cargo:rustc-link-arg=/MANIFEST:EMBED");
+        println!(
+            "cargo:rustc-link-arg=/MANIFESTDEPENDENCY:type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'"
+        );
+    }
+
     // ---------------------------------------------------------------------
     // ACL: per-window command gating
     // ---------------------------------------------------------------------
@@ -55,6 +68,8 @@ fn main() {
         "get_history_count",
         "get_frecency_suggestions",
         "record_search_selection",
+        "record_command_usage",
+        "get_command_frecency",
         "open_path",
         "open_file_with_dialog",
         // Batch search command
@@ -315,4 +330,13 @@ fn main() {
             .app_manifest(tauri_build::AppManifest::new().commands(COMMANDS)),
     )
     .expect("failed to run tauri-build");
+
+    // The application already gets manifest resource #1 from tauri-build's
+    // resource.lib. Do not generate a second one when linking that binary;
+    // unit-test harnesses still need the generated Common Controls manifest.
+    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows")
+        && std::env::var("CARGO_CFG_TARGET_ENV").as_deref() == Ok("msvc")
+    {
+        println!("cargo:rustc-link-arg-bin=volt=/MANIFEST:NO");
+    }
 }

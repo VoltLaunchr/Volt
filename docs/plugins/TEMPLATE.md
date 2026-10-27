@@ -7,7 +7,7 @@ Template prêt à l'emploi pour créer un nouveau plugin Volt.
 1. Copiez ce dossier dans `src/features/plugins/builtin/`
 2. Renommez-le selon votre plugin (ex: `my-awesome-plugin`)
 3. Modifiez les fichiers selon vos besoins
-4. Enregistrez le plugin dans `src/app/App.tsx`
+4. Enregistrez le plugin dans `src/app/hooks/useAppLifecycle.ts` (registration block) + déclarez son `activation` (prefixes/keywords) et son entrée `MANAGED_PLUGINS` dans `src/features/plugins/builtin/manifest.ts` s'il doit être désactivable
 
 ---
 
@@ -482,10 +482,10 @@ function levenshteinDistance(str1: string, str2: string): number {
 
 ## Enregistrement du plugin
 
-Après avoir créé votre plugin, enregistrez-le dans `src/app/App.tsx` :
+Après avoir créé votre plugin, enregistrez-le dans `src/app/hooks/useAppLifecycle.ts` :
 
 ```typescript
-// src/app/App.tsx
+// src/app/hooks/useAppLifecycle.ts
 
 // Import de votre plugin
 import { MyPlugin } from '../features/plugins/builtin/my-plugin';

@@ -4,6 +4,7 @@ export { DeveloperCommandsPlugin } from './developer';
 export { DeveloperToolsPlugin } from './developer-tools';
 export { WebSearchPlugin } from './websearch';
 export { SystemCommandsPlugin } from './systemcommands';
+export { SettingsCommandsPlugin } from './settings-commands';
 export { TimerPlugin, TimerDisplay, useTimers, timerStore, tasksStore } from './timer';
 export { SystemMonitorPlugin } from './systemmonitor';
 export { GamesPlugin } from './games';

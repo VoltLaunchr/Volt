@@ -3,4 +3,28 @@
 /**
  * Plugin settings
  */
-export type PluginSettings = { enabledPlugins: Array<string>, clipboardMonitoring: boolean, clipboardRetentionDays: number, clipboardDisabledApps: Array<string>, };
+export type PluginSettings = { enabledPlugins: Array<string>, clipboardMonitoring: boolean, clipboardRetentionDays: number, clipboardDisabledApps: Array<string>, 
+/**
+ * How often the System Monitor refreshes its metrics, in milliseconds.
+ */
+systemMonitorRefreshMs: number, 
+/**
+ * Pomodoro work session length, in minutes.
+ */
+timerWorkMinutes: number, 
+/**
+ * Pomodoro short break length, in minutes.
+ */
+timerShortBreakMinutes: number, 
+/**
+ * Pomodoro long break length, in minutes.
+ */
+timerLongBreakMinutes: number, 
+/**
+ * Margin around and between windows snapped by Window Management, in pixels.
+ */
+windowManagementGapPx: number, 
+/**
+ * Open URL quicklinks in the browser chosen for web search instead of the system default.
+ */
+quicklinksUsePreferredBrowser: boolean, };

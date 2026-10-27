@@ -1,6 +1,6 @@
 [package]
 name = "volt"
-version = "0.5.0"
+version = "0.5.1"
 description = "Lightning-fast keyboard-driven launcher for Windows, macOS, and Linux"
 authors = ["VoltLaunchr Contributors"]
 license = "Apache-2.0"
@@ -52,6 +52,7 @@ arboard = "3.4"
 rusqlite = { version = "0.40.1" }
 fs4 = "0.13.1"
 notify = { version = "6.1", features = ["macos_fsevent"] }
+ignore = "0.4"
 image = "0.25"
 base64 = "0.22"
 nucleo-matcher = "0.3"
@@ -110,6 +111,10 @@ tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
 winapi = { version = "0.3", features = ["shellapi", "winuser", "wingdi", "winnt", "winreg", "fileapi", "winbase", "psapi", "processthreadsapi", "handleapi", "ioapiset", "errhandlingapi"] }
 winreg = "0.55"
 notify-rust = "4.18"
+# Microsoft Store (MSIX) flavor only — pulled in by the `store` feature below.
+# WinRT `StartupTask` (MSIX autostart) + `Package` (package identity / AUMID).
+# 0.61 is already in the lockfile through Tauri/WebView2, so no new crate.
+windows = { version = "0.61", optional = true, features = ["ApplicationModel"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 icns = "0.1"
@@ -165,6 +170,16 @@ test-embeddings = []
 # at runtime; the pure trigger-matching logic (`expansion::trigger_buffer`)
 # still compiles and is unit-tested on every OS regardless of this flag.
 snippet-global-expansion = []
+# Microsoft Store (MSIX) build flavor. OFF by default: the NSIS/MSI + updater +
+# winget channel is unchanged. When ON (Windows only, see
+# `scripts/package-msix.ps1` and docs/build-release/MICROSOFT_STORE.md):
+# - autostart uses the MSIX `windows.startupTask` (WinRT StartupTask) instead of
+#   the HKCU Run key, which MSIX virtualizes (Explorer never sees it);
+# - native notifications use the package AUMID instead of `volt.launch`.
+# Both paths fall back to the regular behavior when the process has no package
+# identity (e.g. `cargo run --features store`). The self-updater is disabled by
+# the config overlay `tauri.store.conf.json` + `VITE_VOLT_DISTRIBUTION=msstore`.
+store = ["dep:windows"]
 
 [dev-dependencies]
 tempfile = "3"

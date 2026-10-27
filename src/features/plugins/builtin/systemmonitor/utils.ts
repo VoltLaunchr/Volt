@@ -35,6 +35,11 @@ function csvEscape(value: unknown): string {
   } else {
     s = JSON.stringify(value);
   }
+  // Spreadsheet applications evaluate formula-looking text even inside quoted CSV cells.
+  // Names originate in OS processes/interfaces, so preserve them as literal text.
+  if (typeof value === 'string' && (/^\s*[=+\-@]/.test(s) || /^[\t\r\n]/.test(s))) {
+    s = `'${s}`;
+  }
   if (s.includes(',') || s.includes('"') || s.includes('\n') || s.includes('\r')) {
     return `"${s.replace(/"/g, '""')}"`;
   }
@@ -48,22 +53,22 @@ function csvRow(cells: unknown[]): string {
 function timestampFile(d: Date): string {
   const pad = (n: number) => n.toString().padStart(2, '0');
   return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(
-    d.getMinutes(),
+    d.getMinutes()
   )}${pad(d.getSeconds())}`;
 }
 
-/** Build and trigger a CSV download of the current metrics + history. */
-export function exportMetricsCsv(metrics: SystemMetricsV2, history: MetricSample[]): void {
+/** Build an Excel-safe UTF-8 CSV of the current metrics and session history. */
+export function buildMetricsCsv(metrics: SystemMetricsV2, history: MetricSample[]): string {
   const lines: string[] = [];
 
   lines.push(csvRow(['Section', 'Key', 'Value']));
   lines.push(csvRow(['Summary', 'CPU %', metrics.cpuUsage.toFixed(2)]));
   lines.push(csvRow(['Summary', 'Memory %', metrics.memoryUsage.toFixed(2)]));
-  lines.push(csvRow(['Summary', 'Memory Used GB', metrics.memoryUsedGb.toFixed(2)]));
-  lines.push(csvRow(['Summary', 'Memory Total GB', metrics.memoryTotalGb.toFixed(2)]));
+  lines.push(csvRow(['Summary', 'Memory Used GiB', metrics.memoryUsedGb.toFixed(2)]));
+  lines.push(csvRow(['Summary', 'Memory Total GiB', metrics.memoryTotalGb.toFixed(2)]));
   lines.push(csvRow(['Summary', 'Disk %', metrics.diskUsage.toFixed(2)]));
-  lines.push(csvRow(['Summary', 'Disk Used GB', metrics.diskUsedGb.toFixed(2)]));
-  lines.push(csvRow(['Summary', 'Disk Total GB', metrics.diskTotalGb.toFixed(2)]));
+  lines.push(csvRow(['Summary', 'Disk Used GiB', metrics.diskUsedGb.toFixed(2)]));
+  lines.push(csvRow(['Summary', 'Disk Total GiB', metrics.diskTotalGb.toFixed(2)]));
   lines.push(csvRow(['Summary', 'Uptime seconds', metrics.uptimeSeconds]));
 
   lines.push('');
@@ -73,7 +78,9 @@ export function exportMetricsCsv(metrics: SystemMetricsV2, history: MetricSample
   }
 
   lines.push('');
-  lines.push(csvRow(['Disk Mount', 'File System', 'Kind', 'Used GB', 'Total GB', 'Available GB']));
+  lines.push(
+    csvRow(['Disk Mount', 'File System', 'Kind', 'Used GiB', 'Total GiB', 'Available GiB'])
+  );
   for (const d of metrics.perDisk) {
     lines.push(
       csvRow([
@@ -83,14 +90,14 @@ export function exportMetricsCsv(metrics: SystemMetricsV2, history: MetricSample
         d.usedGb.toFixed(2),
         d.totalGb.toFixed(2),
         d.availableGb.toFixed(2),
-      ]),
+      ])
     );
   }
 
   lines.push('');
   lines.push(csvRow(['Network Aggregate', 'RX B/s', 'TX B/s']));
   lines.push(
-    csvRow(['total', metrics.network.receivedBytesPerSec, metrics.network.transmittedBytesPerSec]),
+    csvRow(['total', metrics.network.receivedBytesPerSec, metrics.network.transmittedBytesPerSec])
   );
   lines.push('');
   lines.push(csvRow(['Network Interface', 'RX B/s', 'TX B/s', 'Total RX bytes', 'Total TX bytes']));
@@ -102,23 +109,33 @@ export function exportMetricsCsv(metrics: SystemMetricsV2, history: MetricSample
         iface.transmittedBytesPerSec,
         iface.totalReceivedBytes,
         iface.totalTransmittedBytes,
-      ]),
+      ])
     );
   }
 
   lines.push('');
-  lines.push(csvRow(['Top CPU PID', 'Name', 'CPU %', 'Memory MB']));
+  lines.push(csvRow(['Top CPU PID', 'Name', 'CPU %', 'Memory MiB']));
   for (const p of metrics.topCpuProcesses) {
     lines.push(
-      csvRow([p.pid, p.name, p.cpuUsagePercent.toFixed(2), (p.memoryBytes / (1024 * 1024)).toFixed(1)]),
+      csvRow([
+        p.pid,
+        p.name,
+        p.cpuUsagePercent.toFixed(2),
+        (p.memoryBytes / (1024 * 1024)).toFixed(1),
+      ])
     );
   }
 
   lines.push('');
-  lines.push(csvRow(['Top Memory PID', 'Name', 'CPU %', 'Memory MB']));
+  lines.push(csvRow(['Top Memory PID', 'Name', 'CPU %', 'Memory MiB']));
   for (const p of metrics.topMemoryProcesses) {
     lines.push(
-      csvRow([p.pid, p.name, p.cpuUsagePercent.toFixed(2), (p.memoryBytes / (1024 * 1024)).toFixed(1)]),
+      csvRow([
+        p.pid,
+        p.name,
+        p.cpuUsagePercent.toFixed(2),
+        (p.memoryBytes / (1024 * 1024)).toFixed(1),
+      ])
     );
   }
 
@@ -133,12 +150,17 @@ export function exportMetricsCsv(metrics: SystemMetricsV2, history: MetricSample
         s.diskUsage.toFixed(2),
         s.networkRxBps,
         s.networkTxBps,
-      ]),
+      ])
     );
   }
 
   // UTF-8 BOM so Excel opens the file as UTF-8 instead of the legacy code page.
-  const csv = '\ufeff' + lines.join('\r\n');
+  return '\ufeff' + lines.join('\r\n');
+}
+
+/** Trigger a download; no data leaves this device. */
+export function exportMetricsCsv(metrics: SystemMetricsV2, history: MetricSample[]): void {
+  const csv = buildMetricsCsv(metrics, history);
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');

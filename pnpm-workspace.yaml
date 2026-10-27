@@ -9,12 +9,15 @@ allowBuilds:
 overrides:
   # Versions fixed for the complete current npm advisory set. Exact pins keep
   # installs reproducible until each direct parent raises its own lower bound.
-  brace-expansion: 5.0.9
-  dompurify: 3.4.13
-  fast-uri: 3.1.7
+  brace-expansion: 5.0.12
+  dompurify: 3.4.17
+  fast-uri: 3.1.9
   js-yaml: 4.3.2
   postcss: 8.5.25
-  undici: 7.29.0
+  undici: 8.12.3
+  markdown-it: 14.3.3
+  source-map-js: 1.2.2
+  zod: 4.6.6
   picomatch: '>=4.0.4'
   flatted: '>=3.4.2'
   rollup: '>=4.59.0'

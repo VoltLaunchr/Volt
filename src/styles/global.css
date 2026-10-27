@@ -12,7 +12,7 @@
    they're emitted in our final CSS bundle. */
 @source "../../node_modules/streamdown/dist/*.js";
 
-@custom-variant dark (&:is(.dark *));
+@custom-variant dark (&:where(.dark, .dark *, [data-theme='dark'], [data-theme='dark'] *));
 
 /* ── Base reset (Tailwind preflight covers most of this, these are additions) ── */
 html,
@@ -178,7 +178,8 @@ select {
   --chart-label: oklch(0.45 0.01 260);
 }
 
-.dark {
+.dark,
+[data-theme='dark'] {
   --destructive-foreground: var(--color-red-600);
   --success: var(--color-emerald-500);
   --success-foreground: var(--color-emerald-600);
@@ -205,7 +206,27 @@ select {
   --chart-label: oklch(0.75 0.01 260);
 }
 
+/* Map shadcn utilities to Volt's live semantic variables. Keep --color-primary
+   owned by theme.css: --primary already aliases it, so redefining it here would
+   create a CSS variable cycle and break custom accents. */
 @theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
   --color-destructive-foreground: var(--destructive-foreground);
   --color-success: var(--success);
   --color-success-foreground: var(--success-foreground);

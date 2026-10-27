@@ -365,6 +365,15 @@ fn validate_extension_id(id: &str) -> VoltResult<()> {
             "Extension ID cannot be empty".to_string(),
         ));
     }
+    // "." resolves to the extensions directory itself via `join`, so
+    // `uninstall_extension(".")` would `remove_dir_all` the whole store.
+    // ".." is already covered by the `contains("..")` check below, but reject
+    // both single-dot and parent-dir forms explicitly for clarity.
+    if id == "." || id == ".." {
+        return Err(VoltError::InvalidConfig(
+            "Invalid extension ID: reserved path component".to_string(),
+        ));
+    }
     if id.contains("..") || id.contains('/') || id.contains('\\') {
         return Err(VoltError::InvalidConfig(
             "Invalid extension ID: contains forbidden path characters".to_string(),
@@ -656,11 +665,32 @@ fn extract_tar_gz(bytes: &[u8], dest_dir: &Path) -> VoltResult<()> {
             })?;
         }
 
-        entry
-            .unpack(&outpath)
-            .map_err(|e| VoltError::FileSystem(format!("Failed to unpack tar entry: {}", e)))?;
-
-        total_extracted = total_extracted.saturating_add(advertised);
+        // Stream the entry through a bounded copy so a lying `size()` header
+        // cannot bypass the bomb guard (mirror of the zip path). `unpack`
+        // would trust the header; instead we cap bytes actually written.
+        {
+            use std::io::Read;
+            let mut outfile = fs::File::create(&outpath).map_err(|e| {
+                VoltError::FileSystem(format!(
+                    "Failed to create file {}: {}",
+                    outpath.display(),
+                    e
+                ))
+            })?;
+            let budget = MAX_EXTRACTED_BYTES.saturating_sub(total_extracted);
+            let mut limited = (&mut entry).take(budget + 1);
+            let written = std::io::copy(&mut limited, &mut outfile)
+                .map_err(|e| VoltError::FileSystem(format!("Failed to unpack tar entry: {}", e)))?;
+            if written > budget {
+                // Best-effort cleanup of the truncated file.
+                let _ = fs::remove_file(&outpath);
+                return Err(VoltError::InvalidConfig(format!(
+                    "Tar archive exceeds {} MB decompressed (tar-bomb guard)",
+                    MAX_EXTRACTED_BYTES / (1024 * 1024)
+                )));
+            }
+            total_extracted = total_extracted.saturating_add(written);
+        }
     }
 
     Ok(())
@@ -4165,7 +4195,7 @@ pub async fn ext_get_applications(
     extension_id: String,
 ) -> Result<Vec<crate::commands::apps::AppInfo>, String> {
     require_extension_permission(&app, &extension_id, "system").map_err(|e| e.to_string())?;
-    crate::commands::apps::scan_applications()
+    crate::commands::apps::scan_applications_with_options(false)
         .await
         .map_err(|e| e.to_string())
 }
@@ -4813,5 +4843,47 @@ mod tests {
     fn empty_or_invalid_rejected() {
         assert!(validate_download_url("").is_err());
         assert!(validate_download_url("not a url").is_err());
+    }
+
+    #[test]
+    fn single_dot_extension_id_rejected() {
+        // Regression: "." used to pass validation, making
+        // `extensions_dir.join(".") == extensions_dir` so uninstall would
+        // `remove_dir_all` the whole extension store.
+        assert!(validate_extension_id(".").is_err());
+        assert!(validate_extension_id("..").is_err());
+        assert!(validate_extension_id("").is_err());
+        assert!(validate_extension_id("my.extension").is_ok());
+        assert!(validate_extension_id("my-extension_1").is_ok());
+    }
+
+    #[test]
+    fn tar_gz_extracts_small_archive() {
+        // Regression guard for the tar-bomb fix: valid archives must still
+        // extract via the bounded streaming copy (not `unpack`).
+        use flate2::{Compression, write::GzEncoder};
+        let root = tempfile::tempdir().unwrap();
+        let src = root.path().join("src");
+        let dest = root.path().join("dest");
+        fs::create_dir(&src).unwrap();
+        fs::create_dir(&dest).unwrap();
+        fs::write(src.join("manifest.json"), r#"{"id":"x"}"#).unwrap();
+        let tar_gz_path = root.path().join("ext.tar.gz");
+        {
+            let tar_gz = fs::File::create(&tar_gz_path).unwrap();
+            let enc = GzEncoder::new(tar_gz, Compression::default());
+            let mut builder = tar::Builder::new(enc);
+            builder
+                .append_path_with_name(src.join("manifest.json"), "manifest.json")
+                .unwrap();
+            let enc = builder.into_inner().unwrap();
+            enc.finish().unwrap();
+        }
+        let bytes = fs::read(&tar_gz_path).unwrap();
+        extract_tar_gz(&bytes, &dest).unwrap();
+        assert_eq!(
+            fs::read_to_string(dest.join("manifest.json")).unwrap(),
+            r#"{"id":"x"}"#
+        );
     }
 }

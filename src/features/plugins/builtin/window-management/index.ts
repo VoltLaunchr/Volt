@@ -6,6 +6,8 @@ import {
   PluginResultType,
 } from '../../types';
 import { logger } from '../../../../shared/utils/logger';
+import { useAppStore } from '../../../../stores/appStore';
+import { resolveWindowGapPx } from '../../../settings/behavior/pluginOptions';
 
 // Window position commands with their trigger keywords and aliases
 const WINDOW_COMMANDS = [
@@ -207,7 +209,9 @@ export class WindowManagementPlugin implements Plugin {
     try {
       ({ invoke } = await import('@tauri-apps/api/core'));
       // Backend validates the remembered target before hiding Volt.
-      await invoke<void>('snap_window', { position });
+      // Margin around / between snapped windows: Settings -> Window Management (default 0).
+      const gap = resolveWindowGapPx(useAppStore.getState().settings?.plugins);
+      await invoke<void>('snap_window', { position, gap });
     } catch (error) {
       logger.error('Failed to snap window:', error);
       // If the Tauri API itself could not load, the backend never hid Volt.

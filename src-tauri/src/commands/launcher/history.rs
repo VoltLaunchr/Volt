@@ -268,6 +268,7 @@ pub async fn get_frecency_suggestions(
         // (pinned, frecency_date, key) — `&String` borrow lives only inside the closure.
         let mut ranked: Vec<(bool, i64, &String)> = records
             .iter()
+            .filter(|(_, record)| record.is_app())
             .map(|(key, record)| (record.pinned, record.frecency_date, key))
             .collect();
 
@@ -293,6 +294,37 @@ pub async fn get_frecency_suggestions(
     });
 
     Ok(records)
+}
+
+/// Record one execution of a non-application search result (plugin command,
+/// quicklink, snippet, window action, game, extension command…) in the
+/// universal frecency store. `identity` is the stable result identity from
+/// `src/app/searchResultIdentity.ts` (`pluginId:resultId`).
+///
+/// Returns the new `frecency_date` (ms) so the frontend can update its cached
+/// copy (see `get_command_frecency`) without another round trip. App launches
+/// are recorded by `launch_app` and are rejected here.
+#[tauri::command]
+pub async fn record_command_usage(
+    identity: String,
+    title: String,
+    history_state: State<'_, LaunchHistoryState>,
+) -> VoltResult<i64> {
+    history_state
+        .history
+        .record_command_usage(&identity, &title)
+        .map_err(VoltError::Unknown)
+}
+
+/// `identity → frecency_date` for every recorded command (bounded by
+/// `MAX_COMMAND_RECORDS`). Loaded once by the frontend ranker and kept in sync
+/// with `record_command_usage` results, so plugin commands get a frecency
+/// tie-breaker without an IPC round trip per keystroke.
+#[tauri::command]
+pub async fn get_command_frecency(
+    history_state: State<'_, LaunchHistoryState>,
+) -> VoltResult<std::collections::HashMap<String, i64>> {
+    Ok(history_state.history.command_frecency())
 }
 
 /// Record a query→result binding when the user selects a search result.

@@ -1,6 +1,42 @@
 {
   "versions": [
     {
+      "version": "0.5.1",
+      "date": "2026-10-27",
+      "title": "System Monitor redesign, unified search ranking and AI chat overhaul",
+      "description": "Volt v0.5.1 redesigns the System Monitor and ships the unified search ranking, new behaviour settings and an AI chat overhaul.",
+      "sections": [
+        {
+          "type": "features",
+          "title": "New Features",
+          "icon": "sparkles",
+          "items": [
+            "System Monitor redesign: KPI tiles with synced sparklines, denser overview without scrolling, cleaner CPU, memory, disk and network views (bklit charts)",
+            "Unified search ranking with a single tier ladder and a universal frecency store",
+            "New behaviour settings (pop to root, root-search scope, list-navigation presets, optional Settings hotkey)",
+            "AI chat overhaul: IPC proxy, tools, structured output and reasoning support"
+          ]
+        },
+        {
+          "type": "fixes",
+          "title": "Bug Fixes",
+          "icon": "shield",
+          "items": [
+            "System Monitor: fixed overlapping chart axes, half-width and uneven panels, and cramped storage legends"
+          ]
+        }
+      ],
+      "footer": {
+        "gettingStarted": "Press Ctrl+Space to open Volt anytime. Check out what's new in v0.5.1!",
+        "feedback": "Have feedback or found a bug? Visit our GitHub repository to report issues or request features.",
+        "links": {
+          "github": "https://github.com/VoltLaunchr/Volt",
+          "releases": "https://github.com/VoltLaunchr/Volt/releases",
+          "docs": "https://voltlaunchr.com/docs"
+        }
+      }
+    },
+    {
       "version": "0.5.0",
       "date": "2026-09-13",
       "title": "Add Linux window management (X11/Hyprland) and release hardening (#141) & more",
