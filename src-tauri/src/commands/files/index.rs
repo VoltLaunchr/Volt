@@ -1843,7 +1843,7 @@ mod tests {
 
     #[test]
     fn scan_diagnostics_use_persisted_snapshot_when_startup_cache_is_empty() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = crate::indexer::test_tempdir();
         let db = FileIndexDb::open(dir.path().join("files.db")).unwrap();
         let keep = test_file("keep.txt", "/keep.txt");
         let old_modified = test_file("changed.txt", "/changed.txt");
@@ -1869,7 +1869,7 @@ mod tests {
 
     #[test]
     fn scan_diagnostics_identify_initial_scan_from_persisted_state() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = crate::indexer::test_tempdir();
         let db = FileIndexDb::open(dir.path().join("files.db")).unwrap();
         let after = [test_file("first.txt", "/first.txt")];
         let first = scan_diagnostic_baseline(Some(&db), &[], &after, false).unwrap();
@@ -1886,7 +1886,7 @@ mod tests {
 
     #[test]
     fn scan_diagnostics_reject_unavailable_authoritative_baseline() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = crate::indexer::test_tempdir();
         let path = dir.path().join("files.db");
         let db = FileIndexDb::open(&path).unwrap();
         db.set_meta("last_full_scan", "invalid timestamp").unwrap();
@@ -1900,7 +1900,7 @@ mod tests {
 
     #[tokio::test]
     async fn reconcile_persist_failure_preserves_snapshot_and_does_not_record_success() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = crate::indexer::test_tempdir();
         let root = dir.path().join("root");
         std::fs::create_dir(&root).unwrap();
         std::fs::write(root.join("new.txt"), "new snapshot").unwrap();
@@ -1957,8 +1957,8 @@ mod tests {
     #[test]
     fn watcher_churn_labels_are_generic_and_never_paths() {
         use crate::indexer::database::{WatcherChurnDay, root_diagnostic_key};
-        let first = tempfile::tempdir().unwrap();
-        let second = tempfile::tempdir().unwrap();
+        let first = crate::indexer::test_tempdir();
+        let second = crate::indexer::test_tempdir();
         let folders = vec![
             first.path().to_string_lossy().into_owned(),
             second.path().to_string_lossy().into_owned(),
@@ -2010,7 +2010,7 @@ mod tests {
     #[cfg(feature = "tantivy-search")]
     #[test]
     fn persistent_fulltext_is_reused_only_when_clean_and_complete() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = crate::indexer::test_tempdir();
         let db = FileIndexDb::open(dir.path().join("files.db")).unwrap();
         let fulltext = Arc::new(FulltextIndex::create_in_ram());
         let files = vec![test_file("alpha.txt", "/x/alpha.txt")];

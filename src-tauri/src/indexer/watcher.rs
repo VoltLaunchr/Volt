@@ -99,7 +99,7 @@ mod tests {
 
     #[test]
     fn ignore_rule_edits_and_removal_reconcile_sqlite_cache_and_lookup() {
-        let root = tempfile::tempdir().unwrap();
+        let root = crate::indexer::test_tempdir();
         let file = root.path().join("secret.txt");
         fs::write(&file, b"note").unwrap();
         let initial = create_file_info_pub(&file, &fs::metadata(&file).unwrap()).unwrap();
@@ -133,7 +133,7 @@ mod tests {
 
     #[test]
     fn created_deep_directory_traverses_without_indexing_the_directory_itself() {
-        let root = tempfile::tempdir().unwrap();
+        let root = crate::indexer::test_tempdir();
         let moved = root.path().join("a/b/moved");
         fs::create_dir_all(&moved).unwrap();
         let child = moved.join("notes.txt");
@@ -157,7 +157,7 @@ mod tests {
 
     #[test]
     fn parent_ignore_rule_changes_reconcile_selected_nested_root() {
-        let parent = tempfile::tempdir().unwrap();
+        let parent = crate::indexer::test_tempdir();
         let root = parent.path().join("selected");
         fs::create_dir(&root).unwrap();
         let file = root.join("notes.txt");
@@ -213,7 +213,7 @@ mod tests {
 
     #[test]
     fn watch_filter_matches_scan_file_constraints() {
-        let root = tempfile::tempdir().expect("watch root");
+        let root = crate::indexer::test_tempdir();
         let allowed = root.path().join("allowed.txt");
         let wrong_ext = root.path().join("video.mp4");
         let too_large = root.path().join("large.txt");
@@ -262,7 +262,7 @@ mod tests {
 
     #[test]
     fn watch_filter_keeps_scanner_directory_depth_rules() {
-        let root = tempfile::tempdir().expect("watch root");
+        let root = crate::indexer::test_tempdir();
         let first_level = root.path().join("games");
         let second_level = first_level.join("Steam");
         let third_level = second_level.join("common");
@@ -295,7 +295,7 @@ mod tests {
             EventKind::Create(CreateKind::Folder),
             EventKind::Modify(ModifyKind::Name(RenameMode::To)),
         ] {
-            let root = tempfile::tempdir().unwrap();
+            let root = crate::indexer::test_tempdir();
             let folder = root.path().join("games");
             fs::create_dir(&folder).unwrap();
             let db = FileIndexDb::open(root.path().join("index.db")).unwrap();
@@ -321,7 +321,7 @@ mod tests {
 
     #[test]
     fn watcher_removes_file_that_becomes_ineligible() {
-        let root = tempfile::tempdir().expect("watch root");
+        let root = crate::indexer::test_tempdir();
         let file = root.path().join("notes.txt");
         fs::write(&file, b"ok").expect("initial file");
         let initial = create_file_info_pub(&file, &fs::metadata(&file).unwrap()).unwrap();
@@ -356,7 +356,7 @@ mod tests {
 
     #[test]
     fn watcher_folder_removal_purges_descendants_but_not_prefix_siblings() {
-        let root = tempfile::tempdir().expect("watch root");
+        let root = crate::indexer::test_tempdir();
         let removed_dir = root.path().join("game");
         let removed_child = removed_dir.join("saves").join("slot.txt");
         let sibling_dir = root.path().join("game-old");
@@ -415,7 +415,7 @@ mod tests {
     fn watcher_new_directory_indexes_subtree() {
         // Regression: a moved/copied directory used to index only the folder
         // entry — children stayed invisible until the next full scan.
-        let root = tempfile::tempdir().expect("watch root");
+        let root = crate::indexer::test_tempdir();
         let moved_dir = root.path().join("moved");
         let nested = moved_dir.join("sub");
         fs::create_dir_all(&nested).expect("nested dir");
@@ -463,7 +463,7 @@ mod tests {
     /// Pur et déterministe (aucun sleep, aucune I/O).
     #[test]
     fn churn_counter_attributes_events_to_deepest_root_and_persists_keys_only() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = crate::indexer::test_tempdir();
         let outer = dir.path().join("outer");
         let inner = outer.join("inner");
         fs::create_dir_all(&inner).unwrap();
@@ -532,7 +532,7 @@ mod tests {
     /// termine et indexe exactement les fichiers présents, sans perte.
     #[test]
     fn flush_events_handles_tens_of_thousands_of_paths() {
-        let root = tempfile::tempdir().expect("watch root");
+        let root = crate::indexer::test_tempdir();
         let live_dir = root.path().join("live");
         fs::create_dir(&live_dir).expect("live dir");
         let mut events: HashMap<PathBuf, EventKind> = HashMap::new();
@@ -575,7 +575,7 @@ mod tests {
     /// jamais diverger seul.
     #[test]
     fn failed_db_mutation_leaves_cache_untouched() {
-        let root = tempfile::tempdir().expect("watch root");
+        let root = crate::indexer::test_tempdir();
         let file = root.path().join("doomed.txt");
         fs::write(&file, b"x").expect("file");
         let db_path = root.path().join("index.db");
@@ -618,7 +618,7 @@ mod tests {
             .unwrap_err();
         }
 
-        let root = tempfile::tempdir().expect("watch root");
+        let root = crate::indexer::test_tempdir();
         let file = root.path().join("healed.txt");
         fs::write(&file, b"x").expect("file");
         let db = FileIndexDb::open(root.path().join("index.db")).unwrap();

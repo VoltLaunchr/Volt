@@ -416,7 +416,7 @@ mod tests {
 
     #[test]
     fn scanner_filters_ignored_directory_entries_and_generated_subtrees() {
-        let root = tempfile::tempdir().unwrap();
+        let root = crate::indexer::test_tempdir();
         for name in ["ignored", "node_modules", "node_modules-old", "target"] {
             fs::create_dir(root.path().join(name)).unwrap();
             fs::write(root.path().join(name).join("note.txt"), b"x").unwrap();
@@ -439,7 +439,7 @@ mod tests {
 
     #[test]
     fn explicit_nested_root_under_pruned_parent_is_scanned_without_duplicates() {
-        let root = tempfile::tempdir().unwrap();
+        let root = crate::indexer::test_tempdir();
         let nested = root.path().join("node_modules/target");
         fs::create_dir_all(&nested).unwrap();
         fs::write(nested.join("keep.txt"), b"x").unwrap();
@@ -468,7 +468,7 @@ mod tests {
 
     #[test]
     fn read_dir_scanner_remains_the_cross_platform_fallback() {
-        let root = tempfile::tempdir().expect("temporary scan root");
+        let root = crate::indexer::test_tempdir();
         let nested = root.path().join("nested");
         fs::create_dir(&nested).expect("create nested directory");
         let expected = nested.join("resume.txt");
