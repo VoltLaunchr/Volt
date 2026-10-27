@@ -29,12 +29,26 @@
       <br /><sub><strong>AI workflows</strong></sub>
     </td>
     <td align="center" width="33%">
-      <img src="./docs/readme-assets/screenshots/feature-games-launcher.png" alt="Volt game search across Xbox, EA App, and Steam" width="260" />
-      <br /><sub><strong>Game library</strong></sub>
+      <img src="./docs/readme-assets/screenshots/feature-notes-list.png" alt="Volt Notes window with a Markdown checklist open" width="260" />
+      <br /><sub><strong>Notes</strong></sub>
     </td>
     <td align="center" width="33%">
-      <img src="./docs/readme-assets/screenshots/feature-system-monitor.png" alt="System monitor inside Volt" width="260" />
+      <img src="./docs/readme-assets/screenshots/feature-system-monitor.png" alt="System Monitor with CPU, memory, disk and network tiles" width="260" />
       <br /><sub><strong>System monitor</strong></sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="33%">
+      <img src="./docs/readme-assets/screenshots/feature-clipboard-history.png" alt="Clipboard history with a detail panel for the selected entry" width="260" />
+      <br /><sub><strong>Clipboard history</strong></sub>
+    </td>
+    <td align="center" width="33%">
+      <img src="./docs/readme-assets/screenshots/feature-snippets.png" alt="Snippets listed with the ; prefix" width="260" />
+      <br /><sub><strong>Snippets</strong></sub>
+    </td>
+    <td align="center" width="33%">
+      <img src="./docs/readme-assets/screenshots/feature-timer-running.png" alt="Focus timer running with session tasks" width="260" />
+      <br /><sub><strong>Focus timer</strong></sub>
     </td>
   </tr>
 </table>
