@@ -1,5 +1,5 @@
 use std::sync::Mutex;
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 use tracing::{error, info, warn};
 
@@ -201,5 +201,124 @@ pub fn get_current_hotkey(hotkey_state: State<'_, HotkeyState>) -> Result<String
             .ok_or_else(|| "No hotkey registered".to_string())
     } else {
         Err("Failed to access hotkey state".to_string())
+    }
+}
+
+/// Event emitted when the optional "open Settings" global shortcut is pressed. The main webview
+/// (alive even while hidden) answers by opening the Settings window.
+pub const OPEN_SETTINGS_EVENT: &str = "volt://open-settings-hotkey";
+
+/// Currently registered "open Settings" global shortcut, if any.
+#[derive(Default)]
+pub struct OpenSettingsHotkeyState {
+    pub current: Mutex<Option<String>>,
+}
+
+/// Whether two shortcut strings designate the same key combination (`Ctrl+,` == `ctrl+,`).
+fn same_shortcut(a: &str, b: &str) -> bool {
+    match (a.parse::<Shortcut>(), b.parse::<Shortcut>()) {
+        (Ok(a), Ok(b)) => a == b,
+        _ => a.trim().eq_ignore_ascii_case(b.trim()),
+    }
+}
+
+/// Registers (or clears, when `new_hotkey` is empty) the global shortcut that opens Settings.
+///
+/// The new shortcut is registered before the old one is released, so a refused combination
+/// leaves the previous binding untouched.
+pub fn apply_open_settings_hotkey(app: &AppHandle, new_hotkey: &str) -> Result<(), String> {
+    let new_hotkey = new_hotkey.trim();
+    let state = app
+        .try_state::<OpenSettingsHotkeyState>()
+        .ok_or_else(|| "Hotkey state unavailable".to_string())?;
+    let mut current = state
+        .current
+        .lock()
+        .map_err(|_| "Failed to access hotkey state".to_string())?;
+
+    if new_hotkey.is_empty() {
+        if let Some(old) = current.take()
+            && let Ok(shortcut) = old.parse::<Shortcut>()
+            && let Err(e) = app.global_shortcut().unregister(shortcut)
+        {
+            warn!("Failed to unregister open-settings hotkey '{}': {}", old, e);
+        }
+        return Ok(());
+    }
+
+    let shortcut: Shortcut = new_hotkey
+        .parse()
+        .map_err(|e| format!("Invalid hotkey format: {}", e))?;
+
+    if current
+        .as_deref()
+        .is_some_and(|old| same_shortcut(old, new_hotkey))
+    {
+        return Ok(());
+    }
+
+    if let Some(toggle) = app.try_state::<HotkeyState>()
+        && let Ok(toggle) = toggle.current.lock()
+        && toggle
+            .as_deref()
+            .is_some_and(|toggle| same_shortcut(toggle, new_hotkey))
+    {
+        return Err(format!(
+            "Hotkey '{}' is already used to toggle Volt",
+            new_hotkey
+        ));
+    }
+
+    if app.global_shortcut().is_registered(shortcut) {
+        return Err(format!(
+            "Hotkey '{}' is already registered by another application",
+            new_hotkey
+        ));
+    }
+
+    let handle = app.clone();
+    app.global_shortcut()
+        .on_shortcut(shortcut, move |_app, _shortcut, event| {
+            if event.state == ShortcutState::Pressed {
+                let _ = handle.emit(OPEN_SETTINGS_EVENT, ());
+            }
+        })
+        .map_err(|e| format!("Failed to register hotkey: {}", e))?;
+
+    if let Some(old) = current.take()
+        && let Ok(old_shortcut) = old.parse::<Shortcut>()
+        && let Err(e) = app.global_shortcut().unregister(old_shortcut)
+    {
+        warn!(
+            "Failed to unregister previous open-settings hotkey '{}': {}",
+            old, e
+        );
+    }
+    *current = Some(new_hotkey.to_string());
+    info!("Open-settings hotkey bound to: {}", new_hotkey);
+    Ok(())
+}
+
+/// Binds (or clears, with an empty string) the global shortcut that opens Settings.
+#[tauri::command]
+pub fn set_open_settings_hotkey(app: AppHandle, new_hotkey: String) -> Result<(), String> {
+    apply_open_settings_hotkey(&app, &new_hotkey)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::same_shortcut;
+
+    #[test]
+    fn shortcuts_compare_by_key_combination() {
+        assert!(same_shortcut("Ctrl+Space", "ctrl+space"));
+        assert!(same_shortcut("Control+Shift+S", "shift+ctrl+s"));
+        assert!(!same_shortcut("Ctrl+Space", "Ctrl+Shift+Space"));
+    }
+
+    #[test]
+    fn unparsable_shortcuts_fall_back_to_text_comparison() {
+        assert!(same_shortcut(" nonsense ", "NONSENSE"));
+        assert!(!same_shortcut("nonsense", "Ctrl+Space"));
     }
 }

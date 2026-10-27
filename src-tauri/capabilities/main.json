@@ -53,6 +53,8 @@
     "allow-get-history-count",
     "allow-get-frecency-suggestions",
     "allow-record-search-selection",
+    "allow-record-command-usage",
+    "allow-get-command-frecency",
     "allow-open-path",
     "allow-open-file-with-dialog",
 

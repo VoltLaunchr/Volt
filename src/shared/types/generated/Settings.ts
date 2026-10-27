@@ -4,6 +4,8 @@ import type { FallbacksSettings } from "./FallbacksSettings";
 import type { GeneralSettings } from "./GeneralSettings";
 import type { HotkeySettings } from "./HotkeySettings";
 import type { IndexingSettings } from "./IndexingSettings";
+import type { KeyboardSettings } from "./KeyboardSettings";
+import type { LauncherSettings } from "./LauncherSettings";
 import type { PluginSettings } from "./PluginSettings";
 import type { ShellSettings } from "./ShellSettings";
 import type { ShortcutsSettings } from "./ShortcutsSettings";
@@ -13,4 +15,4 @@ import type { WebSearchSettings } from "./WebSearchSettings";
 /**
  * Complete application settings
  */
-export type Settings = { general: GeneralSettings, webSearch: WebSearchSettings, appearance: AppearanceSettings, hotkeys: HotkeySettings, indexing: IndexingSettings, plugins: PluginSettings, shortcuts: ShortcutsSettings, shell: ShellSettings, fallbacks: FallbacksSettings, snippetExpansion: SnippetExpansionSettings, };
+export type Settings = { general: GeneralSettings, webSearch: WebSearchSettings, appearance: AppearanceSettings, hotkeys: HotkeySettings, indexing: IndexingSettings, plugins: PluginSettings, shortcuts: ShortcutsSettings, shell: ShellSettings, fallbacks: FallbacksSettings, launcher: LauncherSettings, keyboard: KeyboardSettings, snippetExpansion: SnippetExpansionSettings, };

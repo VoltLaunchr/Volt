@@ -44,11 +44,32 @@ const ENDPOINT_BETA =
   'https://github.com/VoltLaunchr/Volt/releases/latest/download/latest-beta.json';
 
 /**
- * Distribution packages must be upgraded by the operating-system package
- * manager. Upstream bundles leave this unset and retain Tauri's updater.
+ * Who owns updates for this build:
+ * - `self`: upstream NSIS/MSI/DMG/AppImage bundles — Tauri updater + `latest.json`.
+ * - `package-manager`: distribution packages (`VITE_VOLT_PACKAGE_MANAGER=1`, e.g. Arch).
+ * - `microsoft-store`: MSIX Store build (`VITE_VOLT_DISTRIBUTION=msstore`,
+ *   set by `scripts/package-msix.ps1`). The Store delivers updates; the app
+ *   lives in the read-only `WindowsApps` folder and must never self-update.
+ */
+export type UpdateOwner = 'self' | 'package-manager' | 'microsoft-store';
+
+export function getUpdateOwner(): UpdateOwner {
+  if (import.meta.env.VITE_VOLT_DISTRIBUTION === 'msstore') return 'microsoft-store';
+  if (import.meta.env.VITE_VOLT_PACKAGE_MANAGER === '1') return 'package-manager';
+  return 'self';
+}
+
+/**
+ * True when an external channel (OS package manager or Microsoft Store) owns
+ * updates, i.e. the built-in self-updater must stay completely inert.
  */
 export function isPackageManagerManaged(): boolean {
-  return import.meta.env.VITE_VOLT_PACKAGE_MANAGER === '1';
+  return getUpdateOwner() !== 'self';
+}
+
+/** True for the Microsoft Store (MSIX) build. */
+export function isMicrosoftStoreManaged(): boolean {
+  return getUpdateOwner() === 'microsoft-store';
 }
 
 export const PACKAGE_MANAGER_UPDATE_MESSAGE =
@@ -188,7 +209,9 @@ export function clearPendingUpdate(): void {
  *   from `rawJson` so the manifest can flag security releases.
  * - `beta`: manually fetches `latest-beta.json` and compares versions.
  */
-export async function checkForUpdate(channel: UpdateChannel = 'stable'): Promise<UpdateInfo | null> {
+export async function checkForUpdate(
+  channel: UpdateChannel = 'stable'
+): Promise<UpdateInfo | null> {
   if (isPackageManagerManaged()) return null;
 
   try {

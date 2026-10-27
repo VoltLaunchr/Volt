@@ -66,6 +66,7 @@ vi.mock('../../features/plugins/builtin', () => {
     GamesPlugin: Plugin,
     NotesPlugin: Plugin,
     QuicklinksPlugin: Plugin,
+    SettingsCommandsPlugin: Plugin,
     ShellCommandPlugin: Plugin,
     SystemCommandsPlugin: Plugin,
     SystemMonitorPlugin: Plugin,
@@ -275,33 +276,35 @@ describe('useAppLifecycle file watcher', () => {
     expect(mockInvoke).not.toHaveBeenCalledWith('start_file_watcher');
   });
 
-  it.each([{ excludedPaths: ['private'] }, { deepSearch: !DEFAULT_SETTINGS.indexing.deepSearch }])(
-    'rebuilds the index when its filtering changes: %j',
-    async (change) => {
-      renderHook(() => useAppLifecycle());
-      await waitFor(() =>
-        expect(mockInvoke).toHaveBeenCalledWith('start_indexing', expect.any(Object))
+  it.each([
+    { excludedPaths: ['private'] },
+    { deepSearch: !DEFAULT_SETTINGS.indexing.deepSearch },
+    { respectIgnoreFiles: false },
+    { excludeGeneratedDirs: false },
+  ])('rebuilds the index when its filtering changes: %j', async (change) => {
+    renderHook(() => useAppLifecycle());
+    await waitFor(() =>
+      expect(mockInvoke).toHaveBeenCalledWith('start_indexing', expect.any(Object))
+    );
+    act(() => {
+      emit(
+        registrations.find((entry) => entry.event === 'settings-changed'),
+        {
+          ...settings,
+          indexing: { ...settings.indexing, ...change },
+        }
       );
-      act(() => {
-        emit(
-          registrations.find((entry) => entry.event === 'settings-changed'),
-          {
-            ...settings,
-            indexing: { ...settings.indexing, ...change },
-          }
-        );
-      });
-      await waitFor(() => {
-        expect(
-          mockInvoke.mock.calls.filter(([command]) => command === 'start_indexing')
-        ).toHaveLength(2);
-      });
-      expect(mockInvoke).toHaveBeenLastCalledWith(
-        'start_indexing',
-        expect.objectContaining({ ...change, force: true })
-      );
-    }
-  );
+    });
+    await waitFor(() => {
+      expect(
+        mockInvoke.mock.calls.filter(([command]) => command === 'start_indexing')
+      ).toHaveLength(2);
+    });
+    expect(mockInvoke).toHaveBeenLastCalledWith(
+      'start_indexing',
+      expect.objectContaining({ ...change, force: true })
+    );
+  });
 
   it('records a new configuration only after a completed scan', async () => {
     localStorage.setItem('volt:lastIndexConfig', 'previous successful scan');
@@ -337,6 +340,9 @@ describe('useAppLifecycle file watcher', () => {
       ext: [...settings.indexing.fileExtensions].sort(),
       excludedPaths: [...settings.indexing.excludedPaths].sort(),
       deepSearch: settings.indexing.deepSearch,
+      respectIgnoreFiles: settings.indexing.respectIgnoreFiles,
+      excludeGeneratedDirs: settings.indexing.excludeGeneratedDirs,
+      diagnosticsEnabled: settings.indexing.diagnosticsEnabled,
     });
   });
 

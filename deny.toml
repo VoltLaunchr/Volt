@@ -42,7 +42,21 @@ unmaintained = "workspace"
 # positive or has no available fix. Every entry MUST carry a `reason`, is
 # auditable in git history, and should be revisited whenever the upstream
 # situation changes.
-ignore = []
+ignore = [
+  # zip 4.6.1 is pulled only by tauri-plugin-updater (latest release, no
+  # upstream fix yet). The advisories concern ZipArchive::extract() on
+  # attacker-controlled archives; the updater only unpacks bundles whose
+  # minisign signature was verified first. Our own zip use is on zip >= 9.
+  { id = "RUSTSEC-2026-0367", reason = "zip 4.6.1 via tauri-plugin-updater; signature-verified archives only; revisit on updater release" },
+  { id = "RUSTSEC-2026-0368", reason = "zip 4.6.1 via tauri-plugin-updater; signature-verified archives only; revisit on updater release" },
+  { id = "RUSTSEC-2026-0369", reason = "zip 4.6.1 via tauri-plugin-updater; signature-verified archives only; revisit on updater release" },
+  # zstd 0.13.x is pulled only by tantivy (optional `tantivy-search` feature,
+  # off by default); it compresses Volt's own local index, never untrusted data.
+  { id = "RUSTSEC-2026-0391", reason = "zstd via optional tantivy-search feature; local index data only; revisit on tantivy release" },
+  { id = "RUSTSEC-2026-0398", reason = "zstd via optional tantivy-search feature; local index data only; revisit on tantivy release" },
+  { id = "RUSTSEC-2026-0403", reason = "zstd via optional tantivy-search feature; local index data only; revisit on tantivy release" },
+  { id = "RUSTSEC-2026-0410", reason = "zstd via optional tantivy-search feature; local index data only; revisit on tantivy release" },
+]
 
 # ---------------------------------------------------------------------------
 # Crate bans / duplicates  (`cargo deny check bans`)

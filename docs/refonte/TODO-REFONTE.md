@@ -119,12 +119,13 @@
 > D3 (USN incrémental) en mode unprivileged, par-dessus le baseline Windows
 > Search.** On ne demande **jamais** d'UAC pour chercher.
 
-### D2. Scan MFT NTFS brute `[XL]` — ✅ ABANDONNÉ (décision finale, 2026-06-25)
+### D2. Scan MFT NTFS brute `[XL]` — ✅ ABANDONNÉ (décision finale, 2026-06-25) · 🔁 RÉOUVERT (2026-10-14)
 - [x] ~~Stratégie privilèges : service Windows ou élévation ponctuelle~~ → **abandonné** (un launcher ne demande jamais l'UAC pour chercher)
 - [x] Accélérateur opportuniste (lecture `$MFT` en un passage si déjà élevé, feature-flag `mft-search`, edge-cases volumes amovibles/réseau/non-NTFS) → **non planifié** : aucun besoin réel (le cas « déjà élevé + NTFS » est marginal), le baseline sans admin (Windows Search Index + `scan_files` walk, D1) couvre 100% des cas. Conservé **doc-only** dans `indexer/mft.rs` (zéro `unsafe`, zéro appel Win32, zéro dépendance NTFS tierce) au cas où le calcul changerait un jour ; n'est plus dans le backlog actif.
 - [x] Décision : **NE PAS** bâtir le service Windows / l'élévation ponctuelle ni l'accélérateur opportuniste. Doc-only dans `indexer/mft.rs`.
+- 🔁 **RÉOUVERT (2026-10-14)** — preuve Raycast for Windows 2.8.0 (service NTFS séparé, opt-in, une seule UAC) : cf. [`REFONTE-REOUVERTURE-E2-D3-RAYCAST.md`](./REFONTE-REOUVERTURE-E2-D3-RAYCAST.md). L'abandon reste valable pour l'accélérateur « opportuniste si déjà élevé » ; seule l'option **service séparé opt-in** (14-A : MFT + USN privilégié, métadonnées seulement, filtrage par l'appelant) est réévaluée, sous gates G1–G5. Le service empaqueté MSIX (`packagedServices`) est rejeté (capacité non approuvée au Store).
 
-### D3. Incrémental USN Journal — **SANS ADMIN** `[L]` ⛔ **NO-GO confirmé (2026-06-24)** — primitive validée & gardée OFF, wiring bloqué sur télémétrie
+### D3. Incrémental USN Journal — **SANS ADMIN** `[L]` ⛔ **NO-GO confirmé (2026-06-24)** — primitive validée & gardée OFF, wiring bloqué sur télémétrie · 🔁 RÉOUVERT (2026-10-14)
 - [x] Module `indexer/usn.rs` (feature `usn-incremental`, OFF par défaut ; FFI `#[cfg(windows)]`, parseur portable)
 - [x] FFI fine maison : volume en `FILE_TRAVERSE` (pas `GENERIC_READ`), `FSCTL_QUERY_USN_JOURNAL`, boucle `FSCTL_READ_UNPRIVILEGED_USN_JOURNAL` (= `0x000903AB`)
 - [x] Parseur `USN_RECORD_V2/V3` **pur, 15 tests verts** (buffer synthétique, sans volume ; inclut deletes via map, renames, coalescing)
@@ -147,6 +148,14 @@
   - [x] **Métriques re-scan persistées** (la mesure manquante du gate (2) du NO-GO D3) : `record_stale_catchup()` bumpe `stale_catchup_count` + stamp `last_stale_catchup` en meta DB **uniquement** sur le chemin catch-up offline (pas `start_indexing`/rebuild), donc mesure la dérive app-fermée. Exposé via `get_db_index_stats` → 2 tuiles Settings (compteur + dernier rattrapage). C'est la télémétrie qui débloque la reconsidération USN un jour.
 - [ ] Baseline sans admin = Windows Search Index (déjà là) + `scan_files` fallback ; l'USN = deltas only
 - ⚠️ `StartUsn` doit être `0` / `FirstUsn` / un USN déjà retourné — offset arbitraire → `ERROR_INVALID_PARAMETER` (87)
+- 🔁 **RÉOUVERT (2026-10-14)** — gate (2) re-cadré : télémétrie **locale, opt-in, sans réseau** (cf. [`REFONTE-REOUVERTURE-E2-D3-RAYCAST.md`](./REFONTE-REOUVERTURE-E2-D3-RAYCAST.md) §6.1). NO-GO maintenu tant que G2 n'est pas atteint ; si le service 14-A est construit, il remplace l'USN non privilégié (noms inline, plus de résolution à 462 µs/fichier).
+  - [ ] Ring buffer des 50 derniers `reconcile()` en meta DB : `kind`, `duration_ms`, `files_total`, delta `added/removed/modified` (diff ancien/nouveau snapshot) `[S]`
+  - [ ] Compteur d'événements watcher par racine et par jour (mesure du churn) `[S]`
+  - [ ] Settings File Search : tuiles durée médiane / fichiers changés + bouton « Copier le rapport de diagnostic » (JSON agrégé, aucun envoi) `[S]`
+  - [ ] Gains sans admin inspirés de Raycast : ignore files hiérarchiques (`.gitignore`/`.ignore`/`.voltignore`) + exclusion automatique des dossiers à fort churn `[M]`
+  - [ ] Collecter ≥ 5 rapports volontaires sur ≥ 2 semaines puis statuer sur G2 (seuils indicatifs : catch-up médian ≥ 10 s, ≥ 1/jour, `delta × 0,462 ms` < 50 % du walk) `[S]`
+  - [ ] Si G1 (binaire signé) + G2 + G3 (revue sécurité) verts : spike service `windows-service` opt-in `[XL]`
+  - [ ] Blueprint Pilier D : `ntfs-reader` cité en 0.4.2, dernière version 0.6.0 (crates.io, 2026-10-14) — à rafraîchir au moment du spike
 
 ### D4. Architecture en acteurs `[M]` — ✅ consolidation contenue (2026-06-25)
 - [x] Découpler : sources / watch / indexing / queue → **sources** (`indexer/scanner.rs`) et **watch** (`indexer/watcher.rs`) étaient déjà proprement découplés par fichier, rien à faire. **queue** : le design *reject-if-busy* (check-and-set atomique du flag `is_indexing`) est déjà correct et le frontend s'appuie dessus (désactivation de bouton, polling) — pas converti en vraie queue mpsc, ça changerait un comportement observable pour zéro bénéfice.
@@ -168,16 +177,24 @@
 - [x] Validé : `cargo check`/`cargo clippy -- -D warnings` (défaut + `--features snippet-global-expansion`), 19 tests purs verts, `pnpm run lint`/`pnpm run build`/`tsc --noEmit` verts
 - [ ] ⚠️ **SMOKE TEST MANUEL requis avant merge** (comme le clipboard event-driven, Pilier B) : le hook lui-même, l'injection `SendInput`, et la résolution multi-layout (FR/US, touches mortes) ne sont délibérément PAS exercés par les tests automatisés — installer un hook clavier global réel ou injecter des frappes depuis un agent aurait manipulé la vraie session Windows de la machine de dev. À tester manuellement : frappe dans Notepad/Chrome/VS Code sans lag ni perte de caractère, expansion correcte avec Shift/AltGr/CapsLock, comportement silencieux (pas de crash) sur une fenêtre élevée en admin.
 
-### E2. Helper `uiAccess=true` signé `[XL]` — BLOQUÉ sans signature de code
+### E2. Helper `uiAccess=true` signé `[XL]` — BLOQUÉ sans signature de code · 🔁 RÉOUVERT (2026-10-14)
 - [ ] ⚠️ Prérequis : chaîne de signature de code valide + install Program Files
 - [ ] Binaire Rust séparé, manifeste `uiAccess="true"`
 - [ ] Hook LL + injection `SendInput` au-dessus de l'UAC
 - [ ] Tracking fenêtre (`SetWinEventHook`)
+- 🔁 **RÉOUVERT (2026-10-14)** — la signature n'est plus un mur : un MSIX distribué par le Store est re-signé gratuitement par Microsoft et le compte développeur est gratuit ; Raycast livre exactement ce schéma (`rescap:uiaccess` + `Raycast.UIAccess.exe` en `windows.fullTrustProcess`). Restent deux inconnues : recevabilité d'un `uiAccess` pour un launcher (réservé aux technologies d'assistance selon MS Learn) et suffisance de la seule signature du paquet. Cf. [`REFONTE-REOUVERTURE-E2-D3-RAYCAST.md`](./REFONTE-REOUVERTURE-E2-D3-RAYCAST.md). Option retenue si GO : MSIX + Store (13-A) ; lancement uiAccess via service SYSTEM (13-D) rejeté.
+  - [ ] Prérequis G0 : smoke test E1 fait + besoin réel « au-dessus des fenêtres élevées » remonté par des utilisateurs
+  - [ ] Activer réellement la signature Windows (job SignPath câblé mais v0.5.0 publié non signé) ; signer dans `tauri build` (`signCommand`) pour ne pas invalider les `.sig` de l'updater `[S-M]`
+  - [ ] Spike MSIX sideload (`winapp pack`) : updater désactivé dans la variante MSIX, `windows.startupTask` (autostart), `uap:Protocol` (deep-link), `unvirtualizedResources` (chemins AppData réels), passage WACK `[M]`
+  - [ ] Spike helper `uiAccess` minimal déclaré en `windows.fullTrustProcess` : vérifier `TokenUIAccess` avec et sans signature Authenticode propre `[M]`
+  - [ ] Décisions mainteneur : statut éditeur (particulier FR vs organisation UE), Store oui/non, double pipeline Store + NSIS
 
-### E3. Canal sécurisé vers le helper `[L]` — non négociable si E2
+### E3. Canal sécurisé vers le helper `[L]` — non négociable si E2 · 🔁 RÉOUVERT (2026-10-14)
 - [ ] Named pipe + vérif identité appelant (`CheckTokenMembership`)
 - [ ] Chiffrement + auth (Schannel/TLS)
 - [ ] Vérif signature de l'appelant (`WinVerifyTrust`)
+- 🔁 **RÉOUVERT (2026-10-14)** — exigences précisées et **mutualisées avec le service NTFS** (cf. [`REFONTE-REOUVERTURE-E2-D3-RAYCAST.md`](./REFONTE-REOUVERTURE-E2-D3-RAYCAST.md) §5) : SDDL explicite (jamais la DACL par défaut) + `FILE_FLAG_FIRST_PIPE_INSTANCE` + `PIPE_REJECT_REMOTE_CLIENTS` ; vérif appelant `GetNamedPipeClientProcessId` → chemin d'image + `WinVerifyTrust` avec éditeur épinglé (remplace `CheckTokenMembership`) ; **TLS/Schannel proposé au retrait** (pipe local, n'ajoute rien) ; API à verbes fermés, jamais de `SendInput` générique.
+  - [ ] Revue sécurité de ces exigences avant toute ligne de code E2 ou service 14-A
 
 ### E4. Hyperkey `[M]`
 - [ ] Remap touche → Ctrl+Alt+Shift+Win
@@ -202,4 +219,6 @@ L'ordre ci-dessous était celui du plan initial. A, B, C, F1, F3 et D1 sont impl
 4. **C** (SQLCipher)
 5. **D1** (Tantivy) → **décision GO/NO-GO** pour D2/D3
 6. **E1** si besoin produit snippet global ; **E2-E4** seulement si signature dispo
+
+**Mise à jour 2026-10-14 — réouverture E2/E3 et D2/D3** (cf. [`REFONTE-REOUVERTURE-E2-D3-RAYCAST.md`](./REFONTE-REOUVERTURE-E2-D3-RAYCAST.md)) : l'analyse statique de Raycast for Windows 2.8.0 (MSIX re-signé par le Store, helper uiAccess, service NTFS opt-in) lève le mur « signature » d'E2 et montre un chemin MFT à UAC unique. Aucune décision n'est inversée : ordre proposé = smoke test E1 → signature Windows réellement active → télémétrie locale D3 + ignore files/exclusion du churn → spikes MSIX/uiAccess → gates G0–G5 avant tout développement E2 ou service.
 </content>

@@ -1,3 +1,10 @@
+use super::behavior_settings::{
+    KeyboardSettings, LauncherSettings, SYSTEM_MONITOR_REFRESH_MS_MAX,
+    SYSTEM_MONITOR_REFRESH_MS_MIN, TIMER_LONG_BREAK_MINUTES_RANGE, TIMER_SHORT_BREAK_MINUTES_RANGE,
+    TIMER_WORK_MINUTES_RANGE, WINDOW_GAP_PX_MAX, clamp_in_place, default_system_monitor_refresh_ms,
+    default_timer_long_break_minutes, default_timer_short_break_minutes,
+    default_timer_work_minutes,
+};
 use crate::core::error::{VoltError, VoltResult};
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -156,15 +163,23 @@ impl Default for AppearanceSettings {
 #[ts(export, export_to = "HotkeySettings.ts")]
 pub struct HotkeySettings {
     pub toggle_window: String,
+    /// Optional system-wide shortcut that opens the Settings window. Empty means "not
+    /// registered" (the in-launcher `Ctrl+,` always works regardless).
+    #[serde(default)]
     pub open_settings: String,
 }
+
+/// Value the field held before it was wired to a real global shortcut. It was never registered
+/// nor editable, so it is migrated to "unset": registering `Ctrl+,` system-wide would steal the
+/// "open preferences" shortcut of most other applications.
+const LEGACY_OPEN_SETTINGS_HOTKEY: &str = "Ctrl+,";
 
 impl Default for HotkeySettings {
     fn default() -> Self {
         Self {
             // Per documentation: /docs/user-guide/shortcuts
             toggle_window: "Ctrl+Space".to_string(),
-            open_settings: "Ctrl+,".to_string(),
+            open_settings: String::new(),
         }
     }
 }
@@ -180,11 +195,60 @@ pub struct IndexingSettings {
     pub index_on_startup: bool,
     #[serde(default)]
     pub deep_search: bool,
+    #[serde(default = "default_enabled")]
+    pub respect_ignore_files: bool,
+    #[serde(default = "default_enabled")]
+    pub exclude_generated_dirs: bool,
+    #[serde(default)]
+    pub diagnostics_enabled: bool,
     /// Re-walk the index on launch when the persisted snapshot is older than
     /// this many seconds (the no-admin offline catch-up — see D3 in
     /// `REFONTE-PILIER-D-SEARCH.md`). `0` disables the catch-up entirely.
     #[serde(default = "default_stale_threshold_secs")]
     pub stale_threshold_secs: u32,
+}
+
+impl From<&IndexingSettings> for crate::indexer::IndexConfig {
+    fn from(settings: &IndexingSettings) -> Self {
+        Self {
+            folders: settings.folders.clone(),
+            excluded_paths: settings.excluded_paths.clone(),
+            file_extensions: settings.file_extensions.clone(),
+            max_depth: if settings.deep_search { 10 } else { 3 },
+            max_file_size: 100 * 1024 * 1024,
+            respect_ignore_files: settings.respect_ignore_files,
+            exclude_generated_dirs: settings.exclude_generated_dirs,
+            diagnostics_enabled: settings.diagnostics_enabled,
+        }
+    }
+}
+
+/// Windows Search remains usable without a Volt scan. Publish its filtering
+/// policy whenever settings become available, independently of indexOnStartup.
+fn publish_indexing_policy(settings: &IndexingSettings) {
+    crate::indexer::set_external_policy(&crate::indexer::IndexConfig::from(settings));
+}
+
+/// Ignore policies are enabled for legacy settings as well as fresh installs.
+fn default_enabled() -> bool {
+    true
+}
+
+#[cfg(test)]
+mod indexing_policy_migration_tests {
+    use super::IndexingSettings;
+
+    #[test]
+    fn old_settings_enable_filters_but_leave_diagnostics_opt_in() {
+        let settings: IndexingSettings = serde_json::from_value(serde_json::json!({
+            "folders": [], "excludedPaths": [], "fileExtensions": [],
+            "indexOnStartup": true
+        }))
+        .unwrap();
+        assert!(settings.respect_ignore_files);
+        assert!(settings.exclude_generated_dirs);
+        assert!(!settings.diagnostics_enabled);
+    }
 }
 
 /// Default offline-catch-up staleness threshold: one hour.
@@ -248,6 +312,9 @@ impl Default for IndexingSettings {
             ],
             index_on_startup: true,
             deep_search: false,
+            respect_ignore_files: true,
+            exclude_generated_dirs: true,
+            diagnostics_enabled: false,
             stale_threshold_secs: default_stale_threshold_secs(),
         }
     }
@@ -264,6 +331,24 @@ pub struct PluginSettings {
     pub clipboard_retention_days: u32,
     #[serde(default)]
     pub clipboard_disabled_apps: Vec<String>,
+    /// How often the System Monitor refreshes its metrics, in milliseconds.
+    #[serde(default = "default_system_monitor_refresh_ms")]
+    pub system_monitor_refresh_ms: u32,
+    /// Pomodoro work session length, in minutes.
+    #[serde(default = "default_timer_work_minutes")]
+    pub timer_work_minutes: u32,
+    /// Pomodoro short break length, in minutes.
+    #[serde(default = "default_timer_short_break_minutes")]
+    pub timer_short_break_minutes: u32,
+    /// Pomodoro long break length, in minutes.
+    #[serde(default = "default_timer_long_break_minutes")]
+    pub timer_long_break_minutes: u32,
+    /// Margin around and between windows snapped by Window Management, in pixels.
+    #[serde(default)]
+    pub window_management_gap_px: u32,
+    /// Open URL quicklinks in the browser chosen for web search instead of the system default.
+    #[serde(default)]
+    pub quicklinks_use_preferred_browser: bool,
 }
 
 fn default_clipboard_retention_days() -> u32 {
@@ -295,12 +380,18 @@ impl Default for PluginSettings {
             clipboard_monitoring: true,
             clipboard_retention_days: default_clipboard_retention_days(),
             clipboard_disabled_apps: Vec::new(),
+            system_monitor_refresh_ms: default_system_monitor_refresh_ms(),
+            timer_work_minutes: default_timer_work_minutes(),
+            timer_short_break_minutes: default_timer_short_break_minutes(),
+            timer_long_break_minutes: default_timer_long_break_minutes(),
+            window_management_gap_px: 0,
+            quicklinks_use_preferred_browser: false,
         }
     }
 }
 
 /// Application shortcut
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export, export_to = "AppShortcut.ts")]
 pub struct AppShortcut {
@@ -559,12 +650,64 @@ pub struct Settings {
     pub shell: ShellSettings,
     #[serde(default)]
     pub fallbacks: FallbacksSettings,
+    #[serde(default)]
+    pub launcher: LauncherSettings,
+    #[serde(default)]
+    pub keyboard: KeyboardSettings,
     // `Settings` has no struct-level `rename_all`, and every other field
     // here is a single word (camelCase-identical to snake_case), so this is
     // the first field that actually needs an explicit rename to keep the
     // wire format — and the generated `Settings.ts` — camelCase.
     #[serde(default, rename = "snippetExpansion")]
     pub snippet_expansion: SnippetExpansionSettings,
+}
+
+impl Settings {
+    /// Brings the behaviour settings back into their valid ranges and migrates values written
+    /// by older builds. Returns `true` when something changed (the caller may persist it).
+    pub fn normalize_behavior(&mut self) -> bool {
+        let mut changed = self.launcher.normalize();
+        changed |= self.keyboard.normalize();
+
+        let open_settings = self.hotkeys.open_settings.trim();
+        if open_settings == LEGACY_OPEN_SETTINGS_HOTKEY
+            || (open_settings.is_empty() && !self.hotkeys.open_settings.is_empty())
+        {
+            self.hotkeys.open_settings = String::new();
+            changed = true;
+        }
+
+        let p = &mut self.plugins;
+        changed |= clamp_in_place(
+            &mut p.system_monitor_refresh_ms,
+            SYSTEM_MONITOR_REFRESH_MS_MIN,
+            SYSTEM_MONITOR_REFRESH_MS_MAX,
+        );
+        changed |= clamp_in_place(
+            &mut p.timer_work_minutes,
+            TIMER_WORK_MINUTES_RANGE.0,
+            TIMER_WORK_MINUTES_RANGE.1,
+        );
+        changed |= clamp_in_place(
+            &mut p.timer_short_break_minutes,
+            TIMER_SHORT_BREAK_MINUTES_RANGE.0,
+            TIMER_SHORT_BREAK_MINUTES_RANGE.1,
+        );
+        changed |= clamp_in_place(
+            &mut p.timer_long_break_minutes,
+            TIMER_LONG_BREAK_MINUTES_RANGE.0,
+            TIMER_LONG_BREAK_MINUTES_RANGE.1,
+        );
+        changed |= clamp_in_place(&mut p.window_management_gap_px, 0, WINDOW_GAP_PX_MAX);
+        changed
+    }
+}
+
+/// Pushes the settings that live in Rust state (not read by the frontend) to their owners.
+fn apply_runtime_settings(app_handle: &AppHandle, settings: &Settings) {
+    if let Some(state) = app_handle.try_state::<super::monitor::SystemMonitorState>() {
+        state.set_refresh_interval_ms(settings.plugins.system_monitor_refresh_ms);
+    }
 }
 
 /// Get the settings file path
@@ -587,13 +730,22 @@ fn get_settings_path(app_handle: &AppHandle) -> VoltResult<PathBuf> {
 /// Load settings from disk
 #[tauri::command]
 pub async fn load_settings(app_handle: AppHandle) -> VoltResult<Settings> {
-    let settings_path = get_settings_path(&app_handle)?;
+    // Loading may run migrations that write the file back, so it must not
+    // interleave with a read-modify-write cycle or another save.
+    let _guard = SETTINGS_LOCK.lock().await;
+    load_settings_unlocked(&app_handle)
+}
+
+/// Body of [`load_settings`]; the caller must hold `SETTINGS_LOCK`.
+fn load_settings_unlocked(app_handle: &AppHandle) -> VoltResult<Settings> {
+    let settings_path = get_settings_path(app_handle)?;
 
     if !settings_path.exists() {
         // Return default settings if file doesn't exist
         let default_settings = Settings::default();
         // Save default settings to disk
         save_settings_to_file(&settings_path, &default_settings)?;
+        publish_indexing_policy(&default_settings.indexing);
         return Ok(default_settings);
     }
 
@@ -657,20 +809,35 @@ pub async fn load_settings(app_handle: AppHandle) -> VoltResult<Settings> {
         }
     }
 
+    if settings.normalize_behavior() {
+        needs_save = true;
+    }
+
     if needs_save {
         save_settings_to_file(&settings_path, &settings)?;
     }
 
+    publish_indexing_policy(&settings.indexing);
+    apply_runtime_settings(app_handle, &settings);
     Ok(settings)
 }
 
 /// Save settings to disk
 #[tauri::command]
-pub async fn save_settings(app_handle: AppHandle, settings: Settings) -> VoltResult<()> {
-    let settings_path = get_settings_path(&app_handle)?;
-    save_settings_to_file(&settings_path, &settings)?;
+pub async fn save_settings(app_handle: AppHandle, mut settings: Settings) -> VoltResult<()> {
+    let _guard = SETTINGS_LOCK.lock().await;
+    settings.normalize_behavior();
+    save_settings_unlocked(&app_handle, &settings)
+}
+
+/// Body of [`save_settings`]; the caller must hold `SETTINGS_LOCK`.
+fn save_settings_unlocked(app_handle: &AppHandle, settings: &Settings) -> VoltResult<()> {
+    let settings_path = get_settings_path(app_handle)?;
+    save_settings_to_file(&settings_path, settings)?;
+    publish_indexing_policy(&settings.indexing);
+    apply_runtime_settings(app_handle, settings);
     // Broadcast to all windows so they can update their in-memory settings state
-    let _ = app_handle.emit("settings-changed", &settings);
+    let _ = app_handle.emit("settings-changed", settings);
     Ok(())
 }
 
@@ -712,9 +879,10 @@ where
     F: FnOnce(&mut Settings),
 {
     let _guard = SETTINGS_LOCK.lock().await;
-    let mut settings = load_settings(app_handle.clone()).await?;
+    let mut settings = load_settings_unlocked(&app_handle)?;
     update_fn(&mut settings);
-    save_settings(app_handle, settings.clone()).await?;
+    settings.normalize_behavior();
+    save_settings_unlocked(&app_handle, &settings)?;
     Ok(settings)
 }
 
@@ -1106,6 +1274,7 @@ pub async fn import_settings(app_handle: AppHandle, path: String) -> VoltResult<
     let settings_value = export_data.get("settings").ok_or_else(invalid)?;
     let mut settings: Settings =
         serde_json::from_value(settings_value.clone()).map_err(|_| invalid())?;
+    settings.normalize_behavior();
 
     // Re-validate path-bearing fields. A crafted import could otherwise point
     // the indexer at sensitive system roots or smuggle traversal sequences.
@@ -1120,72 +1289,94 @@ pub async fn import_settings(app_handle: AppHandle, path: String) -> VoltResult<
     Ok(settings)
 }
 
-/// Sync shortcuts from installed applications
+/// Consult the latest known catalog without starting an expensive scan when Settings opens.
+/// Explicit `force` is reserved for a deliberate rescan; the launcher publishes scan completion.
 #[tauri::command]
-pub async fn sync_app_shortcuts(app_handle: AppHandle) -> VoltResult<Vec<AppShortcut>> {
-    use crate::commands::apps::scan_applications_fresh;
+pub async fn sync_app_shortcuts(
+    app_handle: AppHandle,
+    force: Option<bool>,
+) -> VoltResult<Vec<AppShortcut>> {
+    use crate::commands::apps::{cached_applications, scan_applications_with_options};
+    let apps = if force.unwrap_or(false) {
+        Some(scan_applications_with_options(true).await?)
+    } else {
+        cached_applications().await
+    };
+    let _guard = SETTINGS_LOCK.lock().await;
+    let mut settings = load_settings_unlocked(&app_handle)?;
+    let Some(apps) = apps else {
+        // Startup may still be scanning. Keep the persisted list until apps:scan-finished.
+        return Ok(settings.shortcuts.app_shortcuts);
+    };
+    let shortcuts = merge_app_shortcuts(&apps, &settings.shortcuts.app_shortcuts);
+    if shortcuts != settings.shortcuts.app_shortcuts {
+        settings.shortcuts.app_shortcuts = shortcuts.clone();
+        settings.normalize_behavior();
+        save_settings_unlocked(&app_handle, &settings)?;
+    }
+    Ok(shortcuts)
+}
 
-    // Perform the expensive scan *before* acquiring the settings lock so we
-    // hold the lock only for the read-modify-write cycle, not for the I/O.
-    let apps = scan_applications_fresh().await?;
+fn merge_app_shortcuts(
+    apps: &[crate::commands::apps::AppInfo],
+    existing: &[AppShortcut],
+) -> Vec<AppShortcut> {
+    let existing: std::collections::HashMap<_, _> =
+        existing.iter().map(|item| (&item.id, item)).collect();
+    apps.iter()
+        .map(|app| {
+            let saved = existing.get(&app.id);
+            AppShortcut {
+                id: app.id.clone(),
+                name: app.name.clone(),
+                category: app
+                    .category
+                    .clone()
+                    .unwrap_or_else(|| "Applications".to_string()),
+                icon: None,
+                path: app.path.clone(),
+                alias: saved.and_then(|item| item.alias.clone()),
+                hotkey: saved.and_then(|item| item.hotkey.clone()),
+                enabled: saved.is_none_or(|item| item.enabled),
+            }
+        })
+        .collect()
+}
 
-    let mut new_shortcuts_out = Vec::new();
+#[cfg(test)]
+mod shortcut_sync_tests {
+    use super::*;
+    use crate::commands::apps::AppInfo;
 
-    update_settings_section(app_handle, |settings| {
-        // Keep existing shortcuts data (aliases, hotkeys) but update category from fresh scan
-        let existing_shortcuts: std::collections::HashMap<String, AppShortcut> = settings
-            .shortcuts
-            .app_shortcuts
-            .iter()
-            .map(|s| (s.id.clone(), s.clone()))
-            .collect();
-
-        let mut new_shortcuts = Vec::new();
-
-        for app in &apps {
-            let shortcut = if let Some(existing) = existing_shortcuts.get(&app.id) {
-                // Keep existing alias/hotkey but update category from fresh scan
-                AppShortcut {
-                    id: existing.id.clone(),
-                    name: app.name.clone(),
-                    category: app
-                        .category
-                        .clone()
-                        .unwrap_or_else(|| "Applications".to_string()),
-                    // Icons are display-only and may be large data URLs. Keep
-                    // them out of persisted settings; the UI hydrates lazily.
-                    icon: None,
-                    path: app.path.clone(),
-                    alias: existing.alias.clone(),
-                    hotkey: existing.hotkey.clone(),
-                    enabled: existing.enabled,
-                }
-            } else {
-                // Create new shortcut
-                AppShortcut {
-                    id: app.id.clone(),
-                    name: app.name.clone(),
-                    category: app
-                        .category
-                        .clone()
-                        .unwrap_or_else(|| "Applications".to_string()),
-                    // Icons are display-only and may be large data URLs. Keep
-                    // them out of persisted settings; the UI hydrates lazily.
-                    icon: None,
-                    path: app.path.clone(),
-                    alias: None,
-                    hotkey: None,
-                    enabled: true,
-                }
-            };
-
-            new_shortcuts.push(shortcut);
-        }
-
-        settings.shortcuts.app_shortcuts = new_shortcuts.clone();
-        new_shortcuts_out = new_shortcuts;
-    })
-    .await?;
-
-    Ok(new_shortcuts_out)
+    #[test]
+    fn merge_preserves_customizations_and_is_idempotent_without_icons() {
+        let apps = vec![AppInfo {
+            id: "app".into(),
+            name: "Updated name".into(),
+            path: "app.exe".into(),
+            icon: Some("large image".into()),
+            description: None,
+            keywords: None,
+            last_used: None,
+            usage_count: 0,
+            category: Some("development".into()),
+        }];
+        let saved = vec![AppShortcut {
+            id: "app".into(),
+            name: "Old name".into(),
+            path: "old.exe".into(),
+            category: "other".into(),
+            icon: Some("obsolete image".into()),
+            alias: Some("editor".into()),
+            hotkey: Some("ctrl+alt+e".into()),
+            enabled: false,
+        }];
+        let merged = merge_app_shortcuts(&apps, &saved);
+        assert_eq!(merged[0].alias, saved[0].alias);
+        assert_eq!(merged[0].hotkey, saved[0].hotkey);
+        assert!(!merged[0].enabled);
+        assert_eq!(merged[0].name, "Updated name");
+        assert!(merged[0].icon.is_none());
+        assert_eq!(merge_app_shortcuts(&apps, &merged), merged);
+    }
 }

@@ -37,7 +37,7 @@ export class MyPlugin implements Plugin {
   }
 }
 
-// 2. Enregistrer dans src/app/App.tsx
+// 2. Enregistrer dans src/app/hooks/useAppLifecycle.ts (registration block)
 import { MyPlugin } from '../features/plugins/builtin/my-plugin';
 pluginRegistry.register(new MyPlugin());
 ```
@@ -439,9 +439,9 @@ describe('MyPlugin', () => {
 - [ ] Gérer les erreurs
 - [ ] Tester avec `pnpm run tauri -- dev`
 - [ ] Vérifier les perfs (< 500ms)
-- [ ] Enregistrer dans App.tsx
+- [ ] Enregistrer dans useAppLifecycle.ts
 - [ ] Documenter le plugin
 
 ---
 
-**Version :** 1.0 | **Projet :** Volt | **Licence :** MIT
+**Version :** cf. package.json | **Projet :** Volt | **Licence :** Apache-2.0

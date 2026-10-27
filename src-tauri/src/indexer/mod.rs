@@ -1,5 +1,6 @@
 pub mod database;
 pub mod file_history;
+mod ignore_policy;
 pub mod scanner;
 pub mod search_engine;
 pub mod types;
@@ -23,6 +24,16 @@ pub mod usn;
 
 pub use database::{FileIndexDb, IndexStats};
 pub use file_history::*;
+pub(crate) use ignore_policy::set_external_policy;
 pub use scanner::*;
 pub use search_engine::{SearchEngine, SearchOptions, SearchResult};
 pub use types::*;
+
+/// Temp dir under a canonical base. macOS temp dirs live below the
+/// `/var` -> `/private/var` symlink, which the scanner deliberately refuses to
+/// traverse, so tests must root their fixtures at the resolved path.
+#[cfg(test)]
+pub(crate) fn test_tempdir() -> tempfile::TempDir {
+    let base = std::env::temp_dir().canonicalize().unwrap();
+    tempfile::Builder::new().tempdir_in(base).unwrap()
+}

@@ -16,25 +16,30 @@
 //! ```
 
 use crate::indexer::types::{FileCategory, FileInfo};
-use rusqlite::{Connection, params};
+use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 use tracing::{debug, info, warn};
+use ts_rs::TS;
 
 // ---------------------------------------------------------------------------
 // Public types
 // ---------------------------------------------------------------------------
 
 /// Statistics about the current SQLite index.
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "IndexDbStats.ts", rename = "IndexDbStats")]
 pub struct IndexStats {
     /// Number of files currently in the index.
     pub indexed_count: usize,
     /// Rough size of the DB file on disk, in bytes.
+    #[ts(type = "number")]
     pub db_size_bytes: u64,
     /// Unix timestamp of the last full scan (0 = never).
+    #[ts(type = "number")]
     pub last_full_scan: i64,
     /// Whether the file watcher is currently active.
     pub is_watching: bool,
@@ -42,9 +47,178 @@ pub struct IndexStats {
     /// index (the no-admin stand-in for a USN-journal drain). This is the
     /// re-scan telemetry feeding the D3/USN reconsideration — see
     /// `REFONTE-PILIER-D-SEARCH.md`.
+    #[ts(type = "number")]
     pub stale_catchup_count: i64,
     /// Unix timestamp of the most recent offline catch-up reconcile (0 = never).
+    #[ts(type = "number")]
     pub last_stale_catchup: i64,
+    /// Local, bounded diagnostics. These records deliberately contain no paths.
+    pub scan_history: Vec<ScanDiagnostic>,
+    #[ts(type = "number | null")]
+    pub scan_duration_recent_ms: Option<u64>,
+    #[ts(type = "number | null")]
+    pub scan_duration_median_ms: Option<u64>,
+    /// Watcher events per indexed root and UTC day (last
+    /// [`WATCHER_CHURN_DAYS`] days). `root` is an opaque key in the database;
+    /// the IPC command replaces it with a generic label (`Root 1`, ...).
+    pub watcher_churn: Vec<WatcherChurnDay>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, TS)]
+#[serde(rename_all = "lowercase")]
+#[ts(export, export_to = "ScanKind.ts")]
+pub enum ScanKind {
+    Initial,
+    Rebuild,
+    Catchup,
+}
+
+/// Only aggregate counts and timings cross the diagnostics boundary.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[ts(export, export_to = "ScanDiagnostic.ts")]
+pub struct ScanDiagnostic {
+    pub kind: ScanKind,
+    #[ts(type = "number")]
+    pub completed_at: i64,
+    #[ts(type = "number")]
+    pub scan_ms: u64,
+    #[ts(type = "number")]
+    pub persist_ms: u64,
+    #[ts(type = "number")]
+    pub total_ms: u64,
+    pub indexed_count: usize,
+    pub root_count: usize,
+    pub added: usize,
+    pub removed: usize,
+    pub modified: usize,
+}
+
+/// Watcher activity for one indexed root on one UTC day. No path is stored:
+/// `root` is [`root_diagnostic_key`] on disk and a generic label over IPC.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[ts(export, export_to = "WatcherChurnDay.ts")]
+pub struct WatcherChurnDay {
+    /// Days since the Unix epoch (UTC).
+    #[ts(type = "number")]
+    pub day: i64,
+    pub root: String,
+    #[ts(type = "number")]
+    pub events: u64,
+}
+
+/// Days of watcher activity kept.
+pub const WATCHER_CHURN_DAYS: i64 = 30;
+/// Roots kept per day; quieter roots are folded into [`OTHER_ROOTS_KEY`].
+pub const WATCHER_CHURN_ROOTS_PER_DAY: usize = 20;
+/// Bucket for roots beyond the per-day bound.
+pub const OTHER_ROOTS_KEY: &str = "other";
+
+/// Opaque, stable key for an indexed root (FNV-1a of its canonical path).
+/// Lets per-root counters survive restarts without persisting the path.
+pub fn root_diagnostic_key(root: &Path) -> String {
+    let canonical = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for byte in canonical.to_string_lossy().as_bytes() {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x0100_0000_01b3);
+    }
+    format!("{hash:016x}")
+}
+
+/// Current UTC day number, the unit of [`WatcherChurnDay::day`].
+pub fn current_churn_day() -> i64 {
+    chrono::Utc::now().timestamp().div_euclid(86_400)
+}
+
+/// Merge `counts` into `history` for `day`, then enforce both bounds.
+fn merge_watcher_churn(history: &mut Vec<WatcherChurnDay>, day: i64, counts: &[(String, u64)]) {
+    for (root, events) in counts {
+        match history
+            .iter_mut()
+            .find(|entry| entry.day == day && &entry.root == root)
+        {
+            Some(entry) => entry.events = entry.events.saturating_add(*events),
+            None => history.push(WatcherChurnDay {
+                day,
+                root: root.clone(),
+                events: *events,
+            }),
+        }
+    }
+    history.retain(|entry| entry.day > day - WATCHER_CHURN_DAYS && entry.day <= day);
+    let mut days: Vec<i64> = history.iter().map(|entry| entry.day).collect();
+    days.sort_unstable();
+    days.dedup();
+    let mut bounded = Vec::with_capacity(history.len());
+    for current in days {
+        let mut entries: Vec<WatcherChurnDay> = history
+            .iter()
+            .filter(|entry| entry.day == current)
+            .cloned()
+            .collect();
+        entries.sort_by(|a, b| {
+            (a.root == OTHER_ROOTS_KEY)
+                .cmp(&(b.root == OTHER_ROOTS_KEY))
+                .then(b.events.cmp(&a.events))
+                .then(a.root.cmp(&b.root))
+        });
+        if entries.len() > WATCHER_CHURN_ROOTS_PER_DAY {
+            let folded: u64 = entries
+                .drain(WATCHER_CHURN_ROOTS_PER_DAY - 1..)
+                .map(|entry| entry.events)
+                .fold(0, u64::saturating_add);
+            entries.push(WatcherChurnDay {
+                day: current,
+                root: OTHER_ROOTS_KEY.to_string(),
+                events: folded,
+            });
+        }
+        bounded.extend(entries);
+    }
+    *history = bounded;
+}
+
+/// Compare stable snapshot metadata; access times and presentation icons do
+/// not imply a file changed. Paths are used transiently and never returned.
+pub fn snapshot_delta(before: &[FileInfo], after: &[FileInfo]) -> (usize, usize, usize) {
+    let mut previous: HashMap<&str, &FileInfo> = before
+        .iter()
+        .map(|file| (file.path.as_str(), file))
+        .collect();
+    let mut added = 0;
+    let mut modified = 0;
+    for file in after {
+        match previous.remove(file.path.as_str()) {
+            None => added += 1,
+            Some(old)
+                if old.size != file.size
+                    || old.modified != file.modified
+                    || old.name != file.name
+                    || old.extension != file.extension
+                    || old.category != file.category =>
+            {
+                modified += 1;
+            }
+            Some(_) => {}
+        }
+    }
+    (added, previous.len(), modified)
+}
+
+fn duration_median(history: &[ScanDiagnostic]) -> Option<u64> {
+    let mut values: Vec<u64> = history.iter().map(|scan| scan.total_ms).collect();
+    if values.is_empty() {
+        return None;
+    }
+    values.sort_unstable();
+    let middle = values.len() / 2;
+    Some(if values.len().is_multiple_of(2) {
+        values[middle - 1] + (values[middle] - values[middle - 1]) / 2
+    } else {
+        values[middle]
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -52,9 +226,24 @@ pub struct IndexStats {
 // ---------------------------------------------------------------------------
 
 /// Thread-safe wrapper around a SQLite connection for file indexing.
+///
+/// Cloning shares the SAME underlying connection (the `Arc<Mutex<_>>` is
+/// cloned, not the connection): all clones serialize on one mutex, so two
+/// writers in the same process can never hit `SQLITE_BUSY` against each
+/// other. This is what lets the file watcher share the index state's
+/// connection instead of opening a second one to the same file.
 pub struct FileIndexDb {
     conn: Arc<Mutex<Connection>>,
     db_path: std::path::PathBuf,
+}
+
+impl Clone for FileIndexDb {
+    fn clone(&self) -> Self {
+        Self {
+            conn: Arc::clone(&self.conn),
+            db_path: self.db_path.clone(),
+        }
+    }
 }
 
 impl FileIndexDb {
@@ -65,8 +254,14 @@ impl FileIndexDb {
         let conn = Connection::open(&db_path).map_err(|e| format!("Failed to open DB: {}", e))?;
 
         // Enable WAL mode for better concurrent read performance.
-        conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;")
-            .map_err(|e| format!("Failed to set PRAGMA: {}", e))?;
+        // `busy_timeout` makes the second connection (watcher) wait instead of
+        // immediately failing with SQLITE_BUSY when the scanner holds a write
+        // transaction — without it watcher upserts are dropped and DB/memory
+        // diverge under scan+churn contention.
+        conn.execute_batch(
+            "PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA busy_timeout=5000;",
+        )
+        .map_err(|e| format!("Failed to set PRAGMA: {}", e))?;
 
         // Create table.
         conn.execute_batch(
@@ -518,6 +713,21 @@ impl FileIndexDb {
             .and_then(|v| v.parse::<i64>().ok())
             .unwrap_or(0);
 
+        let scan_history = self
+            .get_meta(SCAN_HISTORY_KEY)?
+            .map(|value| serde_json::from_str::<Vec<ScanDiagnostic>>(&value))
+            .transpose()
+            .map_err(|e| format!("Failed to read scan diagnostics: {}", e))?
+            .unwrap_or_default();
+        let scan_duration_recent_ms = scan_history.last().map(|scan| scan.total_ms);
+        let scan_duration_median_ms = duration_median(&scan_history);
+        let watcher_churn = self
+            .get_meta(WATCHER_CHURN_KEY)?
+            .map(|value| serde_json::from_str::<Vec<WatcherChurnDay>>(&value))
+            .transpose()
+            .map_err(|e| format!("Failed to read watcher diagnostics: {}", e))?
+            .unwrap_or_default();
+
         Ok(IndexStats {
             indexed_count,
             db_size_bytes,
@@ -525,7 +735,72 @@ impl FileIndexDb {
             is_watching,
             stale_catchup_count,
             last_stale_catchup,
+            scan_history,
+            scan_duration_recent_ms,
+            scan_duration_median_ms,
+            watcher_churn,
         })
+    }
+
+    /// Add watcher event counts (`(root key, events)`) for `day`. One lock
+    /// covers read/merge/write so concurrent callers cannot lose counts.
+    pub fn record_watcher_events(&self, day: i64, counts: &[(String, u64)]) -> Result<(), String> {
+        if counts.is_empty() {
+            return Ok(());
+        }
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| format!("DB lock poisoned: {}", e))?;
+        let value: Option<String> = conn
+            .query_row(
+                "SELECT value FROM metadata WHERE key = ?1",
+                params![WATCHER_CHURN_KEY],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|e| format!("Failed to read watcher diagnostics: {}", e))?;
+        // A corrupt blob is diagnostics only: restart the series.
+        let mut history: Vec<WatcherChurnDay> = value
+            .and_then(|value| serde_json::from_str(&value).ok())
+            .unwrap_or_default();
+        merge_watcher_churn(&mut history, day, counts);
+        let value = serde_json::to_string(&history)
+            .map_err(|e| format!("Failed to serialize watcher diagnostics: {}", e))?;
+        conn.execute("INSERT INTO metadata(key, value) VALUES(?1, ?2) ON CONFLICT(key) DO UPDATE SET value = excluded.value", params![WATCHER_CHURN_KEY, value])
+            .map_err(|e| format!("Failed to persist watcher diagnostics: {}", e))?;
+        Ok(())
+    }
+
+    /// Append after a successful SQLite replacement only. One connection lock
+    /// covers the read/append/write so concurrent callers cannot lose samples.
+    pub fn record_scan(&self, scan: ScanDiagnostic) -> Result<(), String> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| format!("DB lock poisoned: {}", e))?;
+        let value: Option<String> = conn
+            .query_row(
+                "SELECT value FROM metadata WHERE key = ?1",
+                params![SCAN_HISTORY_KEY],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|e| format!("Failed to read scan diagnostics: {}", e))?;
+        let mut history: Vec<ScanDiagnostic> = value
+            .map(|value| serde_json::from_str(&value))
+            .transpose()
+            .map_err(|e| format!("Failed to parse scan diagnostics: {}", e))?
+            .unwrap_or_default();
+        history.push(scan);
+        if history.len() > SCAN_HISTORY_LIMIT {
+            history.drain(..history.len() - SCAN_HISTORY_LIMIT);
+        }
+        let value = serde_json::to_string(&history)
+            .map_err(|e| format!("Failed to serialize scan diagnostics: {}", e))?;
+        conn.execute("INSERT INTO metadata(key, value) VALUES(?1, ?2) ON CONFLICT(key) DO UPDATE SET value = excluded.value", params![SCAN_HISTORY_KEY, value])
+            .map_err(|e| format!("Failed to persist scan diagnostics: {}", e))?;
+        Ok(())
     }
 
     /// Record a successful full scan timestamp.
@@ -567,6 +842,9 @@ impl FileIndexDb {
 const STALE_CATCHUP_COUNT_KEY: &str = "stale_catchup_count";
 /// Metadata key: Unix timestamp of the last offline catch-up reconcile.
 const LAST_STALE_CATCHUP_KEY: &str = "last_stale_catchup";
+const SCAN_HISTORY_KEY: &str = "scan_history_v1";
+const SCAN_HISTORY_LIMIT: usize = 50;
+const WATCHER_CHURN_KEY: &str = "watcher_churn_v1";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -606,6 +884,153 @@ mod tests {
             icon: None,
             category: FileCategory::Document,
         }
+    }
+
+    fn make_scan(total_ms: u64) -> ScanDiagnostic {
+        ScanDiagnostic {
+            kind: ScanKind::Rebuild,
+            completed_at: 1_700_000_000,
+            scan_ms: total_ms / 2,
+            persist_ms: total_ms / 2,
+            total_ms,
+            indexed_count: 4,
+            root_count: 2,
+            added: 1,
+            removed: 1,
+            modified: 1,
+        }
+    }
+
+    #[test]
+    fn scan_delta_ignores_access_times_and_counts_stable_metadata_changes() {
+        let unchanged = make_file("unchanged.txt", "/private/unchanged.txt");
+        let size_changed = make_file("size.txt", "/private/size.txt");
+        let time_changed = make_file("time.txt", "/private/time.txt");
+        let removed = make_file("removed.txt", "/private/removed.txt");
+        let before = vec![
+            unchanged.clone(),
+            size_changed.clone(),
+            time_changed.clone(),
+            removed,
+        ];
+        let mut after = vec![
+            unchanged,
+            size_changed,
+            time_changed,
+            make_file("added.txt", "/private/added.txt"),
+        ];
+        after[0].accessed = Some(1234);
+        after[0].icon = Some("transient-icon".to_string());
+        after[1].size += 1;
+        after[2].modified += 1;
+        assert_eq!(snapshot_delta(&before, &after), (1, 1, 2));
+        assert_eq!(snapshot_delta(&[], &after), (4, 0, 0));
+        assert_eq!(snapshot_delta(&before, &[]), (0, 4, 0));
+    }
+
+    #[test]
+    fn scan_history_is_bounded_persistent_and_contains_only_aggregate_data() {
+        let dir = tempdir().unwrap();
+        let db_path = dir.path().join("diagnostics.db");
+        let db = FileIndexDb::open(&db_path).unwrap();
+        db.upsert_file(&make_file("secret.txt", "/private/customer/secret.txt"))
+            .unwrap();
+        for total_ms in 1..=55 {
+            db.record_scan(make_scan(total_ms)).unwrap();
+        }
+        drop(db);
+        let db = FileIndexDb::open(&db_path).unwrap();
+        let stats = db.get_stats(false).unwrap();
+        assert_eq!(stats.scan_history.len(), 50);
+        assert_eq!(stats.scan_history.first().unwrap().total_ms, 6);
+        assert_eq!(stats.scan_duration_recent_ms, Some(55));
+        assert_eq!(stats.scan_duration_median_ms, Some(30));
+        let stored = db.get_meta(SCAN_HISTORY_KEY).unwrap().unwrap();
+        assert!(!stored.contains("private"));
+        assert!(!stored.contains("secret.txt"));
+        let wire = serde_json::to_value(stats).unwrap();
+        let record = wire["scanHistory"][0].as_object().unwrap();
+        let mut keys: Vec<_> = record.keys().map(String::as_str).collect();
+        keys.sort_unstable();
+        assert_eq!(
+            keys,
+            vec![
+                "added",
+                "completedAt",
+                "indexedCount",
+                "kind",
+                "modified",
+                "persistMs",
+                "removed",
+                "rootCount",
+                "scanMs",
+                "totalMs"
+            ]
+        );
+    }
+
+    #[test]
+    fn watcher_churn_is_bounded_by_day_and_root_and_persists() {
+        let dir = tempdir().unwrap();
+        let db_path = dir.path().join("churn.db");
+        let db = FileIndexDb::open(&db_path).unwrap();
+        let today = 20_000;
+        // Older than the window: dropped at the next write.
+        db.record_watcher_events(today - WATCHER_CHURN_DAYS, &[("a".into(), 5)])
+            .unwrap();
+        db.record_watcher_events(today - 1, &[("a".into(), 2)])
+            .unwrap();
+        db.record_watcher_events(today, &[("a".into(), 3), ("b".into(), 1)])
+            .unwrap();
+        db.record_watcher_events(today, &[("a".into(), 4)]).unwrap();
+        let many: Vec<(String, u64)> = (0..30).map(|i| (format!("r{i:02}"), 1)).collect();
+        db.record_watcher_events(today, &many).unwrap();
+        drop(db);
+
+        let stats = FileIndexDb::open(&db_path)
+            .unwrap()
+            .get_stats(false)
+            .unwrap();
+        let churn = stats.watcher_churn;
+        assert!(churn.iter().all(|e| e.day > today - WATCHER_CHURN_DAYS));
+        let todays: Vec<_> = churn.iter().filter(|e| e.day == today).collect();
+        assert_eq!(todays.len(), WATCHER_CHURN_ROOTS_PER_DAY);
+        assert_eq!(todays[0].root, "a");
+        assert_eq!(todays[0].events, 7);
+        let total: u64 = todays.iter().map(|e| e.events).sum();
+        assert_eq!(total, 7 + 1 + 30, "folding keeps every event");
+        assert_eq!(todays.last().unwrap().root, OTHER_ROOTS_KEY);
+        assert_eq!(churn.iter().find(|e| e.day == today - 1).unwrap().events, 2);
+    }
+
+    #[test]
+    fn root_diagnostic_key_is_stable_and_does_not_leak_the_path() {
+        let dir = tempdir().unwrap();
+        let key = root_diagnostic_key(dir.path());
+        assert_eq!(key, root_diagnostic_key(dir.path()));
+        assert_eq!(key.len(), 16);
+        let name = dir
+            .path()
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        assert!(!key.contains(&name));
+        assert_ne!(key, root_diagnostic_key(&dir.path().join("child")));
+    }
+
+    #[test]
+    fn scan_median_handles_empty_even_odd_and_large_durations() {
+        assert_eq!(duration_median(&[]), None);
+        assert_eq!(
+            duration_median(&[make_scan(50), make_scan(10), make_scan(30)]),
+            Some(30)
+        );
+        assert_eq!(duration_median(&[make_scan(50), make_scan(10)]), Some(30));
+        assert_eq!(
+            duration_median(&[make_scan(u64::MAX), make_scan(u64::MAX)]),
+            Some(u64::MAX)
+        );
     }
 
     #[test]
@@ -786,5 +1211,114 @@ mod tests {
         // Re-open – data should still be there
         let db2 = FileIndexDb::open(&path).unwrap();
         assert_eq!(db2.count().unwrap(), 1);
+    }
+
+    /// Regression (audit passe 2, sujet 1): the scanner's bulk `replace_files`
+    /// transaction and the watcher's single-row `upsert_file` used to run on
+    /// two SEPARATE SQLite connections to the same file, so under contention
+    /// the watcher got `SQLITE_BUSY` ("database is locked") and DROPPED the
+    /// mutation. Cloned `FileIndexDb` handles share one connection behind one
+    /// mutex, so concurrent writers serialize instead of failing. This test
+    /// hammers a shared handle from several threads behind a barrier and
+    /// asserts zero lock errors and a coherent final count.
+    #[test]
+    fn shared_clone_serializes_concurrent_writers_without_busy() {
+        use std::sync::{
+            Barrier,
+            atomic::{AtomicUsize, Ordering as AtomicOrdering},
+        };
+
+        let dir = tempdir().unwrap();
+        let db = FileIndexDb::open(dir.path().join("t.db")).unwrap();
+        // Seed so the replacer always has something to write.
+        db.upsert_files(
+            &(0..50)
+                .map(|i| make_file(&format!("seed{i}.txt"), &format!("/s/seed{i}.txt")))
+                .collect::<Vec<_>>(),
+        )
+        .unwrap();
+
+        let busy_errors = Arc::new(AtomicUsize::new(0));
+        let barrier = Arc::new(Barrier::new(5));
+        let mut handles = Vec::new();
+
+        // 4 single-row writers (watcher profile).
+        for w in 0..4 {
+            let db = db.clone();
+            let barrier = Arc::clone(&barrier);
+            let busy_errors = Arc::clone(&busy_errors);
+            handles.push(std::thread::spawn(move || {
+                barrier.wait();
+                for i in 0..50 {
+                    let f = make_file(&format!("w{w}_{i}.txt"), &format!("/w{w}/{i}.txt"));
+                    if let Err(e) = db.upsert_file(&f)
+                        && (e.contains("locked") || e.contains("busy"))
+                    {
+                        busy_errors.fetch_add(1, AtomicOrdering::Relaxed);
+                    }
+                }
+            }));
+        }
+
+        // 1 bulk replacer (scanner profile).
+        {
+            let db = db.clone();
+            let barrier = Arc::clone(&barrier);
+            let busy_errors = Arc::clone(&busy_errors);
+            handles.push(std::thread::spawn(move || {
+                barrier.wait();
+                for round in 0..5 {
+                    let files: Vec<FileInfo> = (0..50)
+                        .map(|i| {
+                            make_file(&format!("r{round}_{i}.txt"), &format!("/r{round}/{i}.txt"))
+                        })
+                        .collect();
+                    if let Err(e) = db.replace_files(&files)
+                        && (e.contains("locked") || e.contains("busy"))
+                    {
+                        busy_errors.fetch_add(1, AtomicOrdering::Relaxed);
+                    }
+                }
+            }));
+        }
+
+        for h in handles {
+            h.join().expect("worker thread panicked");
+        }
+
+        assert_eq!(
+            busy_errors.load(AtomicOrdering::Relaxed),
+            0,
+            "shared connection must never surface SQLITE_BUSY to same-process writers"
+        );
+        // The last replacer round wrote exactly 50 rows; single-row upserts
+        // raced it, so the final count is >= 50 and every row is readable.
+        let all = db.get_all_files().unwrap();
+        assert!(
+            all.len() >= 50,
+            "final snapshot must be coherent, got {} rows",
+            all.len()
+        );
+    }
+
+    /// A failed DB mutation must never reach the in-memory layer alone. This
+    /// pins the all-or-none ordering inside `flush_events` indirectly: here at
+    /// the DB level, a write error is returned to the caller instead of being
+    /// swallowed, so the caller can skip the cache/Tantivy half (see the
+    /// watcher test `failed_db_mutation_leaves_cache_untouched`).
+    #[test]
+    fn write_error_is_surfaced_not_swallowed() {
+        let dir = tempdir().unwrap();
+        let db = FileIndexDb::open(dir.path().join("t.db")).unwrap();
+        // Drop the table out from under the handle: every write must now fail.
+        db.conn
+            .lock()
+            .unwrap()
+            .execute_batch("DROP TABLE files;")
+            .unwrap();
+        let err = db
+            .upsert_file(&make_file("x.txt", "/x.txt"))
+            .expect_err("write against a dropped table must fail");
+        assert!(!err.is_empty());
     }
 }

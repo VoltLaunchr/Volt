@@ -60,6 +60,11 @@ affichée sous Wayland, mais le raccourci global et le presse-papiers ne sont pa
 des implémentations Wayland natives. Ces fonctions doivent être modernisées en
 upstream avant de déclarer un support Wayland complet.
 
+Sous Hyprland, la voie officielle est le bind `volt --toggle` (le hotkey
+in-app ne marche pas en Wayland natif) : voir
+[`HYPRLAND.md`](HYPRLAND.md) — bind toggle, windowrules, autostart
+`volt --hidden` et prérequis Wayland.
+
 ## Politique du paquet
 
 Le nom retenu est `volt-launchr`. Il évite les noms proches déjà utilisés par

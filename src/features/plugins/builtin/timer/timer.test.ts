@@ -51,8 +51,7 @@ describe('parseDurationFlexible', () => {
     it('returns null for empty string', () => expect(parseDurationFlexible('')).toBeNull());
     it('returns null for garbage', () => expect(parseDurationFlexible('abc')).toBeNull());
     it('returns null for 0', () => expect(parseDurationFlexible('0')).toBeNull());
-    it('treats "-5m" as 5m (ignores leading dash)', () =>
-      expect(parseDurationFlexible('-5m')).toBe(5 * 60_000));
+    it('rejects negative durations', () => expect(parseDurationFlexible('-5m')).toBeNull());
   });
 
   describe('max duration cap (24h)', () => {
@@ -121,21 +120,27 @@ describe('TimerPlugin', () => {
     it('parses "timer 5m"', () => {
       const results = plugin.match({ query: 'timer 5m' });
       expect(results.length).toBeGreaterThanOrEqual(1);
-      const startResult = results.find((r) => (r.data as Record<string, unknown>).action === 'start');
+      const startResult = results.find(
+        (r) => (r.data as Record<string, unknown>).action === 'start'
+      );
       expect(startResult).toBeDefined();
       expect((startResult!.data as Record<string, unknown>).duration).toBe(5 * 60_000);
     });
 
     it('parses "timer 5 minutes"', () => {
       const results = plugin.match({ query: 'timer 5 minutes' });
-      const startResult = results.find((r) => (r.data as Record<string, unknown>).action === 'start');
+      const startResult = results.find(
+        (r) => (r.data as Record<string, unknown>).action === 'start'
+      );
       expect(startResult).toBeDefined();
       expect((startResult!.data as Record<string, unknown>).duration).toBe(5 * 60_000);
     });
 
     it('parses "timer 1h30m work session"', () => {
       const results = plugin.match({ query: 'timer 1h30m work session' });
-      const startResult = results.find((r) => (r.data as Record<string, unknown>).action === 'start');
+      const startResult = results.find(
+        (r) => (r.data as Record<string, unknown>).action === 'start'
+      );
       expect(startResult).toBeDefined();
       expect((startResult!.data as Record<string, unknown>).duration).toBe(90 * 60_000);
       expect((startResult!.data as Record<string, unknown>).label).toBe('work session');
@@ -143,14 +148,18 @@ describe('TimerPlugin', () => {
 
     it('parses "countdown 30s"', () => {
       const results = plugin.match({ query: 'countdown 30s' });
-      const startResult = results.find((r) => (r.data as Record<string, unknown>).action === 'start');
+      const startResult = results.find(
+        (r) => (r.data as Record<string, unknown>).action === 'start'
+      );
       expect(startResult).toBeDefined();
       expect((startResult!.data as Record<string, unknown>).duration).toBe(30_000);
     });
 
     it('parses bare number "timer 10" as 10 minutes', () => {
       const results = plugin.match({ query: 'timer 10' });
-      const startResult = results.find((r) => (r.data as Record<string, unknown>).action === 'start');
+      const startResult = results.find(
+        (r) => (r.data as Record<string, unknown>).action === 'start'
+      );
       expect(startResult).toBeDefined();
       expect((startResult!.data as Record<string, unknown>).duration).toBe(10 * 60_000);
     });
@@ -183,7 +192,7 @@ describe('TimerPlugin', () => {
 
       const results = plugin.match({ query: 'timer' });
       const cancelResult = results.find(
-        (r) => (r.data as Record<string, unknown>).action === 'cancel',
+        (r) => (r.data as Record<string, unknown>).action === 'cancel'
       );
       expect(cancelResult).toBeDefined();
       expect(cancelResult!.title).toContain('Test Timer');
@@ -250,4 +259,30 @@ describe('timerStore persistence', () => {
     const parsed = JSON.parse(stored!) as { id: string }[];
     expect(parsed.some((t) => t.id === id)).toBe(false);
   });
+});
+
+describe('strict duration parsing regressions', () => {
+  it.each(['-5m', '5m garbage', 'hello 5m', '1:99', '1:90:00', '1.5h', '1m2m', '1m-5s'])(
+    'rejects %s',
+    (input) => expect(parseDurationFlexible(input)).toBeNull()
+  );
+  it('keeps spaced compound units before the label', () => {
+    const result = new TimerPlugin()
+      .match({ query: 'timer 1h 30m deep work' })
+      .find((r) => (r.data as Record<string, unknown>).action === 'start');
+    expect(result?.data).toMatchObject({ duration: 90 * 60_000, label: 'deep work' });
+  });
+});
+
+describe('invalid compound timer queries', () => {
+  it.each(['timer 24h 1m', 'timer 25 h', 'timer 5m -2s', 'timer 5m 1.5h'])(
+    'does not start %s',
+    (query) => {
+      expect(
+        new TimerPlugin()
+          .match({ query })
+          .some((r) => (r.data as Record<string, unknown>).action === 'start')
+      ).toBe(false);
+    }
+  );
 });

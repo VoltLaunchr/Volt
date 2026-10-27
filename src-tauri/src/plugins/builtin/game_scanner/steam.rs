@@ -348,9 +348,12 @@ impl SteamScanner {
         None
     }
 
-    /// Launch a Steam game by App ID
-    pub fn launch_game(&self, app_id: &str) -> Result<(), String> {
-        // Validate and sanitize app_id to prevent command injection
+    /// Validate and sanitize a Steam App ID (pure: no process spawned).
+    ///
+    /// Returns the trimmed ID on success so `launch_game` and its tests share
+    /// one validation path without the tests ever spawning `xdg-open`/`cmd`
+    /// (which opens a real `steam://` URL in the OS during `cargo test`).
+    fn validate_app_id(app_id: &str) -> Result<String, String> {
         let app_id = app_id.trim();
 
         // Check non-empty
@@ -370,6 +373,14 @@ impl SteamScanner {
                 app_id
             ));
         }
+
+        Ok(app_id.to_string())
+    }
+
+    /// Launch a Steam game by App ID
+    pub fn launch_game(&self, app_id: &str) -> Result<(), String> {
+        // Validate and sanitize app_id to prevent command injection
+        let app_id = Self::validate_app_id(app_id)?;
 
         // Build URL with validated app_id
         let url = format!("steam://rungameid/{}", app_id);
@@ -497,11 +508,10 @@ mod tests {
 
     #[test]
     fn test_launch_game_valid_app_id() {
-        let scanner = SteamScanner::new();
-        // Valid app IDs should pass validation (actual launch may fail without Steam)
-        let result = scanner.launch_game("440");
-        // We can't test the actual launch, but validation should pass
-        assert!(result.is_ok() || result.unwrap_err().contains("Failed to launch"));
+        // Hermetic: assert the shared validator instead of spawning a real
+        // `steam://rungameid/440` URL (which opened a browser/Steam page on
+        // every `cargo test` run, even without Steam installed).
+        assert_eq!(SteamScanner::validate_app_id("440").as_deref(), Ok("440"));
     }
 
     #[test]
@@ -550,10 +560,11 @@ mod tests {
 
     #[test]
     fn test_launch_game_trimming() {
-        let scanner = SteamScanner::new();
-        // Valid app ID with surrounding whitespace should be trimmed
-        let result = scanner.launch_game("  440  ");
-        // Validation should pass (actual launch may fail without Steam)
-        assert!(result.is_ok() || result.unwrap_err().contains("Failed to launch"));
+        // Hermetic (see `test_launch_game_valid_app_id`): surrounding
+        // whitespace must be trimmed by the shared validator.
+        assert_eq!(
+            SteamScanner::validate_app_id("  440  ").as_deref(),
+            Ok("440")
+        );
     }
 }

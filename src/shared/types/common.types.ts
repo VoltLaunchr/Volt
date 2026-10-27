@@ -10,8 +10,9 @@
 import type { AppInfo } from './generated/AppInfo';
 import type { FileInfo } from './generated/FileInfo';
 import type { FileCategory } from './generated/FileCategory';
+import type { SearchTier } from './generated/SearchTier';
 
-export type { AppInfo, FileInfo, FileCategory };
+export type { AppInfo, FileInfo, FileCategory, SearchTier };
 
 /**
  * Discriminated union matching the serialized shape of `VoltError` on the Rust
@@ -88,6 +89,39 @@ export interface SearchResult {
   section?: string;
   /** Grid layout hint — render this result as a grid card instead of a list row */
   layout?: 'grid';
+  /**
+   * Ranking key used by the unified comparator (`src/app/searchRanking.ts`).
+   * Set by the search pipeline; `score` stays the source-local score shown in
+   * the Properties dialog and is never compared across sources.
+   */
+  rank?: ResultRank;
+}
+
+/**
+ * Placement band of a result, strongest first. Bands express the special
+ * intents (explicit web search, game browsing, direct answers, fallbacks)
+ * that sit outside the tier ladder; everything else is `ranked`.
+ */
+export type ResultBand = 'explicitWeb' | 'liveWeb' | 'browse' | 'answer' | 'ranked' | 'fallback';
+
+/** Source of a ranked result — the "command-type priority" tie-breaker. */
+export type RankSource = 'app' | 'command' | 'file';
+
+/**
+ * Lexicographic ranking key: band > tier > quality > frecency > source >
+ * declared score > title. See `compareResults` in `src/app/searchRanking.ts`.
+ */
+export interface ResultRank {
+  band: ResultBand;
+  /** Position on the shared tier ladder generated from Rust (`SearchTier`). */
+  tier: SearchTier;
+  /** Match quality inside the tier (0-100, higher is better). */
+  quality: number;
+  /** Universal frecency date in ms (`LaunchRecord.frecencyDate`); 0 = never used. */
+  frecency: number;
+  source: RankSource;
+  /** Source-declared score (plugin score, fallback order); higher is better. */
+  declared: number;
 }
 
 /**

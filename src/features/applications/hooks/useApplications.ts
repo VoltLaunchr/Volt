@@ -3,7 +3,6 @@
  * Handles loading, caching, and refreshing applications
  */
 
-import { invoke } from '@tauri-apps/api/core';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { extractErrorMessage } from '../../../shared/utils/error';
 import type { AppInfo } from '../../../shared/types/common.types';
@@ -47,17 +46,11 @@ export interface UseApplicationsReturn {
  */
 export function useApplications(autoLoad = true): UseApplicationsReturn {
   const [state, setState] = useState<ApplicationsState>(INITIAL_APPLICATIONS_STATE);
-  const iconLoadAbort = useRef<AbortController | null>(null);
-  // Guard against React 19 StrictMode double-invoke in dev. Without this, two
-  // concurrent scan_applications calls fire at the same time, the backend cache
-  // can't dedupe them (both see an empty cache before either writes), and the
-  // 2× icon extraction + .lnk parse pressure can OOM the Rust process.
+  // Avoid redundant startup requests during StrictMode effect replay. The native scanner
+  // also deduplicates requests across windows with its single-flight lock.
   const scanStarted = useRef(false);
 
   const refresh = useCallback(async () => {
-    // Abort any in-progress icon loading
-    iconLoadAbort.current?.abort();
-
     setState((prev) => ({
       ...prev,
       isLoading: true,
@@ -88,36 +81,7 @@ export function useApplications(autoLoad = true): UseApplicationsReturn {
         lastRefresh: Date.now(),
       }));
 
-      // Load icons lazily in the background (batches of 10)
-      const abortCtrl = new AbortController();
-      iconLoadAbort.current = abortCtrl;
-      const BATCH_SIZE = 10;
-      const appsNeedingIcons = apps.filter((a) => !a.icon);
-
-      for (let i = 0; i < appsNeedingIcons.length; i += BATCH_SIZE) {
-        if (abortCtrl.signal.aborted) break;
-
-        const batch = appsNeedingIcons.slice(i, i + BATCH_SIZE);
-        const iconResults = await Promise.all(
-          batch.map((app) =>
-            invoke<string | null>('get_app_icon', { path: app.path }).catch(() => null)
-          )
-        );
-
-        if (abortCtrl.signal.aborted) break;
-
-        // Update state with newly loaded icons
-        setState((prev) => {
-          const updatedApps = prev.apps.map((app) => {
-            const batchIdx = batch.findIndex((b) => b.id === app.id);
-            if (batchIdx !== -1 && iconResults[batchIdx]) {
-              return { ...app, icon: iconResults[batchIdx] };
-            }
-            return app;
-          });
-          return { ...prev, apps: updatedApps };
-        });
-      }
+      // Icons are requested only by mounted result rows; never hydrate the full catalog.
     } catch (err) {
       const errorMessage = extractErrorMessage(err);
 

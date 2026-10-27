@@ -19,7 +19,8 @@
     "linkButton": "Link Dev Extension",
     "linking": "Linking...",
     "sectionTitle": "Development",
-    "badge": "DEV"
+    "badge": "DEV",
+    "selectFolder": "Select extension folder"
   },
   "sections": {
     "installed": "Installed"
@@ -30,6 +31,42 @@
     "installed": "Installed",
     "disable": "Disable",
     "enable": "Enable",
-    "uninstall": "Uninstall"
+    "uninstall": "Uninstall",
+    "retry": "Try again",
+    "dismissError": "Dismiss error"
+  },
+  "categories": {
+    "all": "All",
+    "productivity": "Productivity",
+    "utilities": "Utilities",
+    "developer": "Developer",
+    "media": "Media",
+    "social": "Social",
+    "finance": "Finance",
+    "games": "Games",
+    "system": "System",
+    "other": "Other"
+  },
+  "errors": {
+    "registryTitle": "Extension catalog unavailable",
+    "installedTitle": "Installed extensions unavailable",
+    "loadDescription": "This list could not be refreshed. Check your connection and try again. Any previously loaded items remain visible.",
+    "install": "Could not install {{name}}. Try again.",
+    "uninstall": "Could not uninstall this extension. Try again.",
+    "link": "Could not link this extension. Check the selected folder.",
+    "unlink": "Could not unlink this extension."
+  },
+  "preferences": {
+    "title": "{{name}} preferences",
+    "empty": "This extension has no preferences.",
+    "saved": "Saved",
+    "save": "Save",
+    "cancel": "Cancel",
+    "close": "Close",
+    "select": "Select an option",
+    "required": "Required",
+    "optional": "Optional",
+    "showSecret": "Show value",
+    "hideSecret": "Hide value"
   }
 }

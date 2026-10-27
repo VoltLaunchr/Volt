@@ -66,6 +66,9 @@
     "allow-load-plugins-from-directory",
     "allow-get-builtin-plugin-metadata",
 
+    "allow-get-game-platforms",
+    "allow-rescan-all-games",
+
     "allow-fetch-extension-registry",
     "allow-get-installed-extensions",
     "allow-install-extension",

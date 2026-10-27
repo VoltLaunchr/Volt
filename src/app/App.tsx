@@ -20,6 +20,7 @@ import { ResultContextMenu } from './components/ResultContextMenu';
 import { ViewRouter } from './components/ViewRouter';
 import { useAppLifecycle } from './hooks/useAppLifecycle';
 import { useGlobalHotkey } from './hooks/useGlobalHotkey';
+import { usePopToRoot } from './hooks/usePopToRoot';
 import { useResultActions } from './hooks/useResultActions';
 import { useSearchPipeline } from './hooks/useSearchPipeline';
 import { useTauriEvent } from './hooks/tauriEvent';
@@ -319,8 +320,25 @@ function App() {
     return onVoltEvent(VOLT_EVENTS.OPEN_MANAGE_EXTENSIONS, () => handleOpenManageExtensions());
   }, [handleOpenManageExtensions]);
 
+  // Settings -> Launcher: reopen on the root view after the configured hidden time.
+  const handlePopToRoot = useCallback(() => {
+    resetToSearchView();
+    closeContextMenu();
+    closeActionsMenu();
+    closeProperties();
+    if (useUiStore.getState().isHelpOpen) toggleHelp();
+  }, [resetToSearchView, closeContextMenu, closeActionsMenu, closeProperties, toggleHelp]);
+  usePopToRoot(settings?.launcher?.popToRoot, handlePopToRoot);
+
+  // A global shortcut (Settings -> Keyboard) can open the Settings window while Volt is hidden.
+  useTauriEvent('volt://open-settings-hotkey', () => {
+    void openSettingsWindow();
+  });
+
   const { handleKeyDown } = useGlobalHotkey({
     closeOnLaunch,
+    escapeBehavior: settings?.keyboard?.escapeBehavior,
+    listNavigation: settings?.keyboard?.listNavigation,
     hideWindow,
     onLaunch: handleLaunch,
     onActivateSuggestion: handleSuggestionActivate,

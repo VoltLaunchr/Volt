@@ -1,11 +1,32 @@
 import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Plus, Trash2, CheckCircle, AlertCircle, Edit3, X } from 'lucide-react';
+import { Plus, Trash2, CheckCircle, Edit3, X } from 'lucide-react';
 import { HotkeyCapture } from '../../../shared/components/ui/HotkeyCapture';
 import { useQuickActions } from '../hooks/useQuickActions';
 import { PLACEHOLDER_DOCS } from '../placeholders';
 import { QuickActionIcon, QUICK_ACTION_ICONS } from '../icons';
 import type { AiQuickAction } from '../types';
+
+import { Button } from '@/shared/components/ui/button';
+import { Input } from '@/shared/components/ui/input';
+import { Textarea } from '@/shared/components/ui/textarea';
+import { Switch } from '@/shared/components/ui/switch';
+import { Field, FieldDescription, FieldGroup, FieldLabel } from '@/shared/components/ui/field';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/shared/components/ui/dialog';
+import { SettingsStatus } from '../../settings/components/SettingsChrome';
+import {
+  SettingsList,
+  SettingsNote,
+  SettingsRow,
+  SettingsSection,
+} from '../../settings/components/SettingsPrimitives';
 
 function HotkeyChip({
   value,
@@ -15,307 +36,183 @@ function HotkeyChip({
 }: {
   value: string | null | undefined;
   bindError: string | null;
-  onChange: (hk: string) => void;
+  onChange: (hotkey: string) => void;
   onClear: () => void;
 }) {
   const { t } = useTranslation('settings');
   const [editing, setEditing] = useState(false);
-
-  if (editing) {
+  if (editing)
     return (
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+      <div className="flex items-center gap-1">
         <HotkeyCapture
           value={value ?? ''}
-          onChange={(hk) => {
-            onChange(hk);
+          onChange={(hotkey) => {
+            onChange(hotkey);
             setEditing(false);
           }}
         />
-        <button
+        <Button
+          size="icon-sm"
+          variant="ghost"
+          aria-label={t('ai.quickActions.cancel')}
           onClick={() => setEditing(false)}
-          style={{
-            background: 'none',
-            border: 'none',
-            color: 'var(--color-mute)',
-            cursor: 'pointer',
-            padding: 2,
-            display: 'flex',
-          }}
-          title={t('ai.quickActions.cancel')}
         >
-          <X size={13} />
-        </button>
+          <X />
+        </Button>
       </div>
     );
-  }
-
-  if (!value) {
-    return (
-      <button
-        onClick={() => setEditing(true)}
-        style={{
-          padding: '4px 10px',
-          borderRadius: 6,
-          border: '1px dashed var(--color-hairline)',
-          background: 'none',
-          color: 'var(--color-mute)',
-          fontSize: 12,
-          cursor: 'pointer',
-        }}
-      >
-        {t('ai.quickActions.bindHotkey')}
-      </button>
-    );
-  }
-
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-      <button
+    <div className="flex flex-wrap items-center gap-1">
+      <Button
+        size="sm"
+        variant="outline"
         onClick={() => setEditing(true)}
-        style={{
-          fontFamily: 'ui-monospace, monospace',
-          fontSize: 11,
-          padding: '4px 10px',
-          borderRadius: 6,
-          background: bindError ? 'rgba(239,68,68,0.12)' : 'var(--color-surface)',
-          border: bindError
-            ? '1px solid rgba(239,68,68,0.3)'
-            : '1px solid var(--color-hairline)',
-          color: bindError ? '#f87171' : 'var(--color-ink)',
-          cursor: 'pointer',
-        }}
         title={bindError ?? t('ai.quickActions.clickToChange')}
+        className={bindError ? 'text-destructive' : undefined}
       >
-        {value}
-      </button>
-      <button
-        onClick={onClear}
-        style={{
-          background: 'none',
-          border: 'none',
-          color: 'var(--color-mute)',
-          cursor: 'pointer',
-          padding: 2,
-          display: 'flex',
-        }}
-        title={t('ai.quickActions.removeHotkey')}
-      >
-        <X size={13} />
-      </button>
-      {bindError && (
-        <span
-          style={{ fontSize: 11, color: '#f87171', display: 'flex', alignItems: 'center', gap: 4 }}
-          title={bindError}
+        {value ? <kbd className="font-mono text-xs">{value}</kbd> : t('ai.quickActions.bindHotkey')}
+      </Button>
+      {value && (
+        <Button
+          size="icon-sm"
+          variant="ghost"
+          aria-label={t('ai.quickActions.removeHotkey')}
+          onClick={onClear}
         >
-          <AlertCircle size={12} /> {t('ai.quickActions.failed')}
+          <X />
+        </Button>
+      )}
+      {bindError && (
+        <span className="text-xs text-destructive" title={bindError}>
+          {t('ai.quickActions.failed')}
         </span>
       )}
     </div>
   );
 }
 
-interface EditPromptModalProps {
+function EditPromptModal({
+  action,
+  onClose,
+  onSave,
+}: {
   action: AiQuickAction;
   onClose: () => void;
   onSave: (patch: Partial<AiQuickAction>) => Promise<void>;
-}
-
-function EditPromptModal({ action, onClose, onSave }: EditPromptModalProps) {
+}) {
   const { t } = useTranslation('settings');
   const [label, setLabel] = useState(action.label);
   const [system, setSystem] = useState(action.systemPrompt);
   const [icon, setIcon] = useState<string | null>(action.icon ?? 'sparkles');
   const [saving, setSaving] = useState(false);
-
-  const handleSave = useCallback(async () => {
-    if (!label.trim() || !system.trim()) return;
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const handleSave = async () => {
+    if (!label.trim() || !system.trim() || saving) return;
     setSaving(true);
+    setSaveError(null);
     try {
       await onSave({ label: label.trim(), systemPrompt: system.trim(), icon });
       onClose();
+    } catch (error) {
+      setSaveError(String(error));
     } finally {
       setSaving(false);
     }
-  }, [label, system, icon, onSave, onClose]);
-
-  const iconKeys = Object.keys(QUICK_ACTION_ICONS);
-
+  };
   return (
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'rgba(0,0,0,0.5)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 1000,
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open && !saving) onClose();
       }}
-      onClick={onClose}
     >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        onKeyDown={(e) => { if (e.key === 'Escape') onClose(); }}
-        style={{
-          background: 'var(--color-canvas)',
-          borderRadius: 12,
-          border: '1px solid var(--color-hairline)',
-          padding: '24px',
-          width: 520,
-          maxWidth: 'calc(100vw - 48px)',
-          boxShadow: '0 20px 60px rgba(0,0,0,0.4)',
-        }}
+      <DialogContent
+        showCloseButton={false}
+        className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-lg"
       >
-        <h3 style={{ margin: '0 0 16px', fontSize: 15, fontWeight: 600, color: 'var(--color-ink)' }}>
-          {t('ai.quickActions.modal.title')}
-        </h3>
-
-        <label style={{ display: 'block', marginBottom: 6, fontSize: 12, color: 'var(--color-mute)' }}>
-          {t('ai.quickActions.modal.icon', { defaultValue: 'Icon' })}
-        </label>
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fill, minmax(38px, 1fr))',
-            gap: 6,
-            padding: 8,
-            borderRadius: 8,
-            border: '1.5px solid var(--color-hairline)',
-            background: 'var(--color-surface)',
-            marginBottom: 16,
-            maxHeight: 140,
-            overflowY: 'auto',
+        <DialogHeader>
+          <DialogTitle>{t('ai.quickActions.modal.title')}</DialogTitle>
+          <DialogDescription>{t('ai.quickActions.description')}</DialogDescription>
+        </DialogHeader>
+        <form
+          className="space-y-5"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void handleSave();
           }}
         >
-          {iconKeys.map((key) => {
-            const selected = icon === key;
-            return (
-              <button
-                key={key}
-                type="button"
-                onClick={() => setIcon(key)}
-                title={key}
-                style={{
-                  width: 38,
-                  height: 38,
-                  borderRadius: 8,
-                  border: selected
-                    ? '1.5px solid var(--color-accent)'
-                    : '1px solid var(--color-hairline)',
-                  background: selected ? 'rgba(168,85,247,0.12)' : 'var(--color-canvas)',
-                  color: selected ? 'var(--color-accent)' : 'var(--color-ink)',
-                  cursor: 'pointer',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  transition: 'background 0.15s, border-color 0.15s',
-                }}
-              >
-                <QuickActionIcon name={key} size={16} strokeWidth={1.8} />
-              </button>
-            );
-          })}
-        </div>
-
-        <label style={{ display: 'block', marginBottom: 4, fontSize: 12, color: 'var(--color-mute)' }}>
-          {t('ai.quickActions.modal.label')}
-        </label>
-        <input
-          value={label}
-          onChange={(e) => setLabel(e.target.value)}
-          style={{
-            width: '100%',
-            boxSizing: 'border-box',
-            padding: '9px 12px',
-            borderRadius: 8,
-            border: '1.5px solid var(--color-hairline)',
-            background: 'var(--color-surface)',
-            color: 'var(--color-ink)',
-            fontSize: 13,
-            marginBottom: 16,
-            outline: 'none',
-          }}
-        />
-
-        <label style={{ display: 'block', marginBottom: 4, fontSize: 12, color: 'var(--color-mute)' }}>
-          {t('ai.quickActions.modal.systemPrompt')}
-        </label>
-        <textarea
-          value={system}
-          onChange={(e) => setSystem(e.target.value)}
-          rows={6}
-          style={{
-            width: '100%',
-            boxSizing: 'border-box',
-            padding: '9px 12px',
-            borderRadius: 8,
-            border: '1.5px solid var(--color-hairline)',
-            background: 'var(--color-surface)',
-            color: 'var(--color-ink)',
-            fontSize: 13,
-            lineHeight: 1.5,
-            marginBottom: 8,
-            outline: 'none',
-            resize: 'vertical',
-            fontFamily: 'inherit',
-          }}
-        />
-
-        <div style={{ marginBottom: 20, fontSize: 11, color: 'var(--color-mute)', lineHeight: 1.5 }}>
-          <div style={{ marginBottom: 4 }}>{t('ai.quickActions.modal.placeholdersIntro')}</div>
-          <ul style={{ margin: 0, padding: 0, listStyle: 'none' }}>
-            {PLACEHOLDER_DOCS.map((p) => (
-              <li key={p.token} style={{ display: 'flex', gap: 8, alignItems: 'baseline' }}>
-                <code style={{ fontFamily: 'ui-monospace, monospace', color: 'var(--color-ink)' }}>
-                  {p.token}
-                </code>
-                <span>{p.description}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-
-        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-          <button
-            onClick={onClose}
-            style={{
-              padding: '8px 14px',
-              borderRadius: 8,
-              border: '1.5px solid var(--color-hairline)',
-              background: 'var(--color-surface)',
-              color: 'var(--color-ink)',
-              fontSize: 13,
-              cursor: 'pointer',
-            }}
-          >
-            {t('ai.quickActions.modal.cancel')}
-          </button>
-          <button
-            onClick={() => void handleSave()}
-            disabled={!label.trim() || !system.trim() || saving}
-            style={{
-              padding: '8px 14px',
-              borderRadius: 8,
-              border: 'none',
-              background: 'var(--color-accent)',
-              color: '#fff',
-              fontSize: 13,
-              fontWeight: 500,
-              cursor: !label.trim() || !system.trim() || saving ? 'not-allowed' : 'pointer',
-              opacity: !label.trim() || !system.trim() || saving ? 0.5 : 1,
-            }}
-          >
-            {saving ? t('ai.quickActions.modal.saving') : t('ai.quickActions.modal.save')}
-          </button>
-        </div>
-      </div>
-    </div>
+          <FieldGroup>
+            <Field>
+              <FieldLabel>{t('ai.quickActions.modal.icon')}</FieldLabel>
+              <div className="flex max-h-28 flex-wrap gap-1 overflow-y-auto rounded-lg border border-border p-2">
+                {Object.keys(QUICK_ACTION_ICONS).map((key) => (
+                  <Button
+                    key={key}
+                    size="icon-sm"
+                    variant={icon === key ? 'secondary' : 'ghost'}
+                    type="button"
+                    aria-label={key}
+                    aria-pressed={icon === key}
+                    onClick={() => setIcon(key)}
+                    disabled={saving}
+                  >
+                    <QuickActionIcon name={key} size={16} />
+                  </Button>
+                ))}
+              </div>
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="quick-action-label">
+                {t('ai.quickActions.modal.label')}
+              </FieldLabel>
+              <Input
+                id="quick-action-label"
+                value={label}
+                onChange={(event) => setLabel(event.target.value)}
+                disabled={saving}
+              />
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="quick-action-system">
+                {t('ai.quickActions.modal.systemPrompt')}
+              </FieldLabel>
+              <Textarea
+                id="quick-action-system"
+                value={system}
+                onChange={(event) => setSystem(event.target.value)}
+                rows={5}
+                disabled={saving}
+              />
+              <FieldDescription>{t('ai.quickActions.modal.placeholdersIntro')}</FieldDescription>
+              <ul className="space-y-1 text-xs text-muted-foreground">
+                {PLACEHOLDER_DOCS.map((placeholder) => (
+                  <li key={placeholder.token} className="flex flex-wrap gap-x-2">
+                    <code className="font-mono text-foreground">{placeholder.token}</code>
+                    <span>{placeholder.description}</span>
+                  </li>
+                ))}
+              </ul>
+            </Field>
+          </FieldGroup>
+          {saveError && <SettingsStatus kind="error">{saveError}</SettingsStatus>}
+          <DialogFooter>
+            <Button type="button" variant="outline" disabled={saving} onClick={onClose}>
+              {t('ai.quickActions.modal.cancel')}
+            </Button>
+            <Button type="submit" disabled={!label.trim() || !system.trim() || saving}>
+              {saving ? t('ai.quickActions.modal.saving') : t('ai.quickActions.modal.save')}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }
 
 export function QuickActionsSection() {
   const { t } = useTranslation('settings');
-  const { actions, loading, report, error, updateAction, createAction, deleteAction } = useQuickActions();
+  const { actions, loading, report, error, updateAction, createAction, deleteAction } =
+    useQuickActions();
   const [editing, setEditing] = useState<AiQuickAction | null>(null);
 
   const handleAddCustom = useCallback(async () => {
@@ -335,196 +232,82 @@ export function QuickActionsSection() {
 
   return (
     <>
-      <div
-        style={{
-          background: 'var(--color-surface)',
-          borderRadius: 12,
-          border: '1px solid var(--color-hairline)',
-          overflow: 'hidden',
-          marginTop: 16,
-        }}
-      >
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            padding: '12px 16px',
-            borderBottom: '1px solid var(--color-hairline)',
-          }}
-        >
-          <div>
-            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-ink)' }}>
-              {t('ai.quickActions.title')}
-            </div>
-            <div style={{ fontSize: 12, color: 'var(--color-mute)', marginTop: 2 }}>
-              {t('ai.quickActions.description')}
-            </div>
-          </div>
-          <button
-            onClick={() => void handleAddCustom()}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 4,
-              padding: '5px 10px',
-              borderRadius: 7,
-              border: '1.5px solid var(--color-hairline)',
-              background: 'var(--color-canvas)',
-              color: 'var(--color-ink)',
-              fontSize: 12,
-              fontWeight: 500,
-              cursor: 'pointer',
-            }}
-          >
-            <Plus size={13} /> {t('ai.quickActions.add')}
-          </button>
-        </div>
-
+      <SettingsSection sectionId="ai.quickActions" showDescription>
+        <SettingsRow rowId="ai.quickActions.add">
+          <Button size="sm" variant="secondary" onClick={() => void handleAddCustom()}>
+            <Plus size={14} aria-hidden="true" />
+            {t('ai.quickActions.add')}
+          </Button>
+        </SettingsRow>
         {loading ? (
-          <div style={{ padding: 30, textAlign: 'center', color: 'var(--color-mute)', fontSize: 13 }}>
-            {t('ai.quickActions.loading')}
-          </div>
+          <SettingsNote>
+            <span role="status">{t('ai.quickActions.loading')}</span>
+          </SettingsNote>
         ) : actions.length === 0 ? (
-          <div style={{ padding: 30, textAlign: 'center', color: 'var(--color-mute)', fontSize: 13 }}>
-            {t('ai.quickActions.empty')}
-          </div>
+          <SettingsNote>{t('ai.quickActions.empty')}</SettingsNote>
         ) : (
-          actions.map((action, idx) => {
-            const bindStatus = report[action.id];
-            const bindError = bindStatus && bindStatus !== 'ok' ? bindStatus : null;
-            return (
-              <div
-                key={action.id}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 12,
-                  padding: '12px 16px',
-                  borderBottom: idx < actions.length - 1 ? '1px solid var(--color-hairline)' : 'none',
-                  opacity: action.enabled ? 1 : 0.5,
-                }}
-              >
+          <SettingsList label={t('ai.quickActions.title')}>
+            {actions.map((action) => {
+              const bindStatus = report[action.id];
+              const bindError = bindStatus && bindStatus !== 'ok' ? bindStatus : null;
+              return (
                 <div
-                  style={{
-                    width: 32,
-                    height: 32,
-                    borderRadius: 8,
-                    background: 'var(--color-canvas)',
-                    border: '1px solid var(--color-hairline)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    color: 'var(--color-ink)',
-                    flexShrink: 0,
-                  }}
-                  aria-hidden
+                  key={action.id}
+                  role="listitem"
+                  className="settings-list__item settings-list__item--static flex-wrap"
                 >
-                  <QuickActionIcon name={action.icon} size={15} strokeWidth={1.8} />
-                </div>
-
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--color-ink)' }}>
-                    {action.label}
-                  </div>
                   <div
-                    style={{
-                      fontSize: 12,
-                      color: 'var(--color-mute)',
-                      whiteSpace: 'nowrap',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      maxWidth: 320,
-                    }}
-                    title={action.systemPrompt}
+                    className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted"
+                    aria-hidden
                   >
-                    {action.systemPrompt}
+                    <QuickActionIcon name={action.icon} size={16} />
+                  </div>
+                  <div className="settings-list__text">
+                    <span className="settings-list__title">{action.label}</span>
+                    <span className="settings-list__meta" title={action.systemPrompt}>
+                      {action.systemPrompt}
+                    </span>
+                  </div>
+                  <HotkeyChip
+                    value={action.hotkey}
+                    bindError={bindError}
+                    onChange={(hotkey) => void updateAction(action.id, { hotkey })}
+                    onClear={() => void updateAction(action.id, { hotkey: null })}
+                  />
+                  {bindStatus === 'ok' && (
+                    <CheckCircle className="size-3.5 text-muted-foreground" />
+                  )}
+                  <Switch
+                    checked={action.enabled}
+                    onCheckedChange={(enabled) => void updateAction(action.id, { enabled })}
+                    aria-label={`${action.enabled ? t('ai.quickActions.disable') : t('ai.quickActions.enable')} ${action.label}`}
+                  />
+                  <div className="settings-list__actions">
+                    <Button
+                      size="icon-sm"
+                      variant="ghost"
+                      aria-label={`${t('ai.quickActions.edit')} ${action.label}`}
+                      onClick={() => setEditing(action)}
+                    >
+                      <Edit3 />
+                    </Button>
+                    <Button
+                      size="icon-sm"
+                      variant="ghost"
+                      className="text-destructive"
+                      aria-label={`${t('ai.quickActions.delete')} ${action.label}`}
+                      onClick={() => void deleteAction(action.id)}
+                    >
+                      <Trash2 />
+                    </Button>
                   </div>
                 </div>
-
-                <HotkeyChip
-                  value={action.hotkey}
-                  bindError={bindError}
-                  onChange={(hk) => void updateAction(action.id, { hotkey: hk })}
-                  onClear={() => void updateAction(action.id, { hotkey: null })}
-                />
-
-                {bindStatus === 'ok' && (
-                  <CheckCircle size={13} style={{ color: '#22c55e', flexShrink: 0 }} />
-                )}
-
-                <button
-                  onClick={() => void updateAction(action.id, { enabled: !action.enabled })}
-                  style={{
-                    fontSize: 11,
-                    padding: '3px 8px',
-                    borderRadius: 6,
-                    border: '1px solid var(--color-hairline)',
-                    background: 'var(--color-canvas)',
-                    color: action.enabled ? 'var(--color-ink)' : 'var(--color-mute)',
-                    cursor: 'pointer',
-                  }}
-                  title={action.enabled ? t('ai.quickActions.disable') : t('ai.quickActions.enable')}
-                >
-                  {action.enabled ? t('ai.quickActions.on') : t('ai.quickActions.off')}
-                </button>
-
-                <button
-                  onClick={() => setEditing(action)}
-                  style={{
-                    padding: 5,
-                    borderRadius: 6,
-                    border: '1px solid var(--color-hairline)',
-                    background: 'none',
-                    color: 'var(--color-mute)',
-                    cursor: 'pointer',
-                    display: 'flex',
-                  }}
-                  title={t('ai.quickActions.edit')}
-                >
-                  <Edit3 size={12} />
-                </button>
-
-                <button
-                  onClick={() => void deleteAction(action.id)}
-                  style={{
-                    padding: 5,
-                    borderRadius: 6,
-                    border: '1px solid var(--color-hairline)',
-                    background: 'none',
-                    color: 'var(--color-accent-red)',
-                    cursor: 'pointer',
-                    display: 'flex',
-                  }}
-                  title={t('ai.quickActions.delete')}
-                >
-                  <Trash2 size={12} />
-                </button>
-              </div>
-            );
-          })
+              );
+            })}
+          </SettingsList>
         )}
-      </div>
-
-      {error && (
-        <div
-          style={{
-            marginTop: 8,
-            padding: '8px 12px',
-            borderRadius: 8,
-            background: 'rgba(239,68,68,0.08)',
-            border: '1px solid rgba(239,68,68,0.2)',
-            color: '#f87171',
-            fontSize: 12,
-            display: 'flex',
-            alignItems: 'center',
-            gap: 6,
-          }}
-        >
-          <AlertCircle size={13} /> {error}
-        </div>
-      )}
-
+      </SettingsSection>
+      {error && <SettingsStatus kind="error">{error}</SettingsStatus>}
       {editing && (
         <EditPromptModal
           action={editing}

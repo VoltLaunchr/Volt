@@ -11,10 +11,12 @@ src-tauri/src/
 ├── utils/             🛠️ Utilities - Reusable functions
 ├── search/            🔍 Search - Algorithms & ranking
 ├── window/            🪟 Window - Management commands
-├── commands/          📡 Commands - Tauri handlers
+├── commands/          📡 Commands - Tauri handlers (8 domains: ai/auth/content/extensions/files/launcher/shell/system)
 ├── hotkey/            ⌨️  Hotkey - Global shortcuts
-├── indexer/           📂 Indexer - File scanning
-└── launcher/          🚀 Launcher - Process management
+├── indexer/           📂 Indexer - File scanning (SQLite + optional Tantivy + watcher)
+├── launcher/          🚀 Launcher - Process management
+├── embeddings/        🧠 Local embeddings (fastembed, lazy ONNX)
+└── expansion/         ⌨️ Global snippet expansion (Windows, opt-in feature)
 ```
 
 ## 📦 Module Descriptions
@@ -72,23 +74,20 @@ src-tauri/src/
 - `toggle_window()` - Toggle visibility
 - `center_window()` - Center on screen
 
-### 📡 Commands (`commands/`)
+### 📡 Commands (`commands/` — 8 domains)
 
-**Tauri command handlers** exposed to frontend.
+**Tauri command handlers** exposed to frontend (~230 `#[tauri::command]`, legacy flat paths re-exported via `commands/mod.rs`).
 
-- **apps.rs**: Scan & launch applications
-- **settings.rs**: Load/save settings
-- **files.rs**: File indexing
-- **launcher.rs**: Launch history
-- **autostart.rs**: Autostart management
-- **clipboard.rs**: Clipboard operations
-- **extensions.rs**: Extension management
-- **games.rs**: Game scanning
-- **steam.rs**: Steam integration
-- **system_monitor.rs**: System monitoring
-- **plugins.rs**: Plugin commands
-- **hotkey.rs**: Hotkey management
-- **logging.rs**: Logging configuration
+- **launcher/**: app scan & launch, game/Steam scan, batch/streaming search, launch history
+- **files/**: file indexing + file preview
+- **system/**: settings, clipboard, system monitor, window management, autostart, logging, notifications, web search
+- **content/**: notes, snippets (+ global expansion trigger), quicklinks
+- **shell/**: shell execution (streaming) + shell history
+- **ai/**: AI profile, quick actions, embeddings, proxy, custom emojis
+- **auth/**: session (Supabase + deep link), OAuth, credentials (keyring), signed keyring store, sync
+- **extensions/**: extension management + plugin commands
+
+All commands return `VoltResult<T>` at the module boundary (mapped to `Result<T, String>` at the `#[tauri::command]` boundary).
 
 ## 🚀 Quick Start
 
@@ -224,11 +223,11 @@ cargo test -- --nocapture
 
 ## 📊 Module Statistics
 
-- **Total Modules**: 9
-- **Core Types**: 4 enums, 6 traits
-- **Utility Functions**: 15+
-- **Tauri Commands**: 50+
-- **Built-in Plugins**: 3 (clipboard_manager, game_scanner, system_monitor)
+- **Top-level modules**: core, plugins, utils, search, window, commands (8 domains), hotkey, indexer, launcher, embeddings, expansion
+- **Core Types**: AppCategory, SearchResultType, Platform, LaunchMode (+ VoltError/VoltResult)
+- **Tauri Commands**: ~230 `#[tauri::command]` across ~40 files (recompter via `rg -o "#\[tauri::command\]" src-tauri/src/commands | wc -l`)
+- **Built-in backend plugins**: 3 (clipboard_manager, game_scanner [10 platform scanners], system_monitor)
+- **Feature flags**: `tantivy-search` (persistent file index) · `sqlcipher` (encrypted DB) · `usn-incremental` (Windows delta reader) · `snippet-global-expansion` (Windows hook) · `test-embeddings` · `devtools` (debug)
 
 ## 🛣️ Roadmap
 
@@ -239,12 +238,13 @@ cargo test -- --nocapture
 - [x] Utils module
 - [x] Plugin system foundation
 
-### Phase 2: Enhancement 🚧
+### Phase 2: Enhancement ✅
 
 - [x] More built-in plugins (clipboard_manager, game_scanner)
 - [x] Advanced search algorithms (nucleo-matcher fuzzy matching)
-- [ ] Caching layer
-- [ ] Performance optimizations
+- [x] Persistent file index (SQLite source of truth + optional Tantivy backend)
+- [x] Encrypted data-at-rest track (`sqlcipher` feature, see `docs/refonte/REFONTE-PILIER-C-SQLCIPHER.md`)
+- [ ] Performance baselines (see `docs/benchmarks/PERFORMANCE_BASELINE.md`)
 
 ### Phase 3: Extensibility 📋
 

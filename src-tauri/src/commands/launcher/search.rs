@@ -25,6 +25,7 @@ use crate::core::error::{VoltError, VoltResult};
 use crate::indexer::fulltext::{FulltextIndex, FulltextQueryOptions};
 use crate::indexer::{FileInfo, SearchEngine, SearchOptions};
 use crate::launcher::LaunchRecord;
+use crate::search::{FileRelevanceScorer, LearnedMatch, SearchSensitivity, SearchTier};
 
 /// Build a `path → alias` map from a list of shortcuts, skipping entries
 /// that are disabled or have no alias configured. Used by the cascade ranker
@@ -60,6 +61,18 @@ pub struct SearchAllOptions {
     pub size_max: Option<u64>,
     pub modified_after: Option<i64>,
     pub modified_before: Option<i64>,
+    /// Settings -> Search Sensitivity (`'low' | 'medium' | 'high'`). Optional
+    /// on the wire; defaults to `medium`.
+    #[serde(default)]
+    pub sensitivity: SearchSensitivity,
+    /// Settings -> Launcher -> include files in the root search. When `false` the file
+    /// source is skipped (an empty `files` batch is still sent so consumers see it complete).
+    #[serde(default = "default_include_files")]
+    pub include_files: bool,
+}
+
+fn default_include_files() -> bool {
+    true
 }
 
 /// Combined result from all search sources (batch mode).
@@ -69,21 +82,31 @@ pub struct SearchAllResult {
     pub apps: Vec<AppInfoWithScore>,
     pub files: Vec<FileSearchResultCompact>,
     pub frecency_suggestions: Vec<LaunchRecord>,
+    /// Learned query bindings for this query (plugin commands included).
+    pub learned: Vec<LearnedMatch>,
 }
 
-/// Compact file search result with score for the batch endpoint.
+/// Compact file search result for the batch / streaming endpoints.
+///
+/// `tier` places the file on the shared search ladder (`crate::search::SearchTier`);
+/// `score` is the filename match quality inside that tier (100 exact, 90
+/// prefix, 50-89 fuzzy, 0 path-only), never a raw engine score.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FileSearchResultCompact {
     #[serde(flatten)]
     pub file: FileInfo,
     pub score: u32,
+    pub tier: SearchTier,
 }
 
 /// A batch of results streamed to the frontend via a Tauri Channel.
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase", tag = "event", content = "data")]
 pub enum SearchBatch {
+    /// Learned query bindings for this query, sent first so the frontend can
+    /// give plugin commands the same learned tiers as applications.
+    Learned { results: Vec<LearnedMatch> },
     /// Application search results with frecency scoring.
     Apps { results: Vec<AppInfoWithScore> },
     /// File search results.
@@ -177,25 +200,21 @@ pub async fn search_all(
 
     // ---- Run all three searches concurrently ----
 
+    let learned = bindings_snapshot.learned_matches(&query, chrono::Utc::now().timestamp_millis());
+
     let (app_results, file_results, frecency_results) = tokio::join!(
         async {
-            // Project history into a path→frecency map under the lock; avoids
-            // cloning the whole record set just to score app matches.
-            let frecency = history.with_records(|records| {
-                records
-                    .iter()
-                    .map(|(path, record)| (path.clone(), record.frecency_date))
-                    .collect::<std::collections::HashMap<String, i64>>()
-            });
+            let frecency = history.app_frecency();
             crate::search::search_applications_with_frecency(
                 &query_apps,
                 apps_for_search,
                 &frecency,
                 Some(&bindings_snapshot),
                 &aliases,
+                options.sensitivity,
             )
             .into_iter()
-            .map(|(app, score)| AppInfoWithScore { app, score })
+            .map(|(app, rank)| AppInfoWithScore::new(app, rank))
             .collect::<Vec<_>>()
         },
         file_results_future,
@@ -204,7 +223,8 @@ pub async fn search_all(
             // references under the lock and clone only the top 5 survivors
             // instead of cloning every record up front.
             history.with_records(|records| {
-                let mut refs: Vec<&LaunchRecord> = records.values().collect();
+                let mut refs: Vec<&LaunchRecord> =
+                    records.values().filter(|r| r.is_app()).collect();
                 refs.sort_by(|a, b| {
                     b.pinned
                         .cmp(&a.pinned)
@@ -222,6 +242,7 @@ pub async fn search_all(
         apps: app_results,
         files: file_results,
         frecency_suggestions: frecency_results,
+        learned,
     })
 }
 
@@ -277,6 +298,14 @@ pub async fn search_streaming(
     let query_apps = query.clone();
     let query_files = query.clone();
     let options_clone = options.clone();
+    let sensitivity = options.sensitivity;
+
+    // Learned bindings first: a cheap lookup on the snapshot, so the frontend
+    // has them before any app / file batch (and before plugins are merged).
+    let learned = bindings_snapshot.learned_matches(&query, chrono::Utc::now().timestamp_millis());
+    on_event
+        .send(SearchBatch::Learned { results: learned })
+        .map_err(|e| e.to_string())?;
 
     // Spawn concurrent tasks, collect via mpsc
     let (tx, mut rx) = tokio::sync::mpsc::channel::<SearchBatch>(4);
@@ -285,24 +314,18 @@ pub async fn search_streaming(
     let tx_apps = tx.clone();
     let aliases_for_apps = aliases;
     tokio::spawn(async move {
-        // Project history into a path→frecency map under the lock; avoids
-        // cloning the whole record set per streaming search.
-        let frecency = history.with_records(|records| {
-            records
-                .iter()
-                .map(|(path, record)| (path.clone(), record.frecency_date))
-                .collect::<std::collections::HashMap<String, i64>>()
-        });
+        let frecency = history.app_frecency();
         let results = crate::search::search_applications_with_frecency(
             &query_apps,
             apps,
             &frecency,
             Some(&bindings_snapshot),
             &aliases_for_apps,
+            sensitivity,
         );
         let scored: Vec<AppInfoWithScore> = results
             .into_iter()
-            .map(|(app, score)| AppInfoWithScore { app, score })
+            .map(|(app, rank)| AppInfoWithScore::new(app, rank))
             .collect();
         let _ = tx_apps.send(SearchBatch::Apps { results: scored }).await;
     });
@@ -362,6 +385,9 @@ async fn search_files_batch(
     #[cfg(feature = "tantivy-search")] fulltext: Option<Arc<FulltextIndex>>,
     #[cfg(feature = "tantivy-search")] file_lookup: Arc<std::collections::HashMap<String, usize>>,
 ) -> Vec<FileSearchResultCompact> {
+    if !options.include_files {
+        return Vec::new();
+    }
     let has_operators = options.ext_filter.is_some()
         || options.dir_filter.is_some()
         || options.size_min.is_some()
@@ -390,6 +416,7 @@ async fn search_files_batch(
             .map(|r| FileSearchResultCompact {
                 file: r.file,
                 score: r.score,
+                tier: SearchTier::FilePathOnly,
             })
             .collect::<Vec<_>>()
     };
@@ -420,6 +447,7 @@ async fn search_files_batch(
                         .map(|r| FileSearchResultCompact {
                             file: r.file,
                             score: r.score,
+                            tier: SearchTier::FilePathOnly,
                         })
                         .collect(),
                     Err(e) => {
@@ -447,23 +475,49 @@ async fn search_files_batch(
         {
             let existing_paths: std::collections::HashSet<String> =
                 results.iter().map(|f| f.file.path.clone()).collect();
-            // Supplement results sit just below Volt fuzzy matches (~50) but
-            // above 0 so they aren't sorted to the bottom by the frontend.
-            // Decrement to preserve Windows Search's own rank ordering.
-            const WS_BASE_SCORE: u32 = 30;
-            let mut rank: u32 = 0;
+            // Scored with the same filename tiers as Volt's own results by
+            // `rank_file_results` below. Appended after Volt results so the
+            // stable sort keeps Volt first, then Windows Search's own rank,
+            // within each tier.
             for file in ws_results {
                 if !existing_paths.contains(&file.path) {
-                    let score = WS_BASE_SCORE.saturating_sub(rank);
-                    results.push(FileSearchResultCompact { file, score });
-                    rank += 1;
+                    results.push(FileSearchResultCompact {
+                        file,
+                        score: 0,
+                        tier: SearchTier::FilePathOnly,
+                    });
                 }
             }
         }
     }
 
+    results = rank_file_results(query, results, options.sensitivity);
     results.truncate(max_results);
     results
+}
+
+/// Replace engine-specific scores (nucleo, Tantivy, Windows Search rank) with
+/// absolute, query-relative file tiers on the shared ladder so the frontend
+/// can merge files with apps without normalising by the batch maximum.
+/// Results rejected by the sensitivity are dropped. The sort is stable: within
+/// one tier and quality the incoming engine order is preserved.
+fn rank_file_results(
+    query: &str,
+    results: Vec<FileSearchResultCompact>,
+    sensitivity: SearchSensitivity,
+) -> Vec<FileSearchResultCompact> {
+    let mut scorer = FileRelevanceScorer::new(query, sensitivity);
+    let mut ranked: Vec<FileSearchResultCompact> = results
+        .into_iter()
+        .filter_map(|mut result| {
+            let rank = scorer.score(&result.file.name)?;
+            result.tier = rank.tier;
+            result.score = u32::from(rank.quality);
+            Some(result)
+        })
+        .collect();
+    ranked.sort_by_key(|r| (r.tier, std::cmp::Reverse(r.score)));
+    ranked
 }
 
 #[cfg(all(test, feature = "tantivy-search"))]
@@ -508,6 +562,8 @@ mod tests {
             size_max: None,
             modified_after: None,
             modified_before: None,
+            sensitivity: SearchSensitivity::default(),
+            include_files: true,
         };
 
         let results = search_files_batch(
@@ -521,5 +577,134 @@ mod tests {
         .await;
 
         assert!(results.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod ranking_tests {
+    use super::*;
+    use crate::indexer::FileCategory;
+
+    fn compact(name: &str, engine_score: u32) -> FileSearchResultCompact {
+        let path = format!("/docs/{name}");
+        FileSearchResultCompact {
+            file: FileInfo {
+                id: crate::utils::hash_id(&path),
+                name: name.to_string(),
+                path,
+                extension: name.rsplit('.').next().unwrap_or_default().to_string(),
+                size: 100,
+                modified: 1_700_000_000,
+                created: None,
+                accessed: None,
+                icon: None,
+                category: FileCategory::Document,
+            },
+            score: engine_score,
+            tier: SearchTier::FilePathOnly,
+        }
+    }
+
+    fn ranked(query: &str, input: Vec<FileSearchResultCompact>) -> Vec<(String, SearchTier)> {
+        rank_file_results(query, input, SearchSensitivity::Medium)
+            .into_iter()
+            .map(|r| (r.file.name, r.tier))
+            .collect()
+    }
+
+    #[test]
+    fn exact_filename_outranks_higher_engine_scores() {
+        let out = ranked(
+            "budget",
+            vec![
+                compact("budget-2024-final.xlsx", 9_000),
+                compact("old_budget_notes.txt", 5_000),
+                compact("budget.xlsx", 10),
+            ],
+        );
+        assert_eq!(out[0], ("budget.xlsx".to_string(), SearchTier::FileExact));
+        assert_eq!(
+            out[1],
+            ("budget-2024-final.xlsx".to_string(), SearchTier::FilePrefix)
+        );
+        assert!(out[2].1 > SearchTier::FilePrefix);
+    }
+
+    #[test]
+    fn weak_best_match_is_not_promoted_to_the_top_tier() {
+        // The only result is a path-only match: it keeps the lowest tier
+        // instead of being normalised to the batch maximum.
+        let out = ranked("budget", vec![compact("q3.xlsx", 9_000)]);
+        assert_eq!(out, vec![("q3.xlsx".to_string(), SearchTier::FilePathOnly)]);
+    }
+
+    #[test]
+    fn equal_tiers_keep_engine_order_for_windows_search_supplements() {
+        // Windows Search supplements arrive after Volt results with score 0;
+        // path-only matches must keep that relative order.
+        let out = ranked(
+            "budget",
+            vec![
+                compact("a.txt", 50),
+                compact("b.txt", 0),
+                compact("c.txt", 0),
+            ],
+        );
+        let names: Vec<&str> = out.iter().map(|(n, _)| n.as_str()).collect();
+        assert_eq!(names, vec!["a.txt", "b.txt", "c.txt"]);
+    }
+
+    #[test]
+    fn low_sensitivity_drops_fuzzy_and_path_only_files() {
+        let out = rank_file_results(
+            "budget",
+            vec![
+                compact("budget.xlsx", 1),
+                compact("old_budget_notes.txt", 1),
+                compact("q3.xlsx", 1),
+            ],
+            SearchSensitivity::Low,
+        );
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].file.name, "budget.xlsx");
+    }
+
+    #[test]
+    fn search_options_accept_missing_or_explicit_sensitivity() {
+        let base = serde_json::json!({
+            "query": "x",
+            "maxResults": 5,
+            "extFilter": null,
+            "dirFilter": null,
+            "sizeMin": null,
+            "sizeMax": null,
+            "modifiedAfter": null,
+            "modifiedBefore": null,
+        });
+        let missing: SearchAllOptions = serde_json::from_value(base.clone()).unwrap();
+        assert_eq!(missing.sensitivity, SearchSensitivity::Medium);
+
+        let mut with_low = base;
+        with_low["sensitivity"] = serde_json::json!("low");
+        let low: SearchAllOptions = serde_json::from_value(with_low).unwrap();
+        assert_eq!(low.sensitivity, SearchSensitivity::Low);
+    }
+}
+
+#[cfg(test)]
+mod include_files_option_tests {
+    use super::SearchAllOptions;
+
+    #[test]
+    fn files_are_searched_unless_the_option_says_otherwise() {
+        let default: SearchAllOptions =
+            serde_json::from_value(serde_json::json!({ "query": "a", "maxResults": 3 })).unwrap();
+        assert!(default.include_files);
+
+        let disabled: SearchAllOptions = serde_json::from_value(
+            serde_json::json!({ "query": "a", "maxResults": 3, "includeFiles": false }),
+        )
+        .unwrap();
+        assert!(!disabled.include_files);
     }
 }

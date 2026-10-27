@@ -2,7 +2,7 @@
 
 Welcome to Volt's documentation. This directory is the source of truth for understanding the project, contributing code, building plugins, and shipping releases.
 
-> **Current version**: v0.2.0 (2026-05-18) — Notes, AI Chat / Quick Actions / Profile, Custom Emojis, Developer portal, extension sandbox hardening. See [`changelog/CHANGELOG.md`](./changelog/CHANGELOG.md) and [`public/changelog.json`](../public/changelog.json).
+> **Current version**: v0.4.0 (2026-07-19) — see [`changelog/CHANGELOG.md`](./changelog/CHANGELOG.md) and [`public/changelog.json`](../public/changelog.json) (14 versions, source for the in-app "What's new" view).
 
 ## 📂 Structure
 
@@ -32,7 +32,7 @@ docs/
 
 | Document | What it covers |
 |---|---|
-| [Features](./architecture/FEATURES.md) | Every user-visible capability of Volt v0.2.0 — search, plugins, AI, notes, extensions, security |
+| [Features](./architecture/FEATURES.md) | Every user-visible capability of Volt v0.4.0 — search, plugins, AI, notes, extensions, security |
 | [Architecture](./architecture/ARCHITECTURE.md) | Backend modules, Tauri commands, frontend layout, search pipeline, embeddings, security model |
 | [Keyboard Shortcuts](./user-guide/SHORTCUTS.md) | Global + view + plugin hotkeys |
 | [Plugin Development](./plugins/DEVELOPMENT.md) | Build your own plugin or extension |
@@ -42,7 +42,7 @@ docs/
 
 ## 🏗️ Architecture
 
-- [**Architecture overview**](./architecture/ARCHITECTURE.md) — entry points, ~30 Tauri command modules, frontend feature folders, search & indexing pipeline, embeddings, extension sandbox, auth security model.
+- [**Architecture overview**](./architecture/ARCHITECTURE.md) — entry points, 8 Tauri command domains (`ai` · `auth` · `content` · `extensions` · `files` · `launcher` · `shell` · `system`), frontend feature folders, search & indexing pipeline, embeddings, extension sandbox, auth security model.
 - [**Features reference**](./architecture/FEATURES.md) — every user-facing capability, built-in plugin, settings panel.
 - [**OAuth implementation**](./architecture/OAUTH_IMPLEMENTATION.md) — provider integration details (GitHub, Notion).
 
@@ -81,6 +81,7 @@ See the [Extensions](./architecture/FEATURES.md#-extension-ecosystem) section in
 | [CI/CD Pipeline](./build-release/CICD.md) | GitHub Actions workflows (`check`, `release`, `auto-tag`, `changelog`, `e2e`, `pr-title`, `version-bump`) |
 | [Distribution](./build-release/DISTRIBUTION.md) | Multi-platform packaging, installers, code signing, auto-updates |
 | [Signing Setup](./build-release/SIGNING_SETUP.md) | Windows Authenticode + macOS notarization — certs, `.pfx`/`.p12` export, GitHub secrets |
+| [Microsoft Store (MSIX)](./build-release/MICROSOFT_STORE.md) | Store build flavor (no self-updater), MSIX packaging, Partner Center steps, WACK risks — local test: [`scripts/msix-local-test.md`](../scripts/msix-local-test.md) |
 | [macOS Stability](./build-release/MACOS_STABILITY.md) | macOS release gates, smoke test coverage, and beta checklist without local Mac hardware |
 | [Roadmap](./build-release/ROADMAP.md) | Release phases & milestones |
 | [Implementation Plan (history)](../archive/plans/IMPLEMENTATION_PLAN.md) | Journal of past milestones (archived) |
@@ -198,30 +199,33 @@ pluginRegistry.register(new MyPlugin());
 
 ```
 Volt/
-├── src/                                 Frontend (React 19, TS 5.8, Vite 7)
+├── src/                                 Frontend (React 19, TS 6, Vite 8)
 │   ├── app/                             App component + hooks (useAppLifecycle, useSearchPipeline, …)
+│   │   ├── hooks/                       Search pipeline (150 ms debounce + latestSearchId), lifecycle, hotkeys, actions
+│   │   └── components/                  ViewRouter, ResultContextMenu, ActionsMenu
 │   ├── features/
-│   │   ├── plugins/builtin/             16 built-in plugins (ai-chat, calculator, …)
+│   │   ├── plugins/builtin/             16 built-in plugins (14 managed/toggleable + ai-chat & developer always-on, see manifest.ts)
+│   │   │   ├── core/                    registry.ts (500 ms timeout) · activation.ts (prefix/keyword manifest) · types/
 │   │   ├── applications/                App discovery & launching
 │   │   ├── search/                      SearchBar (150 ms debounce)
 │   │   ├── results/                     ResultsList, grouping
 │   │   ├── settings/                    Settings window
-│   │   ├── extensions/                  Loader (Sucrase + Web Worker)
+│   │   ├── extensions/                  Loader (Sucrase + Web Worker sandbox)
 │   │   ├── notes/                       Tiptap-based notes
 │   │   ├── ai-profile/ ai-quick-actions/ Personalization & hotkey-bound AI
 │   │   ├── custom-emojis/               SDXL Emoji generator (Pro)
 │   │   ├── auth/ changelog/ developer/ window/ files/ clipboard/ suggestions/
 │   │   └── …
-│   ├── shared/                          Types, hooks, UI primitives, utils
+│   ├── shared/                          Types (+ generated/ via ts-rs codegen), hooks, UI primitives, utils
 │   ├── stores/                          Zustand: appStore · searchStore · uiStore
-│   ├── pages/                           Multi-page entries (settings · onboarding · system-monitor · notes)
-│   ├── i18n/                            i18next (en · fr)
+│   ├── pages/                           Multi-page entries (main · settings · onboarding · system-monitor · notes)
+│   ├── i18n/                            i18next (en · fr) + per-feature locales
 │   └── styles/                          Tailwind v4 + theme.css
 │
 ├── src-tauri/                           Backend (Rust, edition 2024)
 │   ├── src/
-│   │   ├── commands/                    ~30 Tauri command modules
-│   │   ├── plugins/                     Backend plugin system + builtin (clipboard, games, system_monitor)
+│   │   ├── commands/                    8 domains: ai/ · auth/ · content/ · extensions/ · files/ · launcher/ · shell/ · system/ (~230 commands — recompter via `rg -o "#\[tauri::command\]" src-tauri/src/commands | wc -l`)
+│   │   │   ├── plugins/                     Backend plugin system + builtin (clipboard, games, system_monitor)
 │   │   ├── indexer/                     SQLite-backed file index + notify watcher + windows_search
 │   │   ├── launcher/                    History, process, launch_validation
 │   │   ├── search/                      Aggregation
@@ -252,8 +256,11 @@ Volt/
 ```bash
 pnpm run lint               # 0 errors, 0 disabled rules
 pnpm run build              # tsc + Vite bundle
-cd src-tauri && cargo check && cargo clippy -- -D warnings
+cd src-tauri && cargo fmt --check && cargo clippy --all-targets --features tantivy-search -- -D warnings
 pnpm run test
+# Encrypted-DB matrix (when touching storage/indexer):
+# cargo clippy --all-targets --no-default-features --features sqlcipher -- -D warnings
+# cargo test --workspace --lib --no-default-features --features sqlcipher
 ```
 
 See the **Lint & Code Quality** section of [`CLAUDE.md`](../CLAUDE.md) — no `eslint-disable`, no `@ts-ignore`, no `as any`. Fix the code, not the rule.
@@ -277,4 +284,4 @@ See the **Lint & Code Quality** section of [`CLAUDE.md`](../CLAUDE.md) — no `e
 
 Volt is open-source under Apache-2.0 — see [LICENSE](../LICENSE).
 
-_Last updated: 2026-06-28 — docs reorganized; historical material moved to `../archive/`._
+_Last updated: 2026-09-16 — synced to v0.4.0 (stack Vite 8 / TS 6, 8 command domains, 16 built-ins); historical material moved to `../archive/`._

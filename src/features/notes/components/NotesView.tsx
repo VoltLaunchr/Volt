@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { logger } from '../../../shared/utils/logger';
+import { useLiveSettings } from '../../settings/behavior/useLiveSettings';
 import { useNotes } from '../hooks/useNotes';
 import { useNote } from '../hooks/useNote';
 import { NotesSidebar } from './NotesSidebar';
@@ -145,6 +146,9 @@ export function NotesView(): React.JSX.Element {
     })();
   }, []);
 
+  // Settings -> Keyboard: "Escape closes secondary windows" (on by default).
+  const escapeCloses = useLiveSettings()?.keyboard?.escapeClosesSecondaryWindows !== false;
+
   // Cmd/Ctrl+N — create a new note from anywhere in the window.
   // Escape — close the window unless an input/contenteditable has focus
   // (so typing Esc in a search/title field doesn't kill the window).
@@ -155,7 +159,7 @@ export function NotesView(): React.JSX.Element {
         void handleCreate();
         return;
       }
-      if (e.key === 'Escape') {
+      if (e.key === 'Escape' && escapeCloses) {
         const target = e.target as HTMLElement | null;
         const tag = target?.tagName;
         if (tag === 'INPUT' || tag === 'TEXTAREA' || target?.isContentEditable) return;
@@ -167,7 +171,7 @@ export function NotesView(): React.JSX.Element {
     return () => {
       window.removeEventListener('keydown', onKey);
     };
-  }, [handleCreate, handleClose]);
+  }, [handleCreate, handleClose, escapeCloses]);
 
   return (
     <div className="notes-view">

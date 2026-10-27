@@ -263,6 +263,55 @@ pub async fn set_clipboard_disabled_apps(
     Ok(())
 }
 
+/// Linux clipboard write with Wayland fallback.
+///
+/// Tries `arboard` (X11/XWayland) first; if that fails inside a Wayland
+/// session, falls back to `wl-copy` over stdin (no argv — safe for
+/// newlines, quotes, leading dashes, …). Outside a Wayland session the
+/// original arboard error is returned unchanged.
+#[cfg(target_os = "linux")]
+async fn set_clipboard_text_linux(text: &str) -> Result<(), String> {
+    use arboard::Clipboard;
+    match Clipboard::new()
+        .map_err(|e| e.to_string())
+        .and_then(|mut cb| cb.set_text(text).map_err(|e| e.to_string()))
+    {
+        Ok(()) => Ok(()),
+        Err(arboard_err) => {
+            if crate::utils::wayland::is_wayland_session() {
+                tracing::warn!(
+                    "paste: arboard set_text failed ({arboard_err}), trying wl-copy fallback"
+                );
+                crate::utils::wayland::wl_copy_text(text).await
+            } else {
+                Err(arboard_err)
+            }
+        }
+    }
+}
+
+/// Linux Ctrl+V with Wayland fallback.
+///
+/// Tries XTEST first (X11/XWayland); if that fails inside a Wayland
+/// session, falls back to `wtype -M ctrl -k v -m ctrl` (virtual-keyboard
+/// protocol — needs a compatible compositor, e.g. Hyprland/Sway).
+#[cfg(target_os = "linux")]
+async fn simulate_paste_linux() -> Result<(), String> {
+    match crate::utils::x11::simulate_ctrl_v() {
+        Ok(()) => Ok(()),
+        Err(x_err) => {
+            if crate::utils::wayland::is_wayland_session() {
+                tracing::warn!(
+                    "paste: X11 simulate_ctrl_v failed ({x_err}), trying wtype fallback"
+                );
+                crate::utils::wayland::wtype_ctrl_v().await
+            } else {
+                Err(x_err)
+            }
+        }
+    }
+}
+
 /// Paste text into the previously-focused window.
 ///
 /// Copies the given text to the clipboard, then after a short delay
@@ -274,21 +323,39 @@ pub async fn set_clipboard_disabled_apps(
 /// terminal or password manager).
 #[tauri::command]
 pub async fn paste_text(text: String, paste_state: State<'_, PasteState>) -> VoltResult<()> {
-    use arboard::Clipboard;
-
+    // Soft X11 probe: X11/XWayland is still preferred when available. Only
+    // hard-fail here when there is NO Wayland session to fall back to;
+    // otherwise continue — set/simulate each have their own fallback below.
     #[cfg(target_os = "linux")]
-    crate::utils::x11::connect().map_err(VoltError::Unknown)?;
+    if let Err(connect_err) = crate::utils::x11::connect().map(|_| ()) {
+        if crate::utils::wayland::is_wayland_session() {
+            tracing::warn!(
+                "paste_text: X11 unavailable ({connect_err}), using Wayland fallback (wl-copy/wtype)"
+            );
+        } else {
+            return Err(VoltError::Unknown(connect_err));
+        }
+    }
     if cfg!(not(any(windows, target_os = "linux"))) {
         return Err(VoltError::InvalidConfig(
             "Direct paste is not supported on this platform".into(),
         ));
     }
 
-    let mut cb =
-        Clipboard::new().map_err(|e| crate::core::error::VoltError::Unknown(e.to_string()))?;
-    cb.set_text(&text)
-        .map_err(|e| crate::core::error::VoltError::Unknown(e.to_string()))?;
-    drop(cb);
+    #[cfg(target_os = "linux")]
+    set_clipboard_text_linux(&text)
+        .await
+        .map_err(crate::core::error::VoltError::Unknown)?;
+
+    #[cfg(not(target_os = "linux"))]
+    {
+        use arboard::Clipboard;
+        let mut cb =
+            Clipboard::new().map_err(|e| crate::core::error::VoltError::Unknown(e.to_string()))?;
+        cb.set_text(&text)
+            .map_err(|e| crate::core::error::VoltError::Unknown(e.to_string()))?;
+        drop(cb);
+    }
 
     // Capture the target foreground window BEFORE the Volt window hides — at
     // command-entry the Volt search bar is foreground, and the window we want
@@ -320,7 +387,7 @@ pub async fn paste_text(text: String, paste_state: State<'_, PasteState>) -> Vol
             }
         }
         #[cfg(target_os = "linux")]
-        if let Err(error) = crate::utils::x11::simulate_ctrl_v() {
+        if let Err(error) = simulate_paste_linux().await {
             tracing::warn!("paste_text: {error}");
         }
     });
@@ -339,10 +406,18 @@ pub async fn paste_sequentially(
     texts: Vec<String>,
     paste_state: State<'_, PasteState>,
 ) -> VoltResult<()> {
-    use arboard::Clipboard;
-
+    // Same soft X11 probe as paste_text: prefer X11/XWayland, fall back to
+    // Wayland tools when in a Wayland session.
     #[cfg(target_os = "linux")]
-    crate::utils::x11::connect().map_err(VoltError::Unknown)?;
+    if let Err(connect_err) = crate::utils::x11::connect().map(|_| ()) {
+        if crate::utils::wayland::is_wayland_session() {
+            tracing::warn!(
+                "paste_sequentially: X11 unavailable ({connect_err}), using Wayland fallback (wl-copy/wtype)"
+            );
+        } else {
+            return Err(VoltError::Unknown(connect_err));
+        }
+    }
     if cfg!(not(any(windows, target_os = "linux"))) {
         return Err(VoltError::InvalidConfig(
             "Sequential paste is not supported on this platform".into(),
@@ -361,10 +436,28 @@ pub async fn paste_sequentially(
         tokio::time::sleep(tokio::time::Duration::from_millis(350)).await;
 
         for text in texts {
-            if let Ok(mut cb) = Clipboard::new()
-                && cb.set_text(&text).is_ok()
+            // Clipboard write: arboard first, wl-copy fallback on Wayland.
+            // On Windows keep the original arboard-only behaviour.
+            #[cfg(target_os = "linux")]
+            let copied = match set_clipboard_text_linux(&text).await {
+                Ok(()) => true,
+                Err(error) => {
+                    tracing::warn!("paste_sequentially: clipboard write failed: {error}");
+                    false
+                }
+            };
+            #[cfg(not(target_os = "linux"))]
+            let copied = match arboard::Clipboard::new()
+                .map_err(|e| e.to_string())
+                .and_then(|mut cb| cb.set_text(&text).map_err(|e| e.to_string()))
             {
-                drop(cb);
+                Ok(()) => true,
+                Err(error) => {
+                    tracing::warn!("paste_sequentially: clipboard write failed: {error}");
+                    false
+                }
+            };
+            if copied {
                 #[cfg(windows)]
                 {
                     let now_hwnd = current_foreground_hwnd();
@@ -379,7 +472,7 @@ pub async fn paste_sequentially(
                     }
                 }
                 #[cfg(target_os = "linux")]
-                if let Err(error) = crate::utils::x11::simulate_ctrl_v() {
+                if let Err(error) = simulate_paste_linux().await {
                     tracing::warn!("paste_sequentially: {error}");
                     break;
                 }

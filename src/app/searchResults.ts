@@ -1,4 +1,5 @@
 import { SearchResultType, type SearchResult } from '../shared/types/common.types';
+import { compareResults } from './searchRanking';
 
 function applicationIdentity(result: SearchResult): string | null {
   if (result.type !== SearchResultType.Application) return null;
@@ -10,7 +11,10 @@ function applicationIdentity(result: SearchResult): string | null {
     .toLowerCase();
 }
 
-/** Sort all sources by score and collapse duplicate application entries. */
+/**
+ * Order all sources with the unified comparator (`compareResults`) and
+ * collapse duplicate application entries.
+ */
 export function mergeSearchResults(
   maxResults: number,
   ...sources: SearchResult[][]
@@ -19,7 +23,7 @@ export function mergeSearchResults(
 
   return sources
     .flat()
-    .sort((a, b) => b.score - a.score)
+    .sort(compareResults)
     .filter((result) => {
       const identity = applicationIdentity(result);
       if (identity === null) return true;

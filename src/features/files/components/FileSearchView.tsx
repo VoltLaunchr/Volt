@@ -5,6 +5,8 @@ import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/utils';
 import { openFilePath } from '../services/fileOpenService';
 import { FileInfo, FileSearchResult } from '../../../shared/types/common.types';
+import { navigationKey } from '../../settings/behavior/keyboard';
+import { useListNavigationPreset } from '../../settings/behavior/useListNavigationPreset';
 import { logger } from '../../../shared/utils';
 
 interface FileSearchViewProps {
@@ -29,6 +31,7 @@ export function FileSearchView({ onClose }: FileSearchViewProps): React.JSX.Elem
   const [files, setFiles] = useState<FileInfo[]>([]);
   const [selectedFile, setSelectedFile] = useState<FileInfo | null>(null);
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const listNavigation = useListNavigationPreset();
   const [typeFilter, setTypeFilter] = useState<FileTypeFilter>('all');
   const [isLoading, setIsLoading] = useState(false);
   const [showTypeDropdown, setShowTypeDropdown] = useState(false);
@@ -149,7 +152,7 @@ export function FileSearchView({ onClose }: FileSearchViewProps): React.JSX.Elem
     (e: React.KeyboardEvent) => {
       const currentFiles = searchQuery.trim() ? files : recentFiles;
 
-      switch (e.key) {
+      switch (navigationKey(listNavigation, e)) {
         case 'Escape':
           e.preventDefault();
           onClose();
@@ -184,7 +187,16 @@ export function FileSearchView({ onClose }: FileSearchViewProps): React.JSX.Elem
           break;
       }
     },
-    [selectedIndex, files, recentFiles, selectedFile, searchQuery, onClose, handleOpenFile]
+    [
+      selectedIndex,
+      files,
+      recentFiles,
+      selectedFile,
+      searchQuery,
+      onClose,
+      handleOpenFile,
+      listNavigation,
+    ]
   );
 
   // Format file size

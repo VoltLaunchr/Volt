@@ -70,7 +70,7 @@ launcher/      # Cross-platform app launching (history, process, launch_validati
 ### Frontend Structure
 ```
 src/
-  app/                           # Main app component
+  app/                           # Main app component (thin shell → hooks: useAppLifecycle, useSearchPipeline, useGlobalHotkey, useResultActions)
     hooks/                       # useAppLifecycle, useGlobalHotkey, useSearchPipeline, useResultActions
     components/                  # ResultContextMenu, ViewRouter
   features/
@@ -81,14 +81,17 @@ src/
     extensions/                  # Extension store (api, loader, services, types)
     files/                       # File search components
     plugins/                     # Plugin system
-      builtin/                   # calculator, emoji-picker, timer, websearch, steam, systemcommands, systemmonitor, snippets, quicklinks, shell, window-management, games
+      builtin/                   # 17 plugins (calculator, emoji-picker, timer, websearch, steam, systemcommands, systemmonitor, snippets, quicklinks, shell, window-management, games, notes, ai-chat, developer, developer-tools, settings-commands)
       core/registry.ts           # Plugin registry singleton (500ms timeout)
+      core/activation.ts         # Prefix/keyword manifest — single source of truth for activation
+      builtin/manifest.ts        # MANAGED_PLUGINS (14 toggleable; ai-chat, developer, settings-commands always-on)
       types/                     # Plugin, PluginResult, PluginContext interfaces
-    settings/                    # Settings management
+    settings/                    # Settings window: registry/ (declarative page > section > row ids, feeds search + deep-links + root-search commands), components/SettingsPrimitives, pages/
     suggestions/                 # Default suggestions
     window/                      # Window state management
   shared/
     types/common.types.ts        # SearchResult, AppInfo, etc.
+    types/generated/             # ts-rs IPC bindings (do not hand-edit; guarded by Vitest type test)
     constants/                   # Configuration
     hooks/                       # Reusable React hooks
     components/ui/               # HotkeyCapture, ContextMenu, Modal, HelpDialog, PropertiesDialog, PreviewPanel
@@ -111,22 +114,23 @@ src/
 - Snippets: `;` prefix in search bar triggers snippet plugin
 - Shell commands: `>` prefix executes shell commands with streaming output
 - Quicklinks: `ql:` prefix for quicklink management commands
+- Behaviour settings (pop to root, root-search scope, Escape, list-navigation presets, System Monitor interval, Timer durations, window gap): pure logic + bounds in `src/features/settings/behavior/` (mirrored by `Settings::normalize_behavior` in `commands/system/behavior_settings.rs`); the optional global "open Settings" hotkey lives in `hotkey/mod.rs`
 
 ## Important Implementation Details
 
 ### Search Flow
 1. Frontend: 150ms debounce + `latestSearchId` for stale response protection
-2. Backend: `search_applications()` uses scoring (exact=100, startsWith=90, contains=80-position, fuzzy=50)
-3. Frecency scoring: apps ranked by match_score + frecency_bonus (launch_count x recency_decay)
+2. Ranking: one tier ladder (`SearchTier`, `search/tiers.rs`; order generated to `src/shared/types/generated/searchTierOrder.ts` by `cargo test`) + one lexicographic comparator (`src/app/searchRanking.ts`): band > tier > quality > frecency > source > declared score > title. Rust ranks apps (`search_applications_with_frecency`, Search Sensitivity applied) and files (`FileRelevanceScorer`); plugin commands are tiered in TS with the same rules; special intents (explicit web, game browse, calculator/URL answers, fallbacks) are bands, not boosts — cf. `docs/refonte/REFONTE-SEARCH-RANKING-UNIFIE.md`
+3. Frecency: one universal store (`launch_history.json`, `LaunchRecord.kind` app/command, `frecency_date` model) — apps via `launch_app`, other stable results via `record_command_usage`; learned query bindings are tiers (`learnedExact` / `aliasPrefix`, 17-day TTL), streamed to the front as the `learned` batch
 4. Predictive suggestions: empty query shows top frecency apps
 5. Power-user operators: `ext:pdf`, `in:dir`, `size:>10mb`, `modified:<7d` parsed by `queryParser.ts`
-6. Results grouped by section (Applications, Commands, Games, Files) and sorted by score descending
+6. Results grouped by section (Applications, Commands, Games, Files) in the unified comparator order
 
 ### File Indexing
-- In-memory state: `FileIndexState` (Arc<Mutex<Vec<FileInfo>>>)
-- Background scan via `start_indexing()` with `max_depth=10`, `max_file_size=100MB`
+- In-memory state: `FileIndexState` (immutable `Arc<Vec<FileInfo>>` snapshot + coherent path lookup) + SQLite source of truth (`file_index.db`)
+- Background scan via `start_indexing()` with `max_depth=10`, `max_file_size=100MB`; completed scans replace SQLite transactionally (failed scans keep the last coherent index)
 - Extensions filter: empty = all files; specified = only those extensions
-- Search: `indexer/search.rs` with same scoring as apps
+- Search: `indexer/search.rs` with same scoring as apps; default nucleo engine, persistent Tantivy backend behind `tantivy-search` (dirty-marker + doc-count guard, hidden files excluded, nucleo fallback)
 
 ### Plugins vs Extensions
 **Builtin plugins** (in-repo, `src/features/plugins/builtin/`):
@@ -147,10 +151,10 @@ results. Declare a `activation: PluginActivation` on the plugin (`{ prefixes?, k
 - `mode: 'declarative'` (default) → `canHandle` is fully driven by the manifest, and
   `match` uses `ctx.activation.stripped` as its search term. `mode: 'custom'` → keep a
   hand-written `canHandle` (e.g. type-ahead, math detection); the keywords drive only
-  the scoring boost. `mode: 'always'` → activates for any query ≥ `minLength`.
-- Scoring: a `prefix`/`keyword` matchKind earns `PLUGIN_KEYWORD_BOOST` in
-  `useSearchPipeline.ts`. **Do not** reintroduce a parallel keyword map there — the
-  manifest is the only source.
+  the `activation` tier. `mode: 'always'` → activates for any query ≥ `minLength`.
+- Scoring: a `prefix`/`keyword` matchKind puts the result in the `activation` tier
+  (`rankPluginResult` in `src/app/searchRanking.ts`). **Do not** reintroduce a parallel
+  keyword map or numeric boosts there — the manifest is the only source.
 
 **Managed plugins & Settings** — `src/features/plugins/builtin/manifest.ts` is the
 canonical list (`MANAGED_PLUGINS`) of user-toggleable built-ins. The `id` is the
@@ -212,8 +216,8 @@ Always-on-top, transparent, 800x550px, no decorations, skips taskbar (see `tauri
 
 ### Frontend (TypeScript)
 - **React 19** + React DOM 19
-- **Vite 7** — build tool (multi-page: main + settings windows)
-- **TypeScript 5.8** — strict mode
+- **Vite 8** — build tool (multi-page: main + settings windows)
+- **TypeScript 6** — strict mode
 - **lucide-react** — icons
 - **date-fns** — date utilities
 - **emojibase** — emoji data
@@ -229,7 +233,7 @@ Always-on-top, transparent, 800x550px, no decorations, skips taskbar (see `tauri
 ## Code Style
 
 **TS/React**: Prettier (single quotes, 100 char, 2 spaces), feature-based folders, functional components
-**Rust**: rustfmt, commands return `Result<T, String>`, use `map_err(|e| e.to_string())`
+**Rust**: rustfmt, commands return `VoltResult<T>` at the module boundary (mapped to `Result<T, String>` at the `#[tauri::command]` boundary via `map_err(|e| e.to_string())`), use `map_err(|e| e.to_string())`
 
 ## Custom Agents (`.claude/commands/`)
 
@@ -460,7 +464,7 @@ Body de PR doit contenir : résumé, test plan checklist, lien vers la release n
 ### Étape 5 — Wait CI
 
 **Aucun merge tant que CI n'est pas verte.** Les jobs critiques :
-- `Check & Build (windows-latest)` (clippy 1.95 strict, fmt check, build)
+- `Check & Build (windows-latest)` (strict clippy, fmt check, build)
 - `Check & Build (macos-latest)`, `Check & Build (ubuntu-latest)`
 - `e2e`
 - `lint-pr-title`

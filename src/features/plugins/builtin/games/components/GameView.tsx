@@ -3,6 +3,8 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/utils';
 import { SearchX } from 'lucide-react';
+import { navigationKey } from '../../../../settings/behavior/keyboard';
+import { useListNavigationPreset } from '../../../../settings/behavior/useListNavigationPreset';
 import { logger } from '../../../../../shared/utils/logger';
 import { GameInfo, PlatformInfo } from '../index';
 
@@ -105,6 +107,7 @@ export function GameView({ onClose }: GameViewProps): React.JSX.Element {
   const [platforms, setPlatforms] = useState<PlatformInfo[]>([]);
   const [selectedGame, setSelectedGame] = useState<GameInfo | null>(null);
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const listNavigation = useListNavigationPreset();
   const [filterQuery, setFilterQuery] = useState('');
   const [platformFilter, setPlatformFilter] = useState<PlatformFilter>('all');
   const [isLoading, setIsLoading] = useState(true);
@@ -178,7 +181,7 @@ export function GameView({ onClose }: GameViewProps): React.JSX.Element {
   // Handle keyboard navigation
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
-      switch (e.key) {
+      switch (navigationKey(listNavigation, e)) {
         case 'Escape':
           e.preventDefault();
           onClose();
@@ -213,7 +216,7 @@ export function GameView({ onClose }: GameViewProps): React.JSX.Element {
           break;
       }
     },
-    [selectedIndex, filteredGames, selectedGame, onClose, handleLaunchGame]
+    [selectedIndex, filteredGames, selectedGame, onClose, handleLaunchGame, listNavigation]
   );
 
   // Rescan games

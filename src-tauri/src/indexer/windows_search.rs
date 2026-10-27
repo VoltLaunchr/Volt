@@ -48,6 +48,7 @@ fn search_windows_index_blocking(query: &str, limit: usize) -> Result<Vec<FileIn
     // injection inside the inlined script.
     let ps_script = format!(
         r#"
+[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false
 $q = $env:VOLT_QUERY
 if ([string]::IsNullOrEmpty($q)) {{ return }}
 $conn = New-Object System.Data.OleDb.OleDbConnection
@@ -94,6 +95,7 @@ try {{
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
+    let stdout = stdout.trim_start_matches('\u{feff}');
     let mut results = Vec::new();
 
     for line in stdout.lines() {
@@ -175,6 +177,13 @@ try {{
     // Post-filter 3: drop temp/junk file extensions (*.tmp, *.temp).
     let excluded_exts: &[&str] = &["tmp", "temp", "bak", "log"];
     results.retain(|r| !excluded_exts.contains(&r.extension.as_str()));
+
+    // Post-filter 4: the user's indexing policy (manual exclusions and glob
+    // patterns, hierarchical ignore files, automatic churn exclusions), so a
+    // path Volt refuses to index does not come back through Windows Search.
+    if let Some(policy) = super::ignore_policy::external_policy() {
+        results.retain(|r| policy.allows_external(std::path::Path::new(&r.path), false));
+    }
 
     if !results.is_empty() {
         info!(

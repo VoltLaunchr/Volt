@@ -988,4 +988,179 @@ mod tests {
         assert_eq!(idx.document_count().unwrap(), 0);
         assert!(idx.index.schema().get_field("hidden").is_ok());
     }
+
+    /// Sujet 5: Tantivy n'autorise qu'UN `IndexWriter` à la fois (lockfile).
+    /// Deux writers chevauchants → `Err(LockBusy)` propre, jamais de panique
+    /// ni de corruption (constaté en test: le perdant reçoit
+    /// "Failed to create index writer: Failed to acquire Lockfile: LockBusy").
+    /// En production les trois chemins d'écriture (rebuild scan, flush
+    /// watcher, fast-path SQLite-cache) sont donc sérialisés par
+    /// `mutation_gate` — SANS la gate, le perdant perdrait sa mutation
+    /// (rebuild → dirty-bit reste à "1", heal au boot; flush → "Watcher
+    /// fulltext sync failed", Tantivy obsolète jusqu'au redémarrage).
+    ///
+    /// Ce test prouve les deux moitiés, déterministiquement, derrière une
+    /// barrière qui force le chevauchement réel:
+    ///  (a) SANS sérialisation: aucune panique, index toujours lisible.
+    ///  (b) AVEC sérialisation (modèle de la gate): les deux commits
+    ///      réussissent et l'état final est EXACTEMENT snapshot+delta.
+    #[test]
+    fn concurrent_rebuild_and_batch_never_corrupts_index() {
+        use std::sync::{Arc, Barrier};
+
+        let make_index = || {
+            let idx = FulltextIndex::create_in_ram();
+            let snapshot: Vec<FileInfo> = (0..50)
+                .map(|i| make_file(&format!("snap{i}.txt"), &format!("/s/snap{i}.txt"), "txt"))
+                .collect();
+            idx.build_from_files(&snapshot).unwrap();
+            idx
+        };
+        let delta: Vec<FileInfo> = (0..10)
+            .map(|i| make_file(&format!("delta{i}.txt"), &format!("/d/delta{i}.txt"), "txt"))
+            .collect();
+
+        // (a) Sans sérialisation: le perdant échoue proprement (Err), jamais
+        // de panique, et l'index reste interrogeable.
+        {
+            let idx = Arc::new(make_index());
+            let barrier = Arc::new(Barrier::new(2));
+            let snapshot: Vec<FileInfo> = (0..50)
+                .map(|i| make_file(&format!("snap{i}.txt"), &format!("/s/snap{i}.txt"), "txt"))
+                .collect();
+            let t1 = {
+                let (idx, barrier, snapshot) = (Arc::clone(&idx), Arc::clone(&barrier), snapshot);
+                std::thread::spawn(move || {
+                    barrier.wait();
+                    let _ = idx.build_from_files(&snapshot);
+                })
+            };
+            let t2 = {
+                let (idx, barrier, delta) = (Arc::clone(&idx), Arc::clone(&barrier), delta.clone());
+                std::thread::spawn(move || {
+                    barrier.wait();
+                    let _ = idx.apply_batch(&delta, &[]);
+                })
+            };
+            t1.join().expect("rebuild thread panicked");
+            t2.join().expect("batch thread panicked");
+            // Lisible dans tous les cas; le compte reflète une génération
+            // committée entière (le perdant LockBusy n'écrit rien).
+            let count = idx.document_count().unwrap();
+            assert!(
+                count == 50 || count == 60,
+                "uncommitted interleavings must not exist, got {count} docs"
+            );
+            assert!(
+                idx.query("snap0", 10, false)
+                    .unwrap()
+                    .iter()
+                    .any(|h| h.path == "/s/snap0.txt"),
+                "base snapshot doc must stay queryable"
+            );
+        }
+
+        // (b) Avec sérialisation (la gate en production): les deux commits
+        // réussissent; l'état final est EXACTEMENT l'une des deux
+        // compositions sérielles valides (l'ordre d'acquisition de la gate
+        // est aléatoire), jamais un mélange partiel.
+        {
+            let idx = Arc::new(make_index());
+            let gate = Arc::new(std::sync::Mutex::new(()));
+            let barrier = Arc::new(Barrier::new(2));
+            let snapshot: Vec<FileInfo> = (0..50)
+                .map(|i| make_file(&format!("snap{i}.txt"), &format!("/s/snap{i}.txt"), "txt"))
+                .collect();
+            let t1 = {
+                let (idx, barrier, gate, snapshot) = (
+                    Arc::clone(&idx),
+                    Arc::clone(&barrier),
+                    Arc::clone(&gate),
+                    snapshot,
+                );
+                std::thread::spawn(move || {
+                    barrier.wait();
+                    let _g = gate.lock().unwrap();
+                    idx.build_from_files(&snapshot).unwrap();
+                })
+            };
+            let t2 = {
+                let (idx, barrier, gate, delta) = (
+                    Arc::clone(&idx),
+                    Arc::clone(&barrier),
+                    Arc::clone(&gate),
+                    delta.clone(),
+                );
+                std::thread::spawn(move || {
+                    barrier.wait();
+                    let _g = gate.lock().unwrap();
+                    idx.apply_batch(&delta, &[]).unwrap();
+                })
+            };
+            t1.join().expect("rebuild thread panicked");
+            t2.join().expect("batch thread panicked");
+            // Composition sérielle exacte: rebuild-puis-batch = 60 avec
+            // delta interrogeable; batch-puis-rebuild = 50, delta absent
+            // (tombstone delete_all), snapshot intact.
+            let count = idx.document_count().unwrap();
+            // Fuzzy/prefix search can also return delta1..delta9. Count the
+            // requested document's identity, not every approximate match.
+            let delta_hits = idx
+                .query("delta0", 10, false)
+                .unwrap()
+                .iter()
+                .filter(|hit| hit.path == "/d/delta0.txt")
+                .count();
+            assert!(
+                idx.query("snap0", 10, false)
+                    .unwrap()
+                    .iter()
+                    .any(|h| h.path == "/s/snap0.txt"),
+                "base snapshot doc must stay queryable"
+            );
+            if count == 60 {
+                assert_eq!(delta_hits, 1);
+            } else {
+                assert_eq!(count, 50);
+                assert_eq!(delta_hits, 0);
+            }
+        }
+
+        // (c) Ordre production (scan commit PUIS flush watcher par-dessus,
+        // imposé par la gate): 60 docs exactement, chaque face lisible.
+        {
+            let idx = make_index();
+            let gate = std::sync::Mutex::new(());
+            {
+                let _g = gate.lock().unwrap();
+                idx.build_from_files(
+                    &(0..50)
+                        .map(|i| {
+                            make_file(&format!("snap{i}.txt"), &format!("/s/snap{i}.txt"), "txt")
+                        })
+                        .collect::<Vec<_>>(),
+                )
+                .unwrap();
+            }
+            {
+                let _g = gate.lock().unwrap();
+                idx.apply_batch(&delta, &[]).unwrap();
+            }
+            assert_eq!(idx.document_count().unwrap(), 60);
+            assert!(
+                idx.query("snap0", 10, false)
+                    .unwrap()
+                    .iter()
+                    .any(|h| h.path == "/s/snap0.txt"),
+                "base snapshot doc must stay queryable"
+            );
+            assert!(
+                idx.query("delta0", 10, false)
+                    .unwrap()
+                    .iter()
+                    .any(|h| h.path == "/d/delta0.txt"),
+                "delta doc must be queryable after ordered apply"
+            );
+        }
+    }
 }

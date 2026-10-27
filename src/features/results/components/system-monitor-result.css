@@ -1,0 +1,102 @@
+.sm-result,
+.sm-result-copy {
+  min-width: 0;
+  flex: 1;
+}
+.sm-result {
+  --sm-resource: #2bb8a8;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+.sm-result[data-resource='memory'],
+.sm-result-icon[data-resource='memory'] {
+  --sm-resource: #a38ae8;
+}
+.sm-result[data-resource='disk'],
+.sm-result-icon[data-resource='disk'] {
+  --sm-resource: #d89a43;
+}
+.sm-result-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.sm-result-copy strong {
+  color: var(--color-ink);
+  font-size: 13px;
+  font-weight: 550;
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sm-result-copy > span {
+  color: var(--color-mute);
+  font-size: 11px;
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sm-result-icon {
+  --sm-resource: #2bb8a8;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  color: var(--sm-resource);
+  background: color-mix(in srgb, var(--sm-resource) 12%, var(--color-surface));
+  border: 1px solid color-mix(in srgb, var(--sm-resource) 22%, transparent);
+  border-radius: 10px;
+}
+.sm-result-reading {
+  width: 82px;
+  flex-shrink: 0;
+  text-align: right;
+}
+.sm-result-value {
+  font-size: 17px;
+  font-weight: 550;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-ink);
+}
+.sm-result-value small {
+  font-size: 11px;
+  color: var(--color-mute);
+  margin-left: 2px;
+}
+.sm-result-track {
+  height: 4px;
+  margin-top: 6px;
+  background: var(--color-hairline);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.sm-result-track > span {
+  height: 100%;
+  display: block;
+  background: var(--sm-resource);
+  border-radius: inherit;
+}
+.sm-result[data-status='critical'] .sm-result-track > span {
+  background: #e26468;
+}
+[data-theme='light'] .sm-result-icon {
+  --sm-resource: #087e73;
+}
+[data-theme='light'] .sm-result-icon[data-resource='memory'] {
+  --sm-resource: #7150b8;
+}
+[data-theme='light'] .sm-result-icon[data-resource='disk'] {
+  --sm-resource: #93600f;
+}
+@media (max-width: 440px) {
+  .sm-result {
+    gap: 10px;
+  }
+  .sm-result-reading {
+    width: 62px;
+  }
+}

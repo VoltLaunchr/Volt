@@ -3,33 +3,31 @@
  * Manage API keys for external services (GitHub, Notion, etc.)
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import {
-  GitBranch,
-  Database,
-  AlertCircle,
-  CheckCircle,
-  Eye,
-  EyeOff,
-  Trash2,
-  ExternalLink,
-  Loader2,
-  Key,
-  Shield,
-  type LucideIcon,
-} from 'lucide-react';
+import { CheckCircle, Eye, EyeOff, ExternalLink, Loader2, Trash2 } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
+import { Badge } from '@/shared/components/ui/badge';
+import { Button } from '@/shared/components/ui/button';
+import { Input } from '@/shared/components/ui/input';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/shared/components/ui/dialog';
 import { logger } from '../../../shared/utils/logger';
 import { credentialsService } from '../services/credentialsService';
+import { SettingsBody, SettingsPageHeader, SettingsStatus } from './SettingsChrome';
+import { SettingsRow, SettingsSection } from './SettingsPrimitives';
+
+type IntegrationId = 'github' | 'notion';
 
 interface IntegrationConfig {
-  id: 'github' | 'notion';
+  id: IntegrationId;
   name: string;
-  icon: LucideIcon;
-  iconSrc?: string;
-  descriptionKey: string;
-  setupUrl: string;
   docUrl: string;
   placeholder: string;
 }
@@ -38,26 +36,27 @@ const INTEGRATIONS: IntegrationConfig[] = [
   {
     id: 'github',
     name: 'GitHub',
-    icon: GitBranch,
-    descriptionKey: 'integrations.github.description',
-    setupUrl: 'https://voltlaunchr.com/api/oauth/github',
     docUrl: 'https://github.com/VoltLaunchr/volt-extensions/blob/main/plugins/github/README.md',
     placeholder: 'ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
   },
   {
     id: 'notion',
     name: 'Notion',
-    icon: Database,
-    iconSrc: '/extension-icons/notion.svg',
-    descriptionKey: 'integrations.notion.description',
-    setupUrl: 'https://voltlaunchr.com/api/oauth/notion',
     docUrl: 'https://github.com/VoltLaunchr/volt-extensions/blob/main/plugins/notion/README.md',
     placeholder: 'secret_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
   },
 ];
 
+const SECURITY_POINTS = ['encrypted', 'neverTransmitted', 'storedLocally', 'deletable'] as const;
+
+type TokenStatus = 'valid' | 'invalid' | 'unchecked';
+
 export function IntegrationsPanel() {
   const { t } = useTranslation('settings');
+  const [pendingDelete, setPendingDelete] = useState<IntegrationId | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [credentialsLoading, setCredentialsLoading] = useState(true);
+  const [credentialsError, setCredentialsError] = useState(false);
   const [credentials, setCredentials] = useState<Record<string, boolean>>({});
   const [showTokens, setShowTokens] = useState<Record<string, boolean>>({});
   const [tokenInputs, setTokenInputs] = useState<Record<string, string>>({});
@@ -65,22 +64,35 @@ export function IntegrationsPanel() {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [success, setSuccess] = useState<Record<string, boolean>>({});
   const [testingTokens, setTestingTokens] = useState<Record<string, boolean>>({});
-  const [tokenStatus, setTokenStatus] = useState<Record<string, 'valid' | 'invalid' | 'unchecked'>>({});
+  const [tokenStatus, setTokenStatus] = useState<Record<string, TokenStatus>>({});
   const [oauthLoading, setOauthLoading] = useState<Record<string, boolean>>({});
 
-  useEffect(() => {
-    const loadCredentials = async () => {
-      const status: Record<string, boolean> = {};
-      for (const integration of INTEGRATIONS) {
-        const hasToken = await credentialsService.hasToken(integration.id);
-        status[integration.id] = hasToken;
-      }
-      setCredentials(status);
-    };
-    void loadCredentials();
+  const loadCredentials = useCallback(async () => {
+    setCredentialsLoading(true);
+    setCredentialsError(false);
+    try {
+      const entries = await Promise.all(
+        INTEGRATIONS.map(
+          async (integration) =>
+            [
+              integration.id,
+              await invoke<boolean>('has_credential', { service: integration.id }),
+            ] as const
+        )
+      );
+      setCredentials(Object.fromEntries(entries));
+    } catch {
+      setCredentialsError(true);
+    } finally {
+      setCredentialsLoading(false);
+    }
   }, []);
 
-  const handleOAuthStart = async (serviceId: 'github' | 'notion') => {
+  useEffect(() => {
+    void loadCredentials();
+  }, [loadCredentials]);
+
+  const handleOAuthStart = async (serviceId: IntegrationId) => {
     setOauthLoading((prev) => ({ ...prev, [serviceId]: true }));
     setErrors((prev) => ({ ...prev, [serviceId]: '' }));
     try {
@@ -102,7 +114,7 @@ export function IntegrationsPanel() {
     }
   };
 
-  const handleSaveToken = async (serviceId: 'github' | 'notion') => {
+  const handleSaveToken = async (serviceId: IntegrationId) => {
     const token = tokenInputs[serviceId];
     if (!token || token.trim().length === 0) {
       setErrors((prev) => ({ ...prev, [serviceId]: t('integrations.tokenEmpty') }));
@@ -127,14 +139,17 @@ export function IntegrationsPanel() {
     }
   };
 
-  const handleTestToken = async (serviceId: 'github' | 'notion') => {
+  const handleTestToken = async (serviceId: IntegrationId) => {
     setTestingTokens((prev) => ({ ...prev, [serviceId]: true }));
     setErrors((prev) => ({ ...prev, [serviceId]: '' }));
     try {
       const isValid = await credentialsService.testToken(serviceId);
       setTokenStatus((prev) => ({ ...prev, [serviceId]: isValid ? 'valid' : 'invalid' }));
       if (!isValid) {
-        setErrors((prev) => ({ ...prev, [serviceId]: t('integrations.invalidToken', { service: serviceId }) }));
+        setErrors((prev) => ({
+          ...prev,
+          [serviceId]: t('integrations.invalidToken', { service: serviceId }),
+        }));
       }
     } catch {
       setTokenStatus((prev) => ({ ...prev, [serviceId]: 'invalid' }));
@@ -144,8 +159,8 @@ export function IntegrationsPanel() {
     }
   };
 
-  const handleDeleteToken = async (serviceId: 'github' | 'notion') => {
-    if (!window.confirm(t('integrations.confirmDelete', { service: serviceId }))) return;
+  const handleDeleteToken = async (serviceId: IntegrationId) => {
+    setIsDeleting(true);
     try {
       await credentialsService.deleteToken(serviceId);
       setCredentials((prev) => ({ ...prev, [serviceId]: false }));
@@ -153,352 +168,216 @@ export function IntegrationsPanel() {
       setShowTokens((prev) => ({ ...prev, [serviceId]: false }));
       setTokenStatus((prev) => ({ ...prev, [serviceId]: 'unchecked' }));
       logger.info(`${serviceId} token removed`);
+      setPendingDelete(null);
     } catch {
       setErrors((prev) => ({ ...prev, [serviceId]: t('integrations.deleteFailed') }));
+      setPendingDelete(null);
+    } finally {
+      setIsDeleting(false);
     }
   };
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden">
-      <div className="flex items-center justify-between h-14 px-6 border-b border-hairline shrink-0">
-        <h2 className="text-sm font-medium text-ink m-0">{t('integrations.title')}</h2>
-      </div>
-      <div className="flex-1 overflow-y-auto p-6">
-        <p className="text-[13px] text-mute mb-5 mt-0">
-          {t('integrations.description')}
-        </p>
-
-        {INTEGRATIONS.map((integration) => (
-          <IntegrationCard
-            key={integration.id}
-            integration={integration}
-            isConfigured={credentials[integration.id] || false}
-            token={tokenInputs[integration.id] || ''}
-            isShowingToken={showTokens[integration.id] || false}
-            isLoading={loading[integration.id] || false}
-            isTesting={testingTokens[integration.id] || false}
-            isOAuthLoading={oauthLoading[integration.id] || false}
-            error={errors[integration.id]}
-            success={success[integration.id] || false}
-            tokenStatus={tokenStatus[integration.id] || 'unchecked'}
-            onTokenChange={(value) => setTokenInputs((prev) => ({ ...prev, [integration.id]: value }))}
-            onToggleVisibility={() =>
-              setShowTokens((prev) => ({ ...prev, [integration.id]: !prev[integration.id] }))
+    <div className="settings-page">
+      <SettingsPageHeader category="integrations" />
+      <SettingsBody>
+        {credentialsLoading ? (
+          <p role="status" className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+            {t('loading')}
+          </p>
+        ) : credentialsError ? (
+          <SettingsStatus
+            kind="error"
+            title={t('integrations.statusError')}
+            action={
+              <Button variant="outline" onClick={() => void loadCredentials()}>
+                {t('navigation.retry')}
+              </Button>
             }
-            onSave={() => {
-              void handleSaveToken(integration.id);
-            }}
-            onTest={() => {
-              void handleTestToken(integration.id);
-            }}
-            onDelete={() => {
-              void handleDeleteToken(integration.id);
-            }}
-            onOAuthStart={() => {
-              void handleOAuthStart(integration.id);
-            }}
-            t={t}
-          />
-        ))}
-
-        {/* Security Notice */}
-        <div style={{
-          marginTop: 24,
-          padding: 16,
-          borderRadius: 10,
-          background: 'rgba(99, 102, 241, 0.08)',
-          border: '1px solid rgba(99, 102, 241, 0.2)',
-          display: 'flex',
-          gap: 12,
-        }}>
-          <Shield size={18} style={{ color: 'var(--color-accent)', flexShrink: 0, marginTop: 2 }} />
-          <div style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>
-            <p style={{ fontWeight: 600, marginBottom: 6 }}>{t('integrations.security.title')}</p>
-            <ul style={{ margin: 0, paddingLeft: 16, lineHeight: 1.8 }}>
-              <li>{t('integrations.security.encrypted')}</li>
-              <li>{t('integrations.security.neverTransmitted')}</li>
-              <li>{t('integrations.security.storedLocally')}</li>
-              <li>{t('integrations.security.deletable')}</li>
-            </ul>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-interface IntegrationCardProps {
-  integration: IntegrationConfig;
-  isConfigured: boolean;
-  token: string;
-  isShowingToken: boolean;
-  isLoading: boolean;
-  isTesting: boolean;
-  isOAuthLoading: boolean;
-  error?: string;
-  success?: boolean;
-  tokenStatus: 'valid' | 'invalid' | 'unchecked';
-  onTokenChange: (value: string) => void;
-  onToggleVisibility: () => void;
-  onSave: () => void;
-  onTest: () => void;
-  onDelete: () => void;
-  onOAuthStart: () => void;
-  t: (key: string, options?: Record<string, string>) => string;
-}
-
-const cardStyle: React.CSSProperties = {
-  borderRadius: 10,
-  background: 'rgba(255, 255, 255, 0.03)',
-  border: '1px solid rgba(255, 255, 255, 0.08)',
-  marginBottom: 16,
-  overflow: 'hidden',
-};
-
-const cardHeaderStyle: React.CSSProperties = {
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'space-between',
-  padding: '14px 16px',
-  borderBottom: '1px solid rgba(255, 255, 255, 0.06)',
-};
-
-const badgeStyle: React.CSSProperties = {
-  display: 'inline-flex',
-  alignItems: 'center',
-  gap: 4,
-  fontSize: 11,
-  fontWeight: 500,
-  padding: '3px 10px',
-  borderRadius: 20,
-  background: 'rgba(34, 197, 94, 0.15)',
-  color: '#22c55e',
-};
-
-const inputStyle: React.CSSProperties = {
-  width: '100%',
-  padding: '8px 36px 8px 12px',
-  borderRadius: 8,
-  background: 'rgba(255, 255, 255, 0.06)',
-  border: '1px solid rgba(255, 255, 255, 0.1)',
-  color: 'var(--color-text-primary)',
-  fontSize: 13,
-  outline: 'none',
-  boxSizing: 'border-box',
-};
-
-const btnBase: React.CSSProperties = {
-  display: 'inline-flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  gap: 6,
-  padding: '7px 14px',
-  borderRadius: 8,
-  fontSize: 13,
-  fontWeight: 500,
-  cursor: 'pointer',
-  border: 'none',
-  transition: 'all 0.15s ease',
-};
-
-function IntegrationCard({
-  integration,
-  isConfigured,
-  token,
-  isShowingToken,
-  isLoading,
-  isTesting,
-  isOAuthLoading,
-  error,
-  success,
-  tokenStatus,
-  onTokenChange,
-  onToggleVisibility,
-  onSave,
-  onTest,
-  onDelete,
-  onOAuthStart,
-  t,
-}: IntegrationCardProps) {
-  const Icon = integration.icon;
-
-  return (
-    <div style={cardStyle}>
-      {/* Header */}
-      <div style={cardHeaderStyle}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          {integration.iconSrc ? (
-            <img src={integration.iconSrc} alt={integration.name} style={{ width: 20, height: 20, objectFit: 'contain' }} />
-          ) : (
-            <Icon size={20} style={{ color: 'var(--color-text-secondary)' }} />
-          )}
-          <div>
-            <div style={{ fontWeight: 600, fontSize: 14, color: 'var(--color-text-primary)' }}>
-              {integration.name}
-            </div>
-            <div style={{ fontSize: 12, color: 'var(--color-text-tertiary)', marginTop: 2 }}>
-              {t(integration.descriptionKey)}
-            </div>
-          </div>
-        </div>
-        {isConfigured && (
-          <span style={badgeStyle}>
-            <CheckCircle size={12} />
-            {t('integrations.connected')}
-          </span>
-        )}
-      </div>
-
-      {/* Content */}
-      <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
-        {/* Status messages */}
-        {isConfigured && !token && (
-          <StatusBanner type="success" message={t('integrations.tokenSavedSecure')} />
-        )}
-        {error && <StatusBanner type="error" message={error} />}
-        {success && <StatusBanner type="success" message={t('integrations.tokenSaved')} />}
-        {tokenStatus === 'valid' && <StatusBanner type="success" message={t('integrations.tokenValid')} />}
-        {tokenStatus === 'invalid' && <StatusBanner type="error" message={t('integrations.tokenInvalid')} />}
-
-        {/* Token input */}
-        <div>
-          <label style={{
-            display: 'flex', alignItems: 'center', gap: 6,
-            fontSize: 13, fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: 6,
-          }}>
-            <Key size={14} />
-            {t('integrations.apiToken')}
-          </label>
-          <div style={{ position: 'relative' }}>
-            <input
-              type={isShowingToken ? 'text' : 'password'}
-              value={token}
-              onChange={(e) => onTokenChange(e.target.value)}
-              placeholder={integration.placeholder}
-              disabled={isLoading}
-              style={{
-                ...inputStyle,
-                opacity: isLoading ? 0.5 : 1,
-              }}
-            />
-            <button
-              type="button"
-              onClick={onToggleVisibility}
-              style={{
-                position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)',
-                background: 'none', border: 'none', color: 'var(--color-text-tertiary)',
-                cursor: 'pointer', padding: 4,
-              }}
-            >
-              {isShowingToken ? <EyeOff size={14} /> : <Eye size={14} />}
-            </button>
-          </div>
-          <div style={{ display: 'flex', gap: 8, marginTop: 6, fontSize: 12 }}>
-            <a href={integration.setupUrl} target="_blank" rel="noopener noreferrer"
-              style={{ color: 'var(--color-accent)', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 3 }}>
-              {t('integrations.getToken')} <ExternalLink size={10} />
-            </a>
-            <span style={{ color: 'var(--color-text-tertiary)' }}>/</span>
-            <a href={integration.docUrl} target="_blank" rel="noopener noreferrer"
-              style={{ color: 'var(--color-accent)', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 3 }}>
-              {t('integrations.learnMore')} <ExternalLink size={10} />
-            </a>
-          </div>
-        </div>
-
-        {/* Actions */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, paddingTop: 4 }}>
-          <button
-            onClick={onOAuthStart}
-            disabled={isOAuthLoading || isConfigured}
-            style={{
-              ...btnBase,
-              width: '100%',
-              background: isConfigured ? 'rgba(34, 197, 94, 0.15)' : 'rgba(34, 197, 94, 0.8)',
-              color: isConfigured ? '#22c55e' : '#fff',
-              opacity: (isOAuthLoading || isConfigured) ? 0.6 : 1,
-              cursor: (isOAuthLoading || isConfigured) ? 'not-allowed' : 'pointer',
-            }}
           >
-            {isOAuthLoading && <Loader2 size={14} className="animate-spin" />}
-            {isConfigured ? t('integrations.connectedOAuth') : t('integrations.connectOAuth')}
-          </button>
-
-          {!isConfigured && (
-            <div style={{
-              textAlign: 'center', fontSize: 11, color: 'var(--color-text-tertiary)',
-              padding: '4px 0', borderTop: '1px solid rgba(255,255,255,0.06)',
-            }}>
-              {t('integrations.pasteManually')}
-            </div>
-          )}
-
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button
-              onClick={onTest}
-              disabled={isLoading || isTesting || !token}
-              style={{
-                ...btnBase,
-                background: 'rgba(255, 255, 255, 0.06)',
-                color: 'var(--color-text-secondary)',
-                border: '1px solid rgba(255, 255, 255, 0.1)',
-                opacity: (isLoading || isTesting || !token) ? 0.4 : 1,
-                cursor: (isLoading || isTesting || !token) ? 'not-allowed' : 'pointer',
+            {t('integrations.statusErrorDesc')}
+          </SettingsStatus>
+        ) : (
+          INTEGRATIONS.map((integration) => {
+            const id = integration.id;
+            const isConfigured = credentials[id] || false;
+            const isShowingToken = showTokens[id] || false;
+            const busy = loading[id] || testingTokens[id] || oauthLoading[id] || false;
+            const token = tokenInputs[id] || '';
+            const status = tokenStatus[id] || 'unchecked';
+            const error = errors[id];
+            return (
+              <SettingsSection key={id} sectionId={`integrations.${id}`} showDescription>
+                {error && (
+                  <div className="p-2.5">
+                    <SettingsStatus kind="error">{error}</SettingsStatus>
+                  </div>
+                )}
+                {success[id] && (
+                  <div className="p-2.5">
+                    <SettingsStatus kind="success">{t('integrations.tokenSaved')}</SettingsStatus>
+                  </div>
+                )}
+                {status === 'valid' && (
+                  <div className="p-2.5">
+                    <SettingsStatus kind="success">{t('integrations.tokenValid')}</SettingsStatus>
+                  </div>
+                )}
+                {status === 'invalid' && !error && (
+                  <div className="p-2.5">
+                    <SettingsStatus kind="error">{t('integrations.tokenInvalid')}</SettingsStatus>
+                  </div>
+                )}
+                <SettingsRow
+                  rowId={`integrations.${id}.connect`}
+                  badge={
+                    isConfigured ? (
+                      <Badge variant="secondary">
+                        <CheckCircle aria-hidden="true" />
+                        {t('integrations.connected')}
+                      </Badge>
+                    ) : undefined
+                  }
+                >
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => void handleOAuthStart(id)}
+                    disabled={busy || isConfigured}
+                  >
+                    {oauthLoading[id] ? (
+                      <Loader2 size={14} className="animate-spin" aria-hidden="true" />
+                    ) : (
+                      <ExternalLink size={14} aria-hidden="true" />
+                    )}
+                    {t('integrations.connectOAuth')}
+                  </Button>
+                </SettingsRow>
+                <SettingsRow rowId={`integrations.${id}.token`} htmlFor={`integration-token-${id}`}>
+                  <div className="flex items-center gap-1">
+                    <Input
+                      id={`integration-token-${id}`}
+                      autoComplete="off"
+                      type={isShowingToken ? 'text' : 'password'}
+                      value={token}
+                      onChange={(event) =>
+                        setTokenInputs((previous) => ({ ...previous, [id]: event.target.value }))
+                      }
+                      placeholder={integration.placeholder}
+                      disabled={busy}
+                      className="w-64 font-mono"
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-sm"
+                      aria-label={
+                        isShowingToken ? t('integrations.hideToken') : t('integrations.showToken')
+                      }
+                      onClick={() =>
+                        setShowTokens((previous) => ({ ...previous, [id]: !previous[id] }))
+                      }
+                    >
+                      {isShowingToken ? <EyeOff size={14} /> : <Eye size={14} />}
+                    </Button>
+                  </div>
+                </SettingsRow>
+                <SettingsRow rowId={`integrations.${id}.actions`}>
+                  <div className="flex flex-wrap items-center justify-end gap-2">
+                    <a
+                      href={integration.docUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="mr-1 inline-flex items-center gap-1 text-xs underline underline-offset-4"
+                    >
+                      {t('integrations.learnMore')}
+                      <ExternalLink className="size-3" aria-hidden="true" />
+                    </a>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => void handleTestToken(id)}
+                      disabled={busy || !isConfigured}
+                    >
+                      {testingTokens[id] && (
+                        <Loader2 size={14} className="animate-spin" aria-hidden="true" />
+                      )}
+                      {t('integrations.testToken')}
+                    </Button>
+                    <Button
+                      size="sm"
+                      onClick={() => void handleSaveToken(id)}
+                      disabled={busy || !token.trim()}
+                    >
+                      {loading[id] && (
+                        <Loader2 size={14} className="animate-spin" aria-hidden="true" />
+                      )}
+                      {isConfigured ? t('integrations.updateToken') : t('integrations.saveToken')}
+                    </Button>
+                    {isConfigured && (
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        className="text-destructive"
+                        aria-label={t('integrations.removeCredential', {
+                          service: integration.name,
+                        })}
+                        onClick={() => setPendingDelete(id)}
+                        disabled={busy}
+                      >
+                        <Trash2 size={14} aria-hidden="true" />
+                      </Button>
+                    )}
+                  </div>
+                </SettingsRow>
+              </SettingsSection>
+            );
+          })
+        )}
+        <SettingsSection sectionId="integrations.security">
+          <ul className="m-0 grid list-none gap-2 p-3 text-xs leading-relaxed text-muted-foreground sm:grid-cols-2">
+            {SECURITY_POINTS.map((key) => (
+              <li key={key} className="flex items-start gap-2">
+                <CheckCircle className="mt-0.5 size-3 shrink-0" aria-hidden="true" />
+                {t(`integrations.security.${key}`)}
+              </li>
+            ))}
+          </ul>
+        </SettingsSection>
+      </SettingsBody>
+      <Dialog
+        open={pendingDelete !== null}
+        onOpenChange={(open) => {
+          if (!open && !isDeleting) setPendingDelete(null);
+        }}
+      >
+        <DialogContent showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle>
+              {t('integrations.removeCredential', { service: pendingDelete ?? '' })}
+            </DialogTitle>
+            <DialogDescription>
+              {t('integrations.confirmDelete', { service: pendingDelete ?? '' })}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" disabled={isDeleting} onClick={() => setPendingDelete(null)}>
+              {t('navigation.cancel')}
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={isDeleting}
+              onClick={() => {
+                if (pendingDelete) void handleDeleteToken(pendingDelete);
               }}
             >
-              {isTesting && <Loader2 size={14} className="animate-spin" />}
-              {t('integrations.testToken')}
-            </button>
-
-            <button
-              onClick={onSave}
-              disabled={isLoading || !token}
-              style={{
-                ...btnBase,
-                flex: 1,
-                background: 'var(--color-accent)',
-                color: '#fff',
-                opacity: (isLoading || !token) ? 0.4 : 1,
-                cursor: (isLoading || !token) ? 'not-allowed' : 'pointer',
-              }}
-            >
-              {isLoading && <Loader2 size={14} className="animate-spin" />}
-              {isConfigured ? t('integrations.updateToken') : t('integrations.saveToken')}
-            </button>
-
-            {isConfigured && (
-              <button
-                onClick={onDelete}
-                disabled={isLoading}
-                style={{
-                  ...btnBase,
-                  background: 'rgba(239, 68, 68, 0.1)',
-                  color: '#ef4444',
-                  border: '1px solid rgba(239, 68, 68, 0.2)',
-                  padding: '7px 10px',
-                }}
-              >
-                <Trash2 size={14} />
-              </button>
-            )}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function StatusBanner({ type, message }: { type: 'success' | 'error'; message: string }) {
-  const isSuccess = type === 'success';
-  const IconComponent = isSuccess ? CheckCircle : AlertCircle;
-  return (
-    <div style={{
-      display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderRadius: 8,
-      background: isSuccess ? 'rgba(34, 197, 94, 0.1)' : 'rgba(239, 68, 68, 0.1)',
-      border: `1px solid ${isSuccess ? 'rgba(34, 197, 94, 0.2)' : 'rgba(239, 68, 68, 0.2)'}`,
-    }}>
-      <IconComponent size={16} style={{ color: isSuccess ? '#22c55e' : '#ef4444', flexShrink: 0 }} />
-      <span style={{ fontSize: 13, color: isSuccess ? '#22c55e' : '#ef4444' }}>{message}</span>
+              {isDeleting ? <Loader2 className="animate-spin" /> : <Trash2 />}
+              {t('ai.local.remove')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

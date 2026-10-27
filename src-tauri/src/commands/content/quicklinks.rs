@@ -276,7 +276,7 @@ pub async fn delete_quicklink(state: State<'_, QuicklinkState>, id: String) -> V
 
 /// Open/execute a quicklink
 #[tauri::command]
-pub async fn open_quicklink(_app: tauri::AppHandle, quicklink: Quicklink) -> VoltResult<()> {
+pub async fn open_quicklink(app: tauri::AppHandle, quicklink: Quicklink) -> VoltResult<()> {
     match quicklink.link_type.as_str() {
         "url" => {
             // Validate scheme to prevent file://, javascript:, vbscript:, ms-cxh:// etc.
@@ -289,6 +289,16 @@ pub async fn open_quicklink(_app: tauri::AppHandle, quicklink: Quicklink) -> Vol
                     parsed.scheme(),
                     ALLOWED_URL_SCHEMES.join(", ")
                 )));
+            }
+            // Opt-in: web links follow the browser chosen for web search (falls back to
+            // the system browser when it is gone). `mailto:` always uses the system handler.
+            if matches!(parsed.scheme(), "http" | "https")
+                && crate::commands::settings::load_settings(app.clone())
+                    .await?
+                    .plugins
+                    .quicklinks_use_preferred_browser
+            {
+                return crate::commands::web_search::open_web_url(app, quicklink.target).await;
             }
             tauri_plugin_opener::open_url(&quicklink.target, None::<&str>)
                 .map_err(|e| VoltError::Launch(format!("Failed to open URL: {}", e)))?;

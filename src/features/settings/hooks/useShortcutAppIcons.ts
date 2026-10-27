@@ -1,4 +1,4 @@
-import { invoke } from '@tauri-apps/api/core';
+import { loadAppIcon } from '../../../shared/services/appIconService';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { AppShortcut } from '../types/settings.types';
 
@@ -59,11 +59,7 @@ export function useShortcutAppIcons(shortcuts: AppShortcut[], enabled: boolean) 
         if (abortCtrl.signal.aborted) break;
 
         const batch = missingShortcuts.slice(i, i + BATCH_SIZE);
-        const iconResults = await Promise.all(
-          batch.map((shortcut) =>
-            invoke<string | null>('get_app_icon', { path: shortcut.path }).catch(() => null)
-          )
-        );
+        const iconResults = await Promise.all(batch.map((shortcut) => loadAppIcon(shortcut.path)));
 
         if (abortCtrl.signal.aborted) break;
 

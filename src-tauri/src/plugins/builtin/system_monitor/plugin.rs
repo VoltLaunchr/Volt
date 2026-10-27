@@ -23,9 +23,8 @@ pub struct SystemMonitorPlugin {
     disks: Mutex<Disks>,
     networks: Mutex<Networks>,
     components: Mutex<Components>,
-    /// Tracks the last CPU refresh so we can dual-sample when the cached
-    /// reading is stale (>1s old). sysinfo requires two `refresh_cpu_usage()`
-    /// calls separated by `MINIMUM_CPU_UPDATE_INTERVAL` for meaningful values.
+    /// Prevents consecutive Windows PDH samples inside sysinfo's minimum interval.
+    /// A second collection without a meaningful delta can report every core at 100%.
     last_cpu_refresh: Mutex<Option<Instant>>,
     /// Previous network totals keyed by interface name, with the timestamp of
     /// the last sample. Used to derive per-second rates across ticker cycles.
@@ -223,48 +222,29 @@ impl SystemMonitorPlugin {
         self
     }
 
-    /// Prime the CPU baseline by performing a second `refresh_cpu_usage()`
-    /// after the required `MINIMUM_CPU_UPDATE_INTERVAL` has elapsed. Intended
-    /// to be called once at startup from a background task so the first user
-    /// query returns meaningful data instead of 0.0.
+    /// Seed one CPU baseline; the next scheduled sample supplies the delta.
     pub fn prime_cpu(&self) -> Result<(), String> {
         let mut system = self
             .system
             .lock()
             .map_err(|e| format!("lock poisoned: {}", e))?;
-        system.refresh_cpu_usage();
-        let mut last = self
-            .last_cpu_refresh
-            .lock()
-            .map_err(|e| format!("lock poisoned: {}", e))?;
-        *last = Some(Instant::now());
+        self.refresh_cpu_if_due(&mut system);
         Ok(())
     }
 
-    /// Refreshes the CPU usage sample. sysinfo's `global_cpu_usage()` returns
-    /// the delta between the two most recent `refresh_cpu_usage()` calls, so
-    /// the baseline must be maintained by an external schedule:
-    ///
-    /// 1. `prime_cpu()` is called once at startup to seed the first sample.
-    /// 2. The 5s background ticker (`refresh_cache`) calls this on every cycle,
-    ///    keeping the inter-sample interval at ~5s.
-    ///
-    /// The previous implementation slept for `MINIMUM_CPU_UPDATE_INTERVAL`
-    /// (~200ms) while holding the `system: Mutex<System>` whenever the cache
-    /// was older than 1s. That blocked every concurrent IPC call (kill_process,
-    /// get_system_info) for the duration of the sleep and was triggered on
-    /// every single ticker iteration. The single-sample path is sufficient
-    /// because the ticker already provides the required inter-sample gap; if
-    /// the baseline is genuinely cold (system resume from suspend, ticker not
-    /// yet primed), the next tick will produce a meaningful reading and the
-    /// transient 0.0 value is acceptable.
-    fn refresh_cpu_dual_sample(&self, system: &mut System) {
+    /// Collect at most one sample per minimum interval across prime, ticker and
+    /// cold-cache queries. Never sleep while holding the system lock.
+    fn refresh_cpu_if_due(&self, system: &mut System) -> bool {
         let mut last = match self.last_cpu_refresh.lock() {
             Ok(g) => g,
             Err(poisoned) => poisoned.into_inner(),
         };
-        system.refresh_cpu_usage();
+        if last.is_some_and(|at| at.elapsed() < sysinfo::MINIMUM_CPU_UPDATE_INTERVAL) {
+            return false;
+        }
+        system.refresh_cpu_specifics(CpuRefreshKind::new().with_cpu_usage().with_frequency());
         *last = Some(Instant::now());
+        true
     }
 
     /// Read only `cpu_usage` from the cache without cloning the full snapshot.
@@ -338,13 +318,9 @@ impl SystemMonitorPlugin {
         // Narrow refresh: only memory + CPU usage (no process/disk/network).
         // `new()` returns an empty kind (no fields set); we opt in to just
         // CPU usage + RAM so we skip processes/network/swap/disks scanning.
-        let refresh_kind = RefreshKind::new()
-            .with_cpu(CpuRefreshKind::new().with_cpu_usage())
-            .with_memory(MemoryRefreshKind::new().with_ram());
+        let refresh_kind = RefreshKind::new().with_memory(MemoryRefreshKind::new().with_ram());
         system.refresh_specifics(refresh_kind);
-        // CPU baseline is primed at startup via `prime_cpu` and maintained by
-        // the 5s background ticker; the single-sample refresh above provides
-        // a meaningful delta against the most recent baseline.
+        self.refresh_cpu_if_due(&mut system);
 
         let mut disks = self
             .disks
@@ -382,12 +358,9 @@ impl SystemMonitorPlugin {
             .map_err(|e| format!("lock poisoned: {}", e))?;
         // Granular refresh: CPU usage (per-core) + RAM. Processes are refreshed
         // below with their own dedicated call so we can opt into cpu_usage only.
-        let refresh_kind = RefreshKind::new()
-            .with_cpu(CpuRefreshKind::new().with_cpu_usage().with_frequency())
-            .with_memory(MemoryRefreshKind::new().with_ram());
+        let refresh_kind = RefreshKind::new().with_memory(MemoryRefreshKind::new().with_ram());
         system.refresh_specifics(refresh_kind);
-        // CPU needs the dual-sample dance for meaningful values.
-        self.refresh_cpu_dual_sample(&mut system);
+        self.refresh_cpu_if_due(&mut system);
         // Processes: refresh with CPU usage so top-CPU rankings are meaningful.
         // `update_all=true` removes processes that have disappeared.
         system.refresh_processes_specifics(
@@ -835,10 +808,53 @@ mod tests {
         assert_eq!(cached.network.received_bytes_per_sec, 0);
     }
 
+    #[test]
+    fn consecutive_cpu_refreshes_preserve_the_first_baseline() {
+        let plugin = SystemMonitorPlugin::new();
+        let mut system = plugin.system.lock().expect("system lock");
+        assert!(plugin.refresh_cpu_if_due(&mut system));
+        let baseline = *plugin.last_cpu_refresh.lock().expect("sample timestamp");
+        assert!(!plugin.refresh_cpu_if_due(&mut system));
+        assert_eq!(
+            *plugin.last_cpu_refresh.lock().expect("sample timestamp"),
+            baseline
+        );
+
+        *plugin.last_cpu_refresh.lock().expect("sample timestamp") =
+            Some(Instant::now() - sysinfo::MINIMUM_CPU_UPDATE_INTERVAL);
+        assert!(plugin.refresh_cpu_if_due(&mut system));
+    }
+
+    #[test]
+    fn spaced_cache_refresh_reports_bounded_native_cpu_readings() {
+        let plugin = SystemMonitorPlugin::new();
+        plugin.prime_cpu().expect("CPU baseline");
+        for _ in 0..2 {
+            std::thread::sleep(sysinfo::MINIMUM_CPU_UPDATE_INTERVAL);
+            plugin.refresh_cache().expect("native metric collection");
+            let sample = plugin.cached_metrics().expect("cached native metrics");
+            assert!(sample.cpu_usage.is_finite());
+            assert!((0.0..=100.0).contains(&sample.cpu_usage));
+            assert!(!sample.per_core_cpu.is_empty());
+            assert!(sample.per_core_cpu.iter().all(|core| {
+                core.usage_percent.is_finite() && (0.0..=100.0).contains(&core.usage_percent)
+            }));
+            eprintln!(
+                "Native CPU: {:.1}%; cores: {:?}",
+                sample.cpu_usage,
+                sample
+                    .per_core_cpu
+                    .iter()
+                    .map(|core| core.usage_percent)
+                    .collect::<Vec<_>>()
+            );
+        }
+    }
+
     /// Pin the contract: `cpu_usage()`, `memory_usage()`, `disk_usage()` are
     /// pure cache reads (no sysinfo refresh, no sleep). They are safe to call
     /// from a sync `#[tauri::command]` because they never hit the slow path.
-    /// Regression: if anyone moves a `refresh_cache()` or `refresh_cpu_dual_sample()`
+    /// Regression: if anyone moves a `refresh_cache()` or `refresh_cpu_if_due()`
     /// call into these getters, the IPC thread will sleep ~200ms per call.
     #[test]
     fn cached_getters_complete_under_50ms() {

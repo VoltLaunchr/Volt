@@ -1,8 +1,15 @@
-
-import { Plugin, PluginActivation, PluginContext, PluginResult, PluginResultType } from '../../types';
+import {
+  Plugin,
+  PluginActivation,
+  PluginContext,
+  PluginResult,
+  PluginResultType,
+} from '../../types';
 import { resolveActivation } from '../../core/activation';
 import { timerStore } from './timerStore';
 import { VOLT_EVENTS, emitVoltEvent } from '../../../../shared/events';
+import { useAppStore } from '../../../../stores/appStore';
+import { resolveTimerDurations } from '../../../settings/behavior/pluginOptions';
 
 // ── Duration parsing ──────────────────────────────────────────────────────────
 
@@ -11,9 +18,21 @@ export const MAX_DURATION_MS = 24 * 60 * 60 * 1000;
 
 /** Unit aliases mapped to their multiplier in ms */
 const UNIT_MAP: Record<string, number> = {
-  s: 1000, sec: 1000, secs: 1000, second: 1000, seconds: 1000,
-  m: 60_000, min: 60_000, mins: 60_000, minute: 60_000, minutes: 60_000,
-  h: 3_600_000, hr: 3_600_000, hrs: 3_600_000, hour: 3_600_000, hours: 3_600_000,
+  s: 1000,
+  sec: 1000,
+  secs: 1000,
+  second: 1000,
+  seconds: 1000,
+  m: 60_000,
+  min: 60_000,
+  mins: 60_000,
+  minute: 60_000,
+  minutes: 60_000,
+  h: 3_600_000,
+  hr: 3_600_000,
+  hrs: 3_600_000,
+  hour: 3_600_000,
+  hours: 3_600_000,
 };
 
 /**
@@ -29,6 +48,7 @@ export function parseDurationFlexible(input: string): number | null {
   const colonMatch = s.match(/^(\d+):(\d{1,2})(?::(\d{1,2}))?$/);
   if (colonMatch) {
     const parts = colonMatch.slice(1).filter(Boolean).map(Number);
+    if (parts.slice(1).some((part) => part >= 60)) return null;
     let ms: number;
     if (parts.length === 2) {
       ms = parts[0] * 60_000 + parts[1] * 1000;
@@ -42,16 +62,22 @@ export function parseDurationFlexible(input: string): number | null {
   const compoundRegex = /(\d+)\s*(s(?:ec(?:ond)?s?)?|m(?:in(?:ute)?s?)?|h(?:(?:ou)?rs?)?)/g;
   let total = 0;
   let found = false;
+  let consumed = 0;
+  const units = new Set<number>();
   let match: RegExpExecArray | null;
   while ((match = compoundRegex.exec(s)) !== null) {
+    if (s.slice(consumed, match.index).trim()) return null;
+    consumed = compoundRegex.lastIndex;
     found = true;
     const value = parseInt(match[1], 10);
     const multiplier = UNIT_MAP[match[2]];
-    if (!multiplier) return null;
+    if (!multiplier || units.has(multiplier)) return null;
+    units.add(multiplier);
     total += value * multiplier;
   }
 
   if (found && total > 0) {
+    if (s.slice(consumed).trim()) return null;
     return total <= MAX_DURATION_MS ? total : null;
   }
 
@@ -109,6 +135,8 @@ export class TimerPlugin implements Plugin {
     }
     // Pomodoro presets
     else if (lower === 'pomodoro' || lower.startsWith('pomodoro')) {
+      const durations = resolveTimerDurations(useAppStore.getState().settings?.plugins);
+      const minutesLabel = (minutes: number) => `${minutes} minute${minutes === 1 ? '' : 's'}`;
       results.push(
         {
           id: 'pomodoro-open-view',
@@ -122,12 +150,12 @@ export class TimerPlugin implements Plugin {
         {
           id: 'pomodoro-work',
           type: PluginResultType.Timer,
-          title: 'Pomodoro Work (25 minutes)',
+          title: `Pomodoro Work (${minutesLabel(durations.workMinutes)})`,
           subtitle: 'Standard Pomodoro work session',
           score: 100,
           data: {
             action: 'start',
-            duration: 25 * 60 * 1000,
+            duration: durations.workMinutes * 60 * 1000,
             label: 'Pomodoro Work',
           },
           pluginId: this.id,
@@ -135,12 +163,12 @@ export class TimerPlugin implements Plugin {
         {
           id: 'pomodoro-break',
           type: PluginResultType.Timer,
-          title: 'Short Break (5 minutes)',
+          title: `Short Break (${minutesLabel(durations.shortBreakMinutes)})`,
           subtitle: 'Pomodoro short break',
           score: 95,
           data: {
             action: 'start',
-            duration: 5 * 60 * 1000,
+            duration: durations.shortBreakMinutes * 60 * 1000,
             label: 'Short Break',
           },
           pluginId: this.id,
@@ -148,16 +176,16 @@ export class TimerPlugin implements Plugin {
         {
           id: 'pomodoro-long-break',
           type: PluginResultType.Timer,
-          title: 'Long Break (15 minutes)',
+          title: `Long Break (${minutesLabel(durations.longBreakMinutes)})`,
           subtitle: 'Pomodoro long break',
           score: 90,
           data: {
             action: 'start',
-            duration: 15 * 60 * 1000,
+            duration: durations.longBreakMinutes * 60 * 1000,
             label: 'Long Break',
           },
           pluginId: this.id,
-        },
+        }
       );
     }
     // Quick timer suggestions (also show active timers)
@@ -201,7 +229,7 @@ export class TimerPlugin implements Plugin {
           score: 65,
           data: { action: 'start', duration: 25 * 60 * 1000, label: 'Pomodoro' },
           pluginId: this.id,
-        },
+        }
       );
     }
 
@@ -209,7 +237,12 @@ export class TimerPlugin implements Plugin {
   }
 
   execute(result: PluginResult): void {
-    const data = result.data as { action: string; duration?: number; label?: string; timerId?: string };
+    const data = result.data as {
+      action: string;
+      duration?: number;
+      label?: string;
+      timerId?: string;
+    };
 
     if (data.action === 'open-view') {
       emitVoltEvent(VOLT_EVENTS.OPEN_TIMER);
@@ -231,22 +264,23 @@ export class TimerPlugin implements Plugin {
    * Splits the input into the duration portion and the optional label.
    */
   private parseTimerInput(input: string): { duration: number; label: string } | null {
-    // Try to peel off progressively shorter prefixes as duration.
-    // Start from shortest (1 word) so that "1h30m work session" matches
-    // "1h30m" as duration and "work session" as label.
-    const words = input.split(/\s+/);
-    for (let i = 1; i < words.length; i++) {
-      const durationPart = words.slice(0, i).join(' ');
-      const labelPart = words.slice(i).join(' ');
-      const ms = parseDurationFlexible(durationPart);
-      if (ms !== null) {
-        return { duration: ms, label: labelPart };
-      }
-    }
-
-    // Try parsing the whole string as a duration (no label)
+    // Prefer the longest complete duration, so spaced compound units stay together.
     const full = parseDurationFlexible(input);
     if (full !== null) return { duration: full, label: 'Timer' };
+    const words = input.split(/\s+/);
+    for (let i = words.length - 1; i >= 1; i--) {
+      const duration = parseDurationFlexible(words.slice(0, i).join(' '));
+      if (duration !== null) {
+        const label = words.slice(i).join(' ');
+        // Do not reinterpret invalid/over-limit compound durations as timer labels.
+        const units = '(?:hours?|hrs?|h|minutes?|mins?|m|seconds?|secs?|s)';
+        const durationRemainder = new RegExp(
+          '^(?:' + units + '(?:\\s|$)|[+-]?\\d+(?:\\.\\d+)?(?:\\s*' + units + '(?=\\d|\\s|$)|:))'
+        );
+        if (durationRemainder.test(label)) return null;
+        return { duration, label };
+      }
+    }
 
     return null;
   }

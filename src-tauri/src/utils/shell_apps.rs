@@ -4,41 +4,38 @@
 //! Shell AppsFolder, including Microsoft Store/UWP apps.
 
 use crate::commands::apps::AppInfo;
-use crate::utils::process::no_window;
-use std::process::Command;
-use tracing::{info, warn};
+use crate::utils::process::{bounded_output, no_window_tokio};
+use std::time::Duration;
+use tokio::process::Command;
+use tracing::info;
 
 /// Enumerate Start Menu applications via PowerShell Get-StartApps.
 /// This intentionally uses the Start surface rather than all AppX packages:
 /// AppX manifests include background/system endpoints that are not useful
 /// launch targets.
-pub fn enumerate_apps_folder() -> Result<Vec<AppInfo>, String> {
+pub async fn enumerate_apps_folder() -> Result<Vec<AppInfo>, String> {
     let mut cmd = Command::new("powershell");
-    no_window(&mut cmd);
-    let output = cmd
-        .args([
+    no_window_tokio(&mut cmd);
+    cmd.args([
             "-NoProfile",
             "-NonInteractive",
             "-Command",
+            // PowerShell writes stdout in the OEM code page unless told otherwise;
+            // decoding that as UTF-8 turns accented names into U+FFFD.
             r#"
+[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false
 Get-StartApps | ForEach-Object {
     if ($_.Name -and $_.AppID -and $_.AppID -match '^[A-Za-z0-9][A-Za-z0-9.]+_[A-Za-z0-9]{13}!.+$') {
         Write-Output "$($_.AppID)`t$($_.Name)"
     }
 }
 "#,
-        ])
-        .output()
-        .map_err(|e| format!("Failed to run PowerShell: {}", e))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        if !stderr.is_empty() {
-            warn!("AppsFolder enumeration warning: {}", stderr.trim());
-        }
-    }
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
+        ]);
+    let output = bounded_output(cmd, Duration::from_secs(8), 2 * 1024 * 1024)
+        .await
+        .map_err(|e| format!("AppsFolder helper failed: {e}"))?;
+    let stdout = String::from_utf8_lossy(&output);
+    let stdout = stdout.trim_start_matches('\u{feff}');
     let mut apps = Vec::new();
 
     for line in stdout.lines() {

@@ -5,6 +5,7 @@ use crate::plugins::builtin::system_monitor::{
     ComponentInfo, CpuCoreInfo, DiskInfo, NetworkInfo, ProcessInfo,
 };
 use serde::{Deserialize, Serialize};
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use tauri::State;
 use ts_rs::TS;
@@ -14,6 +15,38 @@ use ts_rs::TS;
 /// produce meaningful CPU readings (requires at least two refresh cycles).
 pub struct SystemMonitorState {
     pub monitor: Arc<Mutex<SystemMonitorPlugin>>,
+    /// Delay between two background cache refreshes, in milliseconds. Read by the ticker on
+    /// every iteration so a settings change applies without a restart.
+    refresh_interval_ms: AtomicU32,
+}
+
+impl SystemMonitorState {
+    pub fn new(monitor: Arc<Mutex<SystemMonitorPlugin>>) -> Self {
+        Self {
+            monitor,
+            refresh_interval_ms: AtomicU32::new(
+                super::behavior_settings::SYSTEM_MONITOR_REFRESH_MS_DEFAULT,
+            ),
+        }
+    }
+
+    /// Sets the refresh interval, clamped to the supported range.
+    pub fn set_refresh_interval_ms(&self, ms: u32) {
+        use super::behavior_settings::{
+            SYSTEM_MONITOR_REFRESH_MS_MAX, SYSTEM_MONITOR_REFRESH_MS_MIN,
+        };
+        self.refresh_interval_ms.store(
+            ms.clamp(SYSTEM_MONITOR_REFRESH_MS_MIN, SYSTEM_MONITOR_REFRESH_MS_MAX),
+            Ordering::Relaxed,
+        );
+    }
+
+    /// Current delay between two background cache refreshes.
+    pub fn refresh_interval(&self) -> std::time::Duration {
+        std::time::Duration::from_millis(u64::from(
+            self.refresh_interval_ms.load(Ordering::Relaxed),
+        ))
+    }
 }
 
 /// System metrics information
@@ -204,22 +237,37 @@ fn bytes_to_gb(bytes: u64) -> f32 {
     (bytes as f64 / 1024.0 / 1024.0 / 1024.0) as f32
 }
 
+/// Pure guard for `kill_process_by_pid`, extracted for unit testing.
+/// Rejects kernel (0), init (1), and the launcher's own pid (self-DoS).
+fn validate_kill_pid(pid: u32, self_pid: u32) -> VoltResult<()> {
+    if pid <= 1 {
+        return Err(VoltError::InvalidConfig(
+            "Refusing to kill pid 0 or 1 (kernel/init)".to_string(),
+        ));
+    }
+    if pid == self_pid {
+        return Err(VoltError::InvalidConfig(
+            "Refusing to kill the launcher's own process".to_string(),
+        ));
+    }
+    Ok(())
+}
+
 /// Terminate a process by its PID.
 ///
-/// PID 0 is rejected as a safety guard (on some platforms it represents the
-/// kernel/scheduler). Returns `VoltError::NotFound` when the process no longer
-/// exists at the time the kill signal is sent. Runs on a blocking thread so
-/// sysinfo work doesn't stall the async executor.
+/// PID 0 and 1 are rejected as a safety guard (0 represents the
+/// kernel/scheduler on some platforms, 1 is init/systemd — killing it can
+/// destabilise the whole OS). Refusing to kill our own process avoids a
+/// self-DoS where the launcher terminates itself via its own UI. Returns
+/// `VoltError::NotFound` when the process no longer exists at the time the
+/// kill signal is sent. Runs on a blocking thread so sysinfo work doesn't
+/// stall the async executor.
 #[tauri::command]
 pub async fn kill_process_by_pid(
     pid: u32,
     monitor_state: State<'_, SystemMonitorState>,
 ) -> VoltResult<()> {
-    if pid == 0 {
-        return Err(VoltError::InvalidConfig(
-            "Refusing to kill pid 0".to_string(),
-        ));
-    }
+    validate_kill_pid(pid, std::process::id())?;
     let monitor = Arc::clone(&monitor_state.monitor);
     tokio::task::spawn_blocking(move || -> VoltResult<()> {
         let monitor = monitor
@@ -294,5 +342,13 @@ mod tests {
         assert_eq!(metrics.memory_usage, 60.2);
         assert_eq!(metrics.disk_usage, 75.8);
         assert_eq!(metrics.memory_total_gb, 16.0);
+    }
+
+    #[test]
+    fn kill_pid_guard_rejects_kernel_init_and_self() {
+        assert!(validate_kill_pid(0, 1234).is_err());
+        assert!(validate_kill_pid(1, 1234).is_err());
+        assert!(validate_kill_pid(1234, 1234).is_err());
+        assert!(validate_kill_pid(4321, 1234).is_ok());
     }
 }

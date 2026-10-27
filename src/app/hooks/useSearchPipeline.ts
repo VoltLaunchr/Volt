@@ -7,12 +7,14 @@ import {
   webSearchHistory,
   type WebSearchResult,
 } from '../../features/web-search';
-import { AppInfo, FileInfo, SearchResult, SearchResultType } from '../../shared/types/common.types';
 import {
-  SEARCH_SCORING,
-  SEARCH_SENSITIVITY_THRESHOLDS,
-  SEARCH_SENSITIVITY_FUZZY_MULTIPLIER,
-} from '../../shared/constants/searchScoring';
+  AppInfo,
+  FileInfo,
+  SearchResult,
+  SearchResultType,
+  type SearchTier,
+} from '../../shared/types/common.types';
+import type { LearnedMatch } from '../../shared/types/generated/LearnedMatch';
 import { resolveFallbackBrandIcon } from '../../shared/constants/webBrandIcons';
 import type { SearchSensitivity } from '../../features/settings/types/settings.types';
 import { extractErrorMessage } from '../../shared/utils/error';
@@ -21,6 +23,14 @@ import { parseQuery } from '../../shared/utils/queryParser';
 import { detectUrl } from '../../shared/utils/urlDetector';
 import { useAppStore } from '../../stores/appStore';
 import { useSearchStore } from '../../stores/searchStore';
+import { getCommandFrecency, refreshCommandFrecency } from '../commandFrecency';
+import { getStableResultIdentity } from '../searchResultIdentity';
+import { bandRank, compareResults, isExplicitActivation, rankPluginResult } from '../searchRanking';
+import {
+  filterRootSearchApps,
+  filterRootSearchPlugins,
+  shouldSearchFiles,
+} from '../rootSearchScope';
 import { mergeSearchResults } from '../searchResults';
 import { shouldShowWebFallbacks } from '../webSearchConfidence';
 
@@ -33,9 +43,15 @@ function shortenPath(fullPath: string): string {
   return fullPath;
 }
 
-/** Shape returned by search_applications_frecency */
+/**
+ * Ranked application from the Rust cascade (`AppInfoWithScore`): `tier` on
+ * the shared ladder, `score` = match quality inside the tier, `frecency` =
+ * universal frecency date.
+ */
 interface AppInfoWithScore extends AppInfo {
   score: number;
+  tier: SearchTier;
+  frecency: number;
 }
 
 /** Shape returned by get_frecency_suggestions */
@@ -47,13 +63,20 @@ interface LaunchRecord {
   pinned: boolean;
 }
 
-/** File search result with score from the batch/streaming endpoint */
+/**
+ * File search result from the batch/streaming endpoint. `tier` is the
+ * absolute, query-relative file tier computed in Rust
+ * (`search::FileRelevanceScorer`) on the shared ladder; `score` is the
+ * filename match quality inside it. Never normalised by the batch maximum.
+ */
 interface FileSearchResultCompact extends FileInfo {
   score: number;
+  tier: SearchTier;
 }
 
 /** Streaming search batch events from the Rust backend */
 type SearchBatch =
+  | { event: 'learned'; data: { results: LearnedMatch[] } }
   | { event: 'apps'; data: { results: AppInfoWithScore[] } }
   | { event: 'files'; data: { results: FileSearchResultCompact[] } }
   | { event: 'done' };
@@ -83,40 +106,29 @@ const SYSTEM_EXECUTABLE_PATH_SEGMENTS = [
 
 // ---- Conversion helpers (used by streaming callbacks + final merge) ----
 
-const convertApps = (
-  apps: AppInfoWithScore[],
-  sensitivity: SearchSensitivity = 'medium',
-  iconByPath?: Map<string, string>
-): SearchResult[] => {
-  const threshold = SEARCH_SENSITIVITY_THRESHOLDS[sensitivity];
-  const fuzzyMultiplier = SEARCH_SENSITIVITY_FUZZY_MULTIPLIER[sensitivity];
+// Search sensitivity is applied by the Rust ranker (`search::SearchSensitivity`),
+// which only returns matches the user's setting accepts, so no filtering here.
+const convertApps = (apps: AppInfoWithScore[], iconByPath?: Map<string, string>): SearchResult[] =>
+  apps.map((appWithScore) => ({
+    id: appWithScore.id,
+    type: SearchResultType.Application,
+    title: appWithScore.name,
+    subtitle: appWithScore.description || undefined,
+    icon: appWithScore.icon ?? iconByPath?.get(appWithScore.path.toLowerCase()),
+    score: appWithScore.score,
+    data: appWithScore,
+    rank: {
+      band: 'ranked',
+      tier: appWithScore.tier,
+      quality: appWithScore.score,
+      frecency: appWithScore.frecency,
+      source: 'app',
+      declared: 0,
+    },
+  }));
 
-  return apps
-    .filter((app) => {
-      const isFuzzy = app.score < 60;
-      const adjusted = isFuzzy ? Math.round(app.score * fuzzyMultiplier) : app.score;
-      return adjusted >= threshold;
-    })
-    .map((appWithScore) => {
-      const isFuzzy = appWithScore.score < 60;
-      const adjustedScore = isFuzzy
-        ? Math.round(appWithScore.score * fuzzyMultiplier)
-        : appWithScore.score;
-      return {
-        id: appWithScore.id,
-        type: SearchResultType.Application,
-        title: appWithScore.name,
-        subtitle: appWithScore.description || undefined,
-        icon: appWithScore.icon ?? iconByPath?.get(appWithScore.path.toLowerCase()),
-        score: SEARCH_SCORING.APPLICATION + adjustedScore,
-        data: appWithScore,
-      };
-    });
-};
-
-const convertFiles = (files: FileSearchResultCompact[]): SearchResult[] => {
-  const maxFileScore = files.reduce((max, f) => Math.max(max, f.score), 1);
-  return files
+const convertFiles = (files: FileSearchResultCompact[]): SearchResult[] =>
+  files
     .filter((file) => {
       const path = file.path.toLowerCase();
       if (file.name.toLowerCase().endsWith('.exe')) {
@@ -132,12 +144,31 @@ const convertFiles = (files: FileSearchResultCompact[]): SearchResult[] => {
       title: file.name,
       subtitle: shortenPath(file.path),
       icon: file.icon,
-      score: SEARCH_SCORING.FILE + Math.round((file.score / maxFileScore) * 50),
+      score: file.score,
       data: file,
+      // Absolute tier from Rust — never normalised by the batch maximum.
+      rank: {
+        band: 'ranked',
+        tier: file.tier,
+        quality: file.score,
+        frecency: 0,
+        source: 'file',
+        declared: 0,
+      },
     }));
-};
 
-const convertPlugins = (pluginResults: PluginResultData[]): SearchResult[] =>
+interface PluginConversionContext {
+  /** Operator-stripped query used for title matching. */
+  query: string;
+  /** Learned tiers streamed by Rust for this query, keyed by stable identity. */
+  learned: ReadonlyMap<string, SearchTier>;
+  gameBrowse: boolean;
+}
+
+const convertPlugins = (
+  pluginResults: PluginResultData[],
+  context: PluginConversionContext
+): SearchResult[] =>
   pluginResults.map((result) => {
     let searchResultType: SearchResultType;
     // For most plugins we pass the full PluginResult through as `data` so
@@ -175,40 +206,40 @@ const convertPlugins = (pluginResults: PluginResultData[]): SearchResult[] =>
         searchResultType = SearchResultType.Plugin;
     }
 
-    // The registry annotates each result with how the query matched the
-    // plugin's activation manifest. An explicit prefix/keyword match (the user
-    // typed the feature's trigger or name) earns the keyword boost, pushing the
-    // plugin above incidental app/file matches — the single source of truth that
-    // replaces the old hand-maintained PLUGIN_KEYWORDS map.
-    const baseScore = SEARCH_SCORING.PLUGIN_BASE + result.score;
-    const boosted = result.matchKind === 'prefix' || result.matchKind === 'keyword';
-    const finalScore =
-      result.type === PluginResultType.WebSearch && boosted
-        ? SEARCH_SCORING.WEB_EXPLICIT_ACTION
-        : boosted
-          ? SEARCH_SCORING.PLUGIN_KEYWORD_BOOST + baseScore
-          : baseScore;
-
-    return {
+    const converted: SearchResult = {
       id: result.id,
       type: searchResultType,
       title: result.title,
       subtitle: result.subtitle,
       icon: result.icon,
       badge: result.badge,
-      score: finalScore,
+      score: result.score,
       data,
       accessories: result.accessories,
       section: result.section,
       layout: result.layout,
     };
+
+    // One ladder for every command-like result: the registry's activation
+    // match (`matchKind`, from the plugin manifest — the single source of
+    // truth) gives the `activation` tier, titles are matched like app names,
+    // learned bindings and the universal frecency apply by stable identity.
+    const identity = getStableResultIdentity(converted);
+    converted.rank = rankPluginResult(result, {
+      query: context.query,
+      identity,
+      learned: context.learned,
+      frecency: getCommandFrecency(identity),
+      gameBrowse: context.gameBrowse,
+    });
+    return converted;
   });
 
 function explicitWebQuery(pluginResults: PluginResultData[]): string | null {
   const result = pluginResults.find(
     (candidate) =>
       candidate.type === PluginResultType.WebSearch &&
-      (candidate.matchKind === 'prefix' || candidate.matchKind === 'keyword') &&
+      isExplicitActivation(candidate) &&
       typeof candidate.data?.query === 'string'
   );
   const query = result?.data?.query;
@@ -225,7 +256,7 @@ function convertWebResults(results: WebSearchResult[], query: string): SearchRes
       subtitle: result.description,
       icon: result.favicon,
       badge: result.providerId === 'brave' ? 'Brave' : 'Web',
-      score: SEARCH_SCORING.WEB_EXPLICIT_RESULT - index,
+      score: results.length - index,
       pluginId: 'websearch',
       accessories: result.age ? [{ text: result.age }] : undefined,
       data: {
@@ -245,6 +276,8 @@ function convertWebResults(results: WebSearchResult[], query: string): SearchRes
       score: pluginResult.score,
       data: pluginResult,
       accessories: pluginResult.accessories,
+      // Live hits sit directly below the explicit web action, in provider order.
+      rank: bandRank('liveWeb', pluginResult.score),
     };
   });
 }
@@ -275,7 +308,7 @@ function waitForWebDebounce(signal: AbortSignal, delayMs = 275): Promise<void> {
  * - Stale-response protection via `latestSearchId`
  * - Streaming results via Tauri Channels (apps appear before files)
  * - Plugin queries run in parallel (frontend-only, no IPC)
- * - Score-based merge/sort/limit
+ * - Unified tier comparator for the merge/sort/limit (`searchRanking.ts`)
  * - Fallback web search when no results
  */
 export function useSearchPipeline({
@@ -295,11 +328,25 @@ export function useSearchPipeline({
   const fallbackCommands = useAppStore((s) => s.settings?.fallbacks?.commands);
   const rememberWebSearchHistory =
     useAppStore((s) => s.settings?.fallbacks?.rememberWebSearchHistory) ?? false;
+  // Settings -> Launcher: what the root search may surface (default: everything).
+  const includeFiles = useAppStore((s) => s.settings?.launcher?.includeFilesInRootSearch) !== false;
+  const includeGames = useAppStore((s) => s.settings?.launcher?.includeGamesInRootSearch) !== false;
   const searchQuery = useSearchStore((s) => s.searchQuery);
   const results = useSearchStore((s) => s.results);
   const selectedIndex = useSearchStore((s) => s.selectedIndex);
   const { setResults, setSelectedIndex, setSearchError, setShowSnowEffect } =
     useSearchStore.getState();
+  // Streaming batches for the *same* query must not reset keyboard navigation.
+  // `setResults` resets selectedIndex to 0 (correct for a new query); partial
+  // batches use the preserving variant so ArrowDown during apps→files doesn't
+  // snap back to 0.
+  const { setResultsPreserveSelection } = useSearchStore.getState();
+
+  // Universal frecency of plugin commands: cached once, then kept in sync
+  // locally so ranking needs no IPC per keystroke.
+  useEffect(() => {
+    void refreshCommandFrecency();
+  }, []);
 
   const latestSearchId = useRef(0); // Prevent stale search responses
   const activeChannelRef = useRef<Channel<SearchBatch> | null>(null);
@@ -346,6 +393,9 @@ export function useSearchPipeline({
         if (searchId === latestSearchId.current) setResults([]);
         setShowSnowEffect(false);
         finishSearch(searchId);
+        // Cleared query (launch, reopen, Escape): pick up usage recorded by
+        // other windows, e.g. history cleared from Settings.
+        void refreshCommandFrecency();
         return;
       }
 
@@ -364,19 +414,20 @@ export function useSearchPipeline({
       ].includes(lowerQuery);
       const isGameBrowseQuery = ['game', 'games', 'jeu', 'jeux'].includes(lowerQuery);
 
-      // If browsing apps, show ALL apps sorted by name (frecency will reorder used ones)
+      // If browsing apps, show ALL apps in catalog order (frecency will reorder used ones)
       if (isAppBrowseQuery && appsReady) {
-        const allAppResults: SearchResult[] = allApps.slice(0, maxResults + 4).map((app, i) => ({
+        const allAppResults: SearchResult[] = allApps.slice(0, maxResults + 4).map((app) => ({
           id: app.id,
           type: SearchResultType.Application,
           title: app.name,
           subtitle: app.description || undefined,
           icon: app.icon,
-          score: SEARCH_SCORING.APPLICATION + 100 - i,
+          score: 0,
           data: app,
         }));
 
-        // Fetch frecency to reorder — used apps first
+        // Fetch frecency to reorder — used apps first. The sort is stable, so
+        // the catalog order is kept within each group.
         try {
           const frecency = await invoke<LaunchRecord[]>('get_frecency_suggestions', {
             limit: 20,
@@ -386,7 +437,7 @@ export function useSearchPipeline({
             allAppResults.sort((a, b) => {
               const aUsed = frecencyPaths.has((a.data as AppInfo).path) ? 1 : 0;
               const bUsed = frecencyPaths.has((b.data as AppInfo).path) ? 1 : 0;
-              return bUsed - aUsed || b.score - a.score;
+              return bUsed - aUsed;
             });
           }
         } catch {
@@ -408,14 +459,23 @@ export function useSearchPipeline({
 
       setShowSnowEffect(isChristmasQuery);
 
+      // New search generation: reset navigation once. Subsequent streaming
+      // batches for this same searchId preserve the index (see below) so
+      // ArrowDown between apps→files doesn't snap back to 0.
+      if (searchId === latestSearchId.current) {
+        useSearchStore.getState().setSelectedIndex(0);
+      }
+
       try {
         const mergeResults = (...sources: SearchResult[][]): SearchResult[] =>
           mergeSearchResults(maxResults + 4, ...sources);
 
         // Accumulated partial results from streaming
+        const learned = new Map<string, SearchTier>();
         let streamedApps: SearchResult[] = [];
         let streamedFiles: SearchResult[] = [];
         let streamedPlugins: SearchResult[] = [];
+        const rootScope = { includeFiles, includeGames };
 
         // Start plugin search in parallel (plugins run in-process, not via Tauri)
         const pluginPromise = pluginRegistry
@@ -435,14 +495,19 @@ export function useSearchPipeline({
           // Guard against stale search
           if (searchId !== latestSearchId.current) return;
 
-          if (batch.event === 'apps') {
-            streamedApps = convertApps(batch.data.results, searchSensitivity, iconByPath);
+          if (batch.event === 'learned') {
+            for (const match of batch.data.results) learned.set(match.resultId, match.tier);
+          } else if (batch.event === 'apps') {
+            streamedApps = convertApps(
+              filterRootSearchApps(batch.data.results, rootScope, isGameBrowseQuery),
+              iconByPath
+            );
             // Show partial results immediately (apps arrived)
-            setResults(mergeResults(streamedApps, streamedFiles, streamedPlugins));
+            setResultsPreserveSelection(mergeResults(streamedApps, streamedFiles, streamedPlugins));
           } else if (batch.event === 'files') {
             streamedFiles = convertFiles(batch.data.results);
             // Show partial results immediately (files arrived)
-            setResults(mergeResults(streamedApps, streamedFiles, streamedPlugins));
+            setResultsPreserveSelection(mergeResults(streamedApps, streamedFiles, streamedPlugins));
           }
         };
 
@@ -460,6 +525,8 @@ export function useSearchPipeline({
                 modifiedBefore: parsed.hasOperators
                   ? parsed.operators.modifiedBefore || null
                   : null,
+                sensitivity: searchSensitivity,
+                includeFiles: shouldSearchFiles(rootScope, parsed.hasOperators),
               },
               shortcuts: appShortcuts ?? null,
               onEvent: channel,
@@ -480,23 +547,22 @@ export function useSearchPipeline({
           return;
         }
 
-        // Merge plugin results into final set
-        streamedPlugins = convertPlugins(pluginResults);
-
-        // Boost game results when query is game-related
-        if (isGameBrowseQuery) {
-          for (const r of streamedPlugins) {
-            if (r.type === SearchResultType.Game) {
-              r.score += SEARCH_SCORING.GAME_BOOST;
-            }
+        // Merge plugin results into final set. Game browse queries put games
+        // in their own band above the ladder (`rankPluginResult`).
+        streamedPlugins = convertPlugins(
+          filterRootSearchPlugins(pluginResults, rootScope, isGameBrowseQuery),
+          {
+            query: effectiveQuery,
+            learned,
+            gameBrowse: isGameBrowseQuery,
           }
-        }
+        );
 
         // Final merge with all sources
         const allResults = mergeResults(streamedApps, streamedFiles, streamedPlugins);
 
-        // URL auto-detection: inject an "Open URL" result at the top when the
-        // query looks like a navigable URL, with no prefix required.
+        // URL auto-detection: a typed URL is a direct answer, placed in the
+        // `answer` band above every ranked result, with no prefix required.
         const detectedUrl = detectUrl(query);
         if (detectedUrl) {
           const urlResultId = `open-url-${detectedUrl}`;
@@ -505,19 +571,19 @@ export function useSearchPipeline({
             type: SearchResultType.Url,
             title: `Open ${detectedUrl}`,
             subtitle: 'Press Enter to open in browser',
-            score: SEARCH_SCORING.PLUGIN_KEYWORD_BOOST + 200,
+            score: 0,
             data: {
               id: urlResultId,
               type: 'url',
               title: `Open ${detectedUrl}`,
               subtitle: 'Press Enter to open in browser',
-              score: SEARCH_SCORING.PLUGIN_KEYWORD_BOOST + 200,
+              score: 0,
               data: { url: detectedUrl },
             },
+            rank: bandRank('answer', 0),
           };
-          allResults.unshift(urlResult);
-          // Re-sort so score ordering is respected
-          allResults.sort((a, b) => b.score - a.score);
+          allResults.push(urlResult);
+          allResults.sort(compareResults);
         }
 
         // Fallback Commands — use result confidence rather than array length.
@@ -533,10 +599,10 @@ export function useSearchPipeline({
             const resolvedTarget = substitute(cmd.target);
             const resolvedLabel = substitute(cmd.label);
             const fallbackId = `fallback-${cmd.id}-${searchId}`;
-            // Score descending in fallback order so the user's preferred
-            // fallback is selected by default. Stays well below any real
-            // result (worst real fuzzy match is in the 200+ tier).
-            const fallbackScore = 10 - idx;
+            // The `fallback` band sits below every real result; inside it the
+            // user's configured order decides, so the preferred fallback is
+            // selected first when nothing else matched.
+            const fallbackScore = enabledFallbackCommands.length - idx;
 
             if (cmd.kind === 'shell') {
               // Shell kind: dispatch via ShellCommandPlugin. The plugin reads
@@ -560,6 +626,7 @@ export function useSearchPipeline({
                 score: fallbackScore,
                 badge: 'Fallback',
                 data: shellData,
+                rank: bandRank('fallback', fallbackScore),
               });
               return;
             }
@@ -584,11 +651,12 @@ export function useSearchPipeline({
               score: fallbackScore,
               badge: 'Fallback',
               data: webData,
+              rank: bandRank('fallback', fallbackScore),
             });
           });
         }
 
-        setResults(allResults);
+        setResultsPreserveSelection(allResults);
 
         // Progressive web enrichment. It only runs for an explicit web plugin
         // activation, never for ordinary root-search keystrokes. Local results
@@ -615,7 +683,9 @@ export function useSearchPipeline({
                 return;
               }
               const converted = convertWebResults(webResults, webQuery);
-              setResults(mergeSearchResults(maxResults + 4, allResults, converted));
+              setResultsPreserveSelection(
+                mergeSearchResults(maxResults + 4, allResults, converted)
+              );
             })
             .catch(() => {
               // Optional provider: local search and URL fallbacks remain usable.
@@ -642,11 +712,14 @@ export function useSearchPipeline({
       enabledFallbackCommands,
       finishSearch,
       iconByPath,
+      includeFiles,
+      includeGames,
       maxResults,
       rememberWebSearchHistory,
       searchSensitivity,
       searchLanguage,
       setResults,
+      setResultsPreserveSelection,
       setSearchError,
       setShowSnowEffect,
     ]

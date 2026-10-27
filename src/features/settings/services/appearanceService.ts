@@ -32,6 +32,8 @@ export function applyWindowOpacity(
   document.documentElement.style.setProperty('--window-opacity', String(opacity));
 }
 
-export function applyAppearance(appearance: Pick<AppearanceSettings, 'windowEffect' | 'transparency'>): void {
+export function applyAppearance(
+  appearance: Pick<AppearanceSettings, 'windowEffect' | 'transparency'>
+): void {
   applyWindowOpacity(appearance.transparency, appearance.windowEffect);
 }

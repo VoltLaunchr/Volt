@@ -1,6 +1,6 @@
 # Volt Features
 
-Complete reference of features available in **Volt v0.2.0**.
+Complete reference of features available in **Volt v0.4.0** (2026-07-19).
 
 > See [`SHORTCUTS.md`](../user-guide/SHORTCUTS.md) for the full keyboard reference, [`ARCHITECTURE.md`](./ARCHITECTURE.md) for the technical view, and [`CLAIMS_EVIDENCE.md`](../marketing/CLAIMS_EVIDENCE.md) before reusing any feature wording in public marketing.
 
@@ -10,8 +10,8 @@ Complete reference of features available in **Volt v0.2.0**.
 
 ### Smart search
 - Parallel search across **apps · files · plugins · games · commands** with 150 ms debounce + stale-response protection (`latestSearchId`).
-- Backend scoring: exact 100 · startsWith 90 · contains 80−position · fuzzy 50.
-- **Frecency** ranking: `match_score + launch_count × exp(−age_hours / 168)`; 30 % penalty for never-used apps when history exists.
+- Backend scoring: exact 100 · startsWith 90 · nucleo fuzzy 50–89 (cf. `utils/matching.rs`).
+- **Frecency** ranking: `match_score + frecency_bonus()` where the bonus is a bounded `ln` boost (cap +20 via `MAX_FRECENCY_BOOST` in `search/mod.rs`) derived from `frecency_date` (`max(now, frecency_date) + 1 day` on each launch, backfilled on load). Empty-query suggestions are sorted by `frecency_date DESC`; never-launched apps are penalized when history exists.
 - **Predictive suggestions** on empty query (frecency-only) — top apps + contextual shortcuts (clipboard, calculator, settings, …).
 - **Section grouping** (Raycast-style): Applications, Commands, Games, Files; only shown when results span multiple sections.
 
@@ -261,4 +261,4 @@ Export / import via `export_settings` / `import_settings`.
 
 For bug reports and feature requests: [GitHub Issues](https://github.com/VoltLaunchr/Volt/issues).
 
-_Last updated: 2026-05-18 (v0.2.0)_
+_Last updated: 2026-09-16 (v0.4.0)_

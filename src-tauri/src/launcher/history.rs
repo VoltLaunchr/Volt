@@ -1,6 +1,12 @@
-//! Launch history tracking
+//! Launch history tracking — the universal frecency store.
 //!
-//! Tracks application launches for usage statistics and quick access to recently used apps.
+//! Tracks application launches (usage statistics, recents, pins) and, since
+//! the unified search ranking, the usage of every other launchable result
+//! with a stable identity (plugin commands: system commands, quicklinks,
+//! snippets, window actions, games, extension commands…). One record per
+//! identity, one frecency model ([`LaunchRecord::frecency_date`]), one file
+//! (`launch_history.json`). Records carry a [`UsageKind`] so the app-facing
+//! APIs (recents, frequent, pins, suggestions) keep returning applications only.
 
 use log;
 use serde::{Deserialize, Serialize};
@@ -10,6 +16,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use ts_rs::TS;
 
+use crate::search::{LearnedMatch, SearchTier};
 use crate::utils::serialized_file_writer::SerializedFileWriter;
 
 /// Credit (in ms) added to an item's `frecency_date` on each launch.
@@ -23,16 +30,47 @@ const FRECENCY_LAUNCH_WEIGHT: i64 = 86_400_000; // 1 day
 /// long-lived history doesn't translate into an unbounded future date.
 const FRECENCY_BACKFILL_CAP: i64 = 30;
 
+/// Maximum number of [`UsageKind::Command`] records kept. Applications are
+/// bounded by the installed catalog; command identities are not (a quicklink
+/// or snippet can be created and deleted at will), so the least-frecent
+/// commands are evicted beyond this cap.
+pub const MAX_COMMAND_RECORDS: usize = 500;
+
+/// Maximum byte length of a command identity accepted by
+/// [`LaunchHistory::record_command_usage`].
+pub const MAX_COMMAND_IDENTITY_LEN: usize = 512;
+
+/// What a [`LaunchRecord`] tracks.
+///
+/// `#[serde(default)]` on the field makes every record written before this
+/// enum existed load as [`UsageKind::App`] — the only kind that used to exist —
+/// so `launch_history.json` needs no migration step.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "UsageKind.ts")]
+pub enum UsageKind {
+    /// An application, keyed by its path. Recorded by the launch commands.
+    #[default]
+    App,
+    /// Any other launchable result, keyed by its stable identity
+    /// (`pluginId:resultId`, see `src/app/searchResultIdentity.ts`).
+    Command,
+}
+
 /// A single launch record
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export, export_to = "LaunchRecord.ts")]
 pub struct LaunchRecord {
-    /// Application path
+    /// Application path, or the stable result identity of a command record.
     pub path: String,
 
-    /// Application name (derived from path)
+    /// Application name (derived from path), or the command title.
     pub name: String,
+
+    /// What this record tracks. Absent in pre-unified-ranking files → `App`.
+    #[serde(default)]
+    pub kind: UsageKind,
 
     /// Total number of launches
     pub launch_count: u32,
@@ -82,10 +120,24 @@ impl LaunchRecord {
             first_launched: now,
             last_launched: now,
             frecency_date: now + FRECENCY_LAUNCH_WEIGHT,
+            kind: UsageKind::App,
             total_time_ms: None,
             tags: Vec::new(),
             pinned: false,
         }
+    }
+
+    /// Create the first usage record of a command identity.
+    pub fn new_command(identity: impl Into<String>, title: impl Into<String>) -> Self {
+        Self {
+            kind: UsageKind::Command,
+            ..Self::new(identity, title)
+        }
+    }
+
+    /// Whether this record tracks an application.
+    pub fn is_app(&self) -> bool {
+        self.kind == UsageKind::App
     }
 
     /// Record a new launch of this application
@@ -211,6 +263,20 @@ impl LaunchHistory {
         self.writer.write_blocking(generation, json)
     }
 
+    /// Snapshot `records` for the background writer while the lock is held,
+    /// so disk order always matches in-memory mutation order.
+    fn snapshot_for_write(
+        &self,
+        records: &HashMap<String, LaunchRecord>,
+    ) -> Result<Option<(u64, String)>, String> {
+        if !self.auto_save {
+            return Ok(None);
+        }
+        let generation = self.writer.reserve();
+        let json = serde_json::to_string_pretty(records).map_err(|e| e.to_string())?;
+        Ok(Some((generation, json)))
+    }
+
     /// Record an application launch.
     ///
     /// The in-memory update is fast; the persist-to-disk step is offloaded to
@@ -227,13 +293,7 @@ impl LaunchHistory {
                 records.insert(path.to_string(), LaunchRecord::new(path, name));
             }
 
-            if self.auto_save {
-                let generation = self.writer.reserve();
-                let json = serde_json::to_string_pretty(&*records).map_err(|e| e.to_string())?;
-                Some((generation, json))
-            } else {
-                None
-            }
+            self.snapshot_for_write(&records)?
         };
 
         if let Some((generation, json)) = pending_write {
@@ -241,6 +301,86 @@ impl LaunchHistory {
         }
 
         Ok(())
+    }
+
+    /// Record one execution of a non-application result (plugin command,
+    /// quicklink, snippet, window action, game, extension command…) under its
+    /// stable identity, with the same frecency model as app launches.
+    ///
+    /// Returns the record's new `frecency_date` so the caller can update its
+    /// cached copy without another round trip. Refuses identities that are
+    /// already tracked as applications: app launches are recorded by the
+    /// launch commands, and accepting them here would count them twice.
+    pub fn record_command_usage(&self, identity: &str, title: &str) -> Result<i64, String> {
+        let identity = identity.trim();
+        if identity.is_empty()
+            || identity.len() > MAX_COMMAND_IDENTITY_LEN
+            || identity.contains('\0')
+        {
+            return Err("Invalid command identity".to_string());
+        }
+        let title = title.trim();
+        if title.len() > 1024 || title.contains('\0') {
+            return Err("Invalid command title".to_string());
+        }
+
+        let (frecency_date, pending_write) = {
+            let mut records = self.records.lock().map_err(|e| e.to_string())?;
+
+            let frecency_date = match records.get_mut(identity) {
+                Some(record) if record.is_app() => {
+                    return Err(format!(
+                        "'{}' is an application; app launches are recorded by launch_app",
+                        identity
+                    ));
+                }
+                Some(record) => {
+                    record.record_launch();
+                    if !title.is_empty() {
+                        record.name = title.to_string();
+                    }
+                    record.frecency_date
+                }
+                None => {
+                    let record = LaunchRecord::new_command(identity, title);
+                    let date = record.frecency_date;
+                    records.insert(identity.to_string(), record);
+                    date
+                }
+            };
+
+            prune_command_records(&mut records, MAX_COMMAND_RECORDS);
+            (frecency_date, self.snapshot_for_write(&records)?)
+        };
+
+        if let Some((generation, json)) = pending_write {
+            self.writer.spawn_write(generation, json);
+        }
+
+        Ok(frecency_date)
+    }
+
+    /// `identity → frecency_date` for every [`UsageKind::Command`] record.
+    /// Bounded by [`MAX_COMMAND_RECORDS`]; the frontend caches it so plugin
+    /// results are ranked without an IPC round trip per keystroke.
+    pub fn command_frecency(&self) -> HashMap<String, i64> {
+        self.frecency_map(UsageKind::Command)
+    }
+
+    /// `path → frecency_date` for every application record — the projection
+    /// the per-keystroke app ranker needs, built without cloning records.
+    pub fn app_frecency(&self) -> HashMap<String, i64> {
+        self.frecency_map(UsageKind::App)
+    }
+
+    fn frecency_map(&self, kind: UsageKind) -> HashMap<String, i64> {
+        self.with_records(|records| {
+            records
+                .iter()
+                .filter(|(_, record)| record.kind == kind)
+                .map(|(key, record)| (key.clone(), record.frecency_date))
+                .collect()
+        })
     }
 
     /// Get a launch record by path
@@ -252,13 +392,14 @@ impl LaunchHistory {
         records.get(path).cloned()
     }
 
-    /// Get all launch records
+    /// Get every application record (command usage records are excluded:
+    /// they back search ranking only, never the app lists).
     pub fn get_all(&self) -> Vec<LaunchRecord> {
         let records = self.records.lock().unwrap_or_else(|poisoned| {
             log::error!("Launch history mutex poisoned in get_all(): {:?}", poisoned);
             poisoned.into_inner()
         });
-        records.values().cloned().collect()
+        records.values().filter(|r| r.is_app()).cloned().collect()
     }
 
     /// Run `f` against the raw record map while holding the lock.
@@ -325,7 +466,11 @@ impl LaunchHistory {
             );
             poisoned.into_inner()
         });
-        records.values().filter(|r| r.pinned).cloned().collect()
+        records
+            .values()
+            .filter(|r| r.is_app() && r.pinned)
+            .cloned()
+            .collect()
     }
 
     /// Get apps by tag. Filters under the lock so non-matching records never
@@ -435,9 +580,12 @@ impl LaunchHistory {
         Ok(())
     }
 
-    /// Get total number of records
+    /// Get the number of application records
     pub fn count(&self) -> usize {
-        self.records.lock().map(|r| r.len()).unwrap_or(0)
+        self.records
+            .lock()
+            .map(|r| r.values().filter(|record| record.is_app()).count())
+            .unwrap_or(0)
     }
 
     /// Get all unique tags used in history
@@ -459,10 +607,11 @@ impl LaunchHistory {
 
         let mut records = self.records.lock().map_err(|e| e.to_string())?;
 
-        // Collect paths that don't exist anymore
+        // Collect app paths that don't exist anymore (command identities are
+        // not filesystem paths and are bounded by MAX_COMMAND_RECORDS instead).
         let invalid_paths: Vec<String> = records
             .iter()
-            .filter(|(path, _)| !Path::new(path).exists())
+            .filter(|(path, record)| record.is_app() && !Path::new(path).exists())
             .map(|(path, _)| path.clone())
             .collect();
 
@@ -495,6 +644,24 @@ impl Default for LaunchHistory {
     }
 }
 
+/// Evict the least-frecent command records beyond `cap`. Application records
+/// are never touched.
+fn prune_command_records(records: &mut HashMap<String, LaunchRecord>, cap: usize) {
+    let mut commands: Vec<(i64, String)> = records
+        .iter()
+        .filter(|(_, record)| !record.is_app())
+        .map(|(key, record)| (record.frecency_date, key.clone()))
+        .collect();
+    if commands.len() <= cap {
+        return;
+    }
+    commands.sort_unstable();
+    let excess = commands.len() - cap;
+    for (_, key) in commands.into_iter().take(excess) {
+        records.remove(&key);
+    }
+}
+
 // ============================================================================
 // Query-Result Binding Store
 // ============================================================================
@@ -512,6 +679,28 @@ pub struct QueryBinding {
     pub count: u32,
     /// Timestamp (ms) of the last selection
     pub last_used: i64,
+    /// Selections where the typed query was exactly `query_prefix` (not a
+    /// longer query starting with it). `#[serde(default)]`: bindings written
+    /// before learned tiers existed load with `0` and only ever surface as
+    /// learned *prefixes* until the user types the exact query again.
+    #[serde(default)]
+    pub exact_count: u32,
+    /// Timestamp (ms) of the last exact selection (`0` = never).
+    #[serde(default)]
+    pub last_exact: i64,
+}
+
+impl QueryBinding {
+    fn learned_tier(&self, now_ms: i64) -> Option<SearchTier> {
+        let fresh = |at: i64| at > 0 && now_ms.saturating_sub(at) <= LEARNED_TIER_TTL_MS;
+        if self.exact_count > 0 && fresh(self.last_exact) {
+            Some(SearchTier::LearnedExact)
+        } else if fresh(self.last_used) {
+            Some(SearchTier::AliasPrefix)
+        } else {
+            None
+        }
+    }
 }
 
 /// Persisted store of query→result bindings.
@@ -526,6 +715,9 @@ pub struct QueryBindingStore {
 const MAX_BINDING_PREFIXES: usize = 1000;
 /// Maximum prefix length to record
 const MAX_PREFIX_LEN: usize = 8;
+/// How long a learned query stays a ranking tier (Raycast keeps typed search
+/// terms for 17 days). Older bindings stay in the store but no longer rank.
+pub const LEARNED_TIER_TTL_MS: i64 = 17 * 86_400_000;
 
 impl QueryBindingStore {
     /// Record a binding for every prefix of `query` (length 1..min(8, query.len())).
@@ -538,6 +730,11 @@ impl QueryBindingStore {
         }
 
         let now = chrono::Utc::now().timestamp_millis();
+        self.record_binding_at(query_lower, result_id, now);
+    }
+
+    /// [`Self::record_binding`] with an explicit clock (tests).
+    fn record_binding_at(&mut self, query_lower: &str, result_id: &str, now: i64) {
         let max_len = MAX_PREFIX_LEN.min(query_lower.len());
 
         for end in 1..=max_len {
@@ -547,17 +744,24 @@ impl QueryBindingStore {
                 None => continue,
             };
 
+            let is_exact = end == query_lower.len();
             let entries = self.bindings.entry(prefix.to_string()).or_default();
 
             if let Some(existing) = entries.iter_mut().find(|b| b.result_id == result_id) {
                 existing.count += 1;
                 existing.last_used = now;
+                if is_exact {
+                    existing.exact_count += 1;
+                    existing.last_exact = now;
+                }
             } else {
                 entries.push(QueryBinding {
                     query_prefix: prefix.to_string(),
                     result_id: result_id.to_string(),
                     count: 1,
                     last_used: now,
+                    exact_count: u32::from(is_exact),
+                    last_exact: if is_exact { now } else { 0 },
                 });
             }
         }
@@ -566,33 +770,44 @@ impl QueryBindingStore {
         self.prune_if_needed();
     }
 
-    /// Return a boost score for a given (query, result_id) pair.
-    /// Formula: min(count, 10) * 3.0 with recency decay (half-life 1 week).
-    /// Maximum boost: +30.
-    pub fn get_boost(&self, query: &str, result_id: &str) -> f32 {
-        let query_lower = query.to_lowercase();
-        let query_lower = query_lower.trim();
-        if query_lower.is_empty() {
-            return 0.0;
-        }
+    /// Learned tier of `result_id` for `query`, if any:
+    ///
+    /// - [`SearchTier::LearnedExact`]: the user typed exactly this query and
+    ///   opened this result within [`LEARNED_TIER_TTL_MS`];
+    /// - [`SearchTier::AliasPrefix`] (the "alias or learned prefix" tier): the
+    ///   user typed a query starting with this one and opened this result
+    ///   within the TTL.
+    ///
+    /// The tier only applies to results that already matched the query; it
+    /// never makes an unrelated result appear.
+    pub fn learned_tier(&self, query: &str, result_id: &str, now_ms: i64) -> Option<SearchTier> {
+        let query_lower = query.trim().to_lowercase();
+        self.bindings
+            .get(&query_lower)?
+            .iter()
+            .find(|b| b.result_id == result_id)
+            .and_then(|b| b.learned_tier(now_ms))
+    }
 
-        let entries = match self.bindings.get(query_lower) {
-            Some(e) => e,
-            None => return 0.0,
-        };
-
-        let binding = match entries.iter().find(|b| b.result_id == result_id) {
-            Some(b) => b,
-            None => return 0.0,
-        };
-
-        let now_ms = chrono::Utc::now().timestamp_millis();
-        let age_hours = ((now_ms - binding.last_used) as f64 / 3_600_000.0).max(0.0);
-        // Half-life of 1 week (168 hours), floor at 0.2 so old bindings don't vanish
-        let recency_weight = (-age_hours / 168.0).exp().max(0.2) as f32;
-
-        let count_factor = (binding.count.min(10) as f32) * 3.0;
-        count_factor * recency_weight
+    /// Every learned tier for `query` (see [`Self::learned_tier`]). Streamed
+    /// to the frontend so plugin commands share the applications' learned
+    /// tiers without an extra IPC round trip.
+    pub fn learned_matches(&self, query: &str, now_ms: i64) -> Vec<LearnedMatch> {
+        let query_lower = query.trim().to_lowercase();
+        self.bindings
+            .get(&query_lower)
+            .map(|entries| {
+                entries
+                    .iter()
+                    .filter_map(|b| {
+                        b.learned_tier(now_ms).map(|tier| LearnedMatch {
+                            result_id: b.result_id.clone(),
+                            tier,
+                        })
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 
     /// Save the store to a JSON file.
@@ -703,6 +918,7 @@ mod tests {
             first_launched: 1_000,
             last_launched: 2_000,
             frecency_date: 0,
+            kind: UsageKind::App,
             total_time_ms: None,
             tags: Vec::new(),
             pinned: false,
@@ -726,6 +942,7 @@ mod tests {
             first_launched: 0,
             last_launched: 0,
             frecency_date: 0,
+            kind: UsageKind::App,
             total_time_ms: None,
             tags: Vec::new(),
             pinned: false,
@@ -765,5 +982,198 @@ mod tests {
         let record = history.get("C:\\app.exe").unwrap();
         assert!(record.tags.contains(&"work".to_string()));
         assert!(record.tags.contains(&"productivity".to_string()));
+    }
+
+    // ---- Universal frecency (command identities) ----
+
+    #[test]
+    fn legacy_records_without_kind_load_as_apps() {
+        let json = r#"{"C:\\app.exe":{"path":"C:\\app.exe","name":"App","launchCount":2,
+            "firstLaunched":1,"lastLaunched":2,"frecencyDate":5,"tags":[],"pinned":true}}"#;
+        let records: HashMap<String, LaunchRecord> = serde_json::from_str(json).unwrap();
+        let record = &records["C:\\app.exe"];
+        assert_eq!(record.kind, UsageKind::App);
+        assert!(record.is_app());
+
+        // New records serialise their kind so a round trip keeps it.
+        let command = LaunchRecord::new_command("systemcommands:syscmd-settings", "Settings");
+        let back: LaunchRecord =
+            serde_json::from_str(&serde_json::to_string(&command).unwrap()).unwrap();
+        assert_eq!(back.kind, UsageKind::Command);
+    }
+
+    #[test]
+    fn command_usage_accrues_frecency_like_app_launches() {
+        let history = LaunchHistory::in_memory();
+        let first = history
+            .record_command_usage("quicklinks:ql-github", "GitHub")
+            .unwrap();
+        let second = history
+            .record_command_usage("quicklinks:ql-github", "GitHub")
+            .unwrap();
+        assert_eq!(second, first + FRECENCY_LAUNCH_WEIGHT);
+
+        let record = history.get("quicklinks:ql-github").unwrap();
+        assert_eq!(record.kind, UsageKind::Command);
+        assert_eq!(record.launch_count, 2);
+        assert_eq!(
+            history.command_frecency().get("quicklinks:ql-github"),
+            Some(&second)
+        );
+    }
+
+    #[test]
+    fn command_records_stay_out_of_app_lists() {
+        let history = LaunchHistory::in_memory();
+        history.record_launch("C:\\app.exe", "App").unwrap();
+        history
+            .record_command_usage("systemcommands:syscmd-quit", "Quit Volt")
+            .unwrap();
+        history.pin("systemcommands:syscmd-quit").unwrap();
+
+        assert_eq!(history.count(), 1);
+        assert_eq!(history.get_all().len(), 1);
+        assert_eq!(history.get_recent(10).len(), 1);
+        assert_eq!(history.get_frequent(10).len(), 1);
+        assert!(history.get_pinned().is_empty());
+        assert!(history.app_frecency().contains_key("C:\\app.exe"));
+        assert!(
+            !history
+                .app_frecency()
+                .contains_key("systemcommands:syscmd-quit")
+        );
+        assert!(!history.command_frecency().contains_key("C:\\app.exe"));
+    }
+
+    #[test]
+    fn command_usage_rejects_app_identities_and_invalid_input() {
+        let history = LaunchHistory::in_memory();
+        history.record_launch("C:\\app.exe", "App").unwrap();
+        assert!(history.record_command_usage("C:\\app.exe", "App").is_err());
+        assert_eq!(history.get("C:\\app.exe").unwrap().launch_count, 1);
+
+        assert!(history.record_command_usage("   ", "Blank").is_err());
+        assert!(history.record_command_usage("a\0b", "Nul").is_err());
+        let too_long = "x".repeat(MAX_COMMAND_IDENTITY_LEN + 1);
+        assert!(history.record_command_usage(&too_long, "Long").is_err());
+        assert!(
+            history
+                .record_command_usage("plugin:large", &"x".repeat(1025))
+                .is_err()
+        );
+        assert!(history.record_command_usage("plugin:nul", "a\0b").is_err());
+        assert!(history.command_frecency().is_empty());
+    }
+
+    #[test]
+    fn command_records_are_pruned_by_frecency_and_apps_are_kept() {
+        let mut records = HashMap::new();
+        let mut app = LaunchRecord::new("C:\\old.exe", "Old");
+        app.frecency_date = 1;
+        records.insert(app.path.clone(), app);
+        for i in 0..5 {
+            let mut command = LaunchRecord::new_command(format!("p:{i}"), "Cmd");
+            command.frecency_date = 100 + i;
+            records.insert(command.path.clone(), command);
+        }
+
+        prune_command_records(&mut records, 3);
+
+        assert!(records.contains_key("C:\\old.exe"));
+        let mut kept: Vec<&str> = records
+            .values()
+            .filter(|r| !r.is_app())
+            .map(|r| r.path.as_str())
+            .collect();
+        kept.sort_unstable();
+        assert_eq!(kept, vec!["p:2", "p:3", "p:4"]);
+    }
+
+    #[test]
+    fn cleanup_invalid_paths_keeps_command_records() {
+        let history = LaunchHistory::in_memory();
+        history
+            .record_command_usage("window-management:left_half", "Left Half")
+            .unwrap();
+        history
+            .record_launch("Z:\\definitely\\missing.exe", "Missing")
+            .unwrap();
+
+        assert_eq!(history.cleanup_invalid_paths().unwrap(), 1);
+        assert!(history.get("window-management:left_half").is_some());
+    }
+
+    // ---- Learned query tiers ----
+
+    #[test]
+    fn exact_query_is_learned_exact_and_its_prefixes_learned_prefix() {
+        let mut store = QueryBindingStore::default();
+        let now = 1_000_000_000_000;
+        store.record_binding_at("chr", "C:\\chrome.exe", now);
+
+        assert_eq!(
+            store.learned_tier("CHR", "C:\\chrome.exe", now),
+            Some(SearchTier::LearnedExact)
+        );
+        assert_eq!(
+            store.learned_tier("ch", "C:\\chrome.exe", now),
+            Some(SearchTier::AliasPrefix)
+        );
+        assert_eq!(store.learned_tier("chro", "C:\\chrome.exe", now), None);
+        assert_eq!(store.learned_tier("ch", "C:\\other.exe", now), None);
+        assert_eq!(
+            store.learned_matches("ch", now),
+            vec![LearnedMatch {
+                result_id: "C:\\chrome.exe".to_string(),
+                tier: SearchTier::AliasPrefix,
+            }]
+        );
+    }
+
+    #[test]
+    fn learned_tiers_expire_after_the_ttl() {
+        let mut store = QueryBindingStore::default();
+        let then = 1_000_000_000_000;
+        store.record_binding_at("ql", "quicklinks:ql-1", then);
+
+        let within = then + LEARNED_TIER_TTL_MS;
+        assert_eq!(
+            store.learned_tier("ql", "quicklinks:ql-1", within),
+            Some(SearchTier::LearnedExact)
+        );
+        let expired = within + 1;
+        assert_eq!(store.learned_tier("ql", "quicklinks:ql-1", expired), None);
+        assert!(store.learned_matches("ql", expired).is_empty());
+    }
+
+    #[test]
+    fn exact_learning_expires_back_to_prefix_when_only_longer_queries_are_recent() {
+        let mut store = QueryBindingStore::default();
+        let then = 1_000_000_000_000;
+        store.record_binding_at("co", "C:\\code.exe", then);
+        let later = then + LEARNED_TIER_TTL_MS + 1;
+        store.record_binding_at("code", "C:\\code.exe", later);
+
+        assert_eq!(
+            store.learned_tier("co", "C:\\code.exe", later),
+            Some(SearchTier::AliasPrefix)
+        );
+        assert_eq!(
+            store.learned_tier("code", "C:\\code.exe", later),
+            Some(SearchTier::LearnedExact)
+        );
+    }
+
+    #[test]
+    fn legacy_bindings_without_exact_counts_are_prefix_only() {
+        let now = chrono::Utc::now().timestamp_millis();
+        let json = format!(
+            r#"{{"bindings":{{"ch":[{{"queryPrefix":"ch","resultId":"C:\\chrome.exe","count":4,"lastUsed":{now}}}]}}}}"#
+        );
+        let store: QueryBindingStore = serde_json::from_str(&json).unwrap();
+        assert_eq!(
+            store.learned_tier("ch", "C:\\chrome.exe", now),
+            Some(SearchTier::AliasPrefix)
+        );
     }
 }

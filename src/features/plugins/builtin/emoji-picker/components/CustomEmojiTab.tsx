@@ -74,7 +74,7 @@ export function CustomEmojiTab({ onAfterAction }: CustomEmojiTabProps) {
         <div className="relative flex-1">
           <Sparkles
             size={14}
-            className="absolute left-3 top-1/2 -translate-y-1/2 text-accent pointer-events-none"
+            className="absolute left-3 top-1/2 -translate-y-1/2 text-accent-blue pointer-events-none"
           />
           <input
             type="text"
@@ -102,7 +102,7 @@ export function CustomEmojiTab({ onAfterAction }: CustomEmojiTabProps) {
           disabled={!prompt.trim() || generating || hasToken === false}
           className={cn(
             'flex items-center gap-2 h-10 px-4 rounded-lg text-sm font-medium transition-all',
-            'bg-accent text-white',
+            'bg-accent-blue text-white',
             (!prompt.trim() || generating || hasToken === false) && 'opacity-50 cursor-not-allowed'
           )}
         >
@@ -122,8 +122,8 @@ export function CustomEmojiTab({ onAfterAction }: CustomEmojiTabProps) {
 
       {/* Token / error banners */}
       {hasToken === false && (
-        <div className="flex items-center gap-2 px-3 py-2 rounded-md bg-accent/10 border border-accent/20 text-xs text-mute shrink-0">
-          <AlertCircle size={13} className="text-accent shrink-0" />
+        <div className="flex items-center gap-2 px-3 py-2 rounded-md bg-accent-blue/10 border border-accent-blue/20 text-xs text-mute shrink-0">
+          <AlertCircle size={13} className="text-accent-blue shrink-0" />
           <span>
             Custom emoji generation requires Volt Pro (or a dev build with{' '}
             <code className="font-mono text-ink">HF_TOKEN</code> or{' '}

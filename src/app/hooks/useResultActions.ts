@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
-import { useCallback } from 'react';
+import { useCallback, useRef } from 'react';
 import { consumePendingHud } from '../../features/extensions/loader/hud-queue';
 import { applicationService } from '../../features/applications/services/applicationService';
 import { openFilePath } from '../../features/files/services/fileOpenService';
@@ -13,6 +13,8 @@ import { extractErrorMessage } from '../../shared/utils/error';
 import { logger } from '../../shared/utils/logger';
 import { isPluginResultData } from '../../shared/utils/typeGuards';
 import { VOLT_EVENTS, emitVoltEvent } from '../../shared/events';
+import { recordCommandUsage } from '../commandFrecency';
+import { getStableResultIdentity } from '../searchResultIdentity';
 import { openSystemMonitorWindow } from '../windows';
 import { useAppStore } from '../../stores/appStore';
 import { useSearchStore } from '../../stores/searchStore';
@@ -47,8 +49,17 @@ export function useResultActions({
 }: UseResultActionsOptions): UseResultActionsResult {
   const { setQuery: setSearchQuery, setResults, setSearchError } = useSearchStore.getState();
   const { setActiveView } = useUiStore.getState();
+  // Guard against double-activation (key-repeat Enter / double-click): the
+  // second activation while the first is still dispatching would launch the
+  // app twice and record frecency twice.
+  const launchInFlightRef = useRef(false);
   const handleLaunch = useCallback(
     async (result: SearchResult) => {
+      if (launchInFlightRef.current) return;
+      launchInFlightRef.current = true;
+      // Capture the query generation: the HUD 1.5s delay below must not wipe
+      // a new query the user typed after re-opening the window mid-delay.
+      const launchQuery = useSearchStore.getState().searchQuery;
       try {
         let shouldHideWindow = true;
 
@@ -69,6 +80,12 @@ export function useResultActions({
           if (action === 'settings' || action === 'account') {
             shouldHideWindow = false;
             await openSettingsWindow();
+          } else if (action === 'settings-target') {
+            // A settings page or row picked from the launcher: open (or focus) the Settings window
+            // right on it, and keep the launcher as is like the plain `settings` command.
+            shouldHideWindow = false;
+            const target = pluginResult.data?.target;
+            await openSettingsWindow(typeof target === 'string' ? target : undefined);
           } else if (action === 'create-extension') {
             shouldHideWindow = false;
             setActiveView({ type: 'create-extension' });
@@ -149,16 +166,24 @@ export function useResultActions({
         // Web queries and typed URLs are private by default. They use the
         // dedicated opt-in history above and never enter the launcher's generic
         // query bindings, logs, or query_bindings.json persistence.
-        if (currentQuery.trim() && !isPrivateWebResult) {
-          const resultId =
-            result.type === SearchResultType.Application
-              ? (result.data as { path: string }).path
-              : result.type === SearchResultType.File
-                ? (result.data as FileInfo).path
-                : result.id;
+        // Results without a stable identity (fallbacks, calculator, per-query
+        // plugin ids) are skipped: they could never match again and would only
+        // evict useful bindings from the bounded store.
+        const resultId = isPrivateWebResult ? null : getStableResultIdentity(result);
+        if (currentQuery.trim() && resultId !== null) {
           invoke('record_search_selection', { query: currentQuery, resultId }).catch((err) =>
             logger.error('Failed to record search selection:', err)
           );
+        }
+        // Universal frecency for every other stable result (plugin commands,
+        // quicklinks, snippets, window actions, games…). Applications are
+        // recorded by `launch_app`, files by `track_file_access`.
+        if (
+          resultId !== null &&
+          result.type !== SearchResultType.Application &&
+          result.type !== SearchResultType.File
+        ) {
+          recordCommandUsage(resultId, result.title);
         }
 
         // If the extension called showHUD(), show the overlay for 1.5s before hiding.
@@ -177,13 +202,19 @@ export function useResultActions({
 
         // Keep query and results visible for shell commands so user can read output
         if (result.type !== SearchResultType.ShellCommand) {
-          setSearchQuery('');
-          setResults([]);
+          // Don't wipe a new query typed while the HUD delay was pending
+          // (open → launch → reopen → type within 1.5s).
+          if (useSearchStore.getState().searchQuery === launchQuery) {
+            setSearchQuery('');
+            setResults([]);
+          }
         }
       } catch (err) {
         const errorMessage = extractErrorMessage(err);
         logger.error('Failed to launch:', errorMessage);
         setSearchError(`Failed to launch: ${errorMessage}`);
+      } finally {
+        launchInFlightRef.current = false;
       }
     },
     [

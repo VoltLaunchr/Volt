@@ -7,7 +7,6 @@ use crate::indexer::{
     IndexStatus, SearchEngine, SearchOptions, SearchResult as IndexSearchResult, scan_files,
 };
 use std::collections::HashMap;
-#[cfg(feature = "tantivy-search")]
 use std::path::Path;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -186,12 +185,20 @@ fn replace_file_cache(
     files: Vec<FileInfo>,
 ) {
     let lookup = build_file_lookup(&files);
-    if let Ok(mut files_guard) = files_state.lock()
-        && let Ok(mut lookup_guard) = lookup_state.lock()
-    {
-        *files_guard = Arc::new(files);
-        *lookup_guard = lookup;
-    }
+    // Recover from poison instead of skipping: this is a wholesale snapshot
+    // replacement, so overwriting heals whatever the panicking holder left
+    // behind. Skipping here while SQLite+Tantivy advanced would desynchronize
+    // the three stores (audit passe 2, sujet 6).
+    let mut files_guard = files_state.lock().unwrap_or_else(|poisoned| {
+        warn!("File cache mutex poisoned during swap; recovering");
+        poisoned.into_inner()
+    });
+    let mut lookup_guard = lookup_state.lock().unwrap_or_else(|poisoned| {
+        warn!("File lookup mutex poisoned during swap; recovering");
+        poisoned.into_inner()
+    });
+    *files_guard = Arc::new(files);
+    *lookup_guard = lookup;
 }
 
 #[cfg(feature = "tantivy-search")]
@@ -362,12 +369,62 @@ impl IndexingGuard {
 
 impl Drop for IndexingGuard {
     fn drop(&mut self) {
-        if self.generation.load(Ordering::Acquire) == self.owner
-            && let Ok(mut s) = self.status.lock()
-        {
+        // Recover from poison: clearing a boolean flag is always safe and a
+        // stuck `is_indexing = true` bricks "Rebuild Index" until restart.
+        if self.generation.load(Ordering::Acquire) == self.owner {
+            let mut s = self.status.lock().unwrap_or_else(|poisoned| {
+                warn!("Index status mutex poisoned in IndexingGuard::drop; recovering");
+                poisoned.into_inner()
+            });
             s.is_indexing = false;
         }
     }
+}
+
+struct ScanDiagnosticBaseline {
+    kind: crate::indexer::database::ScanKind,
+    added: usize,
+    removed: usize,
+    modified: usize,
+}
+
+/// The cache may still be empty on a forced startup scan. SQLite remains the
+/// baseline authority; failures suppress diagnostics instead of inventing an
+/// empty prior snapshot. Call on the blocking pool before replacing SQLite.
+fn scan_diagnostic_baseline(
+    db: Option<&FileIndexDb>,
+    cached_files: &[FileInfo],
+    scanned_files: &[FileInfo],
+    catchup: bool,
+) -> Result<ScanDiagnosticBaseline, String> {
+    let persisted_files;
+    let (before, last_full_scan) = if let Some(db) = db {
+        persisted_files = db.get_all_files()?;
+        let last_full_scan = db
+            .get_meta("last_full_scan")?
+            .map(|value| value.parse::<i64>())
+            .transpose()
+            .map_err(|e| format!("Invalid previous scan timestamp: {}", e))?
+            .unwrap_or(0);
+        (persisted_files.as_slice(), last_full_scan)
+    } else {
+        (cached_files, 0)
+    };
+    let kind = if before.is_empty() && last_full_scan == 0 {
+        crate::indexer::database::ScanKind::Initial
+    } else if catchup {
+        crate::indexer::database::ScanKind::Catchup
+    } else {
+        crate::indexer::database::ScanKind::Rebuild
+    };
+    let (added, removed, modified) =
+        crate::indexer::database::snapshot_delta(before, scanned_files);
+    Ok(ScanDiagnosticBaseline {
+        kind,
+        added,
+        removed,
+        modified,
+    })
 }
 
 /// Parameters for [`reconcile`], the scan→persist→swap sequence shared by
@@ -429,10 +486,21 @@ async fn reconcile(params: ReconcileParams) {
     // events, so they are applied after the replacement snapshot is committed.
     let _mutation_guard = mutation_gate.lock().await;
 
+    let started = std::time::Instant::now();
+    let root_count = config.folders.len();
+    let diagnostics_enabled = config.diagnostics_enabled;
+    let snapshot_before = diagnostics_enabled.then(|| {
+        files_arc
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone()
+    });
+
     // `scan_files` is a synchronous, deeply recursive filesystem walk that can
     // take tens of seconds on large drives. Offload to the blocking pool so it
     // never starves the async runtime (IPC / hotkey / UI events).
     let scan_result = tokio::task::spawn_blocking(move || scan_files(&config)).await;
+    let scan_ms = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
 
     // An invalidate/restart may have superseded this scan while the blocking
     // filesystem walk was finishing. Never let an obsolete snapshot commit.
@@ -447,38 +515,133 @@ async fn reconcile(params: ReconcileParams) {
 
             #[cfg(feature = "tantivy-search")]
             mark_fulltext_dirty(db_arc.as_ref().as_ref());
-            let _persisted = if let Some(db) = db_arc.as_ref() {
-                match db.replace_files(&scanned_files) {
-                    Ok(()) => {
-                        if let Err(e) = db.mark_full_scan() {
-                            warn!("{}: mark_full_scan failed: {}", label, e);
+            // `replace_files` (tens of thousands of inserts in ONE transaction
+            // holding a std Mutex) and the Tantivy rebuild (seconds of commit
+            // I/O) are synchronous and blocking: run them on the blocking
+            // pool, never on the Tokio worker that drives IPC/hotkeys (audit
+            // passe 2, sujet 3). The mutation gate stays held across the
+            // await, so watcher flushes keep queueing behind it.
+            let persist_db = db_arc.clone();
+            let persist_result = tokio::task::spawn_blocking(move || {
+                let persist_started = std::time::Instant::now();
+                let diagnostic_baseline =
+                    snapshot_before.as_ref().and_then(
+                        |cached_files| match scan_diagnostic_baseline(
+                            persist_db.as_ref().as_ref(),
+                            cached_files,
+                            &scanned_files,
+                            record_catchup_telemetry,
+                        ) {
+                            Ok(baseline) => Some(baseline),
+                            Err(e) => {
+                                warn!(
+                                    "{}: skipped scan diagnostics, baseline unavailable: {}",
+                                    label, e
+                                );
+                                None
+                            }
+                        },
+                    );
+                let persisted = if let Some(db) = persist_db.as_ref() {
+                    match db.replace_files(&scanned_files) {
+                        Ok(()) => {
+                            let persist_ms = u64::try_from(persist_started.elapsed().as_millis())
+                                .unwrap_or(u64::MAX);
+                            if let Some(baseline) = diagnostic_baseline {
+                                let diagnostic = crate::indexer::database::ScanDiagnostic {
+                                    kind: baseline.kind,
+                                    completed_at: chrono::Utc::now().timestamp(),
+                                    scan_ms,
+                                    persist_ms,
+                                    total_ms: u64::try_from(started.elapsed().as_millis())
+                                        .unwrap_or(u64::MAX),
+                                    indexed_count: file_count,
+                                    root_count,
+                                    added: baseline.added,
+                                    removed: baseline.removed,
+                                    modified: baseline.modified,
+                                };
+                                if let Err(e) = db.record_scan(diagnostic) {
+                                    warn!("{}: scan diagnostics failed: {}", label, e);
+                                }
+                            }
+                            if let Err(e) = db.mark_full_scan() {
+                                warn!("{}: mark_full_scan failed: {}", label, e);
+                            }
+                            if record_catchup_telemetry && let Err(e) = db.record_stale_catchup() {
+                                warn!("{}: record_stale_catchup failed: {}", label, e);
+                            }
+                            true
                         }
-                        if record_catchup_telemetry && let Err(e) = db.record_stale_catchup() {
-                            warn!("{}: record_stale_catchup failed: {}", label, e);
+                        Err(e) => {
+                            warn!("{}: persist failed: {}", label, e);
+                            false
                         }
-                        true
                     }
-                    Err(e) => {
-                        warn!("{}: persist failed: {}", label, e);
-                        false
-                    }
+                } else {
+                    false
+                };
+
+                #[cfg(feature = "tantivy-search")]
+                if persisted || persist_db.is_none() {
+                    rebuild_fulltext_index(
+                        fulltext_arc.as_ref(),
+                        persisted.then(|| persist_db.as_ref().as_ref()).flatten(),
+                        &scanned_files,
+                        label,
+                    );
                 }
-            } else {
-                false
+
+                (persisted, scanned_files)
+            })
+            .await;
+
+            let (persisted, scanned_files) = match persist_result {
+                Ok(parts) => parts,
+                Err(join_err) => {
+                    error!(
+                        "{}: persist task panicked or was cancelled: {}",
+                        label, join_err
+                    );
+                    return;
+                }
             };
 
-            #[cfg(feature = "tantivy-search")]
-            rebuild_fulltext_index(
-                fulltext_arc.as_ref(),
-                _persisted.then(|| db_arc.as_ref().as_ref()).flatten(),
-                &scanned_files,
-                label,
-            );
+            // SQLite is authoritative when available. A failed replacement
+            // must preserve both the prior cache and successful-scan status.
+            if db_arc.is_some() && !persisted {
+                if let Some(app_handle) = app_handle.as_ref() {
+                    let _ = app_handle.emit(
+                        "indexing-progress",
+                        IndexingProgress {
+                            phase: "error".to_string(),
+                            indexed_files: 0,
+                            total_files: 0,
+                            is_complete: true,
+                        },
+                    );
+                }
+                return;
+            }
+
+            // Re-check after the blocking persist: an invalidate/restart may
+            // have superseded this scan while it was committing. The DB may
+            // already hold this (now obsolete) snapshot — the replacement
+            // scan overwrites it when IT commits — but the in-memory cache
+            // must never regress to an older generation.
+            if generation.load(Ordering::Acquire) != owner {
+                info!("{}: discarded obsolete scan generation {}", label, owner);
+                return;
+            }
 
             // Update in-memory cache and its Tantivy hit lookup atomically.
             replace_file_cache(&files_arc, &file_lookup_arc, scanned_files);
 
-            if let Ok(mut status) = status_arc.lock() {
+            {
+                let mut status = status_arc.lock().unwrap_or_else(|poisoned| {
+                    warn!("{}: index status mutex poisoned; recovering", label);
+                    poisoned.into_inner()
+                });
                 status.is_indexing = false;
                 status.total_files = file_count;
                 status.indexed_files = file_count;
@@ -535,6 +698,9 @@ async fn reconcile(params: ReconcileParams) {
 /// calls the in-memory cache is populated from the DB (fast path), and the
 /// scan only runs if `force` is true or no files are in the DB.
 #[tauri::command]
+// Keep optional filtering fields flat on the existing IPC contract; Tauri
+// injects the app handle and state in addition to these user options.
+#[allow(clippy::too_many_arguments)]
 pub async fn start_indexing(
     app_handle: AppHandle,
     state: State<'_, FileIndexState>,
@@ -543,6 +709,9 @@ pub async fn start_indexing(
     file_extensions: Vec<String>,
     force: Option<bool>,
     deep_search: Option<bool>,
+    respect_ignore_files: Option<bool>,
+    exclude_generated_dirs: Option<bool>,
+    diagnostics_enabled: Option<bool>,
 ) -> VoltResult<()> {
     let _control = state.scan_control.lock().await;
 
@@ -578,7 +747,11 @@ pub async fn start_indexing(
             file_extensions: file_extensions.clone(),
             max_depth,
             max_file_size: 100 * 1024 * 1024,
+            respect_ignore_files: respect_ignore_files.unwrap_or(true),
+            exclude_generated_dirs: exclude_generated_dirs.unwrap_or(true),
+            diagnostics_enabled: diagnostics_enabled.unwrap_or(false),
         };
+        crate::indexer::set_external_policy(&cfg);
     }
 
     let files_arc = state.files.clone();
@@ -606,54 +779,96 @@ pub async fn start_indexing(
             file_extensions,
             max_depth: if deep_search.unwrap_or(false) { 10 } else { 3 },
             max_file_size: 100 * 1024 * 1024, // 100MB limit
+            respect_ignore_files: respect_ignore_files.unwrap_or(true),
+            exclude_generated_dirs: exclude_generated_dirs.unwrap_or(true),
+            diagnostics_enabled: diagnostics_enabled.unwrap_or(false),
         };
         // --- Fast path: load from DB if it already has files (skipped when force=true) ---
-        if !should_force {
-            if let Some(db) = db_arc.as_ref() {
-                match db.count() {
-                    Ok(n) if n > 0 => {
-                        info!("Loading {} files from SQLite cache", n);
-                        match db.get_all_files() {
-                            Ok(cached) => {
-                                let file_count = cached.len();
-                                #[cfg(feature = "tantivy-search")]
-                                if fulltext_index_is_current(fulltext_arc.as_ref(), db, file_count)
-                                {
-                                    info!(
-                                        "Reusing persistent Tantivy index ({} files)",
-                                        file_count
-                                    );
-                                } else {
+        // Runs under the mutation gate (audit passe 2, sujets 1+5): without
+        // it, a concurrent watcher flush can commit between our DB read and
+        // our cache/Tantivy swap, losing that mutation from memory and the
+        // derived index. The guard is scoped to this block on purpose —
+        // `reconcile` below takes the gate itself (tokio Mutex is not
+        // reentrant, holding it across would deadlock).
+        // Heavy synchronous work (SQLite load, Tantivy rebuild) is offloaded
+        // to the blocking pool (sujet 3), never on this Tokio worker.
+        let fast_served: bool = {
+            let _fast_gate = mutation_gate.lock().await;
+            if should_force {
+                false
+            } else if let Some(db) = db_arc.as_ref() {
+                // Clone the handle (shares the one connection) for the
+                // blocking thread; `db` itself is borrowed from `db_arc`.
+                let load_db = db.clone();
+                let loaded = tokio::task::spawn_blocking(move || {
+                    let n = load_db.count().unwrap_or(0);
+                    if n == 0 {
+                        return None;
+                    }
+                    load_db.get_all_files().ok()
+                })
+                .await
+                .unwrap_or(None);
+                match loaded {
+                    Some(cached) => {
+                        let file_count = cached.len();
+                        info!("Loading {} files from SQLite cache", file_count);
+                        #[cfg(feature = "tantivy-search")]
+                        {
+                            let ft_db = db.clone();
+                            let ft_arc = fulltext_arc.clone();
+                            let ft_arc_check = ft_arc.clone();
+                            let current = tokio::task::spawn_blocking(move || {
+                                fulltext_index_is_current(ft_arc_check.as_ref(), &ft_db, file_count)
+                            })
+                            .await
+                            .unwrap_or(false);
+                            if current {
+                                info!("Reusing persistent Tantivy index ({} files)", file_count);
+                            } else {
+                                // Cold path only (dirty marker or doc-count
+                                // mismatch): one extra snapshot clone so the
+                                // rebuild owns its input while the cache swap
+                                // below reuses `cached`.
+                                let rb_db = db.clone();
+                                let rb_ft = ft_arc.clone();
+                                let rb_files = cached.clone();
+                                tokio::task::spawn_blocking(move || {
                                     rebuild_fulltext_index(
-                                        fulltext_arc.as_ref(),
-                                        Some(db),
-                                        &cached,
+                                        rb_ft.as_ref(),
+                                        Some(&rb_db),
+                                        &rb_files,
                                         "SQLite cache",
                                     );
-                                }
-                                replace_file_cache(&files_arc, &file_lookup_arc, cached);
-                                if let Ok(mut status) = status_arc.lock() {
-                                    status.is_indexing = false;
-                                    status.total_files = file_count;
-                                    status.indexed_files = file_count;
-                                    status.last_updated = chrono::Utc::now().timestamp();
-                                }
-                                info!("In-memory cache populated from DB ({} files)", file_count);
-                                let _ = app_handle.emit(
-                                    "indexing-progress",
-                                    IndexingProgress {
-                                        phase: "complete".to_string(),
-                                        indexed_files: file_count,
-                                        total_files: file_count,
-                                        is_complete: true,
-                                    },
-                                );
-                                return;
+                                })
+                                .await
+                                .unwrap_or(());
                             }
-                            Err(e) => warn!("Failed to load from DB, falling back to scan: {}", e),
                         }
+                        replace_file_cache(&files_arc, &file_lookup_arc, cached);
+                        {
+                            let mut status = status_arc.lock().unwrap_or_else(|poisoned| {
+                                warn!("Fast-path index status mutex poisoned; recovering");
+                                poisoned.into_inner()
+                            });
+                            status.is_indexing = false;
+                            status.total_files = file_count;
+                            status.indexed_files = file_count;
+                            status.last_updated = chrono::Utc::now().timestamp();
+                        }
+                        info!("In-memory cache populated from DB ({} files)", file_count);
+                        let _ = app_handle.emit(
+                            "indexing-progress",
+                            IndexingProgress {
+                                phase: "complete".to_string(),
+                                indexed_files: file_count,
+                                total_files: file_count,
+                                is_complete: true,
+                            },
+                        );
+                        true
                     }
-                    Ok(_) => {
+                    None => {
                         info!("DB is empty – performing full scan");
                         let _ = app_handle.emit(
                             "indexing-progress",
@@ -664,13 +879,17 @@ pub async fn start_indexing(
                                 is_complete: false,
                             },
                         );
-                    }
-                    Err(e) => {
-                        warn!("Could not check DB count: {}", e);
+                        false
                     }
                 }
+            } else {
+                false
             }
-        } else {
+        };
+        if fast_served {
+            return;
+        }
+        if should_force {
             // Keep the previous snapshot available while scanning. The new
             // snapshot replaces SQLite transactionally only after scan success.
             #[cfg(feature = "tantivy-search")]
@@ -689,7 +908,7 @@ pub async fn start_indexing(
             #[cfg(feature = "tantivy-search")]
             fulltext_arc,
             app_handle: Some(app_handle),
-            label: "full scan",
+            label: if should_force { "rebuild" } else { "full scan" },
             record_catchup_telemetry: false,
             mutation_gate,
             generation,
@@ -698,7 +917,11 @@ pub async fn start_indexing(
         .await;
     });
 
-    if let Ok(mut task) = state.scan_task.lock() {
+    {
+        let mut task = state.scan_task.lock().unwrap_or_else(|poisoned| {
+            warn!("Scan task mutex poisoned storing scan handle; recovering");
+            poisoned.into_inner()
+        });
         *task = Some(join_handle.abort_handle());
     }
 
@@ -1184,12 +1407,19 @@ pub async fn invalidate_index(
 ) -> VoltResult<()> {
     let _control = state.scan_control.lock().await;
 
-    // Abort any in-progress background scan before rebuilding.
-    if let Ok(mut task) = state.scan_task.lock()
-        && let Some(handle) = task.take()
+    // Abort any in-progress background scan before rebuilding. Recover from
+    // poison: losing the AbortHandle would orphan a scan that can commit an
+    // obsolete snapshot (the generation check usually saves us, but the
+    // handle is cheap to preserve).
     {
-        handle.abort();
-        info!("Aborted in-progress index scan for rebuild");
+        let mut task = state.scan_task.lock().unwrap_or_else(|poisoned| {
+            warn!("Scan task mutex poisoned in invalidate_index; recovering");
+            poisoned.into_inner()
+        });
+        if let Some(handle) = task.take() {
+            handle.abort();
+            info!("Aborted in-progress index scan for rebuild");
+        }
     }
 
     // Keep the watcher alive. Its flushes wait on `mutation_gate` while the
@@ -1253,7 +1483,11 @@ pub async fn invalidate_index(
         .await;
     });
 
-    if let Ok(mut task) = state.scan_task.lock() {
+    {
+        let mut task = state.scan_task.lock().unwrap_or_else(|poisoned| {
+            warn!("Scan task mutex poisoned storing rebuild handle; recovering");
+            poisoned.into_inner()
+        });
         *task = Some(rebuild_handle.abort_handle());
     }
 
@@ -1271,6 +1505,11 @@ pub async fn get_db_index_stats(
         .lock()
         .map(|h| h.as_ref().map(|w| w.is_active()).unwrap_or(false))
         .unwrap_or(false);
+    let folders = state
+        .config
+        .lock()
+        .map(|cfg| cfg.folders.clone())
+        .unwrap_or_default();
 
     // `get_stats` calls `std::fs::metadata` and a synchronous SQLite COUNT —
     // both are blocking syscalls; offload to avoid parking a Tokio worker.
@@ -1278,7 +1517,10 @@ pub async fn get_db_index_stats(
     let files_arc = state.files.clone();
     tokio::task::spawn_blocking(move || {
         if let Some(db) = db_arc.as_ref() {
-            db.get_stats(is_watching).map_err(VoltError::Unknown)
+            let mut stats = db.get_stats(is_watching).map_err(VoltError::Unknown)?;
+            stats.watcher_churn =
+                label_watcher_churn(std::mem::take(&mut stats.watcher_churn), &folders);
+            Ok(stats)
         } else {
             let indexed_count = files_arc.lock().map(|f| f.len()).unwrap_or_else(|e| {
                 warn!("files mutex poisoned in get_db_index_stats: {}", e);
@@ -1291,11 +1533,54 @@ pub async fn get_db_index_stats(
                 is_watching,
                 stale_catchup_count: 0,
                 last_stale_catchup: 0,
+                scan_history: Vec::new(),
+                scan_duration_recent_ms: None,
+                scan_duration_median_ms: None,
+                watcher_churn: Vec::new(),
             })
         }
     })
     .await
     .map_err(|e| VoltError::Unknown(format!("get_db_index_stats task failed: {}", e)))?
+}
+
+/// Replace opaque root keys with generic labels before crossing IPC: `Root N`
+/// follows the order of the configured folders; roots no longer configured,
+/// and the overflow bucket, become `Other roots`. Never returns a path.
+fn label_watcher_churn(
+    entries: Vec<crate::indexer::database::WatcherChurnDay>,
+    folders: &[String],
+) -> Vec<crate::indexer::database::WatcherChurnDay> {
+    use crate::indexer::database::{WatcherChurnDay, root_diagnostic_key};
+    let labels: HashMap<String, String> = folders
+        .iter()
+        .enumerate()
+        .map(|(i, folder)| {
+            (
+                root_diagnostic_key(Path::new(folder)),
+                format!("Root {}", i + 1),
+            )
+        })
+        .collect();
+    let mut labelled: Vec<WatcherChurnDay> = Vec::with_capacity(entries.len());
+    for entry in entries {
+        let root = labels
+            .get(&entry.root)
+            .cloned()
+            .unwrap_or_else(|| "Other roots".to_string());
+        match labelled
+            .iter_mut()
+            .find(|e| e.day == entry.day && e.root == root)
+        {
+            Some(existing) => existing.events = existing.events.saturating_add(entry.events),
+            None => labelled.push(WatcherChurnDay {
+                day: entry.day,
+                root,
+                events: entry.events,
+            }),
+        }
+    }
+    labelled
 }
 
 /// Start (or restart) the file-system watcher for the configured directories.
@@ -1306,12 +1591,24 @@ pub async fn start_file_watcher(
     index_state: State<'_, FileIndexState>,
     watcher_state: State<'_, WatcherState>,
 ) -> VoltResult<()> {
-    // Stop any existing watcher.
-    if let Ok(mut handle) = watcher_state.handle.lock() {
-        if let Some(h) = handle.as_ref() {
-            h.stop();
-        }
-        *handle = None;
+    // Stop any existing watcher. `WatcherHandle::stop` joins the worker
+    // thread, which can sit in a multi-second flush or wait behind the
+    // mutation gate during a scan — never do that on this Tokio worker
+    // (audit passe 2, sujet 3). Take the handle out, then join it on the
+    // blocking pool. Sequential stop-before-start is kept: a stale worker
+    // flushing concurrently with the replacement watcher could otherwise
+    // interleave duplicate mutations.
+    let stale: Option<WatcherHandle> = {
+        let mut handle = watcher_state.handle.lock().unwrap_or_else(|poisoned| {
+            warn!("Watcher state mutex poisoned in start_file_watcher; recovering");
+            poisoned.into_inner()
+        });
+        handle.take()
+    };
+    if let Some(stale) = stale {
+        tokio::task::spawn_blocking(move || stale.stop())
+            .await
+            .map_err(|e| VoltError::Unknown(format!("watcher stop task failed: {e}")))?;
     }
 
     // Get the current indexing config. The watcher must enforce the same
@@ -1339,24 +1636,16 @@ pub async fn start_file_watcher(
         }
     };
 
-    // We need an Arc<FileIndexDb> for the watcher thread.  Since `db` is
-    // already inside an Arc<Option<FileIndexDb>>, we reconstruct a new Arc.
-    // This is safe because FileIndexDb wraps its connection in Arc<Mutex<>>.
+    // We need an Arc<FileIndexDb> for the watcher thread. The state holds
+    // `Arc<Option<FileIndexDb>>`; clone the inner handle so the watcher
+    // shares the SAME connection (one `Arc<Mutex<Connection>>`) instead of
+    // opening a second one. Separate connections hit SQLITE_BUSY against each
+    // other under scan+churn contention and dropped watcher mutations as a
+    // result (audit passe 2, sujet 1). The tight `busy_timeout` remains as a
+    // backstop for out-of-process writers.
     use crate::indexer::watcher::start_watcher;
 
-    // Build an Arc from the existing DB reference.
-    // Because FileIndexDb has Arc<Mutex<Connection>> internally, cloning the
-    // Arc-wrapped DB by pointer would require an Arc<FileIndexDb>.
-    // The state already holds Arc<Option<FileIndexDb>>; we construct a new
-    // Arc pointing at the same underlying db by opening a shared reference.
-    //
-    // To avoid requiring Clone on FileIndexDb (which holds a Mutex), we
-    // instead open a fresh connection to the same path stored in the DB.
-    // The DB path is retrieved via a public method.
-    let db_arc: Arc<FileIndexDb> = Arc::new(
-        FileIndexDb::open(db.db_path())
-            .map_err(|e| VoltError::Unknown(format!("Failed to open watcher DB: {}", e)))?,
-    );
+    let db_arc: Arc<FileIndexDb> = Arc::new(db.clone());
 
     // Pass the in-memory files Arc so the watcher can keep it in sync.
     let in_memory_files = Some(index_state.files.clone());
@@ -1398,12 +1687,19 @@ pub async fn start_file_watcher(
 /// Stop the file-system watcher.
 #[tauri::command]
 pub async fn stop_file_watcher(watcher_state: State<'_, WatcherState>) -> VoltResult<()> {
-    if let Ok(mut handle) = watcher_state.handle.lock() {
-        if let Some(h) = handle.as_ref() {
-            h.stop();
-            info!("File watcher stopped");
-        }
-        *handle = None;
+    let handle: Option<WatcherHandle> = {
+        let mut guard = watcher_state.handle.lock().unwrap_or_else(|poisoned| {
+            warn!("Watcher state mutex poisoned in stop_file_watcher; recovering");
+            poisoned.into_inner()
+        });
+        guard.take()
+    };
+    if let Some(handle) = handle {
+        // `stop` joins the worker thread: offload (see `start_file_watcher`).
+        tokio::task::spawn_blocking(move || handle.stop())
+            .await
+            .map_err(|e| VoltError::Unknown(format!("watcher stop task failed: {e}")))?;
+        info!("File watcher stopped");
     }
     Ok(())
 }
@@ -1515,7 +1811,11 @@ pub async fn refresh_index_if_stale(
         .await;
     });
 
-    if let Ok(mut task) = state.scan_task.lock() {
+    {
+        let mut task = state.scan_task.lock().unwrap_or_else(|poisoned| {
+            warn!("Scan task mutex poisoned storing catch-up handle; recovering");
+            poisoned.into_inner()
+        });
         *task = Some(catchup_handle.abort_handle());
     }
 
@@ -1542,6 +1842,154 @@ mod tests {
     }
 
     #[test]
+    fn scan_diagnostics_use_persisted_snapshot_when_startup_cache_is_empty() {
+        let dir = crate::indexer::test_tempdir();
+        let db = FileIndexDb::open(dir.path().join("files.db")).unwrap();
+        let keep = test_file("keep.txt", "/keep.txt");
+        let old_modified = test_file("changed.txt", "/changed.txt");
+        db.upsert_files(&[
+            keep.clone(),
+            old_modified.clone(),
+            test_file("removed.txt", "/removed.txt"),
+        ])
+        .unwrap();
+        db.mark_full_scan().unwrap();
+        let mut modified = old_modified;
+        modified.size += 1;
+        let after = [keep, modified, test_file("added.txt", "/added.txt")];
+        let baseline = scan_diagnostic_baseline(Some(&db), &[], &after, false).unwrap();
+        assert_eq!(baseline.kind, crate::indexer::database::ScanKind::Rebuild);
+        assert_eq!(
+            (baseline.added, baseline.removed, baseline.modified),
+            (1, 1, 1)
+        );
+        let catchup = scan_diagnostic_baseline(Some(&db), &[], &after, true).unwrap();
+        assert_eq!(catchup.kind, crate::indexer::database::ScanKind::Catchup);
+    }
+
+    #[test]
+    fn scan_diagnostics_identify_initial_scan_from_persisted_state() {
+        let dir = crate::indexer::test_tempdir();
+        let db = FileIndexDb::open(dir.path().join("files.db")).unwrap();
+        let after = [test_file("first.txt", "/first.txt")];
+        let first = scan_diagnostic_baseline(Some(&db), &[], &after, false).unwrap();
+        assert_eq!(first.kind, crate::indexer::database::ScanKind::Initial);
+        assert_eq!((first.added, first.removed, first.modified), (1, 0, 0));
+        // A previous successful empty scan is still a previous scan.
+        db.mark_full_scan().unwrap();
+        let next = scan_diagnostic_baseline(Some(&db), &[], &after, false).unwrap();
+        assert_eq!(next.kind, crate::indexer::database::ScanKind::Rebuild);
+        // Without SQLite, use the cache instead of inventing an empty baseline.
+        let cached = scan_diagnostic_baseline(None, &after, &after, false).unwrap();
+        assert_eq!((cached.added, cached.removed, cached.modified), (0, 0, 0));
+    }
+
+    #[test]
+    fn scan_diagnostics_reject_unavailable_authoritative_baseline() {
+        let dir = crate::indexer::test_tempdir();
+        let path = dir.path().join("files.db");
+        let db = FileIndexDb::open(&path).unwrap();
+        db.set_meta("last_full_scan", "invalid timestamp").unwrap();
+        assert!(scan_diagnostic_baseline(Some(&db), &[], &[], false).is_err());
+        rusqlite::Connection::open(&path)
+            .unwrap()
+            .execute_batch("DROP TABLE files;")
+            .unwrap();
+        assert!(scan_diagnostic_baseline(Some(&db), &[], &[], false).is_err());
+    }
+
+    #[tokio::test]
+    async fn reconcile_persist_failure_preserves_snapshot_and_does_not_record_success() {
+        let dir = crate::indexer::test_tempdir();
+        let root = dir.path().join("root");
+        std::fs::create_dir(&root).unwrap();
+        std::fs::write(root.join("new.txt"), "new snapshot").unwrap();
+        let db_path = dir.path().join("files.db");
+        let db = FileIndexDb::open(&db_path).unwrap();
+        let old = test_file("old.txt", "/old.txt");
+        db.upsert_file(&old).unwrap();
+        rusqlite::Connection::open(&db_path)
+            .unwrap()
+            .execute_batch("CREATE TRIGGER reject_scan BEFORE INSERT ON files BEGIN SELECT RAISE(ABORT, 'simulated persistence failure'); END;")
+            .unwrap();
+        let files = Arc::new(Mutex::new(Arc::new(vec![old])));
+        let lookup = Arc::new(Mutex::new(Arc::new(HashMap::from([(
+            "/old.txt".to_string(),
+            0,
+        )]))));
+        let status = Arc::new(Mutex::new(IndexStatus {
+            is_indexing: true,
+            total_files: 1,
+            indexed_files: 1,
+            last_updated: 123,
+        }));
+        let config = IndexConfig {
+            folders: vec![root.to_string_lossy().into_owned()],
+            diagnostics_enabled: true,
+            ..IndexConfig::default()
+        };
+        reconcile(ReconcileParams {
+            config,
+            files_arc: files.clone(),
+            file_lookup_arc: lookup.clone(),
+            status_arc: status.clone(),
+            db_arc: Arc::new(Some(db.clone())),
+            #[cfg(feature = "tantivy-search")]
+            fulltext_arc: None,
+            app_handle: None,
+            label: "rebuild",
+            record_catchup_telemetry: true,
+            mutation_gate: Arc::new(tokio::sync::Mutex::new(())),
+            generation: Arc::new(AtomicU64::new(1)),
+            owner: 1,
+        })
+        .await;
+        assert_eq!(files.lock().unwrap()[0].path, "/old.txt");
+        assert_eq!(lookup.lock().unwrap().get("/old.txt"), Some(&0));
+        assert_eq!(status.lock().unwrap().last_updated, 123);
+        assert_eq!(db.get_all_files().unwrap()[0].path, "/old.txt");
+        let stats = db.get_stats(false).unwrap();
+        assert!(stats.scan_history.is_empty());
+        assert_eq!(stats.stale_catchup_count, 0);
+        assert_eq!(stats.last_full_scan, 0);
+    }
+
+    #[test]
+    fn watcher_churn_labels_are_generic_and_never_paths() {
+        use crate::indexer::database::{WatcherChurnDay, root_diagnostic_key};
+        let first = crate::indexer::test_tempdir();
+        let second = crate::indexer::test_tempdir();
+        let folders = vec![
+            first.path().to_string_lossy().into_owned(),
+            second.path().to_string_lossy().into_owned(),
+        ];
+        let entry = |root: String, events| WatcherChurnDay {
+            day: 1,
+            root,
+            events,
+        };
+        let labelled = label_watcher_churn(
+            vec![
+                entry(root_diagnostic_key(second.path()), 4),
+                entry(root_diagnostic_key(first.path()), 2),
+                entry("removed-root-key".into(), 1),
+                entry("other".into(), 3),
+            ],
+            &folders,
+        );
+        let json = serde_json::to_string(&labelled).unwrap();
+        for folder in &folders {
+            assert!(!json.contains(folder.as_str()));
+        }
+        assert!(!json.contains("removed-root-key"));
+        assert_eq!(labelled[0].root, "Root 2");
+        assert_eq!(labelled[1].root, "Root 1");
+        assert_eq!(labelled[2].root, "Other roots");
+        assert_eq!(labelled[2].events, 4, "unknown roots fold together");
+        assert_eq!(labelled.len(), 3);
+    }
+
+    #[test]
     fn file_lookup_matches_replaced_snapshot() {
         let files_state = Arc::new(Mutex::new(Arc::new(Vec::new())));
         let lookup_state = Arc::new(Mutex::new(Arc::new(HashMap::new())));
@@ -1562,7 +2010,7 @@ mod tests {
     #[cfg(feature = "tantivy-search")]
     #[test]
     fn persistent_fulltext_is_reused_only_when_clean_and_complete() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = crate::indexer::test_tempdir();
         let db = FileIndexDb::open(dir.path().join("files.db")).unwrap();
         let fulltext = Arc::new(FulltextIndex::create_in_ram());
         let files = vec![test_file("alpha.txt", "/x/alpha.txt")];
@@ -1649,14 +2097,11 @@ mod tests {
     }
 
     /// Even if the guard's drop runs after a panic-poisoned mutex, it must
-    /// not panic itself. We can't easily simulate a poisoned mutex in a
-    /// `#[test]` (would require catching a panic and re-acquiring), so this
-    /// test pins the behaviour: drop is total — never aborts on lock failure.
+    /// not panic itself AND must still clear the flag (sujet 6). Poison is
+    /// produced deterministically: the panic unwinds through the guard,
+    /// poisoning the mutex, and `catch_unwind` contains it.
     #[test]
-    fn indexing_guard_drop_does_not_panic_on_lock_failure() {
-        // Trigger Drop with a still-healthy mutex; the assertion below proves
-        // the success path does not panic. The poisoned-mutex path is covered
-        // by the `if let Ok(mut s) = self.status.lock()` guard in the impl.
+    fn indexing_guard_drop_recovers_from_poisoned_status() {
         let status = Arc::new(Mutex::new(IndexStatus {
             is_indexing: true,
             total_files: 0,
@@ -1664,8 +2109,55 @@ mod tests {
             last_updated: 0,
         }));
         let generation = Arc::new(AtomicU64::new(1));
+        {
+            let status = Arc::clone(&status);
+            let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let _guard = status.lock().unwrap();
+                panic!("intentional poison for test");
+            }));
+        }
+        assert!(status.lock().is_err());
         drop(IndexingGuard::new(Arc::clone(&status), generation, 1));
-        assert!(!status.lock().unwrap().is_indexing);
+        assert!(
+            !status
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .is_indexing
+        );
+    }
+
+    /// `replace_file_cache` must swap even when the cache mutexes are
+    /// poisoned (sujet 6): skipping the swap while SQLite+Tantivy advanced
+    /// would desynchronize the three stores.
+    #[test]
+    fn replace_file_cache_recovers_from_poison() {
+        let files_state = Arc::new(Mutex::new(Arc::new(Vec::new())));
+        let lookup_state = Arc::new(Mutex::new(Arc::new(HashMap::new())));
+        {
+            let state = Arc::clone(&files_state);
+            let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let _guard = state.lock().unwrap();
+                panic!("intentional poison for test");
+            }));
+            let state = Arc::clone(&lookup_state);
+            let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let _guard = state.lock().unwrap();
+                panic!("intentional poison for test");
+            }));
+        }
+        replace_file_cache(
+            &files_state,
+            &lookup_state,
+            vec![test_file("healed.txt", "/x/healed.txt")],
+        );
+        let files = files_state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let lookup = lookup_state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        assert_eq!(files.len(), 1);
+        assert_eq!(lookup.get("/x/healed.txt"), Some(&0));
     }
 
     #[test]

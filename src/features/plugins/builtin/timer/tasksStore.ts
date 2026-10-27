@@ -83,7 +83,25 @@ class TasksStore {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (!raw) return;
       const parsed: unknown = JSON.parse(raw);
-      if (Array.isArray(parsed)) this.tasks = parsed as PomodoroTask[];
+      if (Array.isArray(parsed)) {
+        const seen = new Set<string>();
+        this.tasks = parsed.filter((task): task is PomodoroTask => {
+          if (!task || typeof task !== 'object') return false;
+          const t = task as PomodoroTask;
+          if (
+            typeof t.id !== 'string' ||
+            !t.id ||
+            seen.has(t.id) ||
+            typeof t.label !== 'string' ||
+            !t.label.trim() ||
+            typeof t.done !== 'boolean' ||
+            !Number.isFinite(t.createdAt)
+          )
+            return false;
+          seen.add(t.id);
+          return true;
+        });
+      }
     } catch (err) {
       logger.warn('Failed to restore pomodoro tasks', err);
     }

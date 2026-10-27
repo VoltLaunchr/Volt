@@ -1,9 +1,14 @@
-
 import { invoke } from '@tauri-apps/api/core';
 import i18n from 'i18next';
 import { logger } from '../../../../shared/utils/logger';
 import { openSystemMonitorWindow } from '../../../../app/windows';
-import { Plugin, PluginActivation, PluginContext, PluginResult, PluginResultType } from '../../types';
+import {
+  Plugin,
+  PluginActivation,
+  PluginContext,
+  PluginResult,
+  PluginResultType,
+} from '../../types';
 import type { SystemMetrics } from './types';
 
 const SYSTEMMONITOR_NS = 'systemmonitor';
@@ -13,12 +18,7 @@ const MEMORY_KEYWORDS = ['memory', 'ram', 'mémoire'];
 const DISK_KEYWORDS = ['disk', 'disque'];
 const GENERIC_KEYWORDS = ['system', 'système', 'performance', 'usage', 'utilisation'];
 
-const ALL_KEYWORDS = [
-  ...CPU_KEYWORDS,
-  ...MEMORY_KEYWORDS,
-  ...DISK_KEYWORDS,
-  ...GENERIC_KEYWORDS,
-];
+const ALL_KEYWORDS = [...CPU_KEYWORDS, ...MEMORY_KEYWORDS, ...DISK_KEYWORDS, ...GENERIC_KEYWORDS];
 
 /**
  * Word-boundary keyword match. Splits the query on whitespace and checks whether
@@ -66,7 +66,7 @@ export class SystemMonitorPlugin implements Plugin {
         results.push({
           id: 'system_cpu',
           type: PluginResultType.SystemMonitor,
-          title: `${i18n.t('cpu', { ns: SYSTEMMONITOR_NS })} ${metrics.cpuUsage.toFixed(1)}%`,
+          title: i18n.t('cpu', { ns: SYSTEMMONITOR_NS }),
           subtitle: this.getUsageLabel(metrics.cpuUsage),
           score: 95,
           data: {
@@ -88,7 +88,7 @@ export class SystemMonitorPlugin implements Plugin {
         results.push({
           id: 'system_memory',
           type: PluginResultType.SystemMonitor,
-          title: `${i18n.t('memory', { ns: SYSTEMMONITOR_NS })} ${metrics.memoryUsedGb.toFixed(1)} / ${metrics.memoryTotalGb.toFixed(1)} GB`,
+          title: `${i18n.t('memory', { ns: SYSTEMMONITOR_NS })} · ${metrics.memoryUsedGb.toFixed(1)} / ${metrics.memoryTotalGb.toFixed(1)} ${i18n.language?.startsWith('fr') ? 'Gio' : 'GiB'}`,
           subtitle: `${availableLabel} • ${this.getUsageLabel(metrics.memoryUsage)}`,
           score: 95,
           data: {
@@ -110,7 +110,7 @@ export class SystemMonitorPlugin implements Plugin {
         results.push({
           id: 'system_disk',
           type: PluginResultType.SystemMonitor,
-          title: `${i18n.t('disk', { ns: SYSTEMMONITOR_NS })} ${metrics.diskUsedGb.toFixed(0)} / ${metrics.diskTotalGb.toFixed(0)} GB`,
+          title: `${i18n.t('disk', { ns: SYSTEMMONITOR_NS })} · ${metrics.diskUsedGb.toFixed(0)} / ${metrics.diskTotalGb.toFixed(0)} ${i18n.language?.startsWith('fr') ? 'Gio' : 'GiB'}`,
           subtitle: `${freeLabel} • ${this.getUsageLabel(metrics.diskUsage)}`,
           score: 95,
           data: {
@@ -147,7 +147,8 @@ export class SystemMonitorPlugin implements Plugin {
    * Get localized usage status label
    */
   private getUsageLabel(usage: number): string {
-    const key = usage >= 90 ? 'critical' : usage >= 75 ? 'high' : usage >= 50 ? 'moderate' : 'normal';
+    const key =
+      usage >= 90 ? 'critical' : usage >= 75 ? 'high' : usage >= 50 ? 'moderate' : 'normal';
     return i18n.t(`usage.${key}`, { ns: SYSTEMMONITOR_NS });
   }
 }

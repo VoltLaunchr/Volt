@@ -485,6 +485,33 @@ full user profile `C:\Users\Noluc`.
 > base name not a path; journal is bounded), voidtools forum (MFT-baseline + USN-live model),
 > libUSNJournal (`FILE_TRAVERSE` + `FSCTL_READ_UNPRIVILEGED_USN_JOURNAL` = no admin).
 
+### Decision record — 2026-10-14 (🔁 réouverture D2/D3, preuve concurrente)
+
+> Entrée rédigée en français, comme le suivi `TODO-REFONTE.md`. L'analyse d'un produit tiers est
+> volontairement tenue **hors** de ce blueprint (cf. note de scope en tête) : elle vit dans
+> [`REFONTE-REOUVERTURE-E2-D3-RAYCAST.md`](./REFONTE-REOUVERTURE-E2-D3-RAYCAST.md).
+
+- **Fait nouveau** : un launcher concurrent livre sur Windows un **service NTFS séparé, opt-in,
+  installé après une seule UAC** (MFT pour la baseline, USN privilégié pour les deltas, IPC par
+  named pipe avec vérification de signature de l'appelant), tout en gardant par défaut un walk
+  borné avec fichiers d'ignore hiérarchiques et exclusion automatique des dossiers à fort churn.
+- **Ce qui change dans le raisonnement** : avec un lecteur **privilégié**, les records USN
+  portent leur nom ⇒ le coût de résolution `OpenFileById` (462 µs/fichier, DR 2026-06-24) et le
+  « pas de baseline instantanée sans admin » ne s'appliquent plus. Le verrou devient la
+  **sécurité du service** (LocalSystem, métadonnées seulement, filtrage par l'appelant pour ne
+  pas divulguer les noms de fichiers d'autres comptes) et la **signature** du binaire.
+- **Ce qui ne change pas** : D2 « opportuniste si déjà élevé » reste abandonné ; D3 non privilégié
+  reste NO-GO tant que le gate (2) n'est pas mesuré ; aucun UAC par défaut ni par recherche.
+- **Décisions** : (1) ajouter une télémétrie **locale, opt-in, sans réseau** (ring buffer des
+  `reconcile()` avec durée et delta, churn watcher par racine, rapport copiable) pour enfin
+  mesurer le gate (2) ; (2) ajouter les gains sans admin (ignore files, exclusion auto du churn) ;
+  (3) le seul chemin MFT viable est un **service séparé opt-in** — un service empaqueté MSIX
+  (`packagedServices` + `localSystemServices`) est rejeté car non approuvé au Store dans la
+  plupart des cas ; (4) démarrage du service conditionné aux gates G1 (signature), G2 (données),
+  G3 (revue sécurité) du doc de réouverture.
+- **Note de maintenance** : `ntfs-reader` est en **0.6.0** sur crates.io (2026-10-14) ; le §3.2
+  et les références ci-dessous citent encore 0.4.2.
+
 ---
 
 ## 5. Migration & coexistence

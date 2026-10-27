@@ -4,7 +4,7 @@ Ce fichier complète `.github/copilot-instructions.md` avec des règles plus dé
 
 ## Frontend vs Backend (où mettre la logique)
 
-- UI/UX, orchestration, debounce, agrégation des résultats: TypeScript/React. `App.tsx` (~197 lignes) est un shell mince; la logique est extraite dans des hooks dédiés:
+- UI/UX, orchestration, debounce, agrégation des résultats: TypeScript/React. `App.tsx` (~465 lignes) est un shell d'orchestration; la logique métier est extraite dans des hooks dédiés:
   - `src/app/hooks/useSearchPipeline.ts` — search + debounce 150ms + `latestSearchId`
   - `src/app/hooks/useAppLifecycle.ts` — scan init, auto-indexing, updater, extensions
   - `src/app/hooks/useGlobalHotkey.ts` — keyboard shortcuts
@@ -17,16 +17,16 @@ Ce fichier complète `.github/copilot-instructions.md` avec des règles plus dé
 
 ## Indexation fichiers (comment ça marche vraiment)
 
-- État en mémoire ET persistance SQLite: `FileIndexState` conserve un snapshot `Arc<Vec<FileInfo>>`, un lookup `HashMap<path, index>` cohérent avec ce snapshot, et la base SQLite `file_history.db` (rusqlite) pour la persistance entre sessions.
+- État en mémoire ET persistance SQLite: `FileIndexState` conserve un snapshot `Arc<Vec<FileInfo>>`, un lookup `HashMap<path, index>` cohérent avec ce snapshot, et la base SQLite `file_index.db` (rusqlite) pour la persistance entre sessions.
 - `start_indexing(...)` lance un scan en tâche de fond (`tauri::async_runtime::spawn`) et met à jour `IndexStatus`.
 - Scan filesystem: [src-tauri/src/indexer/scanner.rs](src-tauri/src/indexer/scanner.rs)
-  - Filtrage exclusions: `excluded_paths` est un simple `contains` sur le chemin (attention aux faux positifs).
-  - Limites: `max_depth = 10`, `max_file_size = 100MB` (hardcodés dans `start_indexing`).
+  - Filtrage partagé scan/watcher/Windows Search dans `indexer/ignore_policy.rs` : exclusions manuelles par préfixe absolu, composant ou glob, règles hiérarchiques `.gitignore`/`.ignore`/`.voltignore`, puis dossiers générés connus. La politique Windows Search est initialisée depuis les paramètres même sans scan au démarrage.
+  - Limites: `max_depth = 3` (10 si recherche profonde), `max_file_size = 100MB` dans `start_indexing`.
   - Extensions: si `file_extensions` est vide → indexe tout; sinon ne garde que les extensions listées (et ignore les fichiers sans extension).
   - Dossiers: les répertoires sont aussi indexés aux profondeurs 0–1 (permet de trouver des “dossiers jeux”, etc.).
 - Base de données: [src-tauri/src/indexer/database.rs](src-tauri/src/indexer/database.rs) — CRUD SQLite et remplacement transactionnel du snapshot après un scan réussi. Ne pas vider l'ancien index avant la fin du scan.
 - Watcher filesystem: [src-tauri/src/indexer/watcher.rs](src-tauri/src/indexer/watcher.rs) — surveillance temps réel, debounce 100ms, synchronisation SQLite/cache/Tantivy. `stop()` rejoint le worker et constitue une barrière avant rebuild.
-- Recherche index: [src-tauri/src/indexer/search.rs](src-tauri/src/indexer/search.rs) et [src-tauri/src/indexer/search_engine.rs](src-tauri/src/indexer/search_engine.rs)
+- Recherche index: [src-tauri/src/indexer/search_engine.rs](src-tauri/src/indexer/search_engine.rs)
   - Build par défaut: nucleo (exact/startsWith/contains/fuzzy), avec exclusion des fichiers cachés.
   - Feature `tantivy-search`: index persistant dans `file_history.tantivy`, scoring exact + BM25 + préfixe + fuzzy Levenshtein avec transpositions.
   - L'index Tantivy est réutilisé au démarrage uniquement si le marqueur SQLite `tantivy_dirty` est propre et si le nombre de documents concorde; sinon il est reconstruit depuis SQLite.
@@ -72,4 +72,4 @@ Ce fichier complète `.github/copilot-instructions.md` avec des règles plus dé
 - Éviter de casser la recherche: conserver le debounce 150ms + protection anti-réponses obsolètes (`latestSearchId`) dans `useSearchPipeline.ts`.
 - Si vous ajoutez une commande Tauri: ajouter `#[tauri::command]` → exporter dans [src-tauri/src/commands/mod.rs](src-tauri/src/commands/mod.rs) → enregistrer dans [src-tauri/src/lib.rs](src-tauri/src/lib.rs) → appeler via `invoke()`.
 - Synchronisation types Rust/TS: TS est en `camelCase`, Rust en `snake_case`; utiliser `serde(rename_all = "camelCase")` quand une structure traverse la frontière.
-- Tests: vérifier avant de merger. État validé fin août 2026: 449 tests Vitest (49 suites), 357 tests Rust par défaut, 381 avec `tantivy-search`. Exécuter aussi les deux matrices Clippy strictes documentées dans le README.
+- Tests: vérifier avant de merger. Voir CI `check.yml`; recompter via `pnpm run test` / `cargo test --workspace --lib --features tantivy-search`. Exécuter aussi les deux matrices Clippy strictes documentées dans le README.

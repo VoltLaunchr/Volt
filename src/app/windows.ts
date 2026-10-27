@@ -4,6 +4,9 @@ import { logger } from '../shared/utils/logger';
 /**
  * Opens (or focuses) the standalone Volt Settings window.
  *
+ * `section` is a Settings page id, a section id or a row id (see `resolveSettingsTarget`): the
+ * window lands on that page and, for a section or a row, scrolls to it and pulses it.
+ *
  * Lives outside `App.tsx` so it can be referenced by both the main app
  * and the various hooks (lifecycle event handlers, hotkeys, suggestion
  * actions) without tangling those imports through the component module.
